@@ -13,6 +13,19 @@
    insertion, split/merge/extract/inline, shadowing, overloads, syntax errors, CRLF/LF, BOM,
    non-normalized Unicode, invalid UTF-8, deep trees, and generated files.
 
+## Current status
+
+- [x] The pinned 285-case DiffBenchmark literature intra-file stage is complete. The
+  [official v3 report](../benchmarks/diffbenchmark-literature-evaluation-v3.json) records 283
+  evaluated cases, one known malformed oracle, one known malformed source, zero unexpected errors,
+  and `benchmarkComplete: true`.
+- [ ] Ambiguity/abstention evaluation remains incomplete: the completed run emitted no ambiguity
+  candidates, so its zero ambiguity coverage is not evidence about ambiguity behavior.
+- [ ] Cross-tool comparison against GumTree and RefactoringMiner remains incomplete.
+- [ ] Defects4J and cross-file evaluation remain later, separately reported stages.
+
+The completed literature stage does not mark the broader benchmark and acceptance plan complete.
+
 ## Required metrics
 
 - node-mapping precision, recall, and F1 by granularity;

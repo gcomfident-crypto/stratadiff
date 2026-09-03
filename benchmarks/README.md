@@ -1,7 +1,7 @@
 # Benchmark artifacts
 
-`diffbenchmark-literature-manifest-v3.json` is the canonical source manifest for the 285-case
-DiffBenchmark literature subset pinned at revision
+[`diffbenchmark-literature-manifest-v3.json`](diffbenchmark-literature-manifest-v3.json) is the
+canonical source manifest for the 285-case DiffBenchmark literature subset pinned at revision
 `870592abd559d0bd822a27eb5c8ea45aee47015b`. It records repository revisions, paths, and content
 digests without vendoring third-party source files.
 
@@ -12,3 +12,24 @@ Canonical manifest BLAKE3:
 ```
 
 `stratadiff-evaluate` requires this digest before a run can report `benchmarkComplete: true`.
+
+## Official literature result
+
+- [DiffBenchmark literature evaluation v3](diffbenchmark-literature-evaluation-v3.json)
+- [SHA-256 checksums](SHA256SUMS)
+
+This is the first-party StrataDiff result for the complete pinned literature subset. Its
+`benchmarkComplete: true` status records the expected 283 evaluated cases, one known malformed
+oracle, one known malformed source, and zero unexpected errors, together with complete engine
+provenance, a verified JDT cache, the canonical manifest, and the full 285-case selection. It is an
+evaluation artifact for this fixed corpus and engine, not a cross-tool comparison.
+
+Interpret the result within these limits:
+
+- the run emitted no ambiguity candidates, so it does not establish ambiguity or abstention
+  behavior;
+- GumTree and RefactoringMiner comparison runs are not included;
+- Defects4J and cross-file evaluation remain future stages; and
+- relation scores apply only to the fixed parser-adapter universe. Excluded oracle relations and
+  out-of-universe predictions are reported separately, while latency and report-size quantiles are
+  corpus-wide rather than stratified by input size.

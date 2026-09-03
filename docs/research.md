@@ -73,6 +73,31 @@ GumTree Simple reports a 50–281x matching-stage speedup over the older `opt-10
 its evaluated settings and substantially shorter scripts. That makes it the speed baseline, but
 shorter edit scripts are not evidence that every selected mapping reflects the true change.
 
+## Measured StrataDiff result
+
+The provenance-complete v3 run on DiffBenchmark's fixed 285-case intra-file literature subset is
+described in the [benchmark notes](benchmarks.md#diffbenchmark-literature-subset-result), with the
+complete case-level data in the
+[official evaluation report](../benchmarks/diffbenchmark-literature-evaluation-v3.json). Of the 285
+selected cases, 283 were evaluated, independently verified, and replayed byte for byte. One
+digest-pinned malformed oracle and one digest-pinned malformed source were classified separately;
+there were no unexpected case errors, and `benchmarkComplete` is `true`.
+
+Within this run's fixed scorable adapter universe, program-element relations achieved 99.993%
+micro precision, 93.600% micro recall, and 96.691% micro F1. Fine mappings achieved 99.948% micro
+precision, 92.559% micro recall, and 96.112% micro F1. The adapter made 15,499 of 15,680 raw
+program-element relations and 143,454 of 145,435 raw fine-mapping relations scorable. It excluded
+the remaining 181 and 1,981 oracle relations, respectively, and recorded predictions outside that
+universe as unscored rather than correct or incorrect. Multi-relation recall remained limited:
+0/22 for program elements and 22/2,256 for fine mappings, with no ambiguity candidate covering a
+scorable gold relation.
+
+These measurements characterize this adapter and protocol on the fixed literature subset. They are
+not directly comparable with published full-corpus results or results produced under a different
+protocol, including the RefactoringMiner and GumTree figures above. Differences in corpus coverage,
+node taxonomy, adapter exclusions, relation categories, and scoring denominators preclude a valid
+head-to-head ranking or improvement claim from these numbers alone.
+
 ## Design lessons adopted by StrataDiff
 
 1. **Use Tree-sitter as a frontend, not an oracle.** Parser success and grammar identity are part of

@@ -12,9 +12,10 @@ traditional AST differencers often mix together:
 The first question is answered losslessly. The second is independently rechecked by
 `stratadiff verify`. The third never silently turns a heuristic score into a historical fact.
 
-> **Project status:** early alpha. The replay certificate, conservative syntax anchors, bounded
+> **Project status:** research alpha. The replay certificate, conservative syntax anchors, bounded
 > all-optima child alignment, duplicate ambiguity handling, deterministic JSON report, and seven
-> grammar adapters work now. Binding-aware rename proofs remain on the roadmap.
+> grammar adapters work now. A provenance-complete DiffBenchmark literature-subset evaluation is
+> published below. Binding-aware rename proofs remain on the roadmap.
 
 ## Why another code diff?
 
@@ -34,6 +35,28 @@ Two snapshots cannot reveal whether identical blocks were swapped, deleted and p
 untouched. No snapshot-only algorithm can be 100% correct about that hidden history. StrataDiff's
 100% target is therefore precise: every certified predicate must be true, and applying a valid
 report must reproduce the target bytes exactly. It abstains where identity is not observable.
+
+## Evaluated result
+
+The checked-in evaluation selected all 285 cases in DiffBenchmark's pinned Java literature subset.
+It evaluated, independently verified, and byte-for-byte replayed all 283 well-formed cases. The two
+remaining inputs are digest-pinned upstream data defects: one malformed oracle and one malformed
+Java source. There were no unexpected case errors.
+
+| Fixed scorable adapter universe | Precision | Recall | F1 | Oracle coverage |
+|---|---:|---:|---:|---:|
+| Program elements | 99.993% | 93.600% | 96.691% | 98.846% |
+| Fine mappings | 99.948% | 92.559% | 96.112% | 98.638% |
+
+These correspondence scores apply only inside the declared scoring universe; they are not a claim
+of 100% historical identity accuracy. In particular, ambiguity-covered gold relations were 0 in
+this run, multi-relation recall remains weak, and predictions outside the scoring universe are
+reported but not counted as true or false positives. This subset and protocol are not directly
+comparable with published full-corpus GumTree or RefactoringMiner figures.
+
+See the [complete results and limitations](docs/benchmarks.md), the
+[raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v3.json), and the
+[artifact checksums](benchmarks/SHA256SUMS).
 
 ## Quick start
 
@@ -89,8 +112,8 @@ unmatched region.
 Source rows and columns follow Tree-sitter: zero-based rows and UTF-8 byte columns.
 
 See [DESIGN.md](DESIGN.md) for invariants, [docs/research.md](docs/research.md) for the tool and paper
-survey that motivated the design, and [docs/benchmarks.md](docs/benchmarks.md) for the first local
-performance baseline.
+survey that motivated the design, and [docs/benchmarks.md](docs/benchmarks.md) for reproducible
+evaluation results and the local performance baseline.
 
 The JSON serialization and structural constraints are published as
 [schema/report-v1.schema.json](schema/report-v1.schema.json). Semantic validity is stricter than
