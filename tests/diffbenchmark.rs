@@ -405,6 +405,18 @@ fn type_declaration_kind_requires_declaration_context() {
 }
 
 #[test]
+fn type_identifiers_cover_the_nested_jdt_type_and_name_nodes() {
+    let source = "class Demo { java.util.List<String> value; }";
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+
+    assert_resolves_fragment(source, &nodes, "SimpleName", "Demo");
+    assert_resolves_fragment(source, &nodes, "SimpleType", "java.util.List");
+    assert_resolves_fragment(source, &nodes, "QualifiedName", "java.util.List");
+    assert_resolves_fragment(source, &nodes, "SimpleType", "String");
+    assert_resolves_fragment(source, &nodes, "SimpleName", "String");
+}
+
+#[test]
 fn parser_specific_aliases_map_only_to_their_declared_roles() {
     let jdt_aliases = [
         (

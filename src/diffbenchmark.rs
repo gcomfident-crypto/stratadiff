@@ -137,8 +137,28 @@ pub struct ComparableNode {
     pub utf8_bytes: OffsetRange,
 }
 
+/// One comparable node and the exact tree-sitter node that produced it.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[serde(deny_unknown_fields)]
+pub struct TreeSitterComparableNode {
+    pub comparable: ComparableNode,
+    pub origin_id: usize,
+    pub origin_kind: String,
+    pub origin_utf8_bytes: OffsetRange,
+}
+
 /// Return the explicitly supported nodes in one error-free tree-sitter-java parse.
 pub fn comparable_tree_sitter_java_nodes(source: &[u8]) -> Result<Vec<ComparableNode>> {
+    Ok(comparable_tree_sitter_java_node_origins(source)?
+        .into_iter()
+        .map(|node| node.comparable)
+        .collect())
+}
+
+/// Return comparable nodes together with their tree-sitter origins for prediction projection.
+pub fn comparable_tree_sitter_java_node_origins(
+    source: &[u8],
+) -> Result<Vec<TreeSitterComparableNode>> {
     let parsed = parse(source.to_vec(), Language::Java)?;
     let mut comparable = Vec::new();
     for node in &parsed.nodes {
@@ -153,26 +173,66 @@ pub fn comparable_tree_sitter_java_nodes(source: &[u8]) -> Result<Vec<Comparable
                 tree_sitter_java_node_roles(&node.kind)
             };
         if node.kind == "annotation" {
-            comparable.push(ComparableNode {
-                role: annotation_role(&parsed, node.id),
-                utf8_bytes: range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: annotation_role(&parsed, node.id),
+                    utf8_bytes: range,
+                },
+            );
         } else if node.kind == "switch_label" {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::SwitchCase,
-                utf8_bytes: switch_case_range(&parsed, node.id)?,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::SwitchCase,
+                    utf8_bytes: switch_case_range(&parsed, node.id)?,
+                },
+            );
         } else {
-            comparable.extend(roles.iter().map(|role| ComparableNode {
-                role: *role,
-                utf8_bytes: range,
-            }));
+            for role in roles {
+                push_comparable(
+                    &mut comparable,
+                    node,
+                    ComparableNode {
+                        role: *role,
+                        utf8_bytes: range,
+                    },
+                );
+            }
         }
         if node.kind == "enhanced_for_statement" {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::SingleVariableDeclaration,
-                utf8_bytes: enhanced_for_variable_range(&parsed, node.id)?,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::SingleVariableDeclaration,
+                    utf8_bytes: enhanced_for_variable_range(&parsed, node.id)?,
+                },
+            );
+        }
+        if node.kind == "type_identifier" {
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::SimpleName,
+                    utf8_bytes: range,
+                },
+            );
+        }
+        if node.kind == "scoped_type_identifier" {
+            for role in [SharedNodeRole::SimpleType, SharedNodeRole::QualifiedAccess] {
+                push_comparable(
+                    &mut comparable,
+                    node,
+                    ComparableNode {
+                        role,
+                        utf8_bytes: range,
+                    },
+                );
+            }
         }
 
         let Some(parent_id) = node.parent else {
@@ -183,41 +243,61 @@ pub fn comparable_tree_sitter_java_nodes(source: &[u8]) -> Result<Vec<Comparable
             (node.kind.as_str(), parent.kind.as_str()),
             ("class", "class_declaration") | ("interface", "interface_declaration")
         ) {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::TypeDeclarationKind,
-                utf8_bytes: range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::TypeDeclarationKind,
+                    utf8_bytes: range,
+                },
+            );
         }
         if parent.kind == "binary_expression"
             && node.field.as_deref() == Some("operator")
             && is_binary_operator(&node.kind)
             && !is_extended_infix_operator(&parsed, parent_id, &node.kind)
         {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::InfixExpressionOperator,
-                utf8_bytes: range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::InfixExpressionOperator,
+                    utf8_bytes: range,
+                },
+            );
         }
         if node.kind == ";" && is_empty_statement_context(parent, node.field.as_deref()) {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::EmptyStatement,
-                utf8_bytes: range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::EmptyStatement,
+                    utf8_bytes: range,
+                },
+            );
         }
         if node.kind == "update_expression" && is_prefix_update(&parsed, node.id) {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::PrefixExpression,
-                utf8_bytes: range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::PrefixExpression,
+                    utf8_bytes: range,
+                },
+            );
         }
         if parent.kind == "method_invocation"
             && is_jdt_method_invocation(&parsed, parent_id)
             && node.field.as_deref() == Some("object")
         {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::MethodInvocationReceiver,
-                utf8_bytes: range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::MethodInvocationReceiver,
+                    utf8_bytes: range,
+                },
+            );
         }
         if parent.kind == "method_invocation"
             && is_jdt_method_invocation(&parsed, parent_id)
@@ -225,13 +305,33 @@ pub fn comparable_tree_sitter_java_nodes(source: &[u8]) -> Result<Vec<Comparable
             && node.kind == "argument_list"
             && let Some(argument_range) = method_invocation_argument_range(&parsed, node.id)?
         {
-            comparable.push(ComparableNode {
-                role: SharedNodeRole::MethodInvocationArguments,
-                utf8_bytes: argument_range,
-            });
+            push_comparable(
+                &mut comparable,
+                node,
+                ComparableNode {
+                    role: SharedNodeRole::MethodInvocationArguments,
+                    utf8_bytes: argument_range,
+                },
+            );
         }
     }
     Ok(comparable)
+}
+
+fn push_comparable(
+    output: &mut Vec<TreeSitterComparableNode>,
+    origin: &crate::syntax::SyntaxNode,
+    comparable: ComparableNode,
+) {
+    output.push(TreeSitterComparableNode {
+        comparable,
+        origin_id: origin.id,
+        origin_kind: origin.kind.clone(),
+        origin_utf8_bytes: OffsetRange {
+            start: origin.span.start_byte,
+            end: origin.span.end_byte,
+        },
+    });
 }
 
 fn is_jdt_method_invocation(parsed: &crate::syntax::ParsedSyntax, invocation_id: usize) -> bool {

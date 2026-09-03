@@ -151,6 +151,34 @@ fn mirror_response_for_a_different_commit_is_rejected() {
 }
 
 #[test]
+fn resumes_from_an_atomic_case_checkpoint_after_download_failure() {
+    let fixture = MaterializeFixture::new(REVISION);
+    let interrupted = fixture.run_with_failure(8);
+
+    assert!(!interrupted.status.success());
+    assert!(
+        String::from_utf8(interrupted.stderr)
+            .unwrap()
+            .contains("injected GitHub failure")
+    );
+    let checkpoint: Value =
+        serde_json::from_slice(&fs::read(fixture.output.join(".manifest.json.part")).unwrap())
+            .unwrap();
+    assert_eq!(checkpoint["caseCount"], CASE_COUNT);
+    assert_eq!(checkpoint["cases"].as_array().unwrap().len(), 2);
+
+    let resumed = fixture.run();
+    assert!(
+        resumed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&resumed.stderr)
+    );
+    assert!(!fixture.output.join(".manifest.json.part").exists());
+    assert!(!fixture.output.join(".manifest.json.next").exists());
+    assert!(fixture.output.join("manifest.json").is_file());
+}
+
+#[test]
 fn rejects_revision_mismatch_before_materialization() {
     let fixture = MaterializeFixture::new("0000000000000000000000000000000000000000");
     let output = fixture.run();
@@ -297,6 +325,11 @@ for argument in "$@"; do
   endpoint=$argument
 done
 printf '%s\n' "$endpoint" >> "$GH_LOG"
+call_count=$(wc -l < "$GH_LOG")
+if [ "$GH_FAIL_CALL" -gt 0 ] && [ "$call_count" -eq "$GH_FAIL_CALL" ]; then
+  printf 'injected GitHub failure\n' >&2
+  exit 12
+fi
 case "$endpoint" in
   'repos/owner/repo/commits/'*)
     if [ "${GH_FAIL_ORIGINAL-0}" = 1 ]; then
@@ -332,13 +365,26 @@ esac
     }
 
     fn run(&self) -> Output {
-        self.run_with_repository_map(None, false)
+        self.run_config(None, false, 0)
+    }
+
+    fn run_with_failure(&self, fail_call: usize) -> Output {
+        self.run_config(None, false, fail_call)
     }
 
     fn run_with_repository_map(
         &self,
         repository_map: Option<&Path>,
         fail_original: bool,
+    ) -> Output {
+        self.run_config(repository_map, fail_original, 0)
+    }
+
+    fn run_config(
+        &self,
+        repository_map: Option<&Path>,
+        fail_original: bool,
+        fail_call: usize,
     ) -> Output {
         let mut command = Command::new(env!("CARGO_BIN_EXE_stratadiff-materialize"));
         command
@@ -353,7 +399,8 @@ esac
             .env("GH_LOG", &self.gh_log)
             .env("GH_COMMIT", COMMIT)
             .env("GH_PARENT", PARENT)
-            .env("GH_FAIL_ORIGINAL", if fail_original { "1" } else { "0" });
+            .env("GH_FAIL_ORIGINAL", if fail_original { "1" } else { "0" })
+            .env("GH_FAIL_CALL", fail_call.to_string());
         if let Some(repository_map) = repository_map {
             command.arg("--repository-map").arg(repository_map);
         }

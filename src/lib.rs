@@ -1,6 +1,8 @@
 pub mod diffbenchmark;
 pub mod diffbenchmark_case;
 pub mod diffbenchmark_eval;
+pub mod diffbenchmark_materialization;
+pub mod diffbenchmark_prediction;
 mod language;
 mod matcher;
 mod model;

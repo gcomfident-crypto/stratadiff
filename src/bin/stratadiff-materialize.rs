@@ -8,18 +8,20 @@ use std::process::Command;
 use anyhow::{Context, Result, bail, ensure};
 use clap::Parser;
 use csv::{ReaderBuilder, StringRecord};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use stratadiff::diffbenchmark_materialization::{
+    DIFFBENCHMARK_LITERATURE_CASES, DIFFBENCHMARK_REVISION, MATERIALIZATION_MANIFEST_SCHEMA,
+    MaterializationManifest, MaterializedCase, MaterializedSource,
+};
 
-const DIFFBENCHMARK_REVISION: &str = "870592abd559d0bd822a27eb5c8ea45aee47015b";
 const ORACLE_ROOT: &str = "hrd-oracle/adb-paper/literature-exp";
 const LITERATURE_CSV: &str = "csv-outputs/adb-paper/literature-exp-INTRA_FILE_ONLY-NO_FILTER-RefOracle-NO_COMMENTS_AND_JAVADOCS-2025_04_10 18:15:50.csv";
-const EXPECTED_CASES: usize = 285;
-const MANIFEST_SCHEMA: &str = "stratadiff-diffbenchmark-materialization-v2";
 const REPOSITORY_MAP_SCHEMA: &str = "stratadiff-repository-mirrors-v1";
 const MARKER_NAME: &str = ".stratadiff-materialize";
 const MARKER_CONTENTS: &str = "stratadiff-diffbenchmark-materialization-v1\n";
 const MANIFEST_NAME: &str = "manifest.json";
 const MANIFEST_PART_NAME: &str = ".manifest.json.part";
+const MANIFEST_NEXT_NAME: &str = ".manifest.json.next";
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff-materialize")]
@@ -33,36 +35,6 @@ struct Cli {
     /// Explicit repository mirrors, each restricted to exact commits.
     #[arg(long, value_name = "JSON")]
     repository_map: Option<PathBuf>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Manifest {
-    schema: String,
-    dataset_revision: String,
-    case_count: usize,
-    cases: Vec<ManifestCase>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ManifestCase {
-    oracle_path: String,
-    oracle_blake3: String,
-    oracle_repository_url: String,
-    fetched_repository_url: String,
-    commit: String,
-    parent: String,
-    before: SourceArtifact,
-    after: SourceArtifact,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SourceArtifact {
-    repository_path: String,
-    materialized_path: String,
-    content_blake3: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -189,7 +161,10 @@ fn main() -> Result<()> {
             validate_cached_manifest(&manifest, &plans, &repositories)?;
             complete_cached_manifest(&cli.output, manifest, &plans, &repositories)?
         }
-        None => materialize_new_manifest(&cli.output, &plans, &repositories)?,
+        None => {
+            let checkpoint = read_checkpoint(&cli.output)?;
+            materialize_new_manifest(&cli.output, &plans, &repositories, checkpoint)?
+        }
     };
 
     let encoded = encode_manifest(&manifest)?;
@@ -201,17 +176,10 @@ fn main() -> Result<()> {
             "cached manifest is not in its stable serialized form: {}",
             manifest_path.display()
         );
-        let stale_part = manifest_path.with_file_name(MANIFEST_PART_NAME);
-        if stale_part.try_exists()? {
-            fs::remove_file(&stale_part).with_context(|| {
-                format!(
-                    "failed to remove stale manifest file {}",
-                    stale_part.display()
-                )
-            })?;
-        }
+        remove_checkpoints(&cli.output)?;
     } else {
         write_manifest(&manifest_path, &encoded)?;
+        remove_checkpoints(&cli.output)?;
     }
     io::stdout().lock().write_all(&encoded)?;
     Ok(())
@@ -313,8 +281,8 @@ fn build_case_plans(checkout: &Path) -> Result<Vec<CasePlan>> {
     let mut info = read_info_metadata(&checkout.join("info.csv"), &literature_commits)?;
     let oracle_files = find_god_files(&checkout.join(ORACLE_ROOT))?;
     ensure!(
-        oracle_files.len() == EXPECTED_CASES,
-        "expected {EXPECTED_CASES} literature GOD.json files, found {}",
+        oracle_files.len() == DIFFBENCHMARK_LITERATURE_CASES,
+        "expected {DIFFBENCHMARK_LITERATURE_CASES} literature GOD.json files, found {}",
         oracle_files.len()
     );
 
@@ -637,7 +605,7 @@ fn validate_output_layout(output: &Path, case_count: usize) -> Result<()> {
         let name = entry.file_name();
         let file_type = entry.file_type()?;
         match name.to_str() {
-            Some(MARKER_NAME | MANIFEST_NAME | MANIFEST_PART_NAME) => ensure!(
+            Some(MARKER_NAME | MANIFEST_NAME | MANIFEST_PART_NAME | MANIFEST_NEXT_NAME) => ensure!(
                 file_type.is_file() && !file_type.is_symlink(),
                 "unexpected output entry {}",
                 entry.path().display()
@@ -686,7 +654,7 @@ fn validate_output_layout(output: &Path, case_count: usize) -> Result<()> {
     Ok(())
 }
 
-fn read_cached_manifest(path: &Path) -> Result<Option<Manifest>> {
+fn read_cached_manifest(path: &Path) -> Result<Option<MaterializationManifest>> {
     match fs::read(path) {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .with_context(|| format!("invalid cached manifest {}", path.display()))
@@ -696,13 +664,27 @@ fn read_cached_manifest(path: &Path) -> Result<Option<Manifest>> {
     }
 }
 
+fn read_checkpoint(output: &Path) -> Result<Option<MaterializationManifest>> {
+    let part = read_cached_manifest(&output.join(MANIFEST_PART_NAME));
+    let next = read_cached_manifest(&output.join(MANIFEST_NEXT_NAME));
+    match (part, next) {
+        (Ok(part), Ok(next)) => Ok([part, next]
+            .into_iter()
+            .flatten()
+            .max_by_key(|manifest| manifest.cases.len())),
+        (Ok(Some(part)), Err(_)) => Ok(Some(part)),
+        (Err(_), Ok(Some(next))) => Ok(Some(next)),
+        (Ok(None), Err(error)) | (Err(error), Ok(None)) | (Err(error), Err(_)) => Err(error),
+    }
+}
+
 fn validate_cached_manifest(
-    manifest: &Manifest,
+    manifest: &MaterializationManifest,
     plans: &[CasePlan],
     repositories: &RepositoryRegistry,
 ) -> Result<()> {
     ensure!(
-        manifest.schema == MANIFEST_SCHEMA,
+        manifest.schema == MATERIALIZATION_MANIFEST_SCHEMA,
         "cached manifest schema mismatch"
     );
     ensure!(
@@ -765,10 +747,10 @@ fn validate_cached_manifest(
 
 fn complete_cached_manifest(
     output: &Path,
-    manifest: Manifest,
+    manifest: MaterializationManifest,
     plans: &[CasePlan],
     repositories: &RepositoryRegistry,
-) -> Result<Manifest> {
+) -> Result<MaterializationManifest> {
     let mut commits = BTreeMap::new();
     for (index, (case, plan)) in manifest.cases.iter().zip(plans).enumerate() {
         let before_exists = validate_cached_source(output, &case.before)?;
@@ -824,10 +806,27 @@ fn materialize_new_manifest(
     output: &Path,
     plans: &[CasePlan],
     repositories: &RepositoryRegistry,
-) -> Result<Manifest> {
+    checkpoint: Option<MaterializationManifest>,
+) -> Result<MaterializationManifest> {
     let mut commits = BTreeMap::new();
-    let mut cases = Vec::with_capacity(plans.len());
-    for (index, plan) in plans.iter().enumerate() {
+    let mut manifest = checkpoint.unwrap_or_else(|| MaterializationManifest {
+        schema: MATERIALIZATION_MANIFEST_SCHEMA.to_owned(),
+        dataset_revision: DIFFBENCHMARK_REVISION.to_owned(),
+        case_count: plans.len(),
+        cases: Vec::with_capacity(plans.len()),
+    });
+    validate_checkpoint(&manifest, plans, repositories)?;
+    for (index, case) in manifest.cases.iter().enumerate() {
+        ensure!(
+            validate_cached_source(output, &case.before)?
+                && validate_cached_source(output, &case.after)?,
+            "checkpoint source is missing for {}",
+            case.oracle_path
+        );
+        report_progress("resumed", index + 1, plans.len(), &case.oracle_path);
+    }
+
+    for (index, plan) in plans.iter().enumerate().skip(manifest.cases.len()) {
         let resolved = resolve_case(plan, repositories, &mut commits)?;
         let before_bytes = fetch_source(
             &resolved.fetched_repository.owner,
@@ -844,35 +843,58 @@ fn materialize_new_manifest(
         let (before_path, after_path) = materialized_paths(index);
         write_source(output, &before_path, &before_bytes)?;
         write_source(output, &after_path, &after_bytes)?;
-        cases.push(ManifestCase {
+        manifest.cases.push(MaterializedCase {
             oracle_path: plan.oracle_path.clone(),
             oracle_blake3: plan.oracle_blake3.clone(),
             oracle_repository_url: plan.oracle_repository_url.clone(),
             fetched_repository_url: resolved.fetched_repository.url,
             commit: plan.commit.clone(),
             parent: resolved.parent,
-            before: SourceArtifact {
+            before: MaterializedSource {
                 repository_path: resolved.before_path,
                 materialized_path: before_path,
                 content_blake3: digest(&before_bytes),
             },
-            after: SourceArtifact {
+            after: MaterializedSource {
                 repository_path: resolved.after_path,
                 materialized_path: after_path,
                 content_blake3: digest(&after_bytes),
             },
         });
+        write_checkpoint(output, &manifest)?;
         report_progress("materialized", index + 1, plans.len(), &plan.oracle_path);
     }
-    Ok(Manifest {
-        schema: MANIFEST_SCHEMA.to_owned(),
-        dataset_revision: DIFFBENCHMARK_REVISION.to_owned(),
-        case_count: cases.len(),
-        cases,
-    })
+    Ok(manifest)
 }
 
-fn validate_cached_source(output: &Path, artifact: &SourceArtifact) -> Result<bool> {
+fn validate_checkpoint(
+    manifest: &MaterializationManifest,
+    plans: &[CasePlan],
+    repositories: &RepositoryRegistry,
+) -> Result<()> {
+    ensure!(
+        manifest.schema == MATERIALIZATION_MANIFEST_SCHEMA,
+        "checkpoint manifest schema mismatch"
+    );
+    ensure!(
+        manifest.dataset_revision == DIFFBENCHMARK_REVISION,
+        "checkpoint manifest dataset revision mismatch"
+    );
+    ensure!(
+        manifest.case_count == plans.len() && manifest.cases.len() <= plans.len(),
+        "checkpoint manifest case count mismatch"
+    );
+    let prefix = MaterializationManifest {
+        schema: manifest.schema.clone(),
+        dataset_revision: manifest.dataset_revision.clone(),
+        case_count: manifest.cases.len(),
+        cases: manifest.cases.clone(),
+    };
+    validate_cached_manifest(&prefix, &plans[..manifest.cases.len()], repositories)
+        .context("invalid materialization checkpoint")
+}
+
+fn validate_cached_source(output: &Path, artifact: &MaterializedSource) -> Result<bool> {
     let path = output.join(&artifact.materialized_path);
     match fs::symlink_metadata(&path) {
         Ok(metadata) => {
@@ -1155,6 +1177,30 @@ fn write_manifest(path: &Path, encoded: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn write_checkpoint(output: &Path, manifest: &MaterializationManifest) -> Result<()> {
+    let path = output.join(MANIFEST_PART_NAME);
+    let next = output.join(MANIFEST_NEXT_NAME);
+    if next.try_exists()? {
+        fs::remove_file(&next)
+            .with_context(|| format!("failed to remove stale checkpoint {}", next.display()))?;
+    }
+    write_new_file(&next, &encode_manifest(manifest)?)?;
+    fs::rename(&next, &path)
+        .with_context(|| format!("failed to install checkpoint {}", path.display()))?;
+    Ok(())
+}
+
+fn remove_checkpoints(output: &Path) -> Result<()> {
+    for name in [MANIFEST_PART_NAME, MANIFEST_NEXT_NAME] {
+        let path = output.join(name);
+        if path.try_exists()? {
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove checkpoint {}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
 fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
@@ -1168,7 +1214,7 @@ fn write_new_file(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn encode_manifest(manifest: &Manifest) -> Result<Vec<u8>> {
+fn encode_manifest(manifest: &MaterializationManifest) -> Result<Vec<u8>> {
     let mut encoded = serde_json::to_vec_pretty(manifest)?;
     encoded.push(b'\n');
     Ok(encoded)
