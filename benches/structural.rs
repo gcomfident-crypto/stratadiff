@@ -17,6 +17,12 @@ fn python_module(functions: usize, changed_stride: Option<usize>) -> Vec<u8> {
     source.into_bytes()
 }
 
+fn duplicate_python_module(functions: usize) -> Vec<u8> {
+    "def repeated():\n    return 1\n\n"
+        .repeat(functions)
+        .into_bytes()
+}
+
 fn structural_diff(c: &mut Criterion) {
     let mut group = c.benchmark_group("python_structural_diff");
     for functions in [100, 1_000, 5_000] {
@@ -45,6 +51,33 @@ fn structural_diff(c: &mut Criterion) {
         );
     }
     group.finish();
+
+    let mut duplicates = c.benchmark_group("python_duplicate_siblings");
+    for functions in [100, 1_000, 5_000] {
+        let source = duplicate_python_module(functions);
+        duplicates.throughput(Throughput::Bytes((source.len() * 2) as u64));
+        duplicates.bench_with_input(
+            BenchmarkId::from_parameter(functions),
+            &source,
+            |bencher, source| {
+                bencher.iter_batched(
+                    || (source.clone(), source.clone()),
+                    |(before, after)| {
+                        analyze_bytes(
+                            black_box(before),
+                            black_box(after),
+                            "before.py".to_owned(),
+                            "after.py".to_owned(),
+                            Language::Python,
+                        )
+                        .unwrap()
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    duplicates.finish();
 }
 
 criterion_group!(benches, structural_diff);

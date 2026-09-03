@@ -47,13 +47,19 @@ The current alpha applies these rules in order:
 2. Select globally unique, recursively verified identical syntax subtrees of at least three nodes.
 3. In each mapped parent pair, select a unique unmatched child with the same field, kind, and
    verified syntax.
-4. In the remaining local children, emit a suggestion only when field, kind, and recursively
-   verified shape are unique on both sides.
-5. Preserve non-unique local shape buckets as `AmbiguityGroup` values.
-
-The planned stable-core solver will construct all optimal ordered alignments for each anchor-bounded
-region and emit a pair as `model_forced` only when it occurs in every optimum. Oversized repetitive
-regions will remain symbolic ambiguity buckets rather than consume quadratic memory.
+4. Use non-crossing exact direct-child mappings as barriers. A shape-only pair cannot become forced
+   by crossing one of these stronger anchors.
+5. In each remaining region, use `(field, kind, shape_hash)` only as an index, partition hash
+   buckets by recursive shape equality, and build candidates within those verified shape classes.
+6. For at most 64 active children per side, compute a maximum-cardinality ordered alignment and
+   emit a pair as `model_forced` only when forbidding it lowers the optimum.
+7. Require a forced shape signature to occur once per side. This symmetry guard keeps
+   observationally identical duplicates ambiguous even when source order yields one optimal
+   diagonal alignment. If any duplicate participates in an optimum, the entire verified duplicate
+   bucket remains ambiguous so an arbitrary copy is not mislabeled as deleted.
+8. Preserve alignment ties and regions above the cap as `AmbiguityGroup` values. Oversized regions
+   are grouped by recursively verified shape class without constructing a quadratic candidate
+   matrix.
 
 ## Change events
 
@@ -62,7 +68,9 @@ Events are derived after matching and cannot influence certified equality:
 - `formatting_only`: root syntax is equal while bytes differ;
 - `equivalent_relocation`: an exact subtree is under a different mapped parent;
 - `child_order_changed`: mapped direct children have a different relative order;
-- `suggested_update`: a unique local shape pair has different syntax;
+- `model_forced_update`: a shape-equal pair occurs in every optimal ordered alignment but has
+  different syntax;
+- `suggested_update`: reserved for a future explicitly evidenced suggestion rule;
 - `insert` and `delete`: maximal unmatched, non-ambiguous subtrees.
 
 The wording is deliberate. `equivalent_relocation` describes the snapshots; it does not assert that
@@ -81,8 +89,10 @@ The lossless layer is independent from parsing:
 5. Report construction replays all edits and refuses to issue a certificate unless the resulting
    bytes and BLAKE3 digest match the target.
 
-This keeps the common case compact and caps pathological refinement costs. It also works for BOMs,
-NULs, invalid UTF-8, mixed line endings, and files with no final newline.
+This keeps the common case compact and caps pathological refinement costs. The byte-patch primitive
+works for BOMs, NULs, invalid UTF-8, mixed line endings, and files with no final newline. The
+structural `diff` command still requires both snapshots to parse successfully under the selected
+grammar.
 
 ## Verification boundary
 
@@ -92,14 +102,20 @@ NULs, invalid UTF-8, mixed line endings, and files with no final newline.
 - patch bounds, non-overlap, replay bytes, and target digest;
 - relation IDs and all serialized node metadata;
 - one-to-one relation cardinality;
-- every declared byte, syntax, and shape predicate.
+- every declared byte, syntax, and shape predicate;
+- exact-anchor uniqueness and descendant membership;
+- stable-core all-optima membership, duplicate symmetry closure, and 64-node abstention;
+- ambiguity groups, derived changes, and summary counters.
 
-The next verifier milestone separates this checker into a dependency-minimal crate and adds compact
-proofs for `model_forced`, including anchor uniqueness and all-optima membership.
+The verifier independently re-derives these rules without calling the producer matcher. A later
+milestone will move it into a dependency-minimal crate and replace recomputation with compact proof
+objects where practical.
 
 ## Complexity
 
 For N syntax nodes and E bytes, parsing, hashing, indexes, and fixed-size candidate buckets use
-O(N + E) expected time and O(N) memory. Line anchoring uses the Patience implementation from
-`similar`; byte-level Myers is limited to 64 KiB per unmatched region. The current matcher never
-constructs the Cartesian product of duplicate buckets.
+O(N + E) expected time and O(N) memory. A bounded active child region with dimensions A and B uses
+O(A × B) memory and O(U × A × B) time, where A and B are at most 64 and U is at most 64 unique
+possible-optimal pairs checked for forcedness. Regions above the cap stay linear and symbolic. Line
+anchoring uses the Patience implementation from `similar`; byte-level Myers is limited to 64 KiB
+per unmatched region.

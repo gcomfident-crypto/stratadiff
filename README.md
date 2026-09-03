@@ -12,9 +12,9 @@ traditional AST differencers often mix together:
 The first question is answered losslessly. The second is independently rechecked by
 `stratadiff verify`. The third never silently turns a heuristic score into a historical fact.
 
-> **Project status:** early alpha. The replay certificate, conservative syntax anchors,
-> duplicate ambiguity handling, deterministic JSON report, and six grammar adapters work now.
-> Binding-aware rename proofs and the all-optima stable-core solver are on the roadmap.
+> **Project status:** early alpha. The replay certificate, conservative syntax anchors, bounded
+> all-optima child alignment, duplicate ambiguity handling, deterministic JSON report, and seven
+> grammar adapters work now. Binding-aware rename proofs remain on the roadmap.
 
 ## Why another code diff?
 
@@ -25,7 +25,8 @@ moves, false updates, and unstable output around repeated code.
 StrataDiff makes uncertainty part of the data model:
 
 - `predicate` says what is observable: `byte_equal`, `syntax_equal`, or `shape_equal`.
-- `correspondence` says how a pair was selected: `model_forced` or `suggested`.
+- `correspondence` says how a pair was selected. The current engine emits `model_forced` pairs;
+  `suggested` remains reserved in the v1 data model for future explicitly evidenced rules.
 - `ambiguities` preserve repeated or symmetric candidates as sets instead of guessing a pair.
 - `patch` and `certificate` rebuild and hash-check the target byte for byte.
 
@@ -69,22 +70,32 @@ The alpha implements the first useful slice of Proof-Carrying Structural Diff (P
 2. Compute domain-separated byte, syntax, and shape Merkle fingerprints bottom-up.
 3. Verify hash hits recursively, so correctness does not depend on collision resistance alone.
 4. Map globally unique identical subtrees and unique identical children under mapped parents.
-5. Label unique shape-only pairs as suggestions, never as facts.
-6. Preserve repeated shape-equivalent children as symbolic ambiguity groups.
-7. Derive insertions, deletions, equivalent relocations, child-order changes, and suggested updates.
+5. Split unmatched direct children at non-crossing exact anchors, align at most 64 active children
+   per side in each region, and map a unique shape pair only when it is present in every
+   maximum-cardinality ordered alignment.
+6. Preserve ties, the full symmetry class of observationally identical duplicates, and oversized
+   child regions as symbolic ambiguity groups.
+7. Derive insertions, deletions, exact equivalent relocations, child-order changes, and
+   model-forced shape updates without conflating their evidence levels.
 8. Build an exact patch using line-level Patience anchors, bounded byte-level Myers refinement, and
    a linear replacement path for large unmatched regions.
 9. Replay the patch immediately and emit a BLAKE3 certificate only if the output is byte-identical.
 
-Typical matching and hashing are linear in syntax-tree size. Candidate buckets avoid the
-quadratic cross-product caused by repeated nodes. Expensive byte refinement is capped at 64 KiB
-per unmatched region.
+Typical matching and hashing are linear in syntax-tree size. Ordered dynamic programming is
+restricted to active child regions of at most 64 nodes per side; larger regions remain symbolic
+and never allocate a quadratic candidate matrix. Expensive byte refinement is capped at 64 KiB per
+unmatched region.
 
 Source rows and columns follow Tree-sitter: zero-based rows and UTF-8 byte columns.
 
 See [DESIGN.md](DESIGN.md) for invariants, [docs/research.md](docs/research.md) for the tool and paper
 survey that motivated the design, and [docs/benchmarks.md](docs/benchmarks.md) for the first local
 performance baseline.
+
+The JSON serialization and structural constraints are published as
+[schema/report-v1.schema.json](schema/report-v1.schema.json). Semantic validity is stricter than
+the schema alone and is established by `stratadiff verify`, which independently reparses the
+snapshots and re-derives the report's claims.
 
 ## Report excerpt
 
@@ -98,13 +109,18 @@ performance baseline.
     },
     {
       "predicate": "shape_equal",
-      "correspondence": "suggested",
-      "evidence": ["unique_shape_under_mapped_parent", "not_an_identity_claim"]
+      "correspondence": "model_forced",
+      "evidence": [
+        "bounded_ordered_child_alignment_v1",
+        "pair_present_in_every_optimal_alignment",
+        "recursive_shape_equality_check",
+        "not_a_historical_identity_claim"
+      ]
     }
   ],
   "ambiguities": [
     {
-      "reason": "multiple shape-equivalent children admit more than one correspondence"
+      "reason": "repeated shape-equivalent children are not treated as identities even when source order selects one optimal alignment"
     }
   ],
   "certificate": {
@@ -115,7 +131,6 @@ performance baseline.
 
 ## Near-term roadmap
 
-- All-optima ordered alignment: emit only pairs present in every optimal alignment.
 - Binding-aware alpha equivalence and no-capture rename certificates.
 - An independent, minimal verifier crate with correspondence-rule certificates.
 - Repository mode with conservative file pairing and parallel parsing.

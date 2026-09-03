@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use stratadiff::{DiffReport, Language, analyze_files, apply_patch, verify_report};
 
@@ -79,7 +79,9 @@ fn main() -> Result<()> {
             let after = std::fs::read(&after)
                 .with_context(|| format!("failed to read {}", after.display()))?;
             verify_report(&report, &before, &after)?;
-            println!("verified: patch replay, input hashes, one-to-one relations, and predicates");
+            println!(
+                "verified: replay, parser manifest, relations, ambiguities, changes, and summary"
+            );
         }
         Command::Apply {
             report,
@@ -92,13 +94,8 @@ fn main() -> Result<()> {
             )?;
             let before = std::fs::read(&before)
                 .with_context(|| format!("failed to read {}", before.display()))?;
-            if blake3::hash(&before).to_hex().to_string() != report.before.blake3 {
-                bail!("before snapshot does not match the report digest");
-            }
             let rebuilt = apply_patch(&before, &report.patch)?;
-            if blake3::hash(&rebuilt).to_hex().to_string() != report.after.blake3 {
-                bail!("rebuilt output does not match the certified target digest");
-            }
+            verify_report(&report, &before, &rebuilt)?;
             std::fs::write(&output, rebuilt)
                 .with_context(|| format!("failed to write {}", output.display()))?;
             println!("rebuilt certified target at {}", output.display());

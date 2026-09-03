@@ -1,0 +1,186 @@
+use serde::Serialize;
+use stratadiff::{ChangeKind, Correspondence, DiffReport, Language, Predicate, analyze_bytes};
+
+#[test]
+fn emitted_report_conforms_to_the_published_schema() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/report-v1.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let report = analyze_bytes(
+        b"def value():\n    return 1\n".to_vec(),
+        b"def value():\n    return 2\n".to_vec(),
+        "before.py".to_owned(),
+        "after.py".to_owned(),
+        Language::Python,
+    )
+    .unwrap();
+    let instance = serde_json::to_value(report).unwrap();
+    let errors: Vec<_> = validator
+        .iter_errors(&instance)
+        .map(|error| error.to_string())
+        .collect();
+    assert!(errors.is_empty(), "schema errors: {errors:#?}");
+}
+
+#[test]
+fn schema_enums_track_every_serialized_public_variant() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/report-v1.schema.json")).unwrap();
+    assert_enum(
+        &schema["$defs"]["predicate"]["enum"],
+        &[
+            Predicate::InputPair,
+            Predicate::ByteEqual,
+            Predicate::SyntaxEqual,
+            Predicate::ShapeEqual,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["relation"]["properties"]["correspondence"]["enum"],
+        &[
+            Correspondence::InputPair,
+            Correspondence::ModelForced,
+            Correspondence::Suggested,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["change"]["properties"]["kind"]["enum"],
+        &[
+            ChangeKind::Insert,
+            ChangeKind::Delete,
+            ChangeKind::EquivalentRelocation,
+            ChangeKind::ChildOrderChanged,
+            ChangeKind::ModelForcedUpdate,
+            ChangeKind::SuggestedUpdate,
+            ChangeKind::FormattingOnly,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["parser"]["properties"]["language"]["enum"],
+        &[
+            Language::Python,
+            Language::Javascript,
+            Language::Typescript,
+            Language::Tsx,
+            Language::Rust,
+            Language::Java,
+            Language::Json,
+        ],
+    );
+}
+
+#[test]
+fn readme_report_excerpt_uses_current_certificate_vocabulary() {
+    let readme = include_str!("../README.md");
+    let stable = analyze_bytes(
+        b"def old_name(value):\n    return value + 1\n".to_vec(),
+        b"def new_name(item):\n    return item + 2\n".to_vec(),
+        "before.py".to_owned(),
+        "after.py".to_owned(),
+        Language::Python,
+    )
+    .unwrap();
+    let evidence = &stable
+        .relations
+        .iter()
+        .find(|relation| relation.predicate == Predicate::ShapeEqual)
+        .unwrap()
+        .evidence;
+    for item in evidence {
+        assert!(
+            readme.contains(&format!("\"{item}\"")),
+            "README report excerpt is missing evidence {item}"
+        );
+    }
+
+    let duplicate_source = "def same():\n    return 1\n\ndef same():\n    return 1\n";
+    let duplicate = analyze_bytes(
+        duplicate_source.as_bytes().to_vec(),
+        duplicate_source.as_bytes().to_vec(),
+        "before.py".to_owned(),
+        "after.py".to_owned(),
+        Language::Python,
+    )
+    .unwrap();
+    let reason = &duplicate
+        .ambiguities
+        .iter()
+        .find(|group| {
+            group.before.len() == 2
+                && group.after.len() == 2
+                && group.before[0].kind == "function_definition"
+        })
+        .unwrap()
+        .reason;
+    assert!(
+        readme.contains(&format!("\"{reason}\"")),
+        "README report excerpt uses a stale ambiguity reason"
+    );
+}
+
+#[test]
+fn every_report_object_rejects_unknown_fields_during_deserialization() {
+    let before = concat!(
+        "def same():\n    return 1\n\n",
+        "def same():\n    return 1\n",
+    );
+    let after = concat!(
+        "def same():\n    return 1\n\n",
+        "def same():\n    return 1\n\n",
+        "added = 2\n",
+    );
+    let report = analyze_bytes(
+        before.as_bytes().to_vec(),
+        after.as_bytes().to_vec(),
+        "before.py".to_owned(),
+        "after.py".to_owned(),
+        Language::Python,
+    )
+    .unwrap();
+    assert!(!report.relations.is_empty());
+    assert!(!report.ambiguities.is_empty());
+    assert!(!report.changes.is_empty());
+    assert!(!report.patch.edits.is_empty());
+
+    let encoded = serde_json::to_value(report).unwrap();
+    for pointer in [
+        "",
+        "/before",
+        "/parser",
+        "/relations/0",
+        "/relations/0/before",
+        "/relations/0/before/span",
+        "/relations/0/before/span/start",
+        "/ambiguities/0",
+        "/changes/0",
+        "/patch",
+        "/patch/edits/0",
+        "/certificate",
+        "/summary",
+    ] {
+        let mut candidate = encoded.clone();
+        let object = if pointer.is_empty() {
+            candidate.as_object_mut().unwrap()
+        } else {
+            candidate
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+        };
+        object.insert("unexpected".to_owned(), serde_json::Value::Bool(true));
+        assert!(
+            serde_json::from_value::<DiffReport>(candidate).is_err(),
+            "unknown field was accepted at {pointer}"
+        );
+    }
+}
+
+fn assert_enum<T: Serialize>(schema_values: &serde_json::Value, expected: &[T]) {
+    let actual = schema_values.as_array().unwrap();
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|value| serde_json::to_value(value).unwrap())
+        .collect();
+    assert_eq!(actual, &expected);
+}

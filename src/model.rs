@@ -3,12 +3,14 @@ use serde::{Deserialize, Serialize};
 use crate::language::Language;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Position {
     pub row: usize,
     pub column: usize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Span {
     pub start_byte: usize,
     pub end_byte: usize,
@@ -17,6 +19,7 @@ pub struct Span {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct NodeRef {
     pub id: usize,
     pub kind: String,
@@ -49,6 +52,7 @@ pub enum Correspondence {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Relation {
     pub before: NodeRef,
     pub after: NodeRef,
@@ -58,6 +62,7 @@ pub struct Relation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct AmbiguityGroup {
     pub parent_before: usize,
     pub parent_after: usize,
@@ -74,11 +79,13 @@ pub enum ChangeKind {
     Delete,
     EquivalentRelocation,
     ChildOrderChanged,
+    ModelForcedUpdate,
     SuggestedUpdate,
     FormattingOnly,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct StructuralChange {
     pub kind: ChangeKind,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,6 +96,7 @@ pub struct StructuralChange {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Artifact {
     pub path: String,
     pub byte_len: usize,
@@ -96,6 +104,7 @@ pub struct Artifact {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ParserManifest {
     pub engine: String,
     pub runtime_version: String,
@@ -112,6 +121,7 @@ pub struct ParserManifest {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ByteEdit {
     pub old_start: usize,
     pub old_end: usize,
@@ -119,12 +129,14 @@ pub struct ByteEdit {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct LosslessPatch {
     pub algorithm: String,
     pub edits: Vec<ByteEdit>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct ReplayCertificate {
     pub before_blake3: String,
     pub after_blake3: String,
@@ -135,6 +147,7 @@ pub struct ReplayCertificate {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct Summary {
     pub model_forced_relations: usize,
     pub suggested_relations: usize,
@@ -143,6 +156,7 @@ pub struct Summary {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct DiffReport {
     pub schema: String,
     pub engine_version: String,
