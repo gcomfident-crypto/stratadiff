@@ -6,9 +6,11 @@ The benchmark dataset is fetched on demand and is not vendored into StrataDiff.
 tools/diffbenchmark/fetch.sh /absolute/path/to/DiffBenchmark
 ```
 
-The fetch script pins commit `870592abd559d0bd822a27eb5c8ea45aee47015b`. Only `GOD.json` data is
-ground truth. Directories named RMD, GTG, GTS, IJM, or MTD contain outputs from evaluated tools and
-must not be treated as oracle labels.
+The fetch script pins commit `870592abd559d0bd822a27eb5c8ea45aee47015b` and checks out only the
+285 literature `GOD.json` files plus the exact metadata inputs. A clean checkout is about 43 MB;
+tool-output directories are intentionally excluded. Only `GOD.json` data is ground truth.
+Directories named RMD, GTG, GTS, IJM, or MTD contain outputs from evaluated tools and must not be
+treated as oracle labels.
 
 Audit the pinned checkout before attempting an evaluation:
 

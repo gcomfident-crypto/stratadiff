@@ -8,6 +8,7 @@ fi
 
 target_directory=$1
 benchmark_revision=870592abd559d0bd822a27eb5c8ea45aee47015b
+literature_csv='literature-exp-INTRA_FILE_ONLY-NO_FILTER-RefOracle-NO_COMMENTS_AND_JAVADOCS-2025_04_10 18:15:50.csv'
 
 if [[ -e $target_directory ]]; then
   echo "target already exists: $target_directory" >&2
@@ -19,10 +20,10 @@ git clone --filter=blob:none --no-checkout \
   "$target_directory"
 git -C "$target_directory" sparse-checkout init --no-cone
 git -C "$target_directory" sparse-checkout set \
-  hrd-oracle/adb-paper/literature-exp \
-  hrd-format.json \
-  info.csv \
-  csv-outputs/adb-paper
+  '/hrd-oracle/adb-paper/literature-exp/*/*/*/GOD.json' \
+  '/hrd-format.json' \
+  '/info.csv' \
+  "/csv-outputs/adb-paper/$literature_csv"
 git -C "$target_directory" checkout "$benchmark_revision"
 
 echo "DiffBenchmark is pinned at $benchmark_revision in $target_directory"
