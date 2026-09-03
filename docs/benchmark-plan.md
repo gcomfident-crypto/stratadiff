@@ -2,8 +2,9 @@
 
 ## Corpora
 
-1. **DiffBenchmark:** the primary Java mapping oracle, including 800 Defects4J commits and 188
-   refactoring commits.
+1. **DiffBenchmark:** the primary Java mapping oracle. The first executable stage pins the 285-file
+   literature subset at commit `870592abd559d0bd822a27eb5c8ea45aee47015b`; Defects4J and
+   cross-file evaluation are later, separately reported stages.
 2. **ICSE 2021 differential-testing corpus:** 263,165 Java file revisions for disagreement mining
    and metamorphic tests.
 3. **GumTree Simple evaluation inputs:** Defects4J, BugsInPy, and sampled GitHub revisions for
@@ -22,6 +23,12 @@
 - replay success, which must remain 100%;
 - deterministic report rate, which must remain 100%;
 - p50/p95 latency, peak RSS, and report size by input size.
+
+DiffBenchmark results are split into program elements versus fine mappings and singleton versus
+multi-mapping components. Report micro and per-case macro precision/recall/F1, perfect-case rate,
+parser-taxonomy coverage, abstention, ambiguity-candidate coverage and expansion, and multi-group
+overclaim. Predictions outside the fixed parser-adapter universe are unscored and counted. Do not
+report true-negative accuracy because the non-edge universe is not well-defined.
 
 Edit-script length is reported but never used as a proxy for mapping correctness.
 

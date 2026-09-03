@@ -14,13 +14,15 @@ if [[ -e $target_directory ]]; then
   exit 1
 fi
 
-git clone --filter=blob:none --sparse \
+git clone --filter=blob:none --no-checkout \
   https://github.com/pouryafard75/DiffBenchmark.git \
   "$target_directory"
-git -C "$target_directory" checkout "$benchmark_revision"
+git -C "$target_directory" sparse-checkout init --no-cone
 git -C "$target_directory" sparse-checkout set \
   hrd-oracle/adb-paper/literature-exp \
+  hrd-format.json \
   info.csv \
   csv-outputs/adb-paper
+git -C "$target_directory" checkout "$benchmark_revision"
 
 echo "DiffBenchmark is pinned at $benchmark_revision in $target_directory"

@@ -1,3 +1,4 @@
+pub mod diffbenchmark;
 mod language;
 mod matcher;
 mod model;
