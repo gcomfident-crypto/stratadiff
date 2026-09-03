@@ -56,9 +56,24 @@ pub(crate) fn parse(source: Vec<u8>, language: Language) -> Result<ParsedSyntax>
         .context("tree-sitter returned no syntax tree")?;
     let root = tree.root_node();
     if root.has_error() {
+        let invalid = first_invalid_node(root)
+            .context("tree-sitter reported a syntax error without an invalid descendant")?;
+        let start = invalid.start_position();
+        let end = invalid.end_position();
         bail!(
-            "{} parser produced ERROR or missing nodes; refusing to present a partial parse as an exact structural diff",
-            format!("{language:?}").to_ascii_lowercase()
+            "{} parser produced {} bytes {}-{} at {}:{}-{}:{}; refusing to present a partial parse as an exact structural diff",
+            format!("{language:?}").to_ascii_lowercase(),
+            if invalid.is_missing() {
+                "a missing node"
+            } else {
+                "an ERROR node"
+            },
+            invalid.start_byte(),
+            invalid.end_byte(),
+            start.row,
+            start.column,
+            end.row,
+            end.column,
         );
     }
 
@@ -70,6 +85,20 @@ pub(crate) fn parse(source: Vec<u8>, language: Language) -> Result<ParsedSyntax>
         root_kind: root.kind().to_owned(),
         nodes,
     })
+}
+
+fn first_invalid_node(root: Node<'_>) -> Option<Node<'_>> {
+    let mut pending = vec![root];
+    while let Some(node) = pending.pop() {
+        if node.is_error() || node.is_missing() {
+            return Some(node);
+        }
+        let mut cursor = node.walk();
+        let mut children: Vec<_> = node.children(&mut cursor).collect();
+        children.reverse();
+        pending.extend(children);
+    }
+    None
 }
 
 fn collect(

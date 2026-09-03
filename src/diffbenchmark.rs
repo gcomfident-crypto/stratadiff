@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -135,6 +135,121 @@ impl SharedNodeRole {
 pub struct ComparableNode {
     pub role: SharedNodeRole,
     pub utf8_bytes: OffsetRange,
+}
+
+/// Reusable exact resolver for all JDT endpoints from one source file.
+///
+/// Construction indexes every valid UTF-16 boundary and the multiplicity of every comparable
+/// node. Resolving an ordinary endpoint therefore performs constant-time boundary and candidate
+/// lookups instead of rescanning the source and candidate list.
+pub struct JdtNodeResolver<'source> {
+    source: &'source str,
+    utf16_boundaries: Utf16BoundaryMap,
+    candidates: HashMap<ComparableNode, CandidateOccurrence>,
+}
+
+impl<'source> JdtNodeResolver<'source> {
+    pub fn new(source: &'source str, candidates: &[ComparableNode]) -> Self {
+        let mut candidate_index = HashMap::with_capacity(candidates.len());
+        for (index, candidate) in candidates.iter().enumerate() {
+            candidate_index
+                .entry(*candidate)
+                .and_modify(|occurrence: &mut CandidateOccurrence| occurrence.count += 1)
+                .or_insert(CandidateOccurrence {
+                    first_index: index,
+                    count: 1,
+                });
+        }
+        Self {
+            source,
+            utf16_boundaries: Utf16BoundaryMap::new(source),
+            candidates: candidate_index,
+        }
+    }
+
+    /// Convert one JDT UTF-16 code-unit boundary to its UTF-8 byte boundary.
+    pub fn utf16_offset_to_byte_offset(&self, offset: usize) -> Result<usize> {
+        self.utf16_boundaries.byte_offset(offset)
+    }
+
+    /// Resolve one endpoint with the same strict semantics as [`resolve_jdt_node`].
+    pub fn resolve(&self, node: &JdtOracleNode) -> Result<Option<ComparableNode>> {
+        Ok(self
+            .resolve_with_index(node)?
+            .map(|(candidate, _)| candidate))
+    }
+
+    pub(crate) fn resolve_with_index(
+        &self,
+        node: &JdtOracleNode,
+    ) -> Result<Option<(ComparableNode, usize)>> {
+        let normalized = normalize_node_with_boundaries(node, &self.utf16_boundaries, "oracle")?;
+        let direct = ComparableNode {
+            role: normalized.role,
+            utf8_bytes: normalized.utf8_bytes,
+        };
+        if let Some(index) = self.unique_index(direct) {
+            return Ok(Some((direct, index)));
+        }
+
+        if !direct.role.is_declaration() {
+            return Ok(None);
+        }
+        let adjusted = ComparableNode {
+            role: direct.role,
+            utf8_bytes: OffsetRange {
+                start: skip_leading_java_trivia(
+                    self.source,
+                    direct.utf8_bytes.start,
+                    direct.utf8_bytes.end,
+                )?,
+                end: direct.utf8_bytes.end,
+            },
+        };
+        Ok(self.unique_index(adjusted).map(|index| (adjusted, index)))
+    }
+
+    fn unique_index(&self, candidate: ComparableNode) -> Option<usize> {
+        self.candidates
+            .get(&candidate)
+            .filter(|occurrence| occurrence.count == 1)
+            .map(|occurrence| occurrence.first_index)
+    }
+}
+
+struct CandidateOccurrence {
+    first_index: usize,
+    count: usize,
+}
+
+struct Utf16BoundaryMap {
+    byte_offsets: Vec<usize>,
+}
+
+impl Utf16BoundaryMap {
+    const NON_BOUNDARY: usize = usize::MAX;
+
+    fn new(source: &str) -> Self {
+        let mut byte_offsets = vec![0];
+        for (start, character) in source.char_indices() {
+            if character.len_utf16() == 2 {
+                byte_offsets.push(Self::NON_BOUNDARY);
+            }
+            byte_offsets.push(start + character.len_utf8());
+        }
+        Self { byte_offsets }
+    }
+
+    fn byte_offset(&self, offset: usize) -> Result<usize> {
+        match self.byte_offsets.get(offset) {
+            Some(byte_offset) if *byte_offset != Self::NON_BOUNDARY => Ok(*byte_offset),
+            Some(_) => bail!("UTF-16 offset {offset} splits a surrogate pair"),
+            None => bail!(
+                "UTF-16 offset {offset} exceeds source length of {} code units",
+                self.byte_offsets.len() - 1
+            ),
+        }
+    }
 }
 
 /// One comparable node and the exact tree-sitter node that produced it.
@@ -441,8 +556,10 @@ fn switch_case_range(
         .position(|id| *id == switch_label_id)
         .context("tree-sitter switch_label is absent from its parent's children")?;
     let delimiter = siblings
-        .get(position + 1)
+        .iter()
+        .skip(position + 1)
         .map(|id| &parsed.nodes[*id])
+        .find(|node| !node.extra)
         .context("tree-sitter switch_label has no following delimiter")?;
     if !matches!(delimiter.kind.as_str(), ":" | "->") {
         bail!(
@@ -470,7 +587,10 @@ fn annotation_role(parsed: &crate::syntax::ParsedSyntax, annotation_id: usize) -
         .children
         .iter()
         .any(|id| parsed.nodes[*id].kind == "element_value_pair")
-        || !arguments.children.iter().any(|id| parsed.nodes[*id].named)
+        || !arguments.children.iter().any(|id| {
+            let child = &parsed.nodes[*id];
+            child.named && !child.extra
+        })
     {
         SharedNodeRole::NormalAnnotation
     } else {
@@ -530,45 +650,19 @@ fn is_binary_operator(kind: &str) -> bool {
 
 /// Resolve a JDT oracle endpoint to exactly one comparable tree-sitter node.
 ///
-/// JDT declaration ranges may include a leading Javadoc while tree-sitter keeps that comment as an
-/// extra sibling. For declaration roles only, one exact `/** ... */` prefix and the whitespace
-/// immediately following it are removed before the exact role-and-range lookup. Ordinary comments,
-/// arbitrary whitespace, fuzzy ranges, and labels are never used to make a match.
+/// JDT declaration ranges may include leading comments while tree-sitter keeps them as extra
+/// siblings. For declaration roles only, a prefix made entirely of Java whitespace and comments is
+/// removed before the exact role-and-range lookup. Tokens, fuzzy ranges, and labels are never used
+/// to make a match.
 pub fn resolve_jdt_node(
     node: &JdtOracleNode,
     source: &str,
     candidates: &[ComparableNode],
 ) -> Result<Option<ComparableNode>> {
-    let normalized = normalize_node(node, source, "oracle")?;
-    let direct = ComparableNode {
-        role: normalized.role,
-        utf8_bytes: normalized.utf8_bytes,
-    };
-    if count_node(candidates, direct) == 1 {
-        return Ok(Some(direct));
-    }
-
-    if !direct.role.is_declaration() {
-        return Ok(None);
-    }
-    let adjusted = ComparableNode {
-        role: direct.role,
-        utf8_bytes: OffsetRange {
-            start: skip_leading_javadoc(source, direct.utf8_bytes.start, direct.utf8_bytes.end)?,
-            end: direct.utf8_bytes.end,
-        },
-    };
-    Ok((count_node(candidates, adjusted) == 1).then_some(adjusted))
+    JdtNodeResolver::new(source, candidates).resolve(node)
 }
 
-fn count_node(candidates: &[ComparableNode], expected: ComparableNode) -> usize {
-    candidates
-        .iter()
-        .filter(|candidate| **candidate == expected)
-        .count()
-}
-
-fn skip_leading_javadoc(source: &str, start: usize, end: usize) -> Result<usize> {
+fn skip_leading_java_trivia(source: &str, start: usize, end: usize) -> Result<usize> {
     if start > end
         || end > source.len()
         || !source.is_char_boundary(start)
@@ -577,25 +671,36 @@ fn skip_leading_javadoc(source: &str, start: usize, end: usize) -> Result<usize>
         bail!("oracle byte range {start}-{end} is not a valid UTF-8 source range");
     }
 
-    let remaining = &source[start..end];
-    if !remaining.starts_with("/**") {
-        return Ok(start);
-    }
-    let close = remaining
-        .find("*/")
-        .context("unterminated Javadoc in oracle declaration range")?;
-    let mut cursor = start + close + 2;
+    let mut cursor = start;
+    let mut consumed_comment = false;
     while cursor < end {
-        let character = source[cursor..end]
+        let remaining = &source[cursor..end];
+        if remaining.starts_with("//") {
+            consumed_comment = true;
+            cursor += remaining
+                .find('\n')
+                .map_or(remaining.len(), |index| index + 1);
+            continue;
+        }
+        if remaining.starts_with("/*") {
+            consumed_comment = true;
+            let close = remaining
+                .find("*/")
+                .context("unterminated block comment in oracle declaration range")?;
+            cursor += close + 2;
+            continue;
+        }
+        let character = remaining
             .chars()
             .next()
             .context("expected a character before the range end")?;
-        if !character.is_whitespace() {
-            break;
+        if character.is_whitespace() {
+            cursor += character.len_utf8();
+            continue;
         }
-        cursor += character.len_utf8();
+        break;
     }
-    Ok(cursor)
+    Ok(if consumed_comment { cursor } else { start })
 }
 
 /// Classify an Eclipse JDT AST node type into the shared taxonomy.
@@ -856,23 +961,7 @@ pub fn normalize_oracle_mapping(
 /// Offsets at the start or end of a Unicode scalar value are accepted. An offset between the two
 /// UTF-16 code units of a non-BMP scalar value, or beyond the source, is rejected.
 pub fn utf16_offset_to_byte_offset(source: &str, offset: usize) -> Result<usize> {
-    let mut utf16_offset = 0;
-    for (byte_offset, character) in source.char_indices() {
-        if utf16_offset == offset {
-            return Ok(byte_offset);
-        }
-        let next_utf16_offset = utf16_offset + character.len_utf16();
-        if offset < next_utf16_offset {
-            bail!("UTF-16 offset {offset} splits a surrogate pair");
-        }
-        utf16_offset = next_utf16_offset;
-    }
-
-    if utf16_offset == offset {
-        Ok(source.len())
-    } else {
-        bail!("UTF-16 offset {offset} exceeds source length of {utf16_offset} code units")
-    }
+    Utf16BoundaryMap::new(source).byte_offset(offset)
 }
 
 fn parse_endpoint(endpoint: &str, side: &str) -> Result<JdtOracleNode> {
@@ -919,6 +1008,14 @@ fn parse_offset(value: &str, side: &str, boundary: &str) -> Result<usize> {
 }
 
 fn normalize_node(node: &JdtOracleNode, source: &str, side: &str) -> Result<OracleNode> {
+    normalize_node_with_boundaries(node, &Utf16BoundaryMap::new(source), side)
+}
+
+fn normalize_node_with_boundaries(
+    node: &JdtOracleNode,
+    utf16_boundaries: &Utf16BoundaryMap,
+    side: &str,
+) -> Result<OracleNode> {
     let range = &node.utf16_code_units;
     if range.start > range.end {
         bail!(
@@ -927,9 +1024,11 @@ fn normalize_node(node: &JdtOracleNode, source: &str, side: &str) -> Result<Orac
             range.end
         );
     }
-    let start = utf16_offset_to_byte_offset(source, range.start)
+    let start = utf16_boundaries
+        .byte_offset(range.start)
         .with_context(|| format!("invalid DiffBenchmark {side} start offset"))?;
-    let end = utf16_offset_to_byte_offset(source, range.end)
+    let end = utf16_boundaries
+        .byte_offset(range.end)
         .with_context(|| format!("invalid DiffBenchmark {side} end offset"))?;
     let role = jdt_node_role(&node.node_type).with_context(|| {
         format!(

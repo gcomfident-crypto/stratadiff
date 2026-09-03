@@ -28,3 +28,43 @@ The evaluator must convert JDT UTF-16 code-unit offsets to Tree-sitter UTF-8 byt
 original source and map both parsers into a shared node-role taxonomy. Raw span equality across the
 two coordinate systems is invalid. Stage-one scoring covers intra-file edges only; cross-file
 oracle edges remain reported but unscored until repository mode exists.
+
+Materialize the exact before/after revisions without placing third-party sources in this repository:
+
+```console
+cargo build --locked --release --bin stratadiff-materialize
+target/release/stratadiff-materialize \
+  /absolute/path/to/DiffBenchmark \
+  /absolute/path/to/materialized \
+  --repository-map tools/diffbenchmark/repository-mirrors.json \
+  --source-backend git \
+  --git-cache /absolute/path/to/git-cache \
+  --git-transport https
+```
+
+The v3 manifest uses neutral `.source` filenames, hashes every byte sequence, and checkpoints each
+completed case atomically. A complete validated manifest can restore missing source files directly
+from the Git object cache without querying repository metadata again. Its canonical copy is
+[`benchmarks/diffbenchmark-literature-manifest-v3.json`](../../benchmarks/diffbenchmark-literature-manifest-v3.json).
+
+Bootstrap the pinned JDT dependencies and run the complete evaluator without `--limit`:
+
+```console
+JAVA_HOME=/absolute/path/to/jdk-17 \
+  tools/diffbenchmark/jdt/bootstrap.sh /absolute/path/to/jdt-cache
+
+cargo build --locked --release --bin stratadiff-evaluate
+target/release/stratadiff-evaluate \
+  /absolute/path/to/DiffBenchmark \
+  /absolute/path/to/materialized \
+  --jdt-cache /absolute/path/to/jdt-cache \
+  --java-executable /absolute/path/to/jdk-17/bin/java \
+  --require-complete \
+  --output /absolute/path/to/evaluation.json
+```
+
+The pinned inputs contain one malformed Hive oracle and one syntactically malformed Alluxio source;
+both are identified by path, revision, and content digest. A complete run therefore evaluates and
+independently verifies 283 cases, records those two exclusions separately, and has zero unexpected
+case errors. `benchmarkComplete` is a provenance and execution-completeness gate, not an accuracy
+threshold.

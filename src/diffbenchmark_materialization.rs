@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 pub const DIFFBENCHMARK_REVISION: &str = "870592abd559d0bd822a27eb5c8ea45aee47015b";
 pub const DIFFBENCHMARK_LITERATURE_CASES: usize = 285;
-pub const MATERIALIZATION_MANIFEST_SCHEMA: &str = "stratadiff-diffbenchmark-materialization-v2";
+pub const MATERIALIZATION_MANIFEST_SCHEMA: &str = "stratadiff-diffbenchmark-materialization-v3";
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

@@ -1,15 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::diffbenchmark::{
-    ComparableNode, GodMappingRecord, GodReport, JdtOracleMapping, JdtOracleNode, OffsetRange,
+    GodMappingRecord, GodReport, JdtNodeResolver, JdtOracleMapping, JdtOracleNode, OffsetRange,
     SharedNodeRole, comparable_tree_sitter_java_nodes, jdt_node_role, parse_god_info,
-    resolve_jdt_node, utf16_offset_to_byte_offset,
 };
 use crate::diffbenchmark_eval::{
-    Multiplicity, NodeKey, NormalizedNode, NormalizedRelation, OracleRelation, OracleRelations,
+    CategoryRawMultiGroups, Multiplicity, NodeKey, NormalizedNode, NormalizedRelation,
+    OracleRelation, OracleRelations, RawMultiGroup,
 };
 
 /// The side of an intra-file oracle relation being adapted.
@@ -71,6 +71,7 @@ pub enum RelationExclusionReason {
 #[serde(deny_unknown_fields)]
 pub struct ExcludedRelation {
     pub raw_index: usize,
+    pub raw_group_id: Option<usize>,
     pub info: String,
     pub left_display: String,
     pub right_display: String,
@@ -147,10 +148,8 @@ pub fn adapt_intra_file_case(
     let context = CaseContext {
         before_file: before_repository_path,
         after_file: after_repository_path,
-        before_source,
-        after_source,
-        before_candidates: &before_candidates,
-        after_candidates: &after_candidates,
+        before_resolver: JdtNodeResolver::new(before_source, &before_candidates),
+        after_resolver: JdtNodeResolver::new(after_source, &after_candidates),
     };
 
     let program_elements = adapt_category(
@@ -164,6 +163,10 @@ pub fn adapt_intra_file_case(
         oracle_relations: OracleRelations {
             program_elements: program_elements.relations,
             mappings: mappings.relations,
+            raw_multi_groups: CategoryRawMultiGroups {
+                program_elements: program_elements.raw_multi_groups,
+                mappings: mappings.raw_multi_groups,
+            },
         },
         gold_comparable_endpoints: CategoryGoldComparableEndpoints {
             program_elements: program_elements.endpoints,
@@ -178,6 +181,7 @@ pub fn adapt_intra_file_case(
 
 struct AdaptedCategory {
     relations: Vec<OracleRelation>,
+    raw_multi_groups: Vec<RawMultiGroup>,
     endpoints: GoldComparableEndpoints,
     coverage: CategoryCoverageLedger,
 }
@@ -189,13 +193,23 @@ enum ParsedRecord {
 
 type EndpointIdentity = (String, usize, usize);
 
+#[derive(Clone, Copy)]
+struct RawGroupAssignment {
+    id: usize,
+    multiplicity: Multiplicity,
+}
+
+struct RawMultiGroupBuilder {
+    id: usize,
+    before_endpoints: BTreeSet<NodeKey>,
+    after_endpoints: BTreeSet<NodeKey>,
+}
+
 struct CaseContext<'a> {
     before_file: &'a str,
     after_file: &'a str,
-    before_source: &'a str,
-    after_source: &'a str,
-    before_candidates: &'a [ComparableNode],
-    after_candidates: &'a [ComparableNode],
+    before_resolver: JdtNodeResolver<'a>,
+    after_resolver: JdtNodeResolver<'a>,
 }
 
 fn adapt_category(
@@ -212,7 +226,22 @@ fn adapt_category(
             Err(error) => ParsedRecord::InvalidInfo(format!("{error:#}")),
         })
         .collect();
-    let (before_counts, after_counts) = raw_endpoint_counts(&parsed);
+    let group_assignments = raw_group_assignments(&parsed);
+    let mut raw_multi_groups: BTreeMap<_, _> = group_assignments
+        .iter()
+        .flatten()
+        .filter(|assignment| assignment.multiplicity == Multiplicity::Multi)
+        .map(|assignment| {
+            (
+                assignment.id,
+                RawMultiGroupBuilder {
+                    id: assignment.id,
+                    before_endpoints: BTreeSet::new(),
+                    after_endpoints: BTreeSet::new(),
+                },
+            )
+        })
+        .collect();
 
     let mut relations = Vec::new();
     let mut before_nodes = BTreeMap::new();
@@ -225,6 +254,7 @@ fn adapt_category(
             ParsedRecord::InvalidInfo(message) => {
                 exclusions.push(exclusion(
                     raw_index,
+                    None,
                     record,
                     RelationExclusionReason::InfoParseError {
                         message: message.clone(),
@@ -238,16 +268,27 @@ fn adapt_category(
             EndpointSide::Before,
             context.before_file,
             &mapping.before,
-            context.before_source,
-            context.before_candidates,
+            &context.before_resolver,
         );
         let after = adapt_endpoint(
             EndpointSide::After,
             context.after_file,
             &mapping.after,
-            context.after_source,
-            context.after_candidates,
+            &context.after_resolver,
         );
+        let group =
+            group_assignments[raw_index].expect("every parsed raw relation has a group assignment");
+        if group.multiplicity == Multiplicity::Multi {
+            let raw_group = raw_multi_groups
+                .get_mut(&group.id)
+                .expect("every multi relation has a raw group");
+            if let Ok(before) = &before {
+                raw_group.before_endpoints.insert(before.key.clone());
+            }
+            if let Ok(after) = &after {
+                raw_group.after_endpoints.insert(after.key.clone());
+            }
+        }
         let (before, after) = match (before, after) {
             (Ok(before), Ok(after)) => (before, after),
             (before, after) => {
@@ -260,6 +301,7 @@ fn adapt_category(
                 }
                 exclusions.push(exclusion(
                     raw_index,
+                    Some(group.id),
                     record,
                     RelationExclusionReason::EndpointFailures { failures },
                 ));
@@ -270,6 +312,7 @@ fn adapt_category(
         if before.role != after.role {
             exclusions.push(exclusion(
                 raw_index,
+                Some(group.id),
                 record,
                 RelationExclusionReason::RoleMismatch {
                     before: before.role,
@@ -279,20 +322,14 @@ fn adapt_category(
             continue;
         }
 
-        let multiplicity = if before_counts[&endpoint_identity(&mapping.before)] > 1
-            || after_counts[&endpoint_identity(&mapping.after)] > 1
-        {
-            Multiplicity::Multi
-        } else {
-            Multiplicity::Singleton
-        };
         let relation = NormalizedRelation {
             before: before.key.clone(),
             after: after.key.clone(),
         };
         relations.push(OracleRelation {
             relation,
-            multiplicity,
+            multiplicity: group.multiplicity,
+            raw_multi_group_id: (group.multiplicity == Multiplicity::Multi).then_some(group.id),
         });
         insert_gold_node(&mut before_nodes, before)?;
         insert_gold_node(&mut after_nodes, after)?;
@@ -310,6 +347,14 @@ fn adapt_category(
     let incident_after = after.iter().map(|node| node.key.clone()).collect();
     Ok(AdaptedCategory {
         relations,
+        raw_multi_groups: raw_multi_groups
+            .into_values()
+            .map(|group| RawMultiGroup {
+                id: group.id,
+                before_endpoints: group.before_endpoints.into_iter().collect(),
+                after_endpoints: group.after_endpoints.into_iter().collect(),
+            })
+            .collect(),
         endpoints: GoldComparableEndpoints {
             before,
             after,
@@ -339,24 +384,88 @@ fn reject_duplicate_info(category: &str, records: &[GodMappingRecord]) -> Result
     Ok(())
 }
 
-fn raw_endpoint_counts(
-    parsed: &[ParsedRecord],
-) -> (
-    BTreeMap<EndpointIdentity, usize>,
-    BTreeMap<EndpointIdentity, usize>,
-) {
-    let mut before = BTreeMap::new();
-    let mut after = BTreeMap::new();
-    for parsed_record in parsed {
+fn raw_group_assignments(parsed: &[ParsedRecord]) -> Vec<Option<RawGroupAssignment>> {
+    let mut parents: Vec<_> = (0..parsed.len()).collect();
+    let mut before_owners = BTreeMap::new();
+    let mut after_owners = BTreeMap::new();
+    for (raw_index, parsed_record) in parsed.iter().enumerate() {
         let ParsedRecord::Mapping(mapping) = parsed_record else {
             continue;
         };
-        *before
-            .entry(endpoint_identity(&mapping.before))
-            .or_insert(0) += 1;
-        *after.entry(endpoint_identity(&mapping.after)).or_insert(0) += 1;
+        union_with_endpoint_owner(
+            &mut parents,
+            &mut before_owners,
+            endpoint_identity(&mapping.before),
+            raw_index,
+        );
+        union_with_endpoint_owner(
+            &mut parents,
+            &mut after_owners,
+            endpoint_identity(&mapping.after),
+            raw_index,
+        );
     }
-    (before, after)
+
+    let mut component_sizes = BTreeMap::new();
+    for (raw_index, parsed_record) in parsed.iter().enumerate() {
+        if matches!(parsed_record, ParsedRecord::Mapping(_)) {
+            let root = find_root(&mut parents, raw_index);
+            *component_sizes.entry(root).or_insert(0) += 1;
+        }
+    }
+
+    parsed
+        .iter()
+        .enumerate()
+        .map(|(raw_index, parsed_record)| {
+            matches!(parsed_record, ParsedRecord::Mapping(_)).then(|| {
+                let id = find_root(&mut parents, raw_index);
+                RawGroupAssignment {
+                    id,
+                    multiplicity: if component_sizes[&id] > 1 {
+                        Multiplicity::Multi
+                    } else {
+                        Multiplicity::Singleton
+                    },
+                }
+            })
+        })
+        .collect()
+}
+
+fn union_with_endpoint_owner(
+    parents: &mut [usize],
+    owners: &mut BTreeMap<EndpointIdentity, usize>,
+    endpoint: EndpointIdentity,
+    raw_index: usize,
+) {
+    if let Some(owner) = owners.get(&endpoint) {
+        union_roots(parents, raw_index, *owner);
+    } else {
+        owners.insert(endpoint, raw_index);
+    }
+}
+
+fn union_roots(parents: &mut [usize], left: usize, right: usize) {
+    let left = find_root(parents, left);
+    let right = find_root(parents, right);
+    if left != right {
+        parents[left.max(right)] = left.min(right);
+    }
+}
+
+fn find_root(parents: &mut [usize], index: usize) -> usize {
+    let mut root = index;
+    while parents[root] != root {
+        root = parents[root];
+    }
+    let mut current = index;
+    while parents[current] != current {
+        let next = parents[current];
+        parents[current] = root;
+        current = next;
+    }
+    root
 }
 
 fn endpoint_identity(node: &JdtOracleNode) -> EndpointIdentity {
@@ -371,13 +480,12 @@ fn adapt_endpoint(
     side: EndpointSide,
     file: &str,
     node: &JdtOracleNode,
-    source: &str,
-    candidates: &[ComparableNode],
+    resolver: &JdtNodeResolver<'_>,
 ) -> std::result::Result<NormalizedNode, EndpointExclusion> {
     let role = jdt_node_role(&node.node_type).ok_or_else(|| {
         endpoint_exclusion(side, node, EndpointExclusionReason::UnsupportedJdtKind)
     })?;
-    let utf8_bytes = match normalize_range(source, node.utf16_code_units) {
+    let utf8_bytes = match normalize_range(resolver, node.utf16_code_units) {
         Ok(range) => range,
         Err(error) => {
             return Err(endpoint_exclusion(
@@ -389,7 +497,7 @@ fn adapt_endpoint(
             ));
         }
     };
-    let comparable = match resolve_jdt_node(node, source, candidates) {
+    let comparable = match resolver.resolve(node) {
         Ok(Some(comparable)) => comparable,
         Ok(None) => {
             return Err(endpoint_exclusion(
@@ -419,11 +527,13 @@ fn adapt_endpoint(
     ))
 }
 
-fn normalize_range(source: &str, range: OffsetRange) -> Result<OffsetRange> {
-    let start = utf16_offset_to_byte_offset(source, range.start)
+fn normalize_range(resolver: &JdtNodeResolver<'_>, range: OffsetRange) -> Result<OffsetRange> {
+    let start = resolver
+        .utf16_offset_to_byte_offset(range.start)
         .context("invalid endpoint start offset")?;
-    let end =
-        utf16_offset_to_byte_offset(source, range.end).context("invalid endpoint end offset")?;
+    let end = resolver
+        .utf16_offset_to_byte_offset(range.end)
+        .context("invalid endpoint end offset")?;
     Ok(OffsetRange { start, end })
 }
 
@@ -442,11 +552,13 @@ fn endpoint_exclusion(
 
 fn exclusion(
     raw_index: usize,
+    raw_group_id: Option<usize>,
     record: &GodMappingRecord,
     reason: RelationExclusionReason,
 ) -> ExcludedRelation {
     ExcludedRelation {
         raw_index,
+        raw_group_id,
         info: record.info.clone(),
         left_display: record.left.clone(),
         right_display: record.right.clone(),

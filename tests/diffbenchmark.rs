@@ -1,6 +1,6 @@
 use stratadiff::diffbenchmark::{
-    ComparableNode, GodReport, JdtOracleMapping, JdtOracleNode, OffsetRange, OracleMapping,
-    OracleNode, SharedNodeRole, comparable_tree_sitter_java_nodes, jdt_node_role,
+    ComparableNode, GodReport, JdtNodeResolver, JdtOracleMapping, JdtOracleNode, OffsetRange,
+    OracleMapping, OracleNode, SharedNodeRole, comparable_tree_sitter_java_nodes, jdt_node_role,
     normalize_oracle_mapping, parse_god_info, parse_god_report, parse_oracle_mapping,
     resolve_jdt_node, tree_sitter_java_node_role, tree_sitter_java_node_roles,
     utf16_offset_to_byte_offset,
@@ -514,6 +514,15 @@ fn annotation_kinds_expose_both_contextual_roles() {
 }
 
 #[test]
+fn comments_do_not_change_empty_annotation_or_switch_case_roles() {
+    let source = "@Empty(/* comment */) class Demo { void run(int value) { switch (value) { case 1 /* label */: break; } } }";
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+
+    assert_resolves_fragment(source, &nodes, "NormalAnnotation", "@Empty(/* comment */)");
+    assert_resolves_fragment(source, &nodes, "SwitchCase", "case 1 /* label */:");
+}
+
+#[test]
 fn unsupported_types_are_not_guessed_from_spelling() {
     for node_type in [
         "LambdaExpression",
@@ -717,6 +726,112 @@ fn rejects_surrogate_interior_and_out_of_bounds_offsets() {
 }
 
 #[test]
+fn indexed_resolver_preserves_unicode_boundary_conversion() {
+    let source = "aé中😀z";
+    let resolver = JdtNodeResolver::new(source, &[]);
+    let expected = [(0, 0), (1, 1), (2, 3), (3, 6), (5, 10), (6, 11)];
+
+    for (utf16, utf8) in expected {
+        assert_eq!(resolver.utf16_offset_to_byte_offset(utf16).unwrap(), utf8);
+    }
+    assert!(resolver.utf16_offset_to_byte_offset(4).is_err());
+    assert!(resolver.utf16_offset_to_byte_offset(7).is_err());
+}
+
+#[test]
+fn indexed_resolver_matches_one_shot_resolution() {
+    let source = "/** 文档 😀 */\nclass 演示 { int 值; }";
+    let candidates = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+    let resolver = JdtNodeResolver::new(source, &candidates);
+    let value_start = source.find('值').unwrap();
+    let value_end = value_start + '值'.len_utf8();
+    let endpoints = [
+        JdtOracleNode {
+            node_type: "TypeDeclaration".to_owned(),
+            utf16_code_units: OffsetRange {
+                start: 0,
+                end: source.encode_utf16().count(),
+            },
+        },
+        JdtOracleNode {
+            node_type: "SimpleName".to_owned(),
+            utf16_code_units: OffsetRange {
+                start: source[..value_start].encode_utf16().count(),
+                end: source[..value_end].encode_utf16().count(),
+            },
+        },
+        JdtOracleNode {
+            node_type: "SimpleName".to_owned(),
+            utf16_code_units: OffsetRange { start: 0, end: 1 },
+        },
+    ];
+
+    for endpoint in endpoints {
+        assert_eq!(
+            resolver.resolve(&endpoint).unwrap(),
+            resolve_jdt_node(&endpoint, source, &candidates).unwrap()
+        );
+    }
+}
+
+#[test]
+fn indexed_resolver_rejects_duplicate_comparable_candidates() {
+    let source = "x";
+    let candidate = ComparableNode {
+        role: SharedNodeRole::SimpleName,
+        utf8_bytes: OffsetRange { start: 0, end: 1 },
+    };
+    let endpoint = JdtOracleNode {
+        node_type: "SimpleName".to_owned(),
+        utf16_code_units: OffsetRange { start: 0, end: 1 },
+    };
+
+    assert_eq!(
+        JdtNodeResolver::new(source, &[candidate])
+            .resolve(&endpoint)
+            .unwrap(),
+        Some(candidate)
+    );
+    assert_eq!(
+        JdtNodeResolver::new(source, &[candidate, candidate])
+            .resolve(&endpoint)
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn indexed_resolver_handles_many_nodes_without_per_node_scans() {
+    const NODE_COUNT: usize = 20_000;
+
+    let source = "x".repeat(NODE_COUNT);
+    let candidates: Vec<_> = (0..NODE_COUNT)
+        .map(|start| ComparableNode {
+            role: SharedNodeRole::SimpleName,
+            utf8_bytes: OffsetRange {
+                start,
+                end: start + 1,
+            },
+        })
+        .collect();
+    let resolver = JdtNodeResolver::new(&source, &candidates);
+
+    for start in (0..NODE_COUNT).rev() {
+        let endpoint = JdtOracleNode {
+            node_type: "SimpleName".to_owned(),
+            utf16_code_units: OffsetRange {
+                start,
+                end: start + 1,
+            },
+        };
+        assert_eq!(
+            resolver.resolve(&endpoint).unwrap(),
+            Some(candidates[start])
+        );
+    }
+}
+
+#[test]
 fn normalizes_non_bmp_ranges_on_both_sides() {
     let mapping = parse_oracle_mapping("SimpleName[1-3]:SimpleName[0-2]", "A😀BC", "éx").unwrap();
 
@@ -836,7 +951,7 @@ fn declaration_resolution_removes_only_leading_java_trivia() {
 }
 
 #[test]
-fn declaration_resolution_never_strips_non_javadoc_trivia() {
+fn declaration_resolution_strips_comments_but_not_bare_whitespace() {
     let source = "// line\n/* block */\npublic class Demo {}";
     let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
     let class = JdtOracleNode {
@@ -847,7 +962,16 @@ fn declaration_resolution_never_strips_non_javadoc_trivia() {
         },
     };
 
-    assert_eq!(resolve_jdt_node(&class, source, &nodes).unwrap(), None);
+    assert_eq!(
+        resolve_jdt_node(&class, source, &nodes).unwrap(),
+        Some(ComparableNode {
+            role: SharedNodeRole::TypeDeclaration,
+            utf8_bytes: OffsetRange {
+                start: source.find("public class").unwrap(),
+                end: source.len(),
+            },
+        })
+    );
 
     let whitespace_source = "  public class Demo {}";
     let whitespace_nodes = comparable_tree_sitter_java_nodes(whitespace_source.as_bytes()).unwrap();

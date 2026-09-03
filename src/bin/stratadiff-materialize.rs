@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
 use std::ffi::OsStr;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail, ensure};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use csv::{ReaderBuilder, StringRecord};
 use serde::Deserialize;
 use stratadiff::diffbenchmark_materialization::{
@@ -22,6 +23,9 @@ const MARKER_CONTENTS: &str = "stratadiff-diffbenchmark-materialization-v1\n";
 const MANIFEST_NAME: &str = "manifest.json";
 const MANIFEST_PART_NAME: &str = ".manifest.json.part";
 const MANIFEST_NEXT_NAME: &str = ".manifest.json.next";
+const GIT_CACHE_MARKER: &str = ".stratadiff-git-source-cache";
+const GIT_CACHE_MARKER_CONTENTS: &str = "stratadiff-git-source-cache-v1\n";
+const GIT_CACHE_STAGING_SUFFIX: &str = ".staging";
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff-materialize")]
@@ -35,6 +39,27 @@ struct Cli {
     /// Explicit repository mirrors, each restricted to exact commits.
     #[arg(long, value_name = "JSON")]
     repository_map: Option<PathBuf>,
+    /// Source download transport. Git uses a caller-owned partial-clone cache.
+    #[arg(long, value_enum, default_value_t = SourceBackend::GithubApi)]
+    source_backend: SourceBackend,
+    /// Absolute cache directory required by --source-backend git.
+    #[arg(long, value_name = "DIRECTORY")]
+    git_cache: Option<PathBuf>,
+    /// Transport used by --source-backend git.
+    #[arg(long, value_enum, default_value_t = GitTransport::Https)]
+    git_transport: GitTransport,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum SourceBackend {
+    GithubApi,
+    Git,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum GitTransport {
+    Https,
+    Ssh,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -135,6 +160,18 @@ struct FetchedCommit {
     commit: GithubCommit,
 }
 
+enum SourceFetcher {
+    GithubApi,
+    Git(GitBlobCache),
+}
+
+struct GitBlobCache {
+    root: PathBuf,
+    transport: GitTransport,
+    prepared: BTreeSet<String>,
+    fetched: BTreeSet<(String, String)>,
+}
+
 #[derive(Debug)]
 struct GhApiError(String);
 
@@ -146,12 +183,652 @@ impl std::fmt::Display for GhApiError {
 
 impl std::error::Error for GhApiError {}
 
+impl SourceFetcher {
+    fn new(
+        backend: SourceBackend,
+        git_cache: Option<&Path>,
+        git_transport: GitTransport,
+    ) -> Result<Self> {
+        match backend {
+            SourceBackend::GithubApi => {
+                ensure!(
+                    git_cache.is_none(),
+                    "--git-cache is valid only with --source-backend git"
+                );
+                ensure!(
+                    git_transport == GitTransport::Https,
+                    "--git-transport is valid only with --source-backend git"
+                );
+                Ok(Self::GithubApi)
+            }
+            SourceBackend::Git => {
+                let root = git_cache.context("--source-backend git requires --git-cache")?;
+                Ok(Self::Git(GitBlobCache::new(root, git_transport)?))
+            }
+        }
+    }
+
+    fn fetch(
+        &mut self,
+        repository: &RepositoryLocation,
+        revision: &str,
+        path: &str,
+    ) -> Result<Vec<u8>> {
+        match self {
+            Self::GithubApi => {
+                fetch_source(&repository.owner, &repository.repository, revision, path)
+            }
+            Self::Git(cache) => cache.fetch(repository, revision, path),
+        }
+    }
+}
+
+impl GitBlobCache {
+    fn new(root: &Path, transport: GitTransport) -> Result<Self> {
+        ensure!(root.is_absolute(), "git cache directory must be absolute");
+        match fs::symlink_metadata(root) {
+            Ok(metadata) => ensure!(
+                metadata.file_type().is_dir() && !metadata.file_type().is_symlink(),
+                "git cache is not a regular directory: {}",
+                root.display()
+            ),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir_all(root)
+                .with_context(|| format!("failed to create git cache {}", root.display()))?,
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("failed to inspect git cache {}", root.display()));
+            }
+        }
+
+        let root = fs::canonicalize(root)
+            .with_context(|| format!("failed to resolve git cache {}", root.display()))?;
+        ensure!(
+            root != Path::new("/"),
+            "refusing / as the git cache directory"
+        );
+        let marker = root.join(GIT_CACHE_MARKER);
+        let entries = fs::read_dir(&root)?.collect::<std::result::Result<Vec<_>, _>>()?;
+        if entries.is_empty() {
+            write_new_file(&marker, GIT_CACHE_MARKER_CONTENTS.as_bytes())?;
+        } else {
+            let metadata = fs::symlink_metadata(&marker).with_context(|| {
+                format!(
+                    "refusing non-empty git cache without {GIT_CACHE_MARKER}: {}",
+                    root.display()
+                )
+            })?;
+            ensure!(
+                metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
+                "git cache marker is not a regular file: {}",
+                marker.display()
+            );
+            ensure!(
+                fs::read(&marker)? == GIT_CACHE_MARKER_CONTENTS.as_bytes(),
+                "git cache marker has unexpected contents: {}",
+                marker.display()
+            );
+        }
+        for entry in fs::read_dir(&root)? {
+            let entry = entry?;
+            if entry.file_name() == GIT_CACHE_MARKER {
+                continue;
+            }
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| anyhow::anyhow!("non-UTF-8 git cache entry"))?;
+            if is_git_cache_staging_name(&name) {
+                bail!(
+                    "stale git cache staging directory must be removed manually: {}",
+                    entry.path().display()
+                );
+            }
+            ensure!(
+                name.len() == 64
+                    && name.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    && entry.file_type()?.is_dir()
+                    && !entry.file_type()?.is_symlink(),
+                "unexpected git cache entry {}",
+                entry.path().display()
+            );
+        }
+        Ok(Self {
+            root,
+            transport,
+            prepared: BTreeSet::new(),
+            fetched: BTreeSet::new(),
+        })
+    }
+
+    fn fetch(
+        &mut self,
+        repository: &RepositoryLocation,
+        revision: &str,
+        path: &str,
+    ) -> Result<Vec<u8>> {
+        validate_sha(revision)?;
+        validate_repository_path(path)?;
+        let remote_url = match self.transport {
+            GitTransport::Https => repository.url.clone(),
+            GitTransport::Ssh => format!(
+                "git@github.com:{}/{}.git",
+                repository.owner, repository.repository
+            ),
+        };
+        let directory = self.root.join(digest(remote_url.as_bytes()));
+        if !self.prepared.contains(&remote_url) {
+            self.prepare_repository(&directory, &remote_url)?;
+            self.prepared.insert(remote_url.clone());
+        }
+        let key = (remote_url, revision.to_owned());
+        if !self.fetched.contains(&key) {
+            if !git_commit_is_cached(&directory, revision)? {
+                run_git_checked(
+                    &directory,
+                    &[
+                        "fetch",
+                        "--no-tags",
+                        "--depth=1",
+                        "--filter=blob:none",
+                        "origin",
+                        revision,
+                    ],
+                    "failed to fetch exact source revision",
+                )?;
+            }
+            self.fetched.insert(key);
+        }
+        let resolved = run_git_checked_without_lazy_fetch(
+            &directory,
+            &["rev-parse", "--verify", &format!("{revision}^{{commit}}")],
+            "failed to resolve fetched source revision",
+        )?;
+        ensure!(
+            trim_line(&resolved)? == revision,
+            "git cache resolved a different source revision"
+        );
+        read_verified_git_blob(&directory, revision, path).with_context(|| {
+            format!(
+                "failed to download {}/{} at {revision}",
+                repository.url, path
+            )
+        })
+    }
+
+    fn prepare_repository(&self, directory: &Path, url: &str) -> Result<()> {
+        if !directory.try_exists()? {
+            install_cache_directory(directory, |staging| initialize_git_repository(staging, url))
+        } else {
+            validate_git_repository(directory, url)
+        }
+    }
+}
+
+fn initialize_git_repository(directory: &Path, url: &str) -> Result<()> {
+    let output = isolated_git_command()
+        .args(["init", "--bare", "--template="])
+        .arg(directory)
+        .output()
+        .context("failed to start git init for source cache")?;
+    ensure!(
+        output.status.success(),
+        "git init failed for source cache: {}",
+        String::from_utf8_lossy(&output.stderr).trim_end()
+    );
+    run_git_checked(
+        directory,
+        &["remote", "add", "origin", url],
+        "failed to configure source cache remote",
+    )?;
+    run_git_checked(
+        directory,
+        &["config", "extensions.partialClone", "origin"],
+        "failed to configure partial clone extension",
+    )?;
+    run_git_checked(
+        directory,
+        &["config", "remote.origin.promisor", "true"],
+        "failed to configure promisor remote",
+    )?;
+    run_git_checked(
+        directory,
+        &["config", "remote.origin.partialclonefilter", "blob:none"],
+        "failed to configure partial clone filter",
+    )?;
+    validate_git_repository(directory, url)
+}
+
+fn install_cache_directory(
+    directory: &Path,
+    initialize: impl FnOnce(&Path) -> Result<()>,
+) -> Result<()> {
+    let staging = git_cache_staging_path(directory)?;
+    ensure!(
+        !staging.try_exists()?,
+        "stale git cache staging directory must be removed manually: {}",
+        staging.display()
+    );
+    fs::create_dir(&staging)
+        .with_context(|| format!("failed to create git cache staging {}", staging.display()))?;
+
+    let result = (|| {
+        initialize(&staging)?;
+        ensure!(
+            !directory.try_exists()?,
+            "git cache entry appeared concurrently: {}",
+            directory.display()
+        );
+        fs::rename(&staging, directory).with_context(|| {
+            format!("failed to install git cache entry {}", directory.display())
+        })?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => match remove_git_cache_staging(&staging) {
+            Ok(()) => Err(error),
+            Err(cleanup_error) => Err(error.context(format!(
+                "failed to clean git cache staging {}: {cleanup_error:#}",
+                staging.display()
+            ))),
+        },
+    }
+}
+
+fn remove_git_cache_staging(staging: &Path) -> Result<()> {
+    let metadata = match fs::symlink_metadata(staging) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to inspect staging path {}", staging.display()));
+        }
+    };
+    ensure!(
+        metadata.file_type().is_dir() && !metadata.file_type().is_symlink(),
+        "refusing to remove non-directory git cache staging path {}",
+        staging.display()
+    );
+    fs::remove_dir_all(staging)
+        .with_context(|| format!("failed to remove git cache staging {}", staging.display()))
+}
+
+fn git_cache_staging_path(directory: &Path) -> Result<PathBuf> {
+    let name = directory
+        .file_name()
+        .and_then(OsStr::to_str)
+        .context("git cache entry has no UTF-8 name")?;
+    Ok(directory.with_file_name(format!(".{name}{GIT_CACHE_STAGING_SUFFIX}")))
+}
+
+fn is_git_cache_staging_name(name: &str) -> bool {
+    name.strip_prefix('.')
+        .and_then(|name| name.strip_suffix(GIT_CACHE_STAGING_SUFFIX))
+        .is_some_and(|digest| {
+            digest.len() == 64
+                && digest
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        })
+}
+
+fn validate_git_repository(directory: &Path, url: &str) -> Result<()> {
+    let metadata = fs::symlink_metadata(directory)?;
+    ensure!(
+        metadata.file_type().is_dir() && !metadata.file_type().is_symlink(),
+        "git source cache repository is not a directory: {}",
+        directory.display()
+    );
+    let canonical = fs::canonicalize(directory).with_context(|| {
+        format!(
+            "failed to resolve git source cache repository {}",
+            directory.display()
+        )
+    })?;
+    ensure!(
+        canonical == directory,
+        "git source cache repository does not have a canonical path: {}",
+        directory.display()
+    );
+    let bare = run_git_checked(
+        directory,
+        &["rev-parse", "--is-bare-repository"],
+        "git source cache entry is not a valid bare repository",
+    )?;
+    ensure!(
+        trim_line(&bare)? == "true",
+        "git source cache entry is not bare: {}",
+        directory.display()
+    );
+    validate_git_local_config(directory)?;
+    validate_git_directory_path(directory, "--absolute-git-dir", "git directory")?;
+    validate_git_directory_path(directory, "--git-common-dir", "common directory")?;
+    validate_git_object_storage(directory)?;
+
+    let replacements = run_git_checked(
+        directory,
+        &["for-each-ref", "--format=%(refname)", "refs/replace/"],
+        "failed to inspect source cache replacement refs",
+    )?;
+    ensure!(
+        replacements.is_empty(),
+        "git source cache contains replacement refs: {}",
+        directory.display()
+    );
+
+    let configured = run_git_checked(
+        directory,
+        &["remote", "get-url", "origin"],
+        "failed to inspect source cache remote",
+    )?;
+    ensure!(
+        trim_line(&configured)? == url,
+        "git source cache remote URL mismatch for {}",
+        directory.display()
+    );
+    validate_git_config(directory, "extensions.partialClone", "origin")?;
+    validate_git_config(directory, "remote.origin.promisor", "true")?;
+    validate_git_config(directory, "remote.origin.partialclonefilter", "blob:none")?;
+    Ok(())
+}
+
+fn validate_git_local_config(directory: &Path) -> Result<()> {
+    const ALLOWED: &[&str] = &[
+        "core.bare",
+        "core.filemode",
+        "core.repositoryformatversion",
+        "extensions.partialclone",
+        "remote.origin.fetch",
+        "remote.origin.partialclonefilter",
+        "remote.origin.promisor",
+        "remote.origin.url",
+    ];
+    let output = run_git_checked(
+        directory,
+        &[
+            "config",
+            "--local",
+            "--no-includes",
+            "--name-only",
+            "--list",
+        ],
+        "failed to inspect source cache local config",
+    )?;
+    let output = std::str::from_utf8(&output).context("git config output is not UTF-8")?;
+    let mut seen = BTreeSet::new();
+    for key in output.lines() {
+        let key = key.to_ascii_lowercase();
+        ensure!(
+            ALLOWED.binary_search(&key.as_str()).is_ok(),
+            "unsupported git source cache config {key} in {}",
+            directory.display()
+        );
+        ensure!(
+            seen.insert(key.clone()),
+            "duplicate git source cache config {key} in {}",
+            directory.display()
+        );
+    }
+    Ok(())
+}
+
+fn validate_git_directory_path(directory: &Path, argument: &str, label: &str) -> Result<()> {
+    let output = run_git_checked(
+        directory,
+        &["rev-parse", argument],
+        &format!("failed to inspect source cache {label}"),
+    )?;
+    let reported = PathBuf::from(trim_line(&output)?);
+    ensure!(
+        reported.is_absolute(),
+        "git source cache {label} is not absolute: {}",
+        reported.display()
+    );
+    let reported = fs::canonicalize(&reported).with_context(|| {
+        format!(
+            "failed to resolve source cache {label} {}",
+            reported.display()
+        )
+    })?;
+    ensure!(
+        reported == directory,
+        "git source cache {label} escapes its cache entry: expected {}, found {}",
+        directory.display(),
+        reported.display()
+    );
+    Ok(())
+}
+
+fn validate_git_config(directory: &Path, key: &str, expected: &str) -> Result<()> {
+    let value = run_git_checked(
+        directory,
+        &["config", "--get", key],
+        &format!("failed to inspect source cache config {key}"),
+    )?;
+    ensure!(
+        trim_line(&value)? == expected,
+        "git source cache config {key} mismatch for {}",
+        directory.display()
+    );
+    Ok(())
+}
+
+fn validate_git_object_storage(directory: &Path) -> Result<()> {
+    for path in [directory.join("objects"), directory.join("objects/info")] {
+        let metadata = fs::symlink_metadata(&path).with_context(|| {
+            format!("failed to inspect Git object directory {}", path.display())
+        })?;
+        ensure!(
+            metadata.file_type().is_dir() && !metadata.file_type().is_symlink(),
+            "Git object directory is not a regular directory: {}",
+            path.display()
+        );
+    }
+    for name in ["alternates", "http-alternates"] {
+        let path = directory.join("objects/info").join(name);
+        match fs::symlink_metadata(&path) {
+            Ok(_) => bail!(
+                "git source cache must not use an alternate object store: {}",
+                path.display()
+            ),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(error).with_context(|| format!("failed to inspect {}", path.display()));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn isolated_git_command() -> Command {
+    let mut command = Command::new("git");
+    for (name, _) in env::vars_os() {
+        if unsafe_git_environment(&name) {
+            command.env_remove(name);
+        }
+    }
+    for name in [
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "USERPROFILE",
+        "GIT_ASKPASS",
+        "GIT_PROXY_COMMAND",
+        "GIT_SSH",
+        "GIT_SSH_COMMAND",
+        "SSH_ASKPASS",
+        "SSH_ASKPASS_REQUIRE",
+    ] {
+        command.env_remove(name);
+    }
+    command.env("GIT_CONFIG_GLOBAL", null_device());
+    command.env("GIT_CONFIG_NOSYSTEM", "1");
+    command.env("GIT_CONFIG_SYSTEM", null_device());
+    command.env("GIT_NO_REPLACE_OBJECTS", "1");
+    command.args(["--no-replace-objects", "-c", "core.sshCommand=ssh"]);
+    command
+}
+
+#[cfg(windows)]
+fn null_device() -> &'static str {
+    "NUL"
+}
+
+#[cfg(not(windows))]
+fn null_device() -> &'static str {
+    "/dev/null"
+}
+
+fn unsafe_git_environment(name: &OsStr) -> bool {
+    const EXACT: &[&str] = &[
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_COMMON_DIR",
+        "GIT_DEFAULT_HASH",
+        "GIT_DEFAULT_REF_FORMAT",
+        "GIT_DIR",
+        "GIT_EXEC_PATH",
+        "GIT_GRAFT_FILE",
+        "GIT_INDEX_FILE",
+        "GIT_IMPLICIT_WORK_TREE",
+        "GIT_INTERNAL_SUPER_PREFIX",
+        "GIT_NAMESPACE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_PREFIX",
+        "GIT_QUARANTINE_PATH",
+        "GIT_REPLACE_REF_BASE",
+        "GIT_SHALLOW_FILE",
+        "GIT_TEMPLATE_DIR",
+        "GIT_WORK_TREE",
+    ];
+    EXACT.iter().any(|candidate| name == OsStr::new(candidate))
+        || name
+            .to_str()
+            .is_some_and(|name| name == "GIT_CONFIG" || name.starts_with("GIT_CONFIG_"))
+}
+
+fn run_git_checked(directory: &Path, arguments: &[&str], context: &str) -> Result<Vec<u8>> {
+    let output = git_repository_command(directory)
+        .args(arguments)
+        .output()
+        .with_context(|| context.to_owned())?;
+    ensure!(
+        output.status.success(),
+        "{context}: {}",
+        String::from_utf8_lossy(&output.stderr).trim_end()
+    );
+    Ok(output.stdout)
+}
+
+fn run_git_checked_without_lazy_fetch(
+    directory: &Path,
+    arguments: &[&str],
+    context: &str,
+) -> Result<Vec<u8>> {
+    let output = git_repository_command(directory)
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .args(arguments)
+        .output()
+        .with_context(|| context.to_owned())?;
+    ensure!(
+        output.status.success(),
+        "{context}: {}",
+        String::from_utf8_lossy(&output.stderr).trim_end()
+    );
+    Ok(output.stdout)
+}
+
+fn read_verified_git_blob(directory: &Path, revision: &str, path: &str) -> Result<Vec<u8>> {
+    let object = format!("{revision}:{path}");
+    let expected_oid = run_git_checked(
+        directory,
+        &["rev-parse", "--verify", &object],
+        "failed to resolve source blob in git cache",
+    )?;
+    let expected_oid = trim_line(&expected_oid)?;
+    validate_sha(expected_oid).context("git source blob has an invalid object ID")?;
+
+    let bytes = run_git_checked(
+        directory,
+        &["cat-file", "blob", expected_oid],
+        "failed to read source blob from git cache",
+    )?;
+    let actual_oid = hash_git_blob(directory, &bytes)?;
+    ensure!(
+        actual_oid == expected_oid,
+        "git source blob object ID mismatch: expected {expected_oid}, found {actual_oid}"
+    );
+    Ok(bytes)
+}
+
+fn hash_git_blob(directory: &Path, bytes: &[u8]) -> Result<String> {
+    let mut child = git_repository_command(directory)
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .args(["hash-object", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to start git hash-object for source blob")?;
+    let write_result = child
+        .stdin
+        .take()
+        .context("git hash-object stdin is unavailable")?
+        .write_all(bytes);
+    if let Err(error) = write_result {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(error).context("failed to write source blob to git hash-object");
+    }
+    let output = child
+        .wait_with_output()
+        .context("failed to wait for git hash-object")?;
+    ensure!(
+        output.status.success(),
+        "git hash-object failed for source blob: {}",
+        String::from_utf8_lossy(&output.stderr).trim_end()
+    );
+    let oid = trim_line(&output.stdout)?;
+    validate_sha(oid).context("git hash-object returned an invalid object ID")?;
+    Ok(oid.to_owned())
+}
+
+fn git_commit_is_cached(directory: &Path, revision: &str) -> Result<bool> {
+    let output = git_repository_command(directory)
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .args(["rev-parse", "--verify", &format!("{revision}^{{commit}}")])
+        .output()
+        .context("failed to inspect exact source revision in git cache")?;
+    if !output.status.success() {
+        return Ok(false);
+    }
+    ensure!(
+        trim_line(&output.stdout)? == revision,
+        "git cache resolved a different source revision"
+    );
+    Ok(true)
+}
+
+fn git_repository_command(directory: &Path) -> Command {
+    let mut command = isolated_git_command();
+    command.arg("--git-dir").arg(directory);
+    command
+}
+
+fn trim_line(bytes: &[u8]) -> Result<&str> {
+    let value = std::str::from_utf8(bytes).context("git output is not UTF-8")?;
+    Ok(value.trim_end_matches(['\r', '\n']))
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     validate_revision(&cli.checkout)?;
     let repositories = read_repository_registry(cli.repository_map.as_deref())?;
     let plans = build_case_plans(&cli.checkout)?;
     prepare_output(&cli.output, plans.len())?;
+    let mut source_fetcher = SourceFetcher::new(
+        cli.source_backend,
+        cli.git_cache.as_deref(),
+        cli.git_transport,
+    )?;
 
     let manifest_path = cli.output.join(MANIFEST_NAME);
     let cached_manifest = read_cached_manifest(&manifest_path)?;
@@ -159,11 +836,17 @@ fn main() -> Result<()> {
     let manifest = match cached_manifest {
         Some(manifest) => {
             validate_cached_manifest(&manifest, &plans, &repositories)?;
-            complete_cached_manifest(&cli.output, manifest, &plans, &repositories)?
+            complete_cached_manifest(&cli.output, manifest, &plans, &mut source_fetcher)?
         }
         None => {
             let checkpoint = read_checkpoint(&cli.output)?;
-            materialize_new_manifest(&cli.output, &plans, &repositories, checkpoint)?
+            materialize_new_manifest(
+                &cli.output,
+                &plans,
+                &repositories,
+                checkpoint,
+                &mut source_fetcher,
+            )?
         }
     };
 
@@ -186,7 +869,7 @@ fn main() -> Result<()> {
 }
 
 fn validate_revision(checkout: &Path) -> Result<()> {
-    let output = Command::new("git")
+    let output = isolated_git_command()
         .arg("-C")
         .arg(checkout)
         .args(["rev-parse", "--verify", "HEAD^{commit}"])
@@ -643,7 +1326,12 @@ fn validate_output_layout(output: &Path, case_count: usize) -> Result<()> {
             ensure!(
                 matches!(
                     source_name.to_str(),
-                    Some("before.java" | "after.java" | "before.java.part" | "after.java.part")
+                    Some(
+                        "before.source"
+                            | "after.source"
+                            | "before.source.part"
+                            | "after.source.part"
+                    )
                 ) && source_type.is_file()
                     && !source_type.is_symlink(),
                 "unexpected source cache entry {}",
@@ -749,9 +1437,8 @@ fn complete_cached_manifest(
     output: &Path,
     manifest: MaterializationManifest,
     plans: &[CasePlan],
-    repositories: &RepositoryRegistry,
+    source_fetcher: &mut SourceFetcher,
 ) -> Result<MaterializationManifest> {
-    let mut commits = BTreeMap::new();
     for (index, (case, plan)) in manifest.cases.iter().zip(plans).enumerate() {
         let before_exists = validate_cached_source(output, &case.before)?;
         let after_exists = validate_cached_source(output, &case.after)?;
@@ -760,21 +1447,12 @@ fn complete_cached_manifest(
             continue;
         }
 
-        let resolved = resolve_case(plan, repositories, &mut commits)?;
-        ensure!(
-            resolved.fetched_repository.url == case.fetched_repository_url
-                && resolved.parent == case.parent
-                && resolved.before_path == case.before.repository_path
-                && resolved.after_path == case.after.repository_path,
-            "GitHub metadata disagrees with cached manifest for {}",
-            plan.oracle_path
-        );
+        let fetched_repository = parse_repository_url(&case.fetched_repository_url)?;
         if !before_exists {
-            let bytes = fetch_source(
-                &resolved.fetched_repository.owner,
-                &resolved.fetched_repository.repository,
-                &resolved.parent,
-                &resolved.before_path,
+            let bytes = source_fetcher.fetch(
+                &fetched_repository,
+                &case.parent,
+                &case.before.repository_path,
             )?;
             ensure!(
                 digest(&bytes) == case.before.content_blake3,
@@ -784,11 +1462,10 @@ fn complete_cached_manifest(
             write_source(output, &case.before.materialized_path, &bytes)?;
         }
         if !after_exists {
-            let bytes = fetch_source(
-                &resolved.fetched_repository.owner,
-                &resolved.fetched_repository.repository,
+            let bytes = source_fetcher.fetch(
+                &fetched_repository,
                 &plan.commit,
-                &resolved.after_path,
+                &case.after.repository_path,
             )?;
             ensure!(
                 digest(&bytes) == case.after.content_blake3,
@@ -807,6 +1484,7 @@ fn materialize_new_manifest(
     plans: &[CasePlan],
     repositories: &RepositoryRegistry,
     checkpoint: Option<MaterializationManifest>,
+    source_fetcher: &mut SourceFetcher,
 ) -> Result<MaterializationManifest> {
     let mut commits = BTreeMap::new();
     let mut manifest = checkpoint.unwrap_or_else(|| MaterializationManifest {
@@ -828,15 +1506,13 @@ fn materialize_new_manifest(
 
     for (index, plan) in plans.iter().enumerate().skip(manifest.cases.len()) {
         let resolved = resolve_case(plan, repositories, &mut commits)?;
-        let before_bytes = fetch_source(
-            &resolved.fetched_repository.owner,
-            &resolved.fetched_repository.repository,
+        let before_bytes = source_fetcher.fetch(
+            &resolved.fetched_repository,
             &resolved.parent,
             &resolved.before_path,
         )?;
-        let after_bytes = fetch_source(
-            &resolved.fetched_repository.owner,
-            &resolved.fetched_repository.repository,
+        let after_bytes = source_fetcher.fetch(
+            &resolved.fetched_repository,
             &plan.commit,
             &resolved.after_path,
         )?;
@@ -1140,6 +1816,17 @@ fn write_source(output: &Path, relative: &str, expected: &[u8]) -> Result<()> {
     );
     fs::rename(&part, &path)
         .with_context(|| format!("failed to install materialized source {}", path.display()))?;
+    let actual_bytes = fs::read(&path)
+        .with_context(|| format!("failed to read back materialized source {}", path.display()))?;
+    let expected_digest = digest(expected);
+    let actual_digest = digest(&actual_bytes);
+    ensure!(
+        actual_bytes == expected,
+        "installed source differs from downloaded content for {}: expected {}, found {}",
+        path.display(),
+        expected_digest,
+        actual_digest
+    );
     Ok(())
 }
 
@@ -1161,18 +1848,18 @@ fn part_path(path: &Path) -> Result<PathBuf> {
 }
 
 fn write_manifest(path: &Path, encoded: &[u8]) -> Result<()> {
-    let part = path.with_file_name(MANIFEST_PART_NAME);
-    if part.try_exists()? {
-        fs::remove_file(&part)
-            .with_context(|| format!("failed to remove stale manifest file {}", part.display()))?;
+    let next = path.with_file_name(MANIFEST_NEXT_NAME);
+    if next.try_exists()? {
+        fs::remove_file(&next)
+            .with_context(|| format!("failed to remove stale manifest file {}", next.display()))?;
     }
-    write_new_file(&part, encoded)?;
+    write_new_file(&next, encoded)?;
     ensure!(
         !path.try_exists()?,
         "manifest appeared concurrently: {}",
         path.display()
     );
-    fs::rename(&part, path)
+    fs::rename(&next, path)
         .with_context(|| format!("failed to install manifest {}", path.display()))?;
     Ok(())
 }
@@ -1223,8 +1910,8 @@ fn encode_manifest(manifest: &MaterializationManifest) -> Result<Vec<u8>> {
 fn materialized_paths(index: usize) -> (String, String) {
     let directory = case_directory(index);
     (
-        format!("sources/{directory}/before.java"),
-        format!("sources/{directory}/after.java"),
+        format!("sources/{directory}/before.source"),
+        format!("sources/{directory}/after.source"),
     )
 }
 
@@ -1330,5 +2017,613 @@ fn digest(bytes: &[u8]) -> String {
 fn report_progress(action: &str, completed: usize, total: usize, oracle_path: &str) {
     if completed.is_multiple_of(10) || completed == total {
         eprintln!("{action} {completed}/{total}: {oracle_path}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    const FIRST_SOURCE: &[u8] = b"class Demo { int first; }\n";
+    const SECOND_SOURCE: &[u8] = b"class Demo { int second; }\n";
+    const ENV_CHILD: &str = "STRATADIFF_GIT_CACHE_ENV_CHILD";
+    const ENV_REMOTE: &str = "STRATADIFF_GIT_CACHE_ENV_REMOTE";
+    const ENV_CACHE: &str = "STRATADIFF_GIT_CACHE_ENV_ROOT";
+    const ENV_REVISION: &str = "STRATADIFF_GIT_CACHE_ENV_REVISION";
+
+    struct LocalGitFixture {
+        temporary_directory: TempDir,
+        work: PathBuf,
+        remote: PathBuf,
+        first_revision: String,
+        second_revision: String,
+        repository: RepositoryLocation,
+    }
+
+    impl LocalGitFixture {
+        fn new() -> Self {
+            let temporary_directory = tempfile::tempdir().unwrap();
+            let work = temporary_directory.path().join("work");
+            let remote = temporary_directory.path().join("remote.git");
+
+            let mut command = isolated_git_command();
+            command.arg("init").arg(&work);
+            checked(&mut command);
+            for (key, value) in [
+                ("user.name", "StrataDiff Test"),
+                ("user.email", "stratadiff@example.invalid"),
+            ] {
+                let mut command = isolated_git_command();
+                command.arg("-C").arg(&work).args(["config", key, value]);
+                checked(&mut command);
+            }
+
+            fs::write(work.join("Demo.java"), FIRST_SOURCE).unwrap();
+            commit_all(&work, "first");
+            let first_revision = revision(&work);
+            fs::write(work.join("Demo.java"), SECOND_SOURCE).unwrap();
+            commit_all(&work, "second");
+            let second_revision = revision(&work);
+
+            let mut command = isolated_git_command();
+            command.arg("clone").arg("--bare").arg(&work).arg(&remote);
+            checked(&mut command);
+            for key in [
+                "uploadpack.allowFilter",
+                "uploadpack.allowReachableSHA1InWant",
+                "uploadpack.allowAnySHA1InWant",
+            ] {
+                let mut command = isolated_git_command();
+                command
+                    .arg("--git-dir")
+                    .arg(&remote)
+                    .args(["config", key, "true"]);
+                checked(&mut command);
+            }
+
+            let url = format!("file://{}", remote.display());
+            Self {
+                temporary_directory,
+                work,
+                remote,
+                first_revision,
+                second_revision,
+                repository: RepositoryLocation {
+                    owner: "local".to_owned(),
+                    repository: "fixture".to_owned(),
+                    url,
+                },
+            }
+        }
+
+        fn cache_root(&self, name: &str) -> PathBuf {
+            self.temporary_directory.path().join(name)
+        }
+
+        fn cache_entry(&self, root: &Path) -> PathBuf {
+            fs::canonicalize(root)
+                .unwrap()
+                .join(digest(self.repository.url.as_bytes()))
+        }
+    }
+
+    #[test]
+    fn git_cache_fetches_an_exact_blob_from_a_real_repository() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+
+        let bytes = cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap();
+
+        assert_eq!(bytes, SECOND_SOURCE);
+        validate_git_repository(&fixture.cache_entry(&root), &fixture.repository.url).unwrap();
+    }
+
+    #[test]
+    fn git_cache_probe_does_not_lazy_fetch_a_missing_commit() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        let directory = fixture.cache_entry(&root);
+        cache
+            .prepare_repository(&directory, &fixture.repository.url)
+            .unwrap();
+
+        assert!(!git_commit_is_cached(&directory, &fixture.second_revision).unwrap());
+    }
+
+    #[test]
+    fn git_cache_hit_skips_the_network_fetch() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        assert_eq!(
+            cache
+                .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+                .unwrap(),
+            SECOND_SOURCE
+        );
+        drop(cache);
+        fs::rename(
+            &fixture.remote,
+            fixture
+                .temporary_directory
+                .path()
+                .join("remote-unavailable"),
+        )
+        .unwrap();
+
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        assert_eq!(
+            cache
+                .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+                .unwrap(),
+            SECOND_SOURCE
+        );
+    }
+
+    #[test]
+    fn completed_manifest_metadata_enables_offline_git_recovery() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let repository = RepositoryLocation {
+            owner: "offline".to_owned(),
+            repository: "fixture".to_owned(),
+            url: "https://github.com/offline/fixture".to_owned(),
+        };
+        let cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        let directory = cache.root.join(digest(repository.url.as_bytes()));
+        cache
+            .prepare_repository(&directory, &repository.url)
+            .unwrap();
+        run_git_checked(
+            &directory,
+            &[
+                "fetch",
+                "--no-tags",
+                "--depth=2",
+                &fixture.repository.url,
+                &fixture.second_revision,
+            ],
+            "failed to pre-populate offline test cache",
+        )
+        .unwrap();
+        fs::rename(
+            &fixture.remote,
+            fixture
+                .temporary_directory
+                .path()
+                .join("remote-unavailable"),
+        )
+        .unwrap();
+
+        let output = fixture.cache_root("output");
+        let before_path = "sources/0000/before.source";
+        let after_path = "sources/0000/after.source";
+        write_source(&output, before_path, FIRST_SOURCE).unwrap();
+        let manifest = MaterializationManifest {
+            schema: MATERIALIZATION_MANIFEST_SCHEMA.to_owned(),
+            dataset_revision: DIFFBENCHMARK_REVISION.to_owned(),
+            case_count: 1,
+            cases: vec![MaterializedCase {
+                oracle_path: "oracle/GOD.json".to_owned(),
+                oracle_blake3: digest(b"oracle"),
+                oracle_repository_url: repository.url.clone(),
+                fetched_repository_url: repository.url,
+                commit: fixture.second_revision.clone(),
+                parent: fixture.first_revision.clone(),
+                before: MaterializedSource {
+                    repository_path: "Demo.java".to_owned(),
+                    materialized_path: before_path.to_owned(),
+                    content_blake3: digest(FIRST_SOURCE),
+                },
+                after: MaterializedSource {
+                    repository_path: "Demo.java".to_owned(),
+                    materialized_path: after_path.to_owned(),
+                    content_blake3: digest(SECOND_SOURCE),
+                },
+            }],
+        };
+        let plans = vec![CasePlan {
+            oracle_path: "oracle/GOD.json".to_owned(),
+            oracle_blake3: digest(b"oracle"),
+            owner: "offline".to_owned(),
+            repository: "fixture".to_owned(),
+            oracle_repository_url: "https://github.com/offline/fixture".to_owned(),
+            commit: fixture.second_revision.clone(),
+            source_path: "Demo.java".to_owned(),
+        }];
+        let mut source_fetcher =
+            SourceFetcher::Git(GitBlobCache::new(&root, GitTransport::Https).unwrap());
+
+        complete_cached_manifest(&output, manifest, &plans, &mut source_fetcher).unwrap();
+
+        assert_eq!(fs::read(output.join(after_path)).unwrap(), SECOND_SOURCE);
+    }
+
+    #[test]
+    fn git_cache_rejects_blob_content_that_does_not_match_its_object_id() {
+        let fixture = LocalGitFixture::new();
+        let git_directory = fixture.work.join(".git");
+        let first_oid = run_git_checked_without_lazy_fetch(
+            &git_directory,
+            &[
+                "rev-parse",
+                "--verify",
+                &format!("{}:Demo.java", fixture.first_revision),
+            ],
+            "failed to resolve first test blob",
+        )
+        .unwrap();
+        let first_oid = trim_line(&first_oid).unwrap();
+        let second_oid = run_git_checked_without_lazy_fetch(
+            &git_directory,
+            &[
+                "rev-parse",
+                "--verify",
+                &format!("{}:Demo.java", fixture.second_revision),
+            ],
+            "failed to resolve second test blob",
+        )
+        .unwrap();
+        let second_oid = trim_line(&second_oid).unwrap();
+        let first_object = loose_object_path(&git_directory, first_oid);
+        let second_object = loose_object_path(&git_directory, second_oid);
+        fs::remove_file(&first_object).unwrap();
+        fs::copy(second_object, first_object).unwrap();
+
+        let error = read_verified_git_blob(&git_directory, &fixture.first_revision, "Demo.java")
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("object ID mismatch"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn git_cache_rejects_an_existing_non_bare_repository() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        let directory = fixture.cache_entry(&root);
+        let mut command = isolated_git_command();
+        command.arg("init").arg(&directory);
+        checked(&mut command);
+
+        let error = cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap_err();
+
+        assert!(
+            format!("{error:#}").contains("not a valid bare repository"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn git_cache_rejects_replacement_refs() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        cache
+            .fetch(&fixture.repository, &fixture.first_revision, "Demo.java")
+            .unwrap();
+        cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap();
+        let directory = fixture.cache_entry(&root);
+        let mut command = isolated_git_command();
+        command.arg("--git-dir").arg(&directory).args([
+            "replace",
+            &fixture.first_revision,
+            &fixture.second_revision,
+        ]);
+        checked(&mut command);
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+
+        let error = cache
+            .fetch(&fixture.repository, &fixture.first_revision, "Demo.java")
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("contains replacement refs"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn git_cache_rejects_an_alternate_object_store() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap();
+        let directory = fixture.cache_entry(&root);
+        fs::write(
+            directory.join("objects/info/alternates"),
+            format!("{}\n", fixture.remote.join("objects").display()),
+        )
+        .unwrap();
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+
+        let error = cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap_err();
+
+        assert!(
+            error.to_string().contains("alternate object store"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn git_cache_rejects_unapproved_local_configuration() {
+        let fixture = LocalGitFixture::new();
+        let root = fixture.cache_root("cache");
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap();
+        let directory = fixture.cache_entry(&root);
+        let mut command = isolated_git_command();
+        command.arg("--git-dir").arg(&directory).args([
+            "config",
+            "core.sshCommand",
+            "/definitely/not/an/approved/ssh",
+        ]);
+        checked(&mut command);
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+
+        let error = cache
+            .fetch(&fixture.repository, &fixture.second_revision, "Demo.java")
+            .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported git source cache config core.sshcommand"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn git_cache_environment_pollution_does_not_redirect_operations() {
+        let fixture = LocalGitFixture::new();
+        let cache_root = fixture.cache_root("polluted-cache");
+        let hijacked = fixture.cache_root("hijacked.git");
+        let foreign_objects = fixture.cache_root("foreign-objects");
+        let poisoned_config = fixture.cache_root("poisoned.gitconfig");
+        let missing_template = fixture.cache_root("missing-template");
+        fs::create_dir(&foreign_objects).unwrap();
+        fs::write(
+            &poisoned_config,
+            "[remote \"origin\"]\n\turl = file:///not-the-requested-repository\n",
+        )
+        .unwrap();
+        let mut command = isolated_git_command();
+        command.args(["init", "--bare"]).arg(&hijacked);
+        checked(&mut command);
+
+        let output = Command::new(env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "tests::git_cache_environment_child",
+                "--nocapture",
+            ])
+            .env(ENV_CHILD, "1")
+            .env(ENV_REMOTE, &fixture.remote)
+            .env(ENV_CACHE, &cache_root)
+            .env(ENV_REVISION, &fixture.second_revision)
+            .env("GIT_DIR", &hijacked)
+            .env("GIT_WORK_TREE", fixture.temporary_directory.path())
+            .env("GIT_COMMON_DIR", &hijacked)
+            .env("GIT_OBJECT_DIRECTORY", &foreign_objects)
+            .env("GIT_ALTERNATE_OBJECT_DIRECTORIES", hijacked.join("objects"))
+            .env("GIT_CONFIG_GLOBAL", &poisoned_config)
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "remote.origin.url")
+            .env(
+                "GIT_CONFIG_VALUE_0",
+                "file:///also-not-the-requested-repository",
+            )
+            .env("GIT_DEFAULT_HASH", "sha256")
+            .env("GIT_REPLACE_REF_BASE", "refs/heads")
+            .env("GIT_SHALLOW_FILE", fixture.cache_root("foreign-shallow"))
+            .env("GIT_TEMPLATE_DIR", &missing_template)
+            .output()
+            .unwrap();
+
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(fs::read_dir(&foreign_objects).unwrap().next().is_none());
+        let mut command = isolated_git_command();
+        command.arg("--git-dir").arg(&hijacked).arg("remote");
+        assert!(checked(&mut command).is_empty());
+    }
+
+    #[test]
+    fn isolated_git_commands_remove_external_config_and_ssh_overrides() {
+        let command = isolated_git_command();
+        for name in [
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "USERPROFILE",
+            "GIT_ASKPASS",
+            "GIT_PROXY_COMMAND",
+            "GIT_SSH",
+            "GIT_SSH_COMMAND",
+            "SSH_ASKPASS",
+            "SSH_ASKPASS_REQUIRE",
+        ] {
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == OsStr::new(name) && value.is_none()),
+                "{name} was inherited"
+            );
+        }
+        for (name, expected) in [
+            ("GIT_CONFIG_GLOBAL", null_device()),
+            ("GIT_CONFIG_NOSYSTEM", "1"),
+            ("GIT_CONFIG_SYSTEM", null_device()),
+        ] {
+            assert!(command.get_envs().any(|(key, value)| {
+                key == OsStr::new(name) && value == Some(OsStr::new(expected))
+            }));
+        }
+        let arguments: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            arguments,
+            [
+                OsStr::new("--no-replace-objects"),
+                OsStr::new("-c"),
+                OsStr::new("core.sshCommand=ssh")
+            ]
+        );
+    }
+
+    #[test]
+    fn git_cache_environment_child() {
+        if env::var_os(ENV_CHILD).is_none() {
+            return;
+        }
+        let remote = PathBuf::from(env::var_os(ENV_REMOTE).unwrap());
+        let root = PathBuf::from(env::var_os(ENV_CACHE).unwrap());
+        let revision = env::var(ENV_REVISION).unwrap();
+        let repository = RepositoryLocation {
+            owner: "local".to_owned(),
+            repository: "fixture".to_owned(),
+            url: format!("file://{}", remote.display()),
+        };
+        let mut cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+
+        assert_eq!(
+            cache.fetch(&repository, &revision, "Demo.java").unwrap(),
+            SECOND_SOURCE
+        );
+    }
+
+    #[test]
+    fn failed_atomic_cache_initialization_removes_its_staging_directory() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let directory = temporary_directory.path().join("a".repeat(64));
+        let staging = git_cache_staging_path(&directory).unwrap();
+
+        let error = install_cache_directory(&directory, |staging| {
+            fs::write(staging.join("partial"), b"partial")?;
+            bail!("injected initialization failure")
+        })
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("injected initialization failure")
+        );
+        assert!(!directory.exists());
+        assert!(!staging.exists());
+    }
+
+    #[test]
+    fn stale_git_cache_staging_is_diagnosed() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let root = temporary_directory.path().join("cache");
+        let cache = GitBlobCache::new(&root, GitTransport::Https).unwrap();
+        let directory = cache.root.join("b".repeat(64));
+        let staging = git_cache_staging_path(&directory).unwrap();
+        fs::create_dir(&staging).unwrap();
+
+        let error = match GitBlobCache::new(&root, GitTransport::Https) {
+            Ok(_) => panic!("stale staging directory was accepted"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error.to_string().contains("stale git cache staging"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
+    fn materialized_source_is_read_back_with_exact_bytes() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+
+        write_source(
+            temporary_directory.path(),
+            "sources/0000/before.source",
+            FIRST_SOURCE,
+        )
+        .unwrap();
+
+        assert_eq!(
+            fs::read(
+                temporary_directory
+                    .path()
+                    .join("sources/0000/before.source")
+            )
+            .unwrap(),
+            FIRST_SOURCE
+        );
+    }
+
+    #[test]
+    fn failed_final_manifest_install_preserves_the_durable_checkpoint() {
+        let temporary_directory = tempfile::tempdir().unwrap();
+        let manifest_path = temporary_directory.path().join(MANIFEST_NAME);
+        let checkpoint_path = temporary_directory.path().join(MANIFEST_PART_NAME);
+        fs::write(&manifest_path, b"existing manifest\n").unwrap();
+        fs::write(&checkpoint_path, b"durable checkpoint\n").unwrap();
+
+        let error = write_manifest(&manifest_path, b"replacement manifest\n").unwrap_err();
+
+        assert!(error.to_string().contains("manifest appeared concurrently"));
+        assert_eq!(fs::read(checkpoint_path).unwrap(), b"durable checkpoint\n");
+    }
+
+    fn loose_object_path(repository: &Path, oid: &str) -> PathBuf {
+        repository.join("objects").join(&oid[..2]).join(&oid[2..])
+    }
+
+    fn commit_all(repository: &Path, message: &str) {
+        let mut command = isolated_git_command();
+        command
+            .arg("-C")
+            .arg(repository)
+            .args(["add", "--", "Demo.java"]);
+        checked(&mut command);
+        let mut command = isolated_git_command();
+        command
+            .arg("-C")
+            .arg(repository)
+            .args(["commit", "--no-gpg-sign", "-m", message]);
+        checked(&mut command);
+    }
+
+    fn revision(repository: &Path) -> String {
+        let mut command = isolated_git_command();
+        command
+            .arg("-C")
+            .arg(repository)
+            .args(["rev-parse", "HEAD"]);
+        let output = checked(&mut command);
+        trim_line(&output).unwrap().to_owned()
+    }
+
+    fn checked(command: &mut Command) -> Vec<u8> {
+        let output = command.output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        output.stdout
     }
 }

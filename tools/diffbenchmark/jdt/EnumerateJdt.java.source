@@ -1,0 +1,117 @@
+import com.github.gumtreediff.gen.jdt.JdtTreeGenerator;
+import com.github.gumtreediff.tree.Tree;
+import com.github.gumtreediff.tree.TreeContext;
+import org.eclipse.jdt.core.JavaCore;
+import org.eclipse.jdt.core.dom.AST;
+import org.eclipse.jdt.core.dom.ASTParser;
+import org.eclipse.jdt.core.dom.Comment;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+
+import java.io.PrintWriter;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+public final class EnumerateJdt {
+    private static final String PROFILE =
+            "gumtree-3.0.0-jdt-core-3.35.0-ecj-3.35.0-helper-v3";
+    private static final String PROTOCOL = "stratadiff-jdt-tsv-v2";
+
+    private EnumerateJdt() {}
+
+    private record NodeKey(String type, int start, int end) {}
+
+    @SuppressWarnings("deprecation")
+    private static List<NodeKey> commentNodes(String source) {
+        ASTParser parser = ASTParser.newParser(AST.JLS14);
+        parser.setKind(ASTParser.K_COMPILATION_UNIT);
+        Map<String, String> options = JavaCore.getOptions();
+        options.put(JavaCore.COMPILER_COMPLIANCE, JavaCore.VERSION_14);
+        options.put(JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, JavaCore.VERSION_14);
+        options.put(JavaCore.COMPILER_SOURCE, JavaCore.VERSION_14);
+        options.put(JavaCore.COMPILER_DOC_COMMENT_SUPPORT, JavaCore.ENABLED);
+        parser.setCompilerOptions(options);
+        parser.setSource(source.toCharArray());
+        CompilationUnit compilationUnit = (CompilationUnit) parser.createAST(null);
+
+        List<NodeKey> nodes = new ArrayList<>();
+        for (Object entry : compilationUnit.getCommentList()) {
+            Comment comment = (Comment) entry;
+            String type;
+            if (comment.isDocComment()) {
+                type = "Javadoc";
+            } else if (comment.isLineComment()) {
+                type = "LineComment";
+            } else if (comment.isBlockComment()) {
+                type = "BlockComment";
+            } else {
+                throw new IllegalStateException("unknown JDT comment type");
+            }
+            int start = comment.getStartPosition();
+            nodes.add(new NodeKey(type, start, Math.addExact(start, comment.getLength())));
+        }
+        return nodes;
+    }
+
+    private static boolean emitNode(PrintWriter output, Set<NodeKey> emitted, NodeKey key) {
+        if (key.type().indexOf('\t') >= 0
+                || key.type().indexOf('\n') >= 0
+                || key.type().indexOf('\r') >= 0) {
+            throw new IllegalStateException("JDT node type is not TSV-safe");
+        }
+        if (!emitted.add(key)) {
+            return false;
+        }
+        output.printf("NODE\t%s\t%d\t%d\n", key.type(), key.start(), key.end());
+        return true;
+    }
+
+    public static void main(String[] args) throws Exception {
+        PrintWriter output = new PrintWriter(System.out, false, StandardCharsets.UTF_8);
+        output.printf("HELLO\t%s\t%s\t%d\n", PROFILE, PROTOCOL, args.length);
+
+        long totalNodes = 0;
+        for (int index = 0; index < args.length; index++) {
+            byte[] sourceBytes = Files.readAllBytes(Path.of(args[index]));
+            String source = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(sourceBytes))
+                    .toString();
+            List<NodeKey> comments = commentNodes(source);
+            String sourceSha256 = HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(sourceBytes));
+            TreeContext context = new JdtTreeGenerator().generateFrom().string(source);
+            output.printf("BEGIN\t%d\t%s\n", index, sourceSha256);
+            long nodeCount = 0;
+            Set<NodeKey> emitted = new HashSet<>();
+            for (Tree node : context.getRoot().preOrder()) {
+                NodeKey key = new NodeKey(node.getType().name, node.getPos(), node.getEndPos());
+                if (emitNode(output, emitted, key)) {
+                    nodeCount = Math.addExact(nodeCount, 1);
+                }
+            }
+            for (NodeKey comment : comments) {
+                if (emitNode(output, emitted, comment)) {
+                    nodeCount = Math.addExact(nodeCount, 1);
+                }
+            }
+            totalNodes = Math.addExact(totalNodes, nodeCount);
+            output.printf("END\t%d\t%d\n", index, nodeCount);
+        }
+        output.printf("DONE\t%d\t%d\n", args.length, totalNodes);
+        output.flush();
+        if (output.checkError()) {
+            throw new IllegalStateException("failed to write JDT enumeration output");
+        }
+    }
+}

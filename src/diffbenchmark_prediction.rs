@@ -4,8 +4,8 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::diffbenchmark::{
-    JdtOracleNode, OffsetRange, comparable_tree_sitter_java_node_origins, jdt_node_role,
-    resolve_jdt_node,
+    JdtNodeResolver, JdtOracleNode, OffsetRange, comparable_tree_sitter_java_node_origins,
+    jdt_node_role,
 };
 use crate::diffbenchmark_case::{AdaptedIntraFileCase, GoldComparableEndpoints};
 use crate::diffbenchmark_eval::{
@@ -160,6 +160,7 @@ fn bridge_side(file: &str, source: &[u8], jdt_nodes: &[EnumeratedJdtNode]) -> Re
     let source_text = std::str::from_utf8(source).context("Java source is not UTF-8")?;
     let origins = comparable_tree_sitter_java_node_origins(source)?;
     let candidates: Vec<_> = origins.iter().map(|node| node.comparable).collect();
+    let resolver = JdtNodeResolver::new(source_text, &candidates);
     let mut nodes = Vec::new();
     let mut by_origin: BTreeMap<usize, BridgedOrigin> = BTreeMap::new();
     let mut coverage = BridgeCoverage {
@@ -177,14 +178,11 @@ fn bridge_side(file: &str, source: &[u8], jdt_nodes: &[EnumeratedJdtNode]) -> Re
             node_type: enumerated.node_type.clone(),
             utf16_code_units: enumerated.utf16_code_units,
         };
-        let Some(comparable) = resolve_jdt_node(&oracle_node, source_text, &candidates)? else {
+        let Some((comparable, candidate_index)) = resolver.resolve_with_index(&oracle_node)? else {
             coverage.unresolved_supported_nodes += 1;
             continue;
         };
-        let origin = origins
-            .iter()
-            .find(|origin| origin.comparable == comparable)
-            .expect("a resolved comparable node has one tree-sitter origin");
+        let origin = &origins[candidate_index];
         let normalized = NormalizedNode::from_comparable(
             NodeKey {
                 file: file.to_owned(),

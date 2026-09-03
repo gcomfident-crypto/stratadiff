@@ -90,6 +90,30 @@ pub enum Multiplicity {
 pub struct OracleRelation {
     pub relation: NormalizedRelation,
     pub multiplicity: Multiplicity,
+    /// Stable raw component ID when this relation belongs to a multi-edge component.
+    pub raw_multi_group_id: Option<usize>,
+}
+
+/// One multi-edge connected component from the raw category relation graph.
+///
+/// IDs and connectivity are computed before exclusions. Endpoint members contain every endpoint
+/// in the component that the oracle adapter could normalize independently, including endpoints
+/// from relations whose partner was later excluded.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct RawMultiGroup {
+    /// The smallest raw relation index in this connected component.
+    pub id: usize,
+    pub before_endpoints: Vec<NodeKey>,
+    pub after_endpoints: Vec<NodeKey>,
+}
+
+/// Raw multi-groups remain isolated by DiffBenchmark relation category.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CategoryRawMultiGroups {
+    pub program_elements: Vec<RawMultiGroup>,
+    pub mappings: Vec<RawMultiGroup>,
 }
 
 /// Oracle relations remain separated by their DiffBenchmark container category.
@@ -98,6 +122,7 @@ pub struct OracleRelation {
 pub struct OracleRelations {
     pub program_elements: Vec<OracleRelation>,
     pub mappings: Vec<OracleRelation>,
+    pub raw_multi_groups: CategoryRawMultiGroups,
 }
 
 /// Predictions distinguish asserted relations from explicitly uncertain candidate relations.
@@ -200,8 +225,20 @@ impl AmbiguityScore {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct RepresentationWarning {
-    /// Gold multi relations emitted as forced relations. These are exact true positives.
-    pub forced_on_multi: usize,
+    /// Raw multi-groups with at least one surviving scorable gold relation.
+    pub eligible_multi_groups: usize,
+    /// Eligible raw multi-groups incident to at least one in-universe forced relation.
+    pub forced_touched_multi_groups: usize,
+    /// Gold relations in eligible raw multi-groups emitted as forced relations.
+    pub forced_gold_edges_in_multi_groups: usize,
+    /// Forced false-positive relations incident to at least one eligible raw multi-group.
+    pub forced_false_positive_edges_incident_to_multi_groups: usize,
+}
+
+impl RepresentationWarning {
+    pub fn multi_group_overclaim_rate(self) -> Option<f64> {
+        ratio(self.forced_touched_multi_groups, self.eligible_multi_groups)
+    }
 }
 
 /// Predictions outside the fixed category universe are reported but not scored.
@@ -222,11 +259,22 @@ impl UnscoredPredictionCounts {
 #[serde(deny_unknown_fields)]
 pub struct CategoryScore {
     pub exact_relations: ExactRelationScore,
+    /// Gold relations represented by an explicit ambiguity candidate rather than a forced edge.
+    pub ambiguity_covered_oracle_relations: usize,
     pub singleton_relations: MultiplicityLaneScore,
     pub multi_relations: MultiplicityLaneScore,
     pub ambiguity: AmbiguityScore,
     pub representation_warning: RepresentationWarning,
     pub unscored_predictions: UnscoredPredictionCounts,
+}
+
+impl CategoryScore {
+    pub fn ambiguity_covered_gold_relation_rate(self) -> Option<f64> {
+        ratio(
+            self.ambiguity_covered_oracle_relations,
+            self.exact_relations.true_positives + self.exact_relations.false_negatives,
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -282,6 +330,29 @@ pub enum EvaluationError {
         relation_index: usize,
         relation: Box<NormalizedRelation>,
     },
+    DuplicateRawMultiGroupId {
+        category: RelationCategory,
+        group_id: usize,
+    },
+    RawMultiGroupEndpointConflict {
+        category: RelationCategory,
+        side: UniverseSide,
+        key: NodeKey,
+        first_group_id: usize,
+        second_group_id: usize,
+    },
+    InvalidOracleMultiGroupAssignment {
+        category: RelationCategory,
+        relation_index: usize,
+        multiplicity: Multiplicity,
+        raw_multi_group_id: Option<usize>,
+    },
+    OracleRelationOutsideRawMultiGroup {
+        category: RelationCategory,
+        relation_index: usize,
+        group_id: usize,
+        relation: Box<NormalizedRelation>,
+    },
 }
 
 impl fmt::Display for EvaluationError {
@@ -324,6 +395,38 @@ impl fmt::Display for EvaluationError {
                 formatter,
                 "{category:?} oracle relation {relation_index} is outside the relation universe: {relation:?}"
             ),
+            Self::DuplicateRawMultiGroupId { category, group_id } => write!(
+                formatter,
+                "duplicate {category:?} raw multi-group ID {group_id}"
+            ),
+            Self::RawMultiGroupEndpointConflict {
+                category,
+                side,
+                key,
+                first_group_id,
+                second_group_id,
+            } => write!(
+                formatter,
+                "{category:?} {side:?} endpoint {key:?} belongs to raw multi-groups {first_group_id} and {second_group_id}"
+            ),
+            Self::InvalidOracleMultiGroupAssignment {
+                category,
+                relation_index,
+                multiplicity,
+                raw_multi_group_id,
+            } => write!(
+                formatter,
+                "{category:?} oracle relation {relation_index} has invalid {multiplicity:?} raw multi-group assignment {raw_multi_group_id:?}"
+            ),
+            Self::OracleRelationOutsideRawMultiGroup {
+                category,
+                relation_index,
+                group_id,
+                relation,
+            } => write!(
+                formatter,
+                "{category:?} oracle relation {relation_index} is not contained in raw multi-group {group_id}: {relation:?}"
+            ),
         }
     }
 }
@@ -337,12 +440,14 @@ pub fn evaluate_case(input: &CaseEvaluationInput) -> Result<CaseEvaluation, Eval
             RelationCategory::ProgramElements,
             &input.universe.program_elements,
             &input.oracle.program_elements,
+            &input.oracle.raw_multi_groups.program_elements,
             &input.prediction.program_elements,
         )?,
         mappings: evaluate_category(
             RelationCategory::Mappings,
             &input.universe.mappings,
             &input.oracle.mappings,
+            &input.oracle.raw_multi_groups.mappings,
             &input.prediction.mappings,
         )?,
     })
@@ -352,6 +457,7 @@ fn evaluate_category(
     category: RelationCategory,
     universe: &RelationUniverse,
     oracle: &[OracleRelation],
+    raw_multi_groups: &[RawMultiGroup],
     prediction: &PredictionRelations,
 ) -> Result<CategoryScore, EvaluationError> {
     let universe = PreparedUniverse::new(category, universe)?;
@@ -380,6 +486,8 @@ fn evaluate_category(
             });
         }
     }
+    let raw_multi_groups =
+        PreparedRawMultiGroups::new(category, raw_multi_groups, oracle_relations)?;
 
     let (forced, forced_unscored) = partition_by_universe(forced, &universe);
     let (ambiguity_candidates, ambiguity_unscored) =
@@ -402,6 +510,7 @@ fn evaluate_category(
     let false_positives = forced.difference(&all_gold).count();
     let false_negatives = all_gold.difference(&forced).count();
     let covered_multi_relations = ambiguity_candidates.intersection(&multi_gold).count();
+    let forced_gold_edges_in_multi_groups = forced.intersection(&multi_gold).count();
 
     Ok(CategoryScore {
         exact_relations: ExactRelationScore {
@@ -409,6 +518,7 @@ fn evaluate_category(
             false_positives,
             false_negatives,
         },
+        ambiguity_covered_oracle_relations: ambiguity_candidates.intersection(&all_gold).count(),
         singleton_relations: score_multiplicity_lane(&singleton_gold, &forced),
         multi_relations: score_multiplicity_lane(&multi_gold, &forced),
         ambiguity: AmbiguityScore {
@@ -419,7 +529,13 @@ fn evaluate_category(
             extra_candidates: ambiguity_candidates.difference(&multi_gold).count(),
         },
         representation_warning: RepresentationWarning {
-            forced_on_multi: forced.intersection(&multi_gold).count(),
+            eligible_multi_groups: raw_multi_groups.eligible.len(),
+            forced_touched_multi_groups: raw_multi_groups.touched_by(&forced).len(),
+            forced_gold_edges_in_multi_groups,
+            forced_false_positive_edges_incident_to_multi_groups: forced
+                .difference(&all_gold)
+                .filter(|relation| raw_multi_groups.is_incident(relation))
+                .count(),
         },
         unscored_predictions: UnscoredPredictionCounts {
             forced: forced_unscored.len(),
@@ -437,6 +553,142 @@ fn score_multiplicity_lane(
         forced_true_positives: forced.intersection(oracle).count(),
         forced_false_negatives: oracle.difference(forced).count(),
     }
+}
+
+struct PreparedRawMultiGroups {
+    eligible: BTreeSet<usize>,
+    before: BTreeMap<NodeKey, usize>,
+    after: BTreeMap<NodeKey, usize>,
+}
+
+impl PreparedRawMultiGroups {
+    fn new(
+        category: RelationCategory,
+        groups: &[RawMultiGroup],
+        oracle: &[OracleRelation],
+    ) -> Result<Self, EvaluationError> {
+        let mut ids = BTreeSet::new();
+        let mut before = BTreeMap::new();
+        let mut after = BTreeMap::new();
+        for group in groups {
+            if !ids.insert(group.id) {
+                return Err(EvaluationError::DuplicateRawMultiGroupId {
+                    category,
+                    group_id: group.id,
+                });
+            }
+            insert_raw_group_endpoints(
+                category,
+                UniverseSide::Before,
+                group.id,
+                &group.before_endpoints,
+                &mut before,
+            )?;
+            insert_raw_group_endpoints(
+                category,
+                UniverseSide::After,
+                group.id,
+                &group.after_endpoints,
+                &mut after,
+            )?;
+        }
+
+        let mut eligible = BTreeSet::new();
+        for (relation_index, oracle_relation) in oracle.iter().enumerate() {
+            let group_id = match (
+                oracle_relation.multiplicity,
+                oracle_relation.raw_multi_group_id,
+            ) {
+                (Multiplicity::Singleton, None) => {
+                    if before.contains_key(&oracle_relation.relation.before)
+                        || after.contains_key(&oracle_relation.relation.after)
+                    {
+                        return Err(EvaluationError::InvalidOracleMultiGroupAssignment {
+                            category,
+                            relation_index,
+                            multiplicity: oracle_relation.multiplicity,
+                            raw_multi_group_id: oracle_relation.raw_multi_group_id,
+                        });
+                    }
+                    continue;
+                }
+                (Multiplicity::Multi, Some(group_id)) if ids.contains(&group_id) => group_id,
+                _ => {
+                    return Err(EvaluationError::InvalidOracleMultiGroupAssignment {
+                        category,
+                        relation_index,
+                        multiplicity: oracle_relation.multiplicity,
+                        raw_multi_group_id: oracle_relation.raw_multi_group_id,
+                    });
+                }
+            };
+            if before.get(&oracle_relation.relation.before) != Some(&group_id)
+                || after.get(&oracle_relation.relation.after) != Some(&group_id)
+            {
+                return Err(EvaluationError::OracleRelationOutsideRawMultiGroup {
+                    category,
+                    relation_index,
+                    group_id,
+                    relation: Box::new(oracle_relation.relation.clone()),
+                });
+            }
+            eligible.insert(group_id);
+        }
+
+        Ok(Self {
+            eligible,
+            before,
+            after,
+        })
+    }
+
+    fn touched_by(&self, relations: &BTreeSet<NormalizedRelation>) -> BTreeSet<usize> {
+        let mut touched = BTreeSet::new();
+        for relation in relations {
+            if let Some(group_id) = self.before.get(&relation.before)
+                && self.eligible.contains(group_id)
+            {
+                touched.insert(*group_id);
+            }
+            if let Some(group_id) = self.after.get(&relation.after)
+                && self.eligible.contains(group_id)
+            {
+                touched.insert(*group_id);
+            }
+        }
+        touched
+    }
+
+    fn is_incident(&self, relation: &NormalizedRelation) -> bool {
+        self.before
+            .get(&relation.before)
+            .is_some_and(|group_id| self.eligible.contains(group_id))
+            || self
+                .after
+                .get(&relation.after)
+                .is_some_and(|group_id| self.eligible.contains(group_id))
+    }
+}
+
+fn insert_raw_group_endpoints(
+    category: RelationCategory,
+    side: UniverseSide,
+    group_id: usize,
+    endpoints: &[NodeKey],
+    groups_by_endpoint: &mut BTreeMap<NodeKey, usize>,
+) -> Result<(), EvaluationError> {
+    for endpoint in endpoints {
+        if let Some(first_group_id) = groups_by_endpoint.insert(endpoint.clone(), group_id) {
+            return Err(EvaluationError::RawMultiGroupEndpointConflict {
+                category,
+                side,
+                key: endpoint.clone(),
+                first_group_id,
+                second_group_id: group_id,
+            });
+        }
+    }
+    Ok(())
 }
 
 struct PreparedUniverse {

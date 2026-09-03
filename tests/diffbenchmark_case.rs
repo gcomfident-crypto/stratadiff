@@ -74,10 +74,20 @@ fn raw_multi_survives_when_its_partner_is_excluded() {
         adapted.oracle_relations.program_elements[0].multiplicity,
         Multiplicity::Multi
     );
+    assert_eq!(
+        adapted.oracle_relations.program_elements[0].raw_multi_group_id,
+        Some(0)
+    );
+    let groups = &adapted.oracle_relations.raw_multi_groups.program_elements;
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].id, 0);
+    assert_eq!(groups[0].before_endpoints.len(), 1);
+    assert_eq!(groups[0].after_endpoints.len(), 1);
     let coverage = &adapted.coverage.program_elements;
     assert_eq!(coverage.raw_relations, 2);
     assert_eq!(coverage.scorable_relations, 1);
     assert_eq!(coverage.excluded_relations, 1);
+    assert_eq!(coverage.exclusions[0].raw_group_id, Some(0));
     let RelationExclusionReason::EndpointFailures { failures } = &coverage.exclusions[0].reason
     else {
         panic!("expected endpoint failure");
@@ -87,6 +97,57 @@ fn raw_multi_survives_when_its_partner_is_excluded() {
     assert_eq!(
         failures[0].reason,
         EndpointExclusionReason::UnsupportedJdtKind
+    );
+}
+
+#[test]
+fn raw_component_is_not_split_by_a_role_mismatch_exclusion() {
+    let source = "class A { int x = 1; int y = 2; }";
+    let x = utf16_range(source, "x");
+    let one = utf16_range(source, "1");
+    let two = utf16_range(source, "2");
+    let god = report(
+        vec![
+            record(info("SimpleName", x, "SimpleName", x)),
+            record(info("SimpleName", x, "NumberLiteral", two)),
+            record(info("NumberLiteral", one, "NumberLiteral", two)),
+        ],
+        Vec::new(),
+    );
+
+    let adapted = adapt_intra_file_case(
+        "old/A.java",
+        "new/A.java",
+        source.as_bytes(),
+        source.as_bytes(),
+        &god,
+    )
+    .unwrap();
+
+    let relations = &adapted.oracle_relations.program_elements;
+    assert_eq!(relations.len(), 2);
+    assert!(
+        relations
+            .iter()
+            .all(|relation| relation.multiplicity == Multiplicity::Multi)
+    );
+    assert!(
+        relations
+            .iter()
+            .all(|relation| relation.raw_multi_group_id == Some(0))
+    );
+    let groups = &adapted.oracle_relations.raw_multi_groups.program_elements;
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].id, 0);
+    assert_eq!(groups[0].before_endpoints.len(), 2);
+    assert_eq!(groups[0].after_endpoints.len(), 2);
+    assert!(matches!(
+        adapted.coverage.program_elements.exclusions[0].reason,
+        RelationExclusionReason::RoleMismatch { .. }
+    ));
+    assert_eq!(
+        adapted.coverage.program_elements.exclusions[0].raw_group_id,
+        Some(0)
     );
 }
 
@@ -216,6 +277,10 @@ fn multiplicity_and_duplicates_are_isolated_by_category() {
         Multiplicity::Singleton
     );
     assert_eq!(
+        adapted.oracle_relations.program_elements[0].raw_multi_group_id,
+        None
+    );
+    assert_eq!(
         adapted.oracle_relations.mappings[0].multiplicity,
         Multiplicity::Singleton
     );
@@ -295,6 +360,7 @@ fn malformed_info_and_unresolved_span_have_explicit_diagnostics() {
         exclusions[0].reason,
         RelationExclusionReason::InfoParseError { .. }
     ));
+    assert_eq!(exclusions[0].raw_group_id, None);
     let RelationExclusionReason::EndpointFailures { failures } = &exclusions[1].reason else {
         panic!("expected endpoint failure");
     };

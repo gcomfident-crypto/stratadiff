@@ -61,11 +61,11 @@ fn materializes_unique_joins_renames_and_verified_digests() {
         blake3::hash(&fs::read(oracle).unwrap()).to_hex().as_str()
     );
     assert_eq!(
-        fs::read(fixture.output.join("sources/0000/before.java")).unwrap(),
+        fs::read(fixture.output.join("sources/0000/before.source")).unwrap(),
         BEFORE_BYTES
     );
     assert_eq!(
-        fs::read(fixture.output.join("sources/0000/after.java")).unwrap(),
+        fs::read(fixture.output.join("sources/0000/after.source")).unwrap(),
         AFTER_BYTES
     );
     assert_eq!(
@@ -74,13 +74,13 @@ fn materializes_unique_joins_renames_and_verified_digests() {
     );
 
     let calls_after_first = fixture.gh_call_count();
-    let missing_after = fixture.output.join("sources/0000/after.java");
+    let missing_after = fixture.output.join("sources/0000/after.source");
     fs::remove_file(&missing_after).unwrap();
     let recovered = fixture.run_with_repository_map(Some(&repository_map), true);
     assert!(recovered.status.success());
     assert_eq!(recovered.stdout, first.stdout);
     assert_eq!(fs::read(missing_after).unwrap(), AFTER_BYTES);
-    assert_eq!(fixture.gh_call_count(), calls_after_first + 5);
+    assert_eq!(fixture.gh_call_count(), calls_after_first + 1);
 
     let calls_after_recovery = fixture.gh_call_count();
     let resumed = fixture.run_with_repository_map(Some(&repository_map), true);
@@ -88,7 +88,7 @@ fn materializes_unique_joins_renames_and_verified_digests() {
     assert_eq!(resumed.stdout, first.stdout);
     assert_eq!(fixture.gh_call_count(), calls_after_recovery);
 
-    let before_path = fixture.output.join("sources/0000/before.java");
+    let before_path = fixture.output.join("sources/0000/before.source");
     fs::write(&before_path, b"tampered\n").unwrap();
     let rejected = fixture.run_with_repository_map(Some(&repository_map), true);
     assert!(!rejected.status.success());
@@ -312,7 +312,7 @@ impl MaterializeFixture {
         write_executable(
             &command_directory.join("git"),
             &format!(
-                "#!/bin/sh\nset -eu\ntest \"$1\" = -C\ntest \"$3\" = rev-parse\ntest \"$4\" = --verify\ntest \"$5\" = 'HEAD^{{commit}}'\nprintf '%s\\n' '{revision}'\n"
+                "#!/bin/sh\nset -eu\ntest \"$1\" = --no-replace-objects\nshift\ntest \"$1\" = -c\ntest \"$2\" = core.sshCommand=ssh\nshift 2\ntest \"$1\" = -C\ntest \"$3\" = rev-parse\ntest \"$4\" = --verify\ntest \"$5\" = 'HEAD^{{commit}}'\nprintf '%s\\n' '{revision}'\n"
             ),
         );
         write_executable(
