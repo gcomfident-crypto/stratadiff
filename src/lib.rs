@@ -1,4 +1,5 @@
 pub mod diffbenchmark;
+pub mod diffbenchmark_eval;
 mod language;
 mod matcher;
 mod model;

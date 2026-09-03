@@ -2,8 +2,52 @@ use stratadiff::diffbenchmark::{
     ComparableNode, GodReport, JdtOracleMapping, JdtOracleNode, OffsetRange, OracleMapping,
     OracleNode, SharedNodeRole, comparable_tree_sitter_java_nodes, jdt_node_role,
     normalize_oracle_mapping, parse_god_info, parse_god_report, parse_oracle_mapping,
-    resolve_jdt_node, tree_sitter_java_node_role, utf16_offset_to_byte_offset,
+    resolve_jdt_node, tree_sitter_java_node_role, tree_sitter_java_node_roles,
+    utf16_offset_to_byte_offset,
 };
+
+fn assert_resolves_fragment(
+    source: &str,
+    candidates: &[ComparableNode],
+    node_type: &str,
+    fragment: &str,
+) {
+    let start = source
+        .find(fragment)
+        .unwrap_or_else(|| panic!("missing source fragment {fragment:?}"));
+    assert_resolves_range(
+        source,
+        candidates,
+        node_type,
+        OffsetRange {
+            start,
+            end: start + fragment.len(),
+        },
+    );
+}
+
+fn assert_resolves_range(
+    source: &str,
+    candidates: &[ComparableNode],
+    node_type: &str,
+    utf8_bytes: OffsetRange,
+) {
+    let oracle = JdtOracleNode {
+        node_type: node_type.to_owned(),
+        utf16_code_units: OffsetRange {
+            start: source[..utf8_bytes.start].encode_utf16().count(),
+            end: source[..utf8_bytes.end].encode_utf16().count(),
+        },
+    };
+    assert_eq!(
+        resolve_jdt_node(&oracle, source, candidates).unwrap(),
+        Some(ComparableNode {
+            role: jdt_node_role(node_type).unwrap(),
+            utf8_bytes,
+        }),
+        "failed to resolve {node_type}"
+    );
+}
 
 #[test]
 fn parses_the_complete_god_report_shape() {
@@ -183,6 +227,85 @@ fn jdt_and_tree_sitter_types_share_explicit_roles() {
             "yield_statement",
             SharedNodeRole::YieldStatement,
         ),
+        (
+            "SingleVariableDeclaration",
+            "formal_parameter",
+            SharedNodeRole::SingleVariableDeclaration,
+        ),
+        (
+            "MarkerAnnotation",
+            "marker_annotation",
+            SharedNodeRole::MarkerAnnotation,
+        ),
+        ("SwitchCase", "switch_label", SharedNodeRole::SwitchCase),
+        (
+            "TypeParameter",
+            "type_parameter",
+            SharedNodeRole::TypeParameter,
+        ),
+        (
+            "VariableDeclarationFragment",
+            "variable_declarator",
+            SharedNodeRole::VariableDeclarationFragment,
+        ),
+        (
+            "MethodInvocation",
+            "method_invocation",
+            SharedNodeRole::MethodInvocation,
+        ),
+        ("ArrayAccess", "array_access", SharedNodeRole::ArrayAccess),
+        (
+            "ArrayCreation",
+            "array_creation_expression",
+            SharedNodeRole::ArrayCreation,
+        ),
+        (
+            "CastExpression",
+            "cast_expression",
+            SharedNodeRole::CastExpression,
+        ),
+        (
+            "ClassInstanceCreation",
+            "object_creation_expression",
+            SharedNodeRole::ClassInstanceCreation,
+        ),
+        (
+            "ConditionalExpression",
+            "ternary_expression",
+            SharedNodeRole::ConditionalExpression,
+        ),
+        (
+            "InfixExpression",
+            "binary_expression",
+            SharedNodeRole::InfixExpression,
+        ),
+        (
+            "InstanceofExpression",
+            "instanceof_expression",
+            SharedNodeRole::InstanceofExpression,
+        ),
+        (
+            "ParenthesizedExpression",
+            "parenthesized_expression",
+            SharedNodeRole::ParenthesizedExpression,
+        ),
+        (
+            "PrefixExpression",
+            "unary_expression",
+            SharedNodeRole::PrefixExpression,
+        ),
+        ("ThisExpression", "this", SharedNodeRole::ThisExpression),
+        ("LineComment", "line_comment", SharedNodeRole::LineComment),
+        (
+            "BlockComment",
+            "block_comment",
+            SharedNodeRole::BlockComment,
+        ),
+        (
+            "QualifiedName",
+            "scoped_identifier",
+            SharedNodeRole::QualifiedAccess,
+        ),
         ("SimpleName", "identifier", SharedNodeRole::SimpleName),
         (
             "PrimitiveType",
@@ -236,6 +359,19 @@ fn parser_specific_aliases_map_only_to_their_declared_roles() {
         ),
         ("SwitchExpression", SharedNodeRole::SwitchConstruct),
         ("TextBlock", SharedNodeRole::StringLiteral),
+        ("FieldAccess", SharedNodeRole::QualifiedAccess),
+        (
+            "INFIX_EXPRESSION_OPERATOR",
+            SharedNodeRole::InfixExpressionOperator,
+        ),
+        (
+            "METHOD_INVOCATION_ARGUMENTS",
+            SharedNodeRole::MethodInvocationArguments,
+        ),
+        (
+            "METHOD_INVOCATION_RECEIVER",
+            SharedNodeRole::MethodInvocationReceiver,
+        ),
     ];
     let tree_sitter_aliases = [
         ("constructor_declaration", SharedNodeRole::MethodDeclaration),
@@ -273,6 +409,19 @@ fn parser_specific_aliases_map_only_to_their_declared_roles() {
             SharedNodeRole::NumberLiteral,
         ),
         ("hex_floating_point_literal", SharedNodeRole::NumberLiteral),
+        (
+            "catch_formal_parameter",
+            SharedNodeRole::SingleVariableDeclaration,
+        ),
+        (
+            "spread_parameter",
+            SharedNodeRole::SingleVariableDeclaration,
+        ),
+        (
+            "receiver_parameter",
+            SharedNodeRole::SingleVariableDeclaration,
+        ),
+        ("field_access", SharedNodeRole::QualifiedAccess),
     ];
 
     for (node_type, expected) in jdt_aliases {
@@ -284,11 +433,31 @@ fn parser_specific_aliases_map_only_to_their_declared_roles() {
 }
 
 #[test]
+fn annotation_kinds_expose_both_contextual_roles() {
+    assert_eq!(
+        tree_sitter_java_node_roles("annotation"),
+        [
+            SharedNodeRole::NormalAnnotation,
+            SharedNodeRole::SingleMemberAnnotation,
+        ]
+    );
+    assert_eq!(tree_sitter_java_node_role("annotation"), None);
+    assert_eq!(
+        jdt_node_role("NormalAnnotation"),
+        Some(SharedNodeRole::NormalAnnotation)
+    );
+    assert_eq!(
+        jdt_node_role("SingleMemberAnnotation"),
+        Some(SharedNodeRole::SingleMemberAnnotation)
+    );
+}
+
+#[test]
 fn unsupported_types_are_not_guessed_from_spelling() {
     for node_type in [
-        "MethodInvocation",
-        "InfixExpression",
-        "QualifiedName",
+        "LambdaExpression",
+        "PostfixExpression",
+        "SuperFieldAccess",
         "SomeMethodDeclaration",
         "method_declaration",
         "",
@@ -296,9 +465,12 @@ fn unsupported_types_are_not_guessed_from_spelling() {
         assert_eq!(jdt_node_role(node_type), None, "JDT type {node_type}");
     }
     for node_type in [
-        "method_invocation",
-        "binary_expression",
-        "scoped_identifier",
+        "lambda_expression",
+        "update_expression",
+        "scoped_type_identifier",
+        "annotation",
+        "argument_list",
+        "+",
         "modifiers",
         "enum",
         "record",
@@ -351,6 +523,75 @@ fn keyword_roles_are_backed_by_grammar_tokens_not_the_modifiers_container() {
             .any(|entry| entry["type"] == "modifiers" && entry["named"] == true)
     );
     assert_eq!(tree_sitter_java_node_role("modifiers"), None);
+}
+
+#[test]
+fn expanded_roles_are_backed_by_tree_sitter_java_node_types() {
+    let node_types: Vec<serde_json::Value> =
+        serde_json::from_str(tree_sitter_java::NODE_TYPES).unwrap();
+    let named_types = [
+        "formal_parameter",
+        "catch_formal_parameter",
+        "spread_parameter",
+        "receiver_parameter",
+        "marker_annotation",
+        "annotation",
+        "switch_label",
+        "type_parameter",
+        "variable_declarator",
+        "method_invocation",
+        "array_access",
+        "array_creation_expression",
+        "cast_expression",
+        "object_creation_expression",
+        "ternary_expression",
+        "binary_expression",
+        "instanceof_expression",
+        "parenthesized_expression",
+        "unary_expression",
+        "this",
+        "line_comment",
+        "block_comment",
+        "scoped_identifier",
+        "field_access",
+        "argument_list",
+    ];
+
+    for node_type in named_types {
+        assert!(
+            node_types
+                .iter()
+                .any(|entry| entry["type"] == node_type && entry["named"] == true),
+            "tree-sitter-java grammar does not declare named node {node_type}"
+        );
+    }
+
+    let binary_expression = node_types
+        .iter()
+        .find(|entry| entry["type"] == "binary_expression" && entry["named"] == true)
+        .unwrap();
+    assert!(
+        binary_expression["fields"]["operator"]["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|entry| entry["type"] == "+" && entry["named"] == false)
+    );
+    assert!(
+        node_types
+            .iter()
+            .any(|entry| entry["type"] == ";" && entry["named"] == false)
+    );
+
+    let invocation = node_types
+        .iter()
+        .find(|entry| entry["type"] == "method_invocation" && entry["named"] == true)
+        .unwrap();
+    assert_eq!(
+        invocation["fields"]["arguments"]["types"][0]["type"],
+        "argument_list"
+    );
+    assert!(invocation["fields"]["object"]["required"] == false);
 }
 
 #[test]
@@ -478,11 +719,11 @@ fn normalized_mapping_has_a_stable_serialized_shape() {
 
 #[test]
 fn normalization_rejects_unsupported_jdt_types() {
-    let error = parse_oracle_mapping("MethodInvocation[0-1]:SimpleName[0-1]", "x", "x")
+    let error = parse_oracle_mapping("LambdaExpression[0-1]:SimpleName[0-1]", "x", "x")
         .unwrap_err()
         .to_string();
 
-    assert!(error.contains("unsupported DiffBenchmark before JDT node type MethodInvocation"));
+    assert!(error.contains("unsupported DiffBenchmark before JDT node type LambdaExpression"));
 }
 
 #[test]
@@ -529,6 +770,186 @@ fn declaration_resolution_removes_only_leading_java_trivia() {
             },
         })
     );
+}
+
+#[test]
+fn declaration_resolution_never_strips_non_javadoc_trivia() {
+    let source = "// line\n/* block */\npublic class Demo {}";
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+    let class = JdtOracleNode {
+        node_type: "TypeDeclaration".to_owned(),
+        utf16_code_units: OffsetRange {
+            start: 0,
+            end: source.len(),
+        },
+    };
+
+    assert_eq!(resolve_jdt_node(&class, source, &nodes).unwrap(), None);
+
+    let whitespace_source = "  public class Demo {}";
+    let whitespace_nodes = comparable_tree_sitter_java_nodes(whitespace_source.as_bytes()).unwrap();
+    let whitespace_class = JdtOracleNode {
+        node_type: "TypeDeclaration".to_owned(),
+        utf16_code_units: OffsetRange {
+            start: 0,
+            end: whitespace_source.len(),
+        },
+    };
+    assert_eq!(
+        resolve_jdt_node(&whitespace_class, whitespace_source, &whitespace_nodes).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn expanded_taxonomy_resolves_exact_grammar_nodes() {
+    let source = r#"import java.util.List;
+/* block comment */
+// line comment
+@Marker
+@Normal(key = "value")
+@Single("value")
+class Demo<Type> {
+    Object field;
+    void receive(Demo this) {}
+    void run(String formal, String... spread) {
+        try {} catch (Exception caught) {}
+        int fragment = 1;
+        serviceReceiver.call(firstArgument, secondArgument);
+        Object access = array[index];
+        Object madeArray = new int[1];
+        Object cast = (String) value;
+        Object made = new Demo();
+        Object conditional = flag ? first : second;
+        ;
+        Object infix = leftOperand != rightOperand;
+        boolean checked = value instanceof String;
+        Object grouped = (groupedValue);
+        boolean negated = !flag;
+        ++prefixCounter;
+        postfixCounter++;
+        Object qualified = packageName.member;
+        Object fieldAccess = this.field;
+        switch (fragment) {
+            case 1:
+                break;
+            default:
+                break;
+        }
+    }
+}
+"#;
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+
+    for (node_type, fragment) in [
+        ("QualifiedName", "java.util.List"),
+        ("BlockComment", "/* block comment */"),
+        ("LineComment", "// line comment"),
+        ("MarkerAnnotation", "@Marker"),
+        ("NormalAnnotation", "@Normal(key = \"value\")"),
+        ("SingleMemberAnnotation", "@Single(\"value\")"),
+        ("TypeParameter", "Type"),
+        ("SingleVariableDeclaration", "String formal"),
+        ("SingleVariableDeclaration", "String... spread"),
+        ("SingleVariableDeclaration", "Exception caught"),
+        ("VariableDeclarationFragment", "fragment = 1"),
+        (
+            "MethodInvocation",
+            "serviceReceiver.call(firstArgument, secondArgument)",
+        ),
+        ("ArrayAccess", "array[index]"),
+        ("ArrayCreation", "new int[1]"),
+        ("CastExpression", "(String) value"),
+        ("ClassInstanceCreation", "new Demo()"),
+        ("ConditionalExpression", "flag ? first : second"),
+        ("InfixExpression", "leftOperand != rightOperand"),
+        ("InstanceofExpression", "value instanceof String"),
+        ("ParenthesizedExpression", "(groupedValue)"),
+        ("PrefixExpression", "!flag"),
+        ("PrefixExpression", "++prefixCounter"),
+        ("FieldAccess", "this.field"),
+        ("SwitchCase", "case 1:"),
+    ] {
+        assert_resolves_fragment(source, &nodes, node_type, fragment);
+    }
+
+    assert_resolves_fragment(source, &nodes, "SingleVariableDeclaration", "Demo this");
+    let empty_start = source.find("        ;\n").unwrap() + "        ".len();
+    assert_resolves_range(
+        source,
+        &nodes,
+        "EmptyStatement",
+        OffsetRange {
+            start: empty_start,
+            end: empty_start + 1,
+        },
+    );
+    let this_start = source.find("this.field").unwrap();
+    assert_resolves_range(
+        source,
+        &nodes,
+        "ThisExpression",
+        OffsetRange {
+            start: this_start,
+            end: this_start + "this".len(),
+        },
+    );
+    let postfix_start = source.find("postfixCounter++").unwrap();
+    let postfix = JdtOracleNode {
+        node_type: "PrefixExpression".to_owned(),
+        utf16_code_units: OffsetRange {
+            start: postfix_start,
+            end: postfix_start + "postfixCounter++".len(),
+        },
+    };
+    assert_eq!(resolve_jdt_node(&postfix, source, &nodes).unwrap(), None);
+}
+
+#[test]
+fn synthetic_roles_require_exact_tree_sitter_field_context() {
+    let source = "class Demo extends Base { void run() { service.call(first, second); super.call(superArgument); boolean same = left == right; } }";
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+
+    assert_resolves_fragment(source, &nodes, "METHOD_INVOCATION_RECEIVER", "service");
+    assert_resolves_fragment(
+        source,
+        &nodes,
+        "METHOD_INVOCATION_ARGUMENTS",
+        "first, second",
+    );
+    assert_resolves_fragment(source, &nodes, "INFIX_EXPRESSION_OPERATOR", "==");
+
+    let receiver_start = source.find("service").unwrap();
+    assert!(nodes.contains(&ComparableNode {
+        role: SharedNodeRole::SimpleName,
+        utf8_bytes: OffsetRange {
+            start: receiver_start,
+            end: receiver_start + "service".len(),
+        },
+    }));
+    assert_eq!(tree_sitter_java_node_role("argument_list"), None);
+    assert_eq!(tree_sitter_java_node_role("=="), None);
+
+    let super_call_start = source.find("super.call(superArgument)").unwrap();
+    for node_type in ["MethodInvocation", "METHOD_INVOCATION_ARGUMENTS"] {
+        let range = if node_type == "MethodInvocation" {
+            OffsetRange {
+                start: super_call_start,
+                end: super_call_start + "super.call(superArgument)".len(),
+            }
+        } else {
+            let start = source.find("superArgument").unwrap();
+            OffsetRange {
+                start,
+                end: start + "superArgument".len(),
+            }
+        };
+        let oracle = JdtOracleNode {
+            node_type: node_type.to_owned(),
+            utf16_code_units: range,
+        };
+        assert_eq!(resolve_jdt_node(&oracle, source, &nodes).unwrap(), None);
+    }
 }
 
 #[test]
