@@ -63,12 +63,51 @@ pub struct Relation {
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+/// One explicitly supported edge in an exact ambiguity constraint.
+pub struct AmbiguityPair {
+    pub before_id: usize,
+    pub after_id: usize,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AmbiguityAbstentionCause {
+    DuplicateSymmetry,
+    ComponentLimit,
+    CandidateScanLimit,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PairClaims {
+    None,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AmbiguityConstraint {
+    /// A resolution selects exactly `required_matches` listed pairs, uses each endpoint at most
+    /// once, and preserves the order of the enclosing `before` and `after` endpoint arrays.
+    ExactOrderedAlignment {
+        predicate: Predicate,
+        required_matches: usize,
+        possible_pairs: Vec<AmbiguityPair>,
+    },
+    /// The endpoint arrays define only the abstention scope and make no pairwise claims.
+    SymbolicAbstention {
+        cause: AmbiguityAbstentionCause,
+        pair_claims: PairClaims,
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct AmbiguityGroup {
     pub parent_before: usize,
     pub parent_after: usize,
-    pub predicate: Predicate,
     pub before: Vec<NodeRef>,
     pub after: Vec<NodeRef>,
+    pub constraint: AmbiguityConstraint,
     pub reason: String,
 }
 

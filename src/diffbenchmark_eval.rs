@@ -125,7 +125,9 @@ pub struct OracleRelations {
     pub raw_multi_groups: CategoryRawMultiGroups,
 }
 
-/// Predictions distinguish asserted relations from explicitly uncertain candidate relations.
+/// Predictions distinguish asserted relations from the union of individually possible ambiguity
+/// edges. `ambiguity_candidates` is a relation-level coverage projection for scoring; it is not a
+/// jointly selectable mapping and does not replace the source report's coupling constraints.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PredictionRelations {

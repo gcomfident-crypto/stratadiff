@@ -16,9 +16,10 @@ use anyhow::{Context, Result, bail};
 
 pub use language::Language;
 pub use model::{
-    AmbiguityGroup, Artifact, ByteEdit, ChangeKind, Correspondence, DiffReport, LosslessPatch,
-    NodeRef, ParserManifest, Position, Predicate, Relation, ReplayCertificate, Span,
-    StructuralChange, Summary,
+    AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact,
+    ByteEdit, ChangeKind, Correspondence, DiffReport, LosslessPatch, NodeRef, PairClaims,
+    ParserManifest, Position, Predicate, Relation, ReplayCertificate, Span, StructuralChange,
+    Summary,
 };
 pub use patch::apply_patch;
 

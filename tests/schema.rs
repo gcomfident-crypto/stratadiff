@@ -1,31 +1,54 @@
 use serde::Serialize;
-use stratadiff::{ChangeKind, Correspondence, DiffReport, Language, Predicate, analyze_bytes};
+use stratadiff::{
+    AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
+    Language, Predicate, analyze_bytes,
+};
 
 #[test]
 fn emitted_report_conforms_to_the_published_schema() {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schema/report-v1.schema.json")).unwrap();
+        serde_json::from_str(include_str!("../schema/report-v2.schema.json")).unwrap();
     let validator = jsonschema::draft202012::new(&schema).unwrap();
-    let report = analyze_bytes(
-        b"def value():\n    return 1\n".to_vec(),
-        b"def value():\n    return 2\n".to_vec(),
-        "before.py".to_owned(),
-        "after.py".to_owned(),
-        Language::Python,
-    )
-    .unwrap();
-    let instance = serde_json::to_value(report).unwrap();
-    let errors: Vec<_> = validator
-        .iter_errors(&instance)
-        .map(|error| error.to_string())
-        .collect();
-    assert!(errors.is_empty(), "schema errors: {errors:#?}");
+    let reports = [
+        analyze_bytes(
+            b"def value():\n    return 1\n".to_vec(),
+            b"def value():\n    return 2\n".to_vec(),
+            "before.py".to_owned(),
+            "after.py".to_owned(),
+            Language::Python,
+        )
+        .unwrap(),
+        analyze_bytes(
+            b"def add_old(value):\n    return value + 1\n\ndef multiply_old(value):\n    return value * 2\n".to_vec(),
+            b"def multiply_new(item):\n    return item * 3\n\ndef add_new(item):\n    return item + 4\n".to_vec(),
+            "before.py".to_owned(),
+            "after.py".to_owned(),
+            Language::Python,
+        )
+        .unwrap(),
+        analyze_bytes(
+            b"def same():\n    return 1\n\ndef same():\n    return 1\n".to_vec(),
+            b"def same():\n    return 1\n\ndef same():\n    return 1\n".to_vec(),
+            "before.py".to_owned(),
+            "after.py".to_owned(),
+            Language::Python,
+        )
+        .unwrap(),
+    ];
+    for report in reports {
+        let instance = serde_json::to_value(report).unwrap();
+        let errors: Vec<_> = validator
+            .iter_errors(&instance)
+            .map(|error| error.to_string())
+            .collect();
+        assert!(errors.is_empty(), "schema errors: {errors:#?}");
+    }
 }
 
 #[test]
 fn schema_enums_track_every_serialized_public_variant() {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schema/report-v1.schema.json")).unwrap();
+        serde_json::from_str(include_str!("../schema/report-v2.schema.json")).unwrap();
     assert_enum(
         &schema["$defs"]["predicate"]["enum"],
         &[
@@ -65,6 +88,14 @@ fn schema_enums_track_every_serialized_public_variant() {
             Language::Rust,
             Language::Java,
             Language::Json,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["symbolic_abstention"]["properties"]["cause"]["enum"],
+        &[
+            AmbiguityAbstentionCause::DuplicateSymmetry,
+            AmbiguityAbstentionCause::ComponentLimit,
+            AmbiguityAbstentionCause::CandidateScanLimit,
         ],
     );
 }
@@ -152,6 +183,7 @@ fn every_report_object_rejects_unknown_fields_during_deserialization() {
         "/relations/0/before/span",
         "/relations/0/before/span/start",
         "/ambiguities/0",
+        "/ambiguities/0/constraint",
         "/changes/0",
         "/patch",
         "/patch/edits/0",
@@ -174,6 +206,53 @@ fn every_report_object_rejects_unknown_fields_during_deserialization() {
             "unknown field was accepted at {pointer}"
         );
     }
+
+    let exact = analyze_bytes(
+        b"def add_old(value):\n    return value + 1\n\ndef multiply_old(value):\n    return value * 2\n".to_vec(),
+        b"def multiply_new(item):\n    return item * 3\n\ndef add_new(item):\n    return item + 4\n".to_vec(),
+        "before.py".to_owned(),
+        "after.py".to_owned(),
+        Language::Python,
+    )
+    .unwrap();
+    let exact_index = exact
+        .ambiguities
+        .iter()
+        .position(|group| {
+            matches!(
+                group.constraint,
+                AmbiguityConstraint::ExactOrderedAlignment { .. }
+            )
+        })
+        .unwrap();
+    let mut encoded = serde_json::to_value(exact).unwrap();
+    encoded["ambiguities"][exact_index]["constraint"]["possible_pairs"][0]["unexpected"] =
+        serde_json::Value::Bool(true);
+    assert!(serde_json::from_value::<DiffReport>(encoded).is_err());
+}
+
+#[test]
+fn legacy_v1_ambiguity_sets_fail_closed_instead_of_inventing_pairs() {
+    let source = b"def same():\n    return 1\n\ndef same():\n    return 1\n";
+    let report = analyze_bytes(
+        source.to_vec(),
+        source.to_vec(),
+        "before.py".to_owned(),
+        "after.py".to_owned(),
+        Language::Python,
+    )
+    .unwrap();
+    let mut encoded = serde_json::to_value(report).unwrap();
+    encoded["schema"] = serde_json::Value::String(
+        "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json"
+            .to_owned(),
+    );
+    encoded["ambiguities"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("constraint");
+
+    assert!(serde_json::from_value::<DiffReport>(encoded).is_err());
 }
 
 fn assert_enum<T: Serialize>(schema_values: &serde_json::Value, expected: &[T]) {

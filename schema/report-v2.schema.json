@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json",
+  "title": "StrataDiff report v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "engine_version",
+    "before",
+    "after",
+    "parser",
+    "relations",
+    "ambiguities",
+    "changes",
+    "patch",
+    "certificate",
+    "summary"
+  ],
+  "properties": {
+    "schema": { "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json" },
+    "engine_version": { "type": "string" },
+    "before": { "$ref": "#/$defs/artifact" },
+    "after": { "$ref": "#/$defs/artifact" },
+    "parser": { "$ref": "#/$defs/parser" },
+    "relations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/relation" }
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ambiguity" }
+    },
+    "changes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/change" }
+    },
+    "patch": { "$ref": "#/$defs/patch" },
+    "certificate": { "$ref": "#/$defs/certificate" },
+    "summary": { "$ref": "#/$defs/summary" }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "byte_len", "blake3"],
+      "properties": {
+        "path": { "type": "string" },
+        "byte_len": { "type": "integer", "minimum": 0 },
+        "blake3": { "$ref": "#/$defs/blake3" }
+      }
+    },
+    "parser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "runtime_version",
+        "language",
+        "grammar_name",
+        "grammar_version",
+        "grammar_abi",
+        "node_types_blake3",
+        "coordinate_unit",
+        "root_kind",
+        "before_nodes",
+        "after_nodes",
+        "error_free"
+      ],
+      "properties": {
+        "engine": { "const": "tree-sitter" },
+        "runtime_version": { "type": "string" },
+        "language": {
+          "enum": ["python", "javascript", "typescript", "tsx", "rust", "java", "json"]
+        },
+        "grammar_name": { "type": "string" },
+        "grammar_version": { "type": "string" },
+        "grammar_abi": { "type": "integer", "minimum": 0 },
+        "node_types_blake3": { "$ref": "#/$defs/blake3" },
+        "coordinate_unit": { "const": "zero_based_row_utf8_byte_column" },
+        "root_kind": { "type": "string" },
+        "before_nodes": { "type": "integer", "minimum": 1 },
+        "after_nodes": { "type": "integer", "minimum": 1 },
+        "error_free": { "const": true }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row", "column"],
+      "properties": {
+        "row": { "type": "integer", "minimum": 0 },
+        "column": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start_byte", "end_byte", "start", "end"],
+      "properties": {
+        "start_byte": { "type": "integer", "minimum": 0 },
+        "end_byte": { "type": "integer", "minimum": 0 },
+        "start": { "$ref": "#/$defs/position" },
+        "end": { "$ref": "#/$defs/position" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "named",
+        "extra",
+        "missing",
+        "span",
+        "subtree_size",
+        "syntax_hash",
+        "shape_hash"
+      ],
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "kind": { "type": "string" },
+        "named": { "type": "boolean" },
+        "extra": { "type": "boolean" },
+        "missing": { "type": "boolean" },
+        "field": { "type": "string" },
+        "span": { "$ref": "#/$defs/span" },
+        "subtree_size": { "type": "integer", "minimum": 1 },
+        "syntax_hash": { "$ref": "#/$defs/blake3" },
+        "shape_hash": { "$ref": "#/$defs/blake3" }
+      }
+    },
+    "predicate": {
+      "enum": ["input_pair", "byte_equal", "syntax_equal", "shape_equal"]
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before", "after", "predicate", "correspondence", "evidence"],
+      "properties": {
+        "before": { "$ref": "#/$defs/node" },
+        "after": { "$ref": "#/$defs/node" },
+        "predicate": { "$ref": "#/$defs/predicate" },
+        "correspondence": { "enum": ["input_pair", "model_forced", "suggested"] },
+        "evidence": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ambiguity_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["before_id", "after_id"],
+      "properties": {
+        "before_id": { "type": "integer", "minimum": 0 },
+        "after_id": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "exact_ordered_alignment": {
+      "description": "A valid resolution selects exactly required_matches possible_pairs, uses every endpoint at most once, and preserves the orders of the enclosing before and after arrays.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "predicate", "required_matches", "possible_pairs"],
+      "properties": {
+        "kind": { "const": "exact_ordered_alignment" },
+        "predicate": { "$ref": "#/$defs/predicate" },
+        "required_matches": { "type": "integer", "minimum": 1 },
+        "possible_pairs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ambiguity_pair" },
+          "minItems": 2,
+          "uniqueItems": true
+        }
+      }
+    },
+    "symbolic_abstention": {
+      "description": "The endpoint sets describe the abstention scope only. They make no pairwise correspondence claims.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "cause", "pair_claims"],
+      "properties": {
+        "kind": { "const": "symbolic_abstention" },
+        "cause": {
+          "enum": ["duplicate_symmetry", "component_limit", "candidate_scan_limit"]
+        },
+        "pair_claims": { "const": "none" }
+      }
+    },
+    "ambiguity_constraint": {
+      "oneOf": [
+        { "$ref": "#/$defs/exact_ordered_alignment" },
+        { "$ref": "#/$defs/symbolic_abstention" }
+      ]
+    },
+    "ambiguity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parent_before",
+        "parent_after",
+        "before",
+        "after",
+        "constraint",
+        "reason"
+      ],
+      "properties": {
+        "parent_before": { "type": "integer", "minimum": 0 },
+        "parent_after": { "type": "integer", "minimum": 0 },
+        "before": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/node" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "after": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/node" },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "constraint": { "$ref": "#/$defs/ambiguity_constraint" },
+        "reason": { "type": "string" }
+      }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "detail"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "insert",
+            "delete",
+            "equivalent_relocation",
+            "child_order_changed",
+            "model_forced_update",
+            "suggested_update",
+            "formatting_only"
+          ]
+        },
+        "before": { "$ref": "#/$defs/node" },
+        "after": { "$ref": "#/$defs/node" },
+        "detail": { "type": "string" }
+      }
+    },
+    "edit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["old_start", "old_end", "replacement_base64"],
+      "properties": {
+        "old_start": { "type": "integer", "minimum": 0 },
+        "old_end": { "type": "integer", "minimum": 0 },
+        "replacement_base64": { "type": "string", "contentEncoding": "base64" }
+      }
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "edits"],
+      "properties": {
+        "algorithm": { "const": "patience-lines+bounded-myers-bytes-v1" },
+        "edits": { "type": "array", "items": { "$ref": "#/$defs/edit" } }
+      }
+    },
+    "certificate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before_blake3",
+        "after_blake3",
+        "reconstructed_blake3",
+        "before_len",
+        "after_len",
+        "patch_verified"
+      ],
+      "properties": {
+        "before_blake3": { "$ref": "#/$defs/blake3" },
+        "after_blake3": { "$ref": "#/$defs/blake3" },
+        "reconstructed_blake3": { "$ref": "#/$defs/blake3" },
+        "before_len": { "type": "integer", "minimum": 0 },
+        "after_len": { "type": "integer", "minimum": 0 },
+        "patch_verified": { "const": true }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_forced_relations",
+        "suggested_relations",
+        "ambiguity_groups",
+        "structural_changes"
+      ],
+      "properties": {
+        "model_forced_relations": { "type": "integer", "minimum": 0 },
+        "suggested_relations": { "type": "integer", "minimum": 0 },
+        "ambiguity_groups": { "type": "integer", "minimum": 0 },
+        "structural_changes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "blake3": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

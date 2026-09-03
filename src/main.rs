@@ -1,8 +1,12 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use stratadiff::{DiffReport, Language, analyze_files, apply_patch, verify_report};
+use stratadiff::{
+    AmbiguityConstraint, DiffReport, Language, analyze_files, apply_patch, verify_report,
+};
+
+const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff")]
@@ -70,10 +74,7 @@ fn main() -> Result<()> {
             before,
             after,
         } => {
-            let report: DiffReport = serde_json::from_slice(
-                &std::fs::read(&report)
-                    .with_context(|| format!("failed to read {}", report.display()))?,
-            )?;
+            let report = read_report(&report)?;
             let before = std::fs::read(&before)
                 .with_context(|| format!("failed to read {}", before.display()))?;
             let after = std::fs::read(&after)
@@ -88,10 +89,7 @@ fn main() -> Result<()> {
             before,
             output,
         } => {
-            let report: DiffReport = serde_json::from_slice(
-                &std::fs::read(&report)
-                    .with_context(|| format!("failed to read {}", report.display()))?,
-            )?;
+            let report = read_report(&report)?;
             let before = std::fs::read(&before)
                 .with_context(|| format!("failed to read {}", before.display()))?;
             let rebuilt = apply_patch(&before, &report.patch)?;
@@ -102,6 +100,20 @@ fn main() -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn read_report(path: &Path) -> Result<DiffReport> {
+    let bytes =
+        std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .with_context(|| format!("failed to parse {} as JSON", path.display()))?;
+    if value["schema"].as_str() == Some(LEGACY_REPORT_SCHEMA_V1) {
+        bail!(
+            "report schema v1 cannot represent coupled ambiguity constraints or be losslessly upgraded; rerun StrataDiff on the original snapshots to create a v2 report"
+        );
+    }
+    serde_json::from_value(value)
+        .with_context(|| format!("failed to decode {} as a StrataDiff report", path.display()))
 }
 
 fn print_summary(report: &DiffReport) {
@@ -140,13 +152,25 @@ fn print_summary(report: &DiffReport) {
         println!("  {:?}: {before} -> {after}", change.kind);
     }
     for ambiguity in &report.ambiguities {
-        println!(
-            "  ambiguous: {} candidates -> {} candidates under nodes {} -> {}",
-            ambiguity.before.len(),
-            ambiguity.after.len(),
-            ambiguity.parent_before,
-            ambiguity.parent_after
-        );
+        match &ambiguity.constraint {
+            AmbiguityConstraint::ExactOrderedAlignment {
+                required_matches,
+                possible_pairs,
+                ..
+            } => println!(
+                "  ambiguous: choose {required_matches} ordered matches from {} explicit pairs under nodes {} -> {}",
+                possible_pairs.len(),
+                ambiguity.parent_before,
+                ambiguity.parent_after
+            ),
+            AmbiguityConstraint::SymbolicAbstention { cause, .. } => println!(
+                "  ambiguous: abstained from pair claims for {} -> {} endpoints under nodes {} -> {} ({cause:?})",
+                ambiguity.before.len(),
+                ambiguity.after.len(),
+                ambiguity.parent_before,
+                ambiguity.parent_after
+            ),
+        }
     }
     println!(
         "replay certificate: {}",

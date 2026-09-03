@@ -1,16 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 
 use crate::model::{
-    AmbiguityGroup, Artifact, ChangeKind, Correspondence, DiffReport, NodeRef, Predicate, Relation,
+    AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact,
+    ChangeKind, Correspondence, DiffReport, NodeRef, PairClaims, Predicate, Relation,
     StructuralChange, Summary,
 };
 use crate::patch::apply_patch;
 use crate::syntax::{ParsedSyntax, SyntaxNode, parse, shape_equal, syntax_equal};
 
-pub(crate) const REPORT_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
+pub(crate) const REPORT_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json";
 
 const INPUT_PAIR_EVIDENCE: &[&str] = &["caller_supplied_file_pair"];
 const GLOBAL_ANCHOR_EVIDENCE: &[&str] = &[
@@ -28,9 +29,9 @@ const STABLE_CORE_EVIDENCE: &[&str] = &[
     "recursive_shape_equality_check",
     "not_a_historical_identity_claim",
 ];
-const REPEATED_AMBIGUITY_REASON: &str = "repeated shape-equivalent children are not treated as identities even when source order selects one optimal alignment";
+const REPEATED_AMBIGUITY_REASON: &str = "repeated shape-equivalent children are intentionally unresolved; endpoint sets make no pair claims";
 const OPTIONAL_AMBIGUITY_REASON: &str =
-    "the shape-equivalent pair is absent from at least one optimal ordered alignment";
+    "multiple maximum-cardinality ordered alignments have coupled candidate choices";
 const ORDERED_ALIGNMENT_COMPONENT_LIMIT: usize = 64;
 const ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT: usize =
     ORDERED_ALIGNMENT_COMPONENT_LIMIT * ORDERED_ALIGNMENT_COMPONENT_LIMIT * 4;
@@ -78,7 +79,7 @@ pub(crate) fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) ->
     let expected_ambiguities = verify_stable_core(&parsed_before, &parsed_after, &mappings)?;
     verify_ambiguity_node_references(report, &parsed_before, &parsed_after)?;
     if report.ambiguities != expected_ambiguities {
-        bail!("ambiguity groups do not match the independently derived unmatched candidate sets");
+        bail!("ambiguity constraints do not match the independently derived choice spaces");
     }
 
     let expected_changes = derive_changes(
@@ -555,7 +556,6 @@ fn verify_stable_core(
                 ambiguities.push(AmbiguityGroup {
                     parent_before: before_parent,
                     parent_after: after_parent,
-                    predicate: Predicate::ShapeEqual,
                     before: ambiguity
                         .before
                         .iter()
@@ -566,6 +566,7 @@ fn verify_stable_core(
                         .iter()
                         .map(|id| after.nodes[*id].as_ref())
                         .collect(),
+                    constraint: ambiguity.constraint,
                     reason: ambiguity.reason,
                 });
             }
@@ -719,6 +720,7 @@ struct AlignmentOutcome {
 struct AlignmentAmbiguity {
     before: Vec<usize>,
     after: Vec<usize>,
+    constraint: AmbiguityConstraint,
     reason: String,
 }
 
@@ -958,7 +960,7 @@ fn independent_stable_core(
         {
             verify_bounded_component(before, after, global_mappings, &candidates, &component)?
         } else {
-            oversized_alignment(&candidates, &component.groups)
+            oversized_alignment(&candidates, &component)
         };
         outcome.forced.extend(component_outcome.forced);
         outcome.ambiguities.extend(component_outcome.ambiguities);
@@ -1008,7 +1010,10 @@ fn verify_bounded_component(
     }
 
     let mut outcome = AlignmentOutcome::default();
-    let mut ambiguous: BTreeMap<usize, (BTreeSet<usize>, BTreeSet<usize>)> = BTreeMap::new();
+    let mut ambiguous_before = BTreeSet::new();
+    let mut ambiguous_after = BTreeSet::new();
+    let mut possible_pairs = Vec::new();
+    let mut has_duplicate_symmetry = false;
     for (before_index, _) in active_before.iter().enumerate() {
         for (after_index, _) in active_after.iter().enumerate() {
             if !candidates[before_index][after_index]
@@ -1031,25 +1036,52 @@ fn verify_bounded_component(
             {
                 outcome.forced.push((before_id, after_id));
             } else {
-                let endpoints = ambiguous.entry(group_id).or_default();
+                possible_pairs.push(AmbiguityPair {
+                    before_id,
+                    after_id,
+                });
                 if candidate_group_is_singleton {
-                    endpoints.0.insert(before_id);
-                    endpoints.1.insert(after_id);
+                    ambiguous_before.insert(before_id);
+                    ambiguous_after.insert(after_id);
                 } else {
-                    endpoints.0.extend(candidate_group.before.iter().copied());
-                    endpoints.1.extend(candidate_group.after.iter().copied());
+                    has_duplicate_symmetry = true;
+                    ambiguous_before.extend(candidate_group.before.iter().copied());
+                    ambiguous_after.extend(candidate_group.after.iter().copied());
                 }
             }
         }
     }
     outcome.forced.sort_unstable();
-    for (group_id, (before_ids, after_ids)) in ambiguous {
-        let candidate_group = &candidate_groups.groups[group_id];
-        let repeated = candidate_group.before.len() > 1 || candidate_group.after.len() > 1;
+    if !possible_pairs.is_empty() {
+        let constraint = if has_duplicate_symmetry {
+            AmbiguityConstraint::SymbolicAbstention {
+                cause: AmbiguityAbstentionCause::DuplicateSymmetry,
+                pair_claims: PairClaims::None,
+            }
+        } else {
+            let required_matches = optimum - outcome.forced.len();
+            if required_matches == 0 || possible_pairs.len() <= required_matches {
+                bail!("ordered ambiguity does not contain multiple valid resolutions");
+            }
+            AmbiguityConstraint::ExactOrderedAlignment {
+                predicate: Predicate::ShapeEqual,
+                required_matches,
+                possible_pairs,
+            }
+        };
         outcome.ambiguities.push(AlignmentAmbiguity {
-            before: before_ids.into_iter().collect(),
-            after: after_ids.into_iter().collect(),
-            reason: if repeated {
+            before: active_before
+                .iter()
+                .copied()
+                .filter(|id| ambiguous_before.contains(id))
+                .collect(),
+            after: active_after
+                .iter()
+                .copied()
+                .filter(|id| ambiguous_after.contains(id))
+                .collect(),
+            constraint,
+            reason: if has_duplicate_symmetry {
                 REPEATED_AMBIGUITY_REASON.to_owned()
             } else {
                 OPTIONAL_AMBIGUITY_REASON.to_owned()
@@ -1140,26 +1172,36 @@ fn ordered_interaction_components(
     Ok(components)
 }
 
-fn oversized_alignment(candidates: &CandidateGroups, group_ids: &[usize]) -> AlignmentOutcome {
-    let ambiguities = group_ids
+fn oversized_alignment(
+    candidates: &CandidateGroups,
+    component: &AlignmentComponent,
+) -> AlignmentOutcome {
+    let scan_complete = component
+        .groups
         .iter()
-        .map(|group_id| {
-            let candidate_group = &candidates.groups[*group_id];
-            AlignmentAmbiguity {
-                before: candidate_group.before.clone(),
-                after: candidate_group.after.clone(),
-                reason: if candidate_group.scan_complete {
-                    format!(
-                        "ordered alignment candidate region exceeds the {ORDERED_ALIGNMENT_COMPONENT_LIMIT}-child per-side cap; candidates are preserved symbolically"
-                    )
-                } else {
-                    format!(
-                        "shape-class candidate scan exceeds the {ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT}-pair cap; candidates are preserved symbolically"
-                    )
-                },
-            }
-        })
-        .collect();
+        .all(|group_id| candidates.groups[*group_id].scan_complete);
+    let cause = if scan_complete {
+        AmbiguityAbstentionCause::ComponentLimit
+    } else {
+        AmbiguityAbstentionCause::CandidateScanLimit
+    };
+    let ambiguities = vec![AlignmentAmbiguity {
+        before: component.before.clone(),
+        after: component.after.clone(),
+        constraint: AmbiguityConstraint::SymbolicAbstention {
+            cause,
+            pair_claims: PairClaims::None,
+        },
+        reason: if scan_complete {
+            format!(
+                "ordered alignment candidate region exceeds the {ORDERED_ALIGNMENT_COMPONENT_LIMIT}-child per-side cap; endpoint sets make no pair claims"
+            )
+        } else {
+            format!(
+                "shape-class candidate scan exceeds the {ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT}-pair cap; endpoint sets make no pair claims"
+            )
+        },
+    }];
     AlignmentOutcome {
         forced: Vec::new(),
         ambiguities,
@@ -1392,6 +1434,78 @@ fn verify_ambiguity_node_references(
         }
         for node in &group.after {
             verify_node_ref(after, node, "ambiguity after member")?;
+        }
+        let before_positions: HashMap<_, _> = group
+            .before
+            .iter()
+            .enumerate()
+            .map(|(position, node)| (node.id, position))
+            .collect();
+        let after_positions: HashMap<_, _> = group
+            .after
+            .iter()
+            .enumerate()
+            .map(|(position, node)| (node.id, position))
+            .collect();
+        ensure!(
+            !group.before.is_empty() && !group.after.is_empty(),
+            "ambiguity endpoint sets must be non-empty"
+        );
+        ensure!(
+            before_positions.len() == group.before.len()
+                && after_positions.len() == group.after.len(),
+            "ambiguity endpoint sets contain duplicate nodes"
+        );
+        if let AmbiguityConstraint::ExactOrderedAlignment {
+            predicate,
+            required_matches,
+            possible_pairs,
+        } = &group.constraint
+        {
+            ensure!(
+                *predicate == Predicate::ShapeEqual,
+                "exact ordered ambiguity has an unsupported predicate"
+            );
+            ensure!(
+                *required_matches > 0 && possible_pairs.len() > *required_matches,
+                "exact ordered ambiguity must encode multiple non-empty resolutions"
+            );
+            ensure!(
+                *required_matches <= group.before.len().min(group.after.len()),
+                "exact ordered ambiguity requires more matches than its endpoint sets permit"
+            );
+            let mut seen_pairs = HashSet::new();
+            let mut pair_order = Vec::with_capacity(possible_pairs.len());
+            let mut referenced_before = HashSet::new();
+            let mut referenced_after = HashSet::new();
+            for pair in possible_pairs {
+                let before_position = *before_positions
+                    .get(&pair.before_id)
+                    .context("ambiguity pair references a before node outside its endpoint set")?;
+                let after_position = *after_positions
+                    .get(&pair.after_id)
+                    .context("ambiguity pair references an after node outside its endpoint set")?;
+                ensure!(
+                    seen_pairs.insert((pair.before_id, pair.after_id)),
+                    "exact ordered ambiguity contains a duplicate pair"
+                );
+                ensure!(
+                    shape_equal(before, pair.before_id, after, pair.after_id),
+                    "exact ordered ambiguity pair does not satisfy its predicate"
+                );
+                referenced_before.insert(pair.before_id);
+                referenced_after.insert(pair.after_id);
+                pair_order.push((before_position, after_position));
+            }
+            ensure!(
+                pair_order.windows(2).all(|pair| pair[0] < pair[1]),
+                "exact ordered ambiguity pairs are not in canonical order"
+            );
+            ensure!(
+                referenced_before.len() == group.before.len()
+                    && referenced_after.len() == group.after.len(),
+                "exact ordered ambiguity contains unreferenced endpoints"
+            );
         }
     }
     Ok(())

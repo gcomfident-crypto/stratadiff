@@ -27,8 +27,9 @@ StrataDiff makes uncertainty part of the data model:
 
 - `predicate` says what is observable: `byte_equal`, `syntax_equal`, or `shape_equal`.
 - `correspondence` says how a pair was selected. The current engine emits `model_forced` pairs;
-  `suggested` remains reserved in the v1 data model for future explicitly evidenced rules.
-- `ambiguities` preserve repeated or symmetric candidates as sets instead of guessing a pair.
+  `suggested` remains reserved in the v2 data model for future explicitly evidenced rules.
+- `ambiguities` encode coupled ordered choices as explicit pair constraints. Repeated or oversized
+  regions carry `pair_claims: none`, so endpoint sets can never be mistaken for a Cartesian product.
 - `patch` and `certificate` rebuild and hash-check the target byte for byte.
 
 Two snapshots cannot reveal whether identical blocks were swapped, deleted and pasted, or left
@@ -97,8 +98,8 @@ The alpha implements the first useful slice of Proof-Carrying Structural Diff (P
    bounded compatibility-graph components, and align at most 64 active children per side in each
    order-interaction component. Map a singleton candidate-group pair only when it is present in every
    maximum-cardinality ordered alignment.
-6. Preserve ties, the full symmetry class of observationally identical duplicates, and oversized
-   interaction components as symbolic ambiguity groups.
+6. Encode singleton-group ties as exact coupled ordered constraints. Preserve duplicate symmetry
+   and oversized interaction components as symbolic abstentions that make no pair claims.
 7. Derive insertions, deletions, exact equivalent relocations, child-order changes, and
    model-forced shape updates without conflating their evidence levels.
 8. Build an exact patch using line-level Patience anchors, bounded byte-level Myers refinement, and
@@ -118,9 +119,11 @@ survey that motivated the design, and [docs/benchmarks.md](docs/benchmarks.md) f
 evaluation results and the local performance baseline.
 
 The JSON serialization and structural constraints are published as
-[schema/report-v1.schema.json](schema/report-v1.schema.json). Semantic validity is stricter than
-the schema alone and is established by `stratadiff verify`, which independently reparses the
-snapshots and re-derives the report's claims.
+[schema/report-v2.schema.json](schema/report-v2.schema.json). The historical
+[v1 schema](schema/report-v1.schema.json) remains available for inspection, but v1 ambiguity sets
+cannot be losslessly upgraded without rerunning the original snapshots. Semantic validity is
+stricter than the schema alone and is established by `stratadiff verify`, which independently
+reparses the snapshots and re-derives the report's claims.
 
 ## Report excerpt
 
@@ -145,7 +148,12 @@ snapshots and re-derives the report's claims.
   ],
   "ambiguities": [
     {
-      "reason": "repeated shape-equivalent children are not treated as identities even when source order selects one optimal alignment"
+      "constraint": {
+        "kind": "symbolic_abstention",
+        "cause": "duplicate_symmetry",
+        "pair_claims": "none"
+      },
+      "reason": "repeated shape-equivalent children are intentionally unresolved; endpoint sets make no pair claims"
     }
   ],
   "certificate": {

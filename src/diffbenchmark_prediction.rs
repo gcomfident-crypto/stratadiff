@@ -12,7 +12,7 @@ use crate::diffbenchmark_eval::{
     AdapterUniverse, CasePredictions, NodeKey, NormalizedNode, NormalizedRelation,
     PredictionRelations, RelationUniverse,
 };
-use crate::{Correspondence, DiffReport, NodeRef};
+use crate::{AmbiguityConstraint, Correspondence, DiffReport, NodeRef};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -109,16 +109,31 @@ pub fn adapt_predictions(input: &PredictionAdapterInput<'_>) -> Result<AdaptedPr
     let mut program_ambiguity = BTreeSet::new();
     let mut mapping_ambiguity = BTreeSet::new();
     for group in &input.report.ambiguities {
-        project_ambiguity(
-            &group.before,
-            &group.after,
-            &before,
-            &after,
-            &universe.program_elements,
-            &universe.mappings,
-            &mut program_ambiguity,
-            &mut mapping_ambiguity,
-        )?;
+        if let AmbiguityConstraint::ExactOrderedAlignment { possible_pairs, .. } = &group.constraint
+        {
+            for pair in possible_pairs {
+                let before_ref = group
+                    .before
+                    .iter()
+                    .find(|node| node.id == pair.before_id)
+                    .context("ambiguity pair references a missing before endpoint")?;
+                let after_ref = group
+                    .after
+                    .iter()
+                    .find(|node| node.id == pair.after_id)
+                    .context("ambiguity pair references a missing after endpoint")?;
+                project_ambiguity_candidate(
+                    before_ref,
+                    after_ref,
+                    &before,
+                    &after,
+                    &universe.program_elements,
+                    &universe.mappings,
+                    &mut program_ambiguity,
+                    &mut mapping_ambiguity,
+                )?;
+            }
+        }
     }
     program_ambiguity.retain(|relation| !program_forced.contains(relation));
     mapping_ambiguity.retain(|relation| !mapping_forced.contains(relation));
@@ -295,9 +310,9 @@ fn project_relation(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn project_ambiguity(
-    before_refs: &[NodeRef],
-    after_refs: &[NodeRef],
+fn project_ambiguity_candidate(
+    before_ref: &NodeRef,
+    after_ref: &NodeRef,
     before: &BridgedSide,
     after: &BridgedSide,
     program_universe: &RelationUniverse,
@@ -305,16 +320,16 @@ fn project_ambiguity(
     program: &mut BTreeSet<NormalizedRelation>,
     mappings: &mut BTreeSet<NormalizedRelation>,
 ) -> Result<()> {
-    let before_nodes = collect_nodes(before_refs, before)?;
-    let after_nodes = collect_nodes(after_refs, after)?;
-    for before_node in &before_nodes {
+    let before_nodes = nodes_for_ref(before_ref, before)?;
+    let after_nodes = nodes_for_ref(after_ref, after)?;
+    for before_node in before_nodes {
         let (universe, output) = if is_program_element(&before_node.key.jdt_kind) {
             (program_universe, &mut *program)
         } else {
             (mapping_universe, &mut *mappings)
         };
         let before_incident = universe.gold_incident_before.contains(&before_node.key);
-        for after_node in &after_nodes {
+        for after_node in after_nodes {
             if before_node.role == after_node.role
                 && (before_incident || universe.gold_incident_after.contains(&after_node.key))
             {
@@ -326,14 +341,6 @@ fn project_ambiguity(
         }
     }
     Ok(())
-}
-
-fn collect_nodes<'a>(refs: &[NodeRef], side: &'a BridgedSide) -> Result<Vec<&'a NormalizedNode>> {
-    let mut nodes = Vec::new();
-    for node_ref in refs {
-        nodes.extend(nodes_for_ref(node_ref, side)?);
-    }
-    Ok(nodes)
 }
 
 fn nodes_for_ref<'a>(node_ref: &NodeRef, side: &'a BridgedSide) -> Result<&'a [NormalizedNode]> {

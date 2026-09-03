@@ -1,7 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::model::{
-    AmbiguityGroup, ChangeKind, Correspondence, Predicate, Relation, StructuralChange,
+    AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, ChangeKind,
+    Correspondence, PairClaims, Predicate, Relation, StructuralChange,
 };
 use crate::syntax::{ParsedSyntax, shape_equal, syntax_equal};
 
@@ -10,6 +11,9 @@ use crate::syntax::{ParsedSyntax, shape_equal, syntax_equal};
 const ORDERED_ALIGNMENT_COMPONENT_LIMIT: usize = 64;
 const ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT: usize =
     ORDERED_ALIGNMENT_COMPONENT_LIMIT * ORDERED_ALIGNMENT_COMPONENT_LIMIT * 4;
+const REPEATED_AMBIGUITY_REASON: &str = "repeated shape-equivalent children are intentionally unresolved; endpoint sets make no pair claims";
+const OPTIONAL_AMBIGUITY_REASON: &str =
+    "multiple maximum-cardinality ordered alignments have coupled candidate choices";
 
 type ShapeKey = (Option<String>, String, [u8; 32]);
 
@@ -305,7 +309,6 @@ fn add_local_relations(
                 ambiguities.push(AmbiguityGroup {
                     parent_before: before_parent,
                     parent_after: after_parent,
-                    predicate: Predicate::ShapeEqual,
                     before: ambiguity
                         .before
                         .iter()
@@ -316,6 +319,7 @@ fn add_local_relations(
                         .iter()
                         .map(|id| state.after.nodes[*id].as_ref())
                         .collect(),
+                    constraint: ambiguity.constraint,
                     reason: ambiguity.reason,
                 });
             }
@@ -407,6 +411,7 @@ struct AlignmentOutcome {
 struct AlignmentAmbiguity {
     before: Vec<usize>,
     after: Vec<usize>,
+    constraint: AmbiguityConstraint,
     reason: String,
 }
 
@@ -448,7 +453,7 @@ fn bounded_ordered_stable_core(
             if within_alignment_limit(component.before.len(), component.after.len()) {
                 bounded_component_stable_core(state, &candidates, &component)
             } else {
-                oversized_alignment_ambiguities(&candidates, &component.groups)
+                oversized_alignment_ambiguities(&candidates, &component)
             };
         outcome.forced.extend(component_outcome.forced);
         outcome.ambiguities.extend(component_outcome.ambiguities);
@@ -485,8 +490,10 @@ fn bounded_component_stable_core(
     }
 
     let mut outcome = AlignmentOutcome::default();
-    let mut ambiguous_by_class: BTreeMap<usize, (BTreeSet<usize>, BTreeSet<usize>)> =
-        BTreeMap::new();
+    let mut ambiguous_before = BTreeSet::new();
+    let mut ambiguous_after = BTreeSet::new();
+    let mut possible_pairs = Vec::new();
+    let mut has_duplicate_symmetry = false;
     for (before_index, row) in candidates.iter().enumerate() {
         for (after_index, _) in row.iter().enumerate() {
             if !candidate_occurs_in_optimum(
@@ -515,31 +522,55 @@ fn bounded_component_stable_core(
             if forced {
                 outcome.forced.push((before_id, after_id));
             } else {
-                let endpoints = ambiguous_by_class.entry(group_id).or_default();
+                possible_pairs.push(AmbiguityPair {
+                    before_id,
+                    after_id,
+                });
                 if candidate_group_is_singleton {
-                    endpoints.0.insert(before_id);
-                    endpoints.1.insert(after_id);
+                    ambiguous_before.insert(before_id);
+                    ambiguous_after.insert(after_id);
                 } else {
-                    endpoints.0.extend(candidate_group.before.iter().copied());
-                    endpoints.1.extend(candidate_group.after.iter().copied());
+                    has_duplicate_symmetry = true;
+                    ambiguous_before.extend(candidate_group.before.iter().copied());
+                    ambiguous_after.extend(candidate_group.after.iter().copied());
                 }
             }
         }
     }
 
     outcome.forced.sort_unstable();
-    for (group_id, (before, after)) in ambiguous_by_class {
-        let candidate_group = &candidate_groups.groups[group_id];
-        let repeated = candidate_group.before.len() > 1 || candidate_group.after.len() > 1;
+    if !possible_pairs.is_empty() {
+        let constraint = if has_duplicate_symmetry {
+            AmbiguityConstraint::SymbolicAbstention {
+                cause: AmbiguityAbstentionCause::DuplicateSymmetry,
+                pair_claims: PairClaims::None,
+            }
+        } else {
+            let required_matches = optimum - outcome.forced.len();
+            debug_assert!(required_matches > 0);
+            debug_assert!(possible_pairs.len() > required_matches);
+            AmbiguityConstraint::ExactOrderedAlignment {
+                predicate: Predicate::ShapeEqual,
+                required_matches,
+                possible_pairs,
+            }
+        };
         outcome.ambiguities.push(AlignmentAmbiguity {
-            before: before.into_iter().collect(),
-            after: after.into_iter().collect(),
-            reason: if repeated {
-                "repeated shape-equivalent children are not treated as identities even when source order selects one optimal alignment"
-                    .to_owned()
+            before: active_before
+                .iter()
+                .copied()
+                .filter(|id| ambiguous_before.contains(id))
+                .collect(),
+            after: active_after
+                .iter()
+                .copied()
+                .filter(|id| ambiguous_after.contains(id))
+                .collect(),
+            constraint,
+            reason: if has_duplicate_symmetry {
+                REPEATED_AMBIGUITY_REASON.to_owned()
             } else {
-                "the shape-equivalent pair is absent from at least one optimal ordered alignment"
-                    .to_owned()
+                OPTIONAL_AMBIGUITY_REASON.to_owned()
             },
         });
     }
@@ -812,29 +843,36 @@ fn within_alignment_limit(before: usize, after: usize) -> bool {
 
 fn oversized_alignment_ambiguities(
     candidates: &CandidateGroups,
-    group_ids: &[usize],
+    component: &AlignmentComponent,
 ) -> AlignmentOutcome {
+    let scan_complete = component
+        .groups
+        .iter()
+        .all(|group_id| candidates.groups[*group_id].scan_complete);
+    let cause = if scan_complete {
+        AmbiguityAbstentionCause::ComponentLimit
+    } else {
+        AmbiguityAbstentionCause::CandidateScanLimit
+    };
     AlignmentOutcome {
         forced: Vec::new(),
-        ambiguities: group_ids
-            .iter()
-            .map(|group_id| {
-                let candidate_group = &candidates.groups[*group_id];
-                AlignmentAmbiguity {
-                    before: candidate_group.before.clone(),
-                    after: candidate_group.after.clone(),
-                    reason: if candidate_group.scan_complete {
-                        format!(
-                            "ordered alignment candidate region exceeds the {ORDERED_ALIGNMENT_COMPONENT_LIMIT}-child per-side cap; candidates are preserved symbolically"
-                        )
-                    } else {
-                        format!(
-                            "shape-class candidate scan exceeds the {ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT}-pair cap; candidates are preserved symbolically"
-                        )
-                    },
-                }
-            })
-            .collect(),
+        ambiguities: vec![AlignmentAmbiguity {
+            before: component.before.clone(),
+            after: component.after.clone(),
+            constraint: AmbiguityConstraint::SymbolicAbstention {
+                cause,
+                pair_claims: PairClaims::None,
+            },
+            reason: if scan_complete {
+                format!(
+                    "ordered alignment candidate region exceeds the {ORDERED_ALIGNMENT_COMPONENT_LIMIT}-child per-side cap; endpoint sets make no pair claims"
+                )
+            } else {
+                format!(
+                    "shape-class candidate scan exceeds the {ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT}-pair cap; endpoint sets make no pair claims"
+                )
+            },
+        }],
     }
 }
 
@@ -1325,6 +1363,48 @@ mod tests {
         }
     }
 
+    #[test]
+    fn residual_pair_constraints_encode_every_three_by_three_optimum() {
+        for bits in 0_u16..(1 << 9) {
+            let mut candidates = vec![vec![false; 3]; 3];
+            for index in 0..9 {
+                candidates[index / 3][index % 3] = bits & (1 << index) != 0;
+            }
+            let alignments = maximum_alignments(&candidates);
+            let optimum = alignments[0].len();
+            let forced: std::collections::BTreeSet<_> = (0..3)
+                .flat_map(|before_index| (0..3).map(move |after_index| (before_index, after_index)))
+                .filter(|pair| alignments.iter().all(|alignment| alignment.contains(pair)))
+                .collect();
+            let possible: Vec<_> = (0..3)
+                .flat_map(|before_index| (0..3).map(move |after_index| (before_index, after_index)))
+                .filter(|pair| {
+                    !forced.contains(pair)
+                        && alignments.iter().any(|alignment| alignment.contains(pair))
+                })
+                .collect();
+            let required_matches = optimum - forced.len();
+            let actual: std::collections::BTreeSet<Vec<_>> = alignments
+                .iter()
+                .map(|alignment| {
+                    alignment
+                        .iter()
+                        .copied()
+                        .filter(|pair| !forced.contains(pair))
+                        .collect()
+                })
+                .collect();
+            let encoded = constrained_resolutions(&possible, required_matches);
+            assert_eq!(
+                encoded, actual,
+                "residual constraint mismatch for candidate bits {bits:09b}"
+            );
+            if actual.len() > 1 {
+                assert!(possible.len() > required_matches);
+            }
+        }
+    }
+
     fn maximum_alignments(candidates: &[Vec<bool>]) -> Vec<Vec<(usize, usize)>> {
         let mut alignments = Vec::new();
         enumerate_alignments(candidates, 0, 0, &mut Vec::new(), &mut alignments);
@@ -1364,6 +1444,29 @@ mod tests {
                 current.pop();
             }
         }
+    }
+
+    fn constrained_resolutions(
+        possible: &[(usize, usize)],
+        required_matches: usize,
+    ) -> std::collections::BTreeSet<Vec<(usize, usize)>> {
+        let mut resolutions = std::collections::BTreeSet::new();
+        for bits in 0_usize..(1 << possible.len()) {
+            let selected: Vec<_> = possible
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| bits & (1 << index) != 0)
+                .map(|(_, pair)| *pair)
+                .collect();
+            if selected.len() == required_matches
+                && selected
+                    .windows(2)
+                    .all(|pairs| pairs[0].0 < pairs[1].0 && pairs[0].1 < pairs[1].1)
+            {
+                resolutions.insert(selected);
+            }
+        }
+        resolutions
     }
 
     fn colliding_shapes(first_child_kind: &str, second_child_kind: &str) -> ParsedSyntax {

@@ -1,6 +1,6 @@
 use stratadiff::{
-    ChangeKind, Correspondence, DiffReport, Language, Predicate, Relation, analyze_bytes,
-    verify_report,
+    AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
+    Language, Predicate, Relation, analyze_bytes, verify_report,
 };
 
 fn python(before: &str, after: &str) -> DiffReport {
@@ -324,14 +324,31 @@ fn optional_optimal_pair_cannot_be_promoted_to_model_forced() {
         .ambiguities
         .iter()
         .find(|group| {
-            group.before.len() == 1
-                && group.after.len() == 1
-                && group.before[0].kind == "function_definition"
+            group.before[0].kind == "function_definition"
+                && matches!(
+                    group.constraint,
+                    AmbiguityConstraint::ExactOrderedAlignment { .. }
+                )
         })
         .unwrap();
+    let AmbiguityConstraint::ExactOrderedAlignment { possible_pairs, .. } = &group.constraint
+    else {
+        unreachable!();
+    };
+    let candidate = &possible_pairs[0];
     let fabricated = Relation {
-        before: group.before[0].clone(),
-        after: group.after[0].clone(),
+        before: group
+            .before
+            .iter()
+            .find(|node| node.id == candidate.before_id)
+            .unwrap()
+            .clone(),
+        after: group
+            .after
+            .iter()
+            .find(|node| node.id == candidate.after_id)
+            .unwrap()
+            .clone(),
         predicate: Predicate::ShapeEqual,
         correspondence: Correspondence::ModelForced,
         evidence: vec![
@@ -377,7 +394,7 @@ fn oversized_alignment_abstention_is_recomputed() {
 }
 
 #[test]
-fn ambiguity_parents_memberships_predicate_and_reason_are_checked() {
+fn symbolic_ambiguity_parents_memberships_cause_and_reason_are_checked() {
     let source = "def same():\n    return 1\n\ndef same():\n    return 1\n";
     let report = python(source, source);
     assert!(!report.ambiguities.is_empty());
@@ -386,7 +403,12 @@ fn ambiguity_parents_memberships_predicate_and_reason_are_checked() {
         report.ambiguities[0].parent_before += 1;
     });
     assert_tampered(&report, source, source, |report| {
-        report.ambiguities[0].predicate = Predicate::SyntaxEqual;
+        let AmbiguityConstraint::SymbolicAbstention { cause, .. } =
+            &mut report.ambiguities[0].constraint
+        else {
+            unreachable!();
+        };
+        *cause = AmbiguityAbstentionCause::ComponentLimit;
     });
     assert_tampered(&report, source, source, |report| {
         report.ambiguities[0].reason.push_str(" (guessed)");
@@ -399,6 +421,71 @@ fn ambiguity_parents_memberships_predicate_and_reason_are_checked() {
     });
     assert_tampered(&report, source, source, |report| {
         report.ambiguities.clear();
+    });
+}
+
+#[test]
+fn exact_ambiguity_constraint_tampering_is_rejected() {
+    let before = concat!(
+        "def add_old(value):\n    return value + 1\n\n",
+        "def multiply_old(value):\n    return value * 2\n",
+    );
+    let after = concat!(
+        "def multiply_new(item):\n    return item * 3\n\n",
+        "def add_new(item):\n    return item + 4\n",
+    );
+    let report = python(before, after);
+    let exact = report
+        .ambiguities
+        .iter()
+        .position(|group| {
+            matches!(
+                group.constraint,
+                AmbiguityConstraint::ExactOrderedAlignment { .. }
+            )
+        })
+        .unwrap();
+
+    assert_tampered(&report, before, after, |report| {
+        let AmbiguityConstraint::ExactOrderedAlignment {
+            required_matches, ..
+        } = &mut report.ambiguities[exact].constraint
+        else {
+            unreachable!();
+        };
+        *required_matches += 1;
+    });
+    assert_tampered(&report, before, after, |report| {
+        let AmbiguityConstraint::ExactOrderedAlignment { possible_pairs, .. } =
+            &mut report.ambiguities[exact].constraint
+        else {
+            unreachable!();
+        };
+        possible_pairs.pop();
+    });
+    assert_tampered(&report, before, after, |report| {
+        let AmbiguityConstraint::ExactOrderedAlignment { possible_pairs, .. } =
+            &mut report.ambiguities[exact].constraint
+        else {
+            unreachable!();
+        };
+        possible_pairs.swap(0, 1);
+    });
+    assert_tampered(&report, before, after, |report| {
+        let AmbiguityConstraint::ExactOrderedAlignment { predicate, .. } =
+            &mut report.ambiguities[exact].constraint
+        else {
+            unreachable!();
+        };
+        *predicate = Predicate::SyntaxEqual;
+    });
+    assert_tampered(&report, before, after, |report| {
+        let AmbiguityConstraint::ExactOrderedAlignment { possible_pairs, .. } =
+            &mut report.ambiguities[exact].constraint
+        else {
+            unreachable!();
+        };
+        possible_pairs[0].before_id = usize::MAX;
     });
 }
 

@@ -61,10 +61,13 @@ The current alpha applies these rules in order:
    source order yields one optimal diagonal alignment. Exact descendant anchors may split a
    repeated shape class into singleton candidate groups, making the containing root pair forced by
    the declared model rather than by source order.
-8. Preserve alignment ties and components above the cap as `AmbiguityGroup` values. A shape class
-   requiring more than 16,384 compatibility checks is kept symbolic before pair enumeration;
-   otherwise connected candidate groups are derived exactly. No oversized component constructs a
-   quadratic DP matrix, and unrelated bounded components in the same anchor region are resolved.
+8. Encode ties between singleton candidate groups once per interaction component as an exact
+   ordered constraint: the explicit possible-pair support, the residual number of matches to
+   select, one-to-one endpoints, and strict child order together describe every valid optimum
+   without enumerating exponentially many bundles. Repeated symmetry, components above the
+   64-node cap, and shape classes requiring more than 16,384 compatibility checks instead emit
+   `symbolic_abstention` with `pair_claims: none`. Their endpoint sets define only the abstention
+   scope. No consumer may interpret them as a Cartesian product.
 
 ## Change events
 
@@ -109,9 +112,9 @@ grammar.
 - one-to-one relation cardinality;
 - every declared byte, syntax, and shape predicate;
 - exact-anchor uniqueness and descendant membership;
-- stable-core interaction partitioning, all-optima membership, duplicate symmetry closure, and
-  64-node component abstention;
-- ambiguity groups, derived changes, and summary counters.
+- stable-core interaction partitioning, all-optima support and residual cardinality, duplicate
+  symmetry closure, and 64-node component abstention;
+- exact ambiguity constraints, no-pair symbolic scopes, derived changes, and summary counters.
 
 The verifier independently re-derives these rules without calling the producer matcher. A later
 milestone will move it into a dependency-minimal crate and replace recomputation with compact proof

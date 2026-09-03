@@ -1,4 +1,7 @@
-use stratadiff::{ChangeKind, Correspondence, Language, Predicate, analyze_bytes, verify_report};
+use stratadiff::{
+    AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, Language,
+    PairClaims, Predicate, analyze_bytes, verify_report,
+};
 
 fn python(before: &str, after: &str) -> stratadiff::DiffReport {
     analyze_bytes(
@@ -23,6 +26,11 @@ fn duplicate_subtrees_are_ambiguous_instead_of_guessed() {
                 .before
                 .iter()
                 .all(|node| node.kind == "function_definition")
+            && group.constraint
+                == AmbiguityConstraint::SymbolicAbstention {
+                    cause: AmbiguityAbstentionCause::DuplicateSymmetry,
+                    pair_claims: PairClaims::None,
+                }
     }));
     assert!(!report.changes.iter().any(|change| {
         matches!(change.kind, ChangeKind::Insert | ChangeKind::Delete)
@@ -79,18 +87,44 @@ fn crossing_shape_candidates_remain_ambiguous() {
         relation.before.kind == "function_definition"
             && relation.correspondence == Correspondence::ModelForced
     }));
-    assert_eq!(
-        report
-            .ambiguities
-            .iter()
-            .filter(|group| {
-                group.before.len() == 1
-                    && group.after.len() == 1
-                    && group.before[0].kind == "function_definition"
-            })
-            .count(),
-        2
-    );
+    let group = report
+        .ambiguities
+        .iter()
+        .find(|group| {
+            group.before.len() == 2
+                && group.after.len() == 2
+                && group.before[0].kind == "function_definition"
+        })
+        .unwrap();
+    let AmbiguityConstraint::ExactOrderedAlignment {
+        predicate,
+        required_matches,
+        possible_pairs,
+    } = &group.constraint
+    else {
+        panic!("crossing singleton choices must have an exact ordered constraint");
+    };
+    assert_eq!(*predicate, Predicate::ShapeEqual);
+    assert_eq!(*required_matches, 1);
+    assert_eq!(possible_pairs.len(), 2);
+    let positions: Vec<_> = possible_pairs
+        .iter()
+        .map(|pair| {
+            (
+                group
+                    .before
+                    .iter()
+                    .position(|node| node.id == pair.before_id)
+                    .unwrap(),
+                group
+                    .after
+                    .iter()
+                    .position(|node| node.id == pair.after_id)
+                    .unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(positions, [(0, 1), (1, 0)]);
 }
 
 #[test]
@@ -134,7 +168,9 @@ fn move_plus_edit_does_not_create_a_forced_crossing_pair() {
             .before
             .iter()
             .any(|node| node.kind == "function_definition")
-            && group.reason.contains("optimal ordered alignment")
+            && group
+                .reason
+                .contains("maximum-cardinality ordered alignments")
     }));
 }
 
@@ -190,6 +226,11 @@ fn duplicate_symmetry_closure_does_not_label_an_unselected_copy_deleted() {
                 .before
                 .iter()
                 .all(|node| node.kind == "expression_statement")
+            && group.constraint
+                == AmbiguityConstraint::SymbolicAbstention {
+                    cause: AmbiguityAbstentionCause::DuplicateSymmetry,
+                    pair_claims: PairClaims::None,
+                }
     }));
     assert!(!report.changes.iter().any(|change| {
         change.kind == ChangeKind::Delete
@@ -226,6 +267,11 @@ fn oversized_child_region_abstains_without_building_an_alignment_matrix() {
             && group.after.len() == 65
             && group.before[0].kind == "function_definition"
             && group.reason.contains("64-child per-side cap")
+            && group.constraint
+                == AmbiguityConstraint::SymbolicAbstention {
+                    cause: AmbiguityAbstentionCause::ComponentLimit,
+                    pair_claims: PairClaims::None,
+                }
     }));
     verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
 }
@@ -240,6 +286,11 @@ fn ten_thousand_duplicate_siblings_abstain_without_a_quadratic_candidate_scan() 
             && group.after.len() == 10_000
             && group.before[0].kind == "function_definition"
             && group.reason.contains("16384-pair cap")
+            && group.constraint
+                == AmbiguityConstraint::SymbolicAbstention {
+                    cause: AmbiguityAbstentionCause::CandidateScanLimit,
+                    pair_claims: PairClaims::None,
+                }
     }));
     verify_report(&report, source.as_bytes(), source.as_bytes()).unwrap();
 }
