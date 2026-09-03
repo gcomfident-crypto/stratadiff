@@ -15,7 +15,8 @@ Canonical manifest BLAKE3:
 
 ## Official literature result
 
-- [DiffBenchmark literature evaluation v3](diffbenchmark-literature-evaluation-v3.json)
+- [DiffBenchmark literature evaluation v4](diffbenchmark-literature-evaluation-v4.json)
+- [Prior v3 evaluation](diffbenchmark-literature-evaluation-v3.json)
 - [SHA-256 checksums](SHA256SUMS)
 
 This is the first-party StrataDiff result for the complete pinned literature subset. Its

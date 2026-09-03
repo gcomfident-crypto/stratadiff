@@ -75,10 +75,10 @@ shorter edit scripts are not evidence that every selected mapping reflects the t
 
 ## Measured StrataDiff result
 
-The provenance-complete v3 run on DiffBenchmark's fixed 285-case intra-file literature subset is
+The provenance-complete v4 run on DiffBenchmark's fixed 285-case intra-file literature subset is
 described in the [benchmark notes](benchmarks.md#diffbenchmark-literature-subset-result), with the
 complete case-level data in the
-[official evaluation report](../benchmarks/diffbenchmark-literature-evaluation-v3.json). Of the 285
+[official evaluation report](../benchmarks/diffbenchmark-literature-evaluation-v4.json). Of the 285
 selected cases, 283 were evaluated, independently verified, and replayed byte for byte. One
 digest-pinned malformed oracle and one digest-pinned malformed source were classified separately;
 there were no unexpected case errors, and `benchmarkComplete` is `true`.

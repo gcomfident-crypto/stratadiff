@@ -55,7 +55,7 @@ reported but not counted as true or false positives. This subset and protocol ar
 comparable with published full-corpus GumTree or RefactoringMiner figures.
 
 See the [complete results and limitations](docs/benchmarks.md), the
-[raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v3.json), and the
+[raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v4.json), and the
 [artifact checksums](benchmarks/SHA256SUMS).
 
 ## Quick start
