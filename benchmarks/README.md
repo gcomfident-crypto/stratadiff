@@ -26,8 +26,8 @@ evaluation artifact for this fixed corpus and engine, not a cross-tool compariso
 
 Interpret the result within these limits:
 
-- the run emitted no ambiguity candidates, so it does not establish ambiguity or abstention
-  behavior;
+- the adapter produced no scorable projected ambiguity candidate, so this run does not establish
+  ambiguity coverage and must not be read as evidence that the engine emitted no ambiguity groups;
 - GumTree and RefactoringMiner comparison runs are not included;
 - Defects4J and cross-file evaluation remain future stages; and
 - relation scores apply only to the fixed parser-adapter universe. Excluded oracle relations and

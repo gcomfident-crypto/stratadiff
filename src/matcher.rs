@@ -5,9 +5,11 @@ use crate::model::{
 };
 use crate::syntax::{ParsedSyntax, shape_equal, syntax_equal};
 
-/// Ordered alignment is quadratic in the number of active children. Larger regions are preserved
-/// as symbolic ambiguity buckets without constructing their candidate matrix.
+/// Ordered alignment is quadratic in the number of active children in an order-interaction
+/// component. Larger components are preserved symbolically without constructing their matrix.
 const ORDERED_ALIGNMENT_COMPONENT_LIMIT: usize = 64;
+const ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT: usize =
+    ORDERED_ALIGNMENT_COMPONENT_LIMIT * ORDERED_ALIGNMENT_COMPONENT_LIMIT * 4;
 
 type ShapeKey = (Option<String>, String, [u8; 32]);
 
@@ -408,6 +410,24 @@ struct AlignmentAmbiguity {
     reason: String,
 }
 
+struct AlignmentComponent {
+    before: Vec<usize>,
+    after: Vec<usize>,
+    groups: Vec<usize>,
+}
+
+struct CandidateGroup {
+    before: Vec<usize>,
+    after: Vec<usize>,
+    scan_complete: bool,
+}
+
+struct CandidateGroups {
+    groups: Vec<CandidateGroup>,
+    before_group: HashMap<usize, usize>,
+    after_group: HashMap<usize, usize>,
+}
+
 fn bounded_ordered_stable_core(
     state: &MappingState<'_>,
     before_ids: &[usize],
@@ -417,26 +437,38 @@ fn bounded_ordered_stable_core(
     if verified.classes.is_empty() {
         return AlignmentOutcome::default();
     }
-
-    let active_before: Vec<_> = before_ids
-        .iter()
-        .copied()
-        .filter(|id| verified.before_class.contains_key(id))
-        .collect();
-    let active_after: Vec<_> = after_ids
-        .iter()
-        .copied()
-        .filter(|id| verified.after_class.contains_key(id))
-        .collect();
-
-    if !within_alignment_limit(active_before.len(), active_after.len()) {
-        return oversized_alignment_ambiguities(&verified);
+    let candidates = verified_candidate_groups(state, &verified);
+    if candidates.groups.is_empty() {
+        return AlignmentOutcome::default();
     }
+
+    let mut outcome = AlignmentOutcome::default();
+    for component in ordered_interaction_components(&candidates, before_ids, after_ids) {
+        let component_outcome =
+            if within_alignment_limit(component.before.len(), component.after.len()) {
+                bounded_component_stable_core(state, &candidates, &component)
+            } else {
+                oversized_alignment_ambiguities(&candidates, &component.groups)
+            };
+        outcome.forced.extend(component_outcome.forced);
+        outcome.ambiguities.extend(component_outcome.ambiguities);
+    }
+    outcome.forced.sort_unstable();
+    outcome
+}
+
+fn bounded_component_stable_core(
+    state: &MappingState<'_>,
+    candidate_groups: &CandidateGroups,
+    component: &AlignmentComponent,
+) -> AlignmentOutcome {
+    let active_before = &component.before;
+    let active_after = &component.after;
 
     let mut candidates = vec![vec![false; active_after.len()]; active_before.len()];
     for (before_index, before_id) in active_before.iter().copied().enumerate() {
         for (after_index, after_id) in active_after.iter().copied().enumerate() {
-            if verified.before_class[&before_id] == verified.after_class[&after_id]
+            if candidate_groups.before_group[&before_id] == candidate_groups.after_group[&after_id]
                 && shape_equal(state.before, before_id, state.after, after_id)
                 && state.can_map_shape_pair(before_id, after_id)
             {
@@ -469,35 +501,36 @@ fn bounded_ordered_stable_core(
             }
             let before_id = active_before[before_index];
             let after_id = active_after[after_index];
-            let class_id = verified.before_class[&before_id];
-            let shape_class = &verified.classes[class_id];
-            let signature_is_unique = shape_class.before.len() == 1 && shape_class.after.len() == 1;
+            let group_id = candidate_groups.before_group[&before_id];
+            let candidate_group = &candidate_groups.groups[group_id];
+            let candidate_group_is_singleton =
+                candidate_group.before.len() == 1 && candidate_group.after.len() == 1;
             let forced = candidate_is_forced(
                 &candidates,
                 optimum,
                 before_index,
                 after_index,
-                signature_is_unique,
+                candidate_group_is_singleton,
             );
             if forced {
                 outcome.forced.push((before_id, after_id));
             } else {
-                let endpoints = ambiguous_by_class.entry(class_id).or_default();
-                if signature_is_unique {
+                let endpoints = ambiguous_by_class.entry(group_id).or_default();
+                if candidate_group_is_singleton {
                     endpoints.0.insert(before_id);
                     endpoints.1.insert(after_id);
                 } else {
-                    endpoints.0.extend(shape_class.before.iter().copied());
-                    endpoints.1.extend(shape_class.after.iter().copied());
+                    endpoints.0.extend(candidate_group.before.iter().copied());
+                    endpoints.1.extend(candidate_group.after.iter().copied());
                 }
             }
         }
     }
 
     outcome.forced.sort_unstable();
-    for (class_id, (before, after)) in ambiguous_by_class {
-        let shape_class = &verified.classes[class_id];
-        let repeated = shape_class.before.len() > 1 || shape_class.after.len() > 1;
+    for (group_id, (before, after)) in ambiguous_by_class {
+        let candidate_group = &candidate_groups.groups[group_id];
+        let repeated = candidate_group.before.len() > 1 || candidate_group.after.len() > 1;
         outcome.ambiguities.push(AlignmentAmbiguity {
             before: before.into_iter().collect(),
             after: after.into_iter().collect(),
@@ -511,6 +544,74 @@ fn bounded_ordered_stable_core(
         });
     }
     outcome
+}
+
+fn ordered_interaction_components(
+    candidates: &CandidateGroups,
+    before_ids: &[usize],
+    after_ids: &[usize],
+) -> Vec<AlignmentComponent> {
+    let active_before: Vec<_> = before_ids
+        .iter()
+        .copied()
+        .filter(|id| candidates.before_group.contains_key(id))
+        .collect();
+    let active_after: Vec<_> = after_ids
+        .iter()
+        .copied()
+        .filter(|id| candidates.after_group.contains_key(id))
+        .collect();
+    if active_before.is_empty() {
+        return Vec::new();
+    }
+
+    let mut before_last = vec![0; candidates.groups.len()];
+    for (position, id) in active_before.iter().enumerate() {
+        before_last[candidates.before_group[id]] = position;
+    }
+    let mut after_last = vec![0; candidates.groups.len()];
+    let mut after_counts = vec![0; candidates.groups.len()];
+    for (position, id) in active_after.iter().enumerate() {
+        let group_id = candidates.after_group[id];
+        after_last[group_id] = position;
+        after_counts[group_id] += 1;
+    }
+
+    let mut components = Vec::new();
+    let mut seen = vec![false; candidates.groups.len()];
+    let mut component_groups = Vec::new();
+    let mut before_start = 0;
+    let mut after_start = 0;
+    let mut before_prefix_last = 0;
+    let mut after_prefix_last = 0;
+    let mut after_prefix_count = 0;
+
+    // A cut is independent only when complete connected candidate groups occupy prefixes on both
+    // sides. Every candidate then has both endpoints on one side, so choices cannot interact.
+    for (position, id) in active_before.iter().enumerate() {
+        let group_id = candidates.before_group[id];
+        if !seen[group_id] {
+            seen[group_id] = true;
+            component_groups.push(group_id);
+            before_prefix_last = before_prefix_last.max(before_last[group_id]);
+            after_prefix_last = after_prefix_last.max(after_last[group_id]);
+            after_prefix_count += after_counts[group_id];
+        }
+        if position == before_prefix_last && after_prefix_count == after_prefix_last + 1 {
+            components.push(AlignmentComponent {
+                before: active_before[before_start..=position].to_vec(),
+                after: active_after[after_start..after_prefix_count].to_vec(),
+                groups: std::mem::take(&mut component_groups),
+            });
+            before_start = position + 1;
+            after_start = after_prefix_count;
+        }
+    }
+
+    debug_assert_eq!(before_start, active_before.len());
+    debug_assert_eq!(after_start, active_after.len());
+    debug_assert!(component_groups.is_empty());
+    components
 }
 
 fn shape_key(node: &crate::syntax::SyntaxNode) -> ShapeKey {
@@ -535,8 +636,43 @@ struct ShapeClass {
 
 struct VerifiedShapeClasses {
     classes: Vec<ShapeClass>,
-    before_class: HashMap<usize, usize>,
-    after_class: HashMap<usize, usize>,
+}
+
+struct DisjointSets {
+    parent: Vec<usize>,
+    rank: Vec<u8>,
+}
+
+impl DisjointSets {
+    fn new(len: usize) -> Self {
+        Self {
+            parent: (0..len).collect(),
+            rank: vec![0; len],
+        }
+    }
+
+    fn find(&mut self, value: usize) -> usize {
+        if self.parent[value] != value {
+            self.parent[value] = self.find(self.parent[value]);
+        }
+        self.parent[value]
+    }
+
+    fn union(&mut self, left: usize, right: usize) {
+        let left_root = self.find(left);
+        let right_root = self.find(right);
+        if left_root == right_root {
+            return;
+        }
+        match self.rank[left_root].cmp(&self.rank[right_root]) {
+            std::cmp::Ordering::Less => self.parent[left_root] = right_root,
+            std::cmp::Ordering::Greater => self.parent[right_root] = left_root,
+            std::cmp::Ordering::Equal => {
+                self.parent[right_root] = left_root;
+                self.rank[left_root] += 1;
+            }
+        }
+    }
 }
 
 fn verified_shape_classes(
@@ -582,20 +718,91 @@ fn verified_shape_classes(
         );
     }
 
-    let mut before_class = HashMap::new();
-    let mut after_class = HashMap::new();
-    for (class_id, shape_class) in classes.iter().enumerate() {
-        for before_id in &shape_class.before {
-            before_class.insert(*before_id, class_id);
+    VerifiedShapeClasses { classes }
+}
+
+fn verified_candidate_groups(
+    state: &MappingState<'_>,
+    verified: &VerifiedShapeClasses,
+) -> CandidateGroups {
+    let mut groups = Vec::new();
+    for shape_class in &verified.classes {
+        let within_scan_limit = shape_class
+            .before
+            .len()
+            .checked_mul(shape_class.after.len())
+            .is_some_and(|pairs| pairs <= ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT);
+        if !within_scan_limit {
+            groups.push(CandidateGroup {
+                before: shape_class.before.clone(),
+                after: shape_class.after.clone(),
+                scan_complete: false,
+            });
+            continue;
         }
-        for after_id in &shape_class.after {
-            after_class.insert(*after_id, class_id);
+
+        let before_len = shape_class.before.len();
+        let mut sets = DisjointSets::new(before_len + shape_class.after.len());
+        let mut incident = vec![false; before_len + shape_class.after.len()];
+        for (before_index, before_id) in shape_class.before.iter().copied().enumerate() {
+            for (after_index, after_id) in shape_class.after.iter().copied().enumerate() {
+                if state.can_map_shape_pair(before_id, after_id) {
+                    let after_vertex = before_len + after_index;
+                    sets.union(before_index, after_vertex);
+                    incident[before_index] = true;
+                    incident[after_vertex] = true;
+                }
+            }
+        }
+
+        let mut connected: BTreeMap<usize, CandidateGroup> = BTreeMap::new();
+        for (before_index, before_id) in shape_class.before.iter().copied().enumerate() {
+            if incident[before_index] {
+                connected
+                    .entry(sets.find(before_index))
+                    .or_insert_with(|| CandidateGroup {
+                        before: Vec::new(),
+                        after: Vec::new(),
+                        scan_complete: true,
+                    })
+                    .before
+                    .push(before_id);
+            }
+        }
+        for (after_index, after_id) in shape_class.after.iter().copied().enumerate() {
+            let vertex = before_len + after_index;
+            if incident[vertex] {
+                connected
+                    .entry(sets.find(vertex))
+                    .or_insert_with(|| CandidateGroup {
+                        before: Vec::new(),
+                        after: Vec::new(),
+                        scan_complete: true,
+                    })
+                    .after
+                    .push(after_id);
+            }
+        }
+        groups.extend(connected.into_values());
+    }
+
+    groups.sort_by_key(|group| (group.before[0], group.after[0]));
+    let mut before_group = HashMap::new();
+    let mut after_group = HashMap::new();
+    for (group_id, group) in groups.iter().enumerate() {
+        for before_id in &group.before {
+            let previous = before_group.insert(*before_id, group_id);
+            debug_assert!(previous.is_none());
+        }
+        for after_id in &group.after {
+            let previous = after_group.insert(*after_id, group_id);
+            debug_assert!(previous.is_none());
         }
     }
-    VerifiedShapeClasses {
-        classes,
-        before_class,
-        after_class,
+    CandidateGroups {
+        groups,
+        before_group,
+        after_group,
     }
 }
 
@@ -603,18 +810,29 @@ fn within_alignment_limit(before: usize, after: usize) -> bool {
     before <= ORDERED_ALIGNMENT_COMPONENT_LIMIT && after <= ORDERED_ALIGNMENT_COMPONENT_LIMIT
 }
 
-fn oversized_alignment_ambiguities(verified: &VerifiedShapeClasses) -> AlignmentOutcome {
+fn oversized_alignment_ambiguities(
+    candidates: &CandidateGroups,
+    group_ids: &[usize],
+) -> AlignmentOutcome {
     AlignmentOutcome {
         forced: Vec::new(),
-        ambiguities: verified
-            .classes
+        ambiguities: group_ids
             .iter()
-            .map(|shape_class| AlignmentAmbiguity {
-                before: shape_class.before.clone(),
-                after: shape_class.after.clone(),
-                reason: format!(
-                    "ordered alignment candidate region exceeds the {ORDERED_ALIGNMENT_COMPONENT_LIMIT}-child per-side cap; candidates are preserved symbolically"
-                ),
+            .map(|group_id| {
+                let candidate_group = &candidates.groups[*group_id];
+                AlignmentAmbiguity {
+                    before: candidate_group.before.clone(),
+                    after: candidate_group.after.clone(),
+                    reason: if candidate_group.scan_complete {
+                        format!(
+                            "ordered alignment candidate region exceeds the {ORDERED_ALIGNMENT_COMPONENT_LIMIT}-child per-side cap; candidates are preserved symbolically"
+                        )
+                    } else {
+                        format!(
+                            "shape-class candidate scan exceeds the {ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT}-pair cap; candidates are preserved symbolically"
+                        )
+                    },
+                }
             })
             .collect(),
     }
@@ -682,9 +900,10 @@ fn candidate_is_forced(
     optimum: usize,
     before_index: usize,
     after_index: usize,
-    signature_is_unique: bool,
+    candidate_group_is_singleton: bool,
 ) -> bool {
-    signature_is_unique && alignment_score(candidates, Some((before_index, after_index))) < optimum
+    candidate_group_is_singleton
+        && alignment_score(candidates, Some((before_index, after_index))) < optimum
 }
 
 fn unique_pairs<K: Ord>(
@@ -895,9 +1114,9 @@ mod tests {
     use crate::syntax::{ParsedSyntax, SyntaxNode};
 
     use super::{
-        alignment_prefix_scores, alignment_score, alignment_suffix_scores, candidate_is_forced,
-        candidate_occurs_in_optimum, oversized_alignment_ambiguities, verified_shape_classes,
-        within_alignment_limit,
+        AlignmentComponent, CandidateGroup, CandidateGroups, DisjointSets, alignment_prefix_scores,
+        alignment_score, alignment_suffix_scores, candidate_is_forced, candidate_occurs_in_optimum,
+        ordered_interaction_components, verified_shape_classes, within_alignment_limit,
     };
 
     #[test]
@@ -946,7 +1165,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_signature_guard_preserves_identity_ambiguity() {
+    fn duplicate_candidate_group_guard_preserves_identity_ambiguity() {
         let candidates = vec![vec![true, true], vec![true, true]];
         let optimum = alignment_score(&candidates, None);
 
@@ -964,6 +1183,89 @@ mod tests {
     }
 
     #[test]
+    fn order_interaction_components_split_only_at_compatible_prefixes() {
+        let (monotone, before, after) = candidate_partition(&[0, 0, 1, 2, 2], &[0, 0, 1, 2, 2]);
+        let components = ordered_interaction_components(&monotone, &before, &after);
+        assert_eq!(components.len(), 3);
+        assert_eq!(components[0].groups, [0]);
+        assert_eq!(components[0].before.len(), 2);
+        assert_eq!(components[1].groups, [1]);
+        assert_eq!(components[2].groups, [2]);
+
+        let (crossing, before, after) = candidate_partition(&[0, 1], &[1, 0]);
+        let components = ordered_interaction_components(&crossing, &before, &after);
+        assert_eq!(components.len(), 1);
+        assert_eq!(components[0].groups, [0, 1]);
+
+        let (interleaved, before, after) = candidate_partition(&[0, 1, 0, 2], &[0, 0, 1, 2]);
+        let components = ordered_interaction_components(&interleaved, &before, &after);
+        assert_eq!(components.len(), 2);
+        assert_eq!(components[0].groups, [0, 1]);
+        assert_eq!(components[0].before.len(), 3);
+        assert_eq!(components[0].after.len(), 3);
+        assert_eq!(components[1].groups, [2]);
+    }
+
+    #[test]
+    fn component_optima_equal_the_full_ordered_optimum() {
+        for bits in 1_u16..(1 << 9) {
+            let mut candidates = vec![vec![false; 3]; 3];
+            for index in 0..9 {
+                candidates[index / 3][index % 3] = bits & (1 << index) != 0;
+            }
+            let (graph, before, after) = candidate_graph(&candidates);
+            let components = ordered_interaction_components(&graph, &before, &after);
+            let full_optimum = alignment_score(&candidates, None);
+            let component_optimum: usize = components
+                .iter()
+                .map(|component| alignment_score(&component_matrix(component, &candidates), None))
+                .sum();
+            assert_eq!(
+                component_optimum, full_optimum,
+                "wrong decomposition for candidate bits {bits:09b}"
+            );
+
+            for (before_index, row) in candidates.iter().enumerate() {
+                for (after_index, is_candidate) in row.iter().copied().enumerate() {
+                    if !is_candidate {
+                        continue;
+                    }
+                    let globally_forced =
+                        alignment_score(&candidates, Some((before_index, after_index)))
+                            < full_optimum;
+                    let after_id = 100 + after_index;
+                    let component = components
+                        .iter()
+                        .find(|component| {
+                            component.before.contains(&before_index)
+                                && component.after.contains(&after_id)
+                        })
+                        .unwrap();
+                    let local_before = component
+                        .before
+                        .iter()
+                        .position(|id| *id == before_index)
+                        .unwrap();
+                    let local_after = component
+                        .after
+                        .iter()
+                        .position(|id| *id == after_id)
+                        .unwrap();
+                    let component_candidates = component_matrix(component, &candidates);
+                    let local_optimum = alignment_score(&component_candidates, None);
+                    let locally_forced =
+                        alignment_score(&component_candidates, Some((local_before, local_after)))
+                            < local_optimum;
+                    assert_eq!(
+                        locally_forced, globally_forced,
+                        "wrong forcedness for candidate bits {bits:09b} at ({before_index}, {after_index})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn raw_shape_hash_collision_is_partitioned_by_recursive_equality() {
         let before = colliding_shapes("identifier", "string");
         let after = colliding_shapes("string", "identifier");
@@ -974,15 +1276,6 @@ mod tests {
         assert_eq!(verified.classes[0].after, [2]);
         assert_eq!(verified.classes[1].before, [2]);
         assert_eq!(verified.classes[1].after, [0]);
-        assert_eq!(verified.before_class[&0], verified.after_class[&2]);
-        assert_ne!(verified.before_class[&0], verified.after_class[&0]);
-
-        let oversized = oversized_alignment_ambiguities(&verified);
-        assert_eq!(oversized.ambiguities.len(), 2);
-        assert_eq!(oversized.ambiguities[0].before, [0]);
-        assert_eq!(oversized.ambiguities[0].after, [2]);
-        assert_eq!(oversized.ambiguities[1].before, [2]);
-        assert_eq!(oversized.ambiguities[1].after, [0]);
     }
 
     #[test]
@@ -1086,6 +1379,132 @@ mod tests {
             root: 0,
             root_kind: "container".to_owned(),
         }
+    }
+
+    fn candidate_partition(
+        before_groups: &[usize],
+        after_groups: &[usize],
+    ) -> (CandidateGroups, Vec<usize>, Vec<usize>) {
+        let group_count = before_groups
+            .iter()
+            .chain(after_groups)
+            .copied()
+            .max()
+            .unwrap()
+            + 1;
+        let before: Vec<_> = (0..before_groups.len()).collect();
+        let after: Vec<_> = (100..100 + after_groups.len()).collect();
+        let mut groups: Vec<_> = (0..group_count)
+            .map(|_| CandidateGroup {
+                before: Vec::new(),
+                after: Vec::new(),
+                scan_complete: true,
+            })
+            .collect();
+        let mut before_group = std::collections::HashMap::new();
+        let mut after_group = std::collections::HashMap::new();
+        for (id, group_id) in before.iter().zip(before_groups) {
+            groups[*group_id].before.push(*id);
+            before_group.insert(*id, *group_id);
+        }
+        for (id, group_id) in after.iter().zip(after_groups) {
+            groups[*group_id].after.push(*id);
+            after_group.insert(*id, *group_id);
+        }
+        (
+            CandidateGroups {
+                groups,
+                before_group,
+                after_group,
+            },
+            before,
+            after,
+        )
+    }
+
+    fn candidate_graph(candidates: &[Vec<bool>]) -> (CandidateGroups, Vec<usize>, Vec<usize>) {
+        let before: Vec<_> = (0..candidates.len()).collect();
+        let after_len = candidates[0].len();
+        let after: Vec<_> = (100..100 + after_len).collect();
+        let mut sets = DisjointSets::new(before.len() + after.len());
+        let mut incident = vec![false; before.len() + after.len()];
+        for (before_index, row) in candidates.iter().enumerate() {
+            for (after_index, is_candidate) in row.iter().copied().enumerate() {
+                if is_candidate {
+                    let after_vertex = before.len() + after_index;
+                    sets.union(before_index, after_vertex);
+                    incident[before_index] = true;
+                    incident[after_vertex] = true;
+                }
+            }
+        }
+
+        let mut connected: std::collections::BTreeMap<usize, CandidateGroup> =
+            std::collections::BTreeMap::new();
+        for (before_index, before_id) in before.iter().copied().enumerate() {
+            if incident[before_index] {
+                connected
+                    .entry(sets.find(before_index))
+                    .or_insert_with(|| CandidateGroup {
+                        before: Vec::new(),
+                        after: Vec::new(),
+                        scan_complete: true,
+                    })
+                    .before
+                    .push(before_id);
+            }
+        }
+        for (after_index, after_id) in after.iter().copied().enumerate() {
+            let vertex = before.len() + after_index;
+            if incident[vertex] {
+                connected
+                    .entry(sets.find(vertex))
+                    .or_insert_with(|| CandidateGroup {
+                        before: Vec::new(),
+                        after: Vec::new(),
+                        scan_complete: true,
+                    })
+                    .after
+                    .push(after_id);
+            }
+        }
+        let groups: Vec<_> = connected.into_values().collect();
+        let mut before_group = std::collections::HashMap::new();
+        let mut after_group = std::collections::HashMap::new();
+        for (group_id, group) in groups.iter().enumerate() {
+            for before_id in &group.before {
+                before_group.insert(*before_id, group_id);
+            }
+            for after_id in &group.after {
+                after_group.insert(*after_id, group_id);
+            }
+        }
+        (
+            CandidateGroups {
+                groups,
+                before_group,
+                after_group,
+            },
+            before,
+            after,
+        )
+    }
+
+    fn component_matrix(
+        component: &AlignmentComponent,
+        candidates: &[Vec<bool>],
+    ) -> Vec<Vec<bool>> {
+        component
+            .before
+            .iter()
+            .map(|before_id| {
+                component
+                    .after
+                    .iter()
+                    .map(|after_id| candidates[*before_id][*after_id - 100])
+                    .collect()
+            })
+            .collect()
     }
 
     fn syntax_node(

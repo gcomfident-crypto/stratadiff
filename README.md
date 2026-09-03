@@ -93,11 +93,12 @@ The alpha implements the first useful slice of Proof-Carrying Structural Diff (P
 2. Compute domain-separated byte, syntax, and shape Merkle fingerprints bottom-up.
 3. Verify hash hits recursively, so correctness does not depend on collision resistance alone.
 4. Map globally unique identical subtrees and unique identical children under mapped parents.
-5. Split unmatched direct children at non-crossing exact anchors, align at most 64 active children
-   per side in each region, and map a unique shape pair only when it is present in every
+5. Split unmatched direct children at non-crossing exact anchors, partition each region into
+   bounded compatibility-graph components, and align at most 64 active children per side in each
+   order-interaction component. Map a singleton candidate-group pair only when it is present in every
    maximum-cardinality ordered alignment.
 6. Preserve ties, the full symmetry class of observationally identical duplicates, and oversized
-   child regions as symbolic ambiguity groups.
+   interaction components as symbolic ambiguity groups.
 7. Derive insertions, deletions, exact equivalent relocations, child-order changes, and
    model-forced shape updates without conflating their evidence levels.
 8. Build an exact patch using line-level Patience anchors, bounded byte-level Myers refinement, and
@@ -105,9 +106,10 @@ The alpha implements the first useful slice of Proof-Carrying Structural Diff (P
 9. Replay the patch immediately and emit a BLAKE3 certificate only if the output is byte-identical.
 
 Typical matching and hashing are linear in syntax-tree size. Ordered dynamic programming is
-restricted to active child regions of at most 64 nodes per side; larger regions remain symbolic
-and never allocate a quadratic candidate matrix. Expensive byte refinement is capped at 64 KiB per
-unmatched region.
+restricted to independent interaction components of at most 64 active nodes per side; larger
+components remain symbolic and never allocate a quadratic candidate matrix. Candidate compatibility
+scanning is capped at 16,384 pairs per verified shape class. Expensive byte refinement is capped at
+64 KiB per unmatched region.
 
 Source rows and columns follow Tree-sitter: zero-based rows and UTF-8 byte columns.
 

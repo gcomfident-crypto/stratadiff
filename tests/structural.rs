@@ -231,6 +231,133 @@ fn oversized_child_region_abstains_without_building_an_alignment_matrix() {
 }
 
 #[test]
+fn ten_thousand_duplicate_siblings_abstain_without_a_quadratic_candidate_scan() {
+    let source = "def repeated(value):\n    return value + 1\n\n".repeat(10_000);
+    let report = python(&source, &source);
+
+    assert!(report.ambiguities.iter().any(|group| {
+        group.before.len() == 10_000
+            && group.after.len() == 10_000
+            && group.before[0].kind == "function_definition"
+            && group.reason.contains("16384-pair cap")
+    }));
+    verify_report(&report, source.as_bytes(), source.as_bytes()).unwrap();
+}
+
+#[test]
+fn independent_components_are_aligned_past_the_total_region_limit() {
+    let mut before = String::new();
+    let mut after = String::new();
+    for index in 0..65 {
+        before.push_str(&format!(
+            "def old_function_{index}(old_value):\n    unique_marker_{index}()\n    return old_value + 1\n\n"
+        ));
+        after.push_str(&format!(
+            "def new_function_{index}(new_value):\n    unique_marker_{index}()\n    return new_value + 2\n\n"
+        ));
+    }
+    let report = python(&before, &after);
+
+    let functions: Vec<_> = report
+        .relations
+        .iter()
+        .filter(|relation| {
+            relation.before.kind == "function_definition"
+                && relation.predicate == Predicate::ShapeEqual
+                && relation.correspondence == Correspondence::ModelForced
+        })
+        .collect();
+    assert_eq!(functions.len(), 65);
+    assert!(
+        functions
+            .iter()
+            .all(|relation| relation.before.shape_hash == functions[0].before.shape_hash)
+    );
+    assert!(
+        !report
+            .ambiguities
+            .iter()
+            .any(|group| group.reason.contains("64-child per-side cap"))
+    );
+    verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
+}
+
+#[test]
+fn incompatible_sparse_candidates_do_not_create_symbolic_ambiguity() {
+    let mut before = String::new();
+    let mut after = String::new();
+    for index in 0..65 {
+        let before_expression = format!("{}old_value", "not ".repeat(index + 1));
+        let after_expression = format!("{}new_value", "not ".repeat(index + 1));
+        before.push_str(&format!(
+            "def old_function_{index}():\n    unique_marker_{index}()\n    return {before_expression}\n\n"
+        ));
+        after.push_str(&format!(
+            "def new_function_{index}():\n    unique_marker_{}()\n    return {after_expression}\n\n",
+            (index + 1) % 65
+        ));
+    }
+    let report = python(&before, &after);
+
+    assert!(!report.relations.iter().any(|relation| {
+        relation.before.kind == "function_definition" && relation.predicate == Predicate::ShapeEqual
+    }));
+    assert!(!report.ambiguities.iter().any(|group| {
+        group
+            .before
+            .iter()
+            .any(|node| node.kind == "function_definition")
+    }));
+    assert_eq!(
+        report
+            .changes
+            .iter()
+            .filter(|change| {
+                matches!(change.kind, ChangeKind::Insert | ChangeKind::Delete)
+                    && change
+                        .before
+                        .as_ref()
+                        .or(change.after.as_ref())
+                        .is_some_and(|node| node.kind == "function_definition")
+            })
+            .count(),
+        130
+    );
+    verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
+}
+
+#[test]
+fn small_component_is_not_hidden_by_an_unrelated_oversized_component() {
+    let mut before = String::new();
+    let mut after = String::new();
+    for index in 0..65 {
+        before.push_str(&format!(
+            "def old_{index}(value_{index}):\n    return value_{index} + {index}\n\n"
+        ));
+        after.push_str(&format!(
+            "def new_{index}(item_{index}):\n    return item_{index} + {}\n\n",
+            index + 1_000
+        ));
+    }
+    before.push_str("if old_condition:\n    old_tail()\n");
+    after.push_str("if new_condition:\n    new_tail()\n");
+    let report = python(&before, &after);
+
+    assert!(report.ambiguities.iter().any(|group| {
+        group.before.len() == 65
+            && group.after.len() == 65
+            && group.before[0].kind == "function_definition"
+            && group.reason.contains("64-child per-side cap")
+    }));
+    assert!(report.relations.iter().any(|relation| {
+        relation.before.kind == "if_statement"
+            && relation.predicate == Predicate::ShapeEqual
+            && relation.correspondence == Correspondence::ModelForced
+    }));
+    verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
+}
+
+#[test]
 fn reordered_unique_children_are_reported_at_the_parent() {
     let before = "def first():\n    return 1\n\ndef second():\n    return 2\n";
     let after = "def second():\n    return 2\n\ndef first():\n    return 1\n";

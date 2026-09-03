@@ -19,8 +19,9 @@
   [official v3 report](../benchmarks/diffbenchmark-literature-evaluation-v3.json) records 283
   evaluated cases, one known malformed oracle, one known malformed source, zero unexpected errors,
   and `benchmarkComplete: true`.
-- [ ] Ambiguity/abstention evaluation remains incomplete: the completed run emitted no ambiguity
-  candidates, so its zero ambiguity coverage is not evidence about ambiguity behavior.
+- [ ] Ambiguity/abstention evaluation remains incomplete: the adapter produced no scorable
+  projected ambiguity candidate, so zero measured coverage is not evidence that the engine emitted
+  no ambiguity or that ambiguity handling is ineffective.
 - [ ] Cross-tool comparison against GumTree and RefactoringMiner remains incomplete.
 - [ ] Defects4J and cross-file evaluation remain later, separately reported stages.
 

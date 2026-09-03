@@ -50,16 +50,21 @@ The current alpha applies these rules in order:
 4. Use non-crossing exact direct-child mappings as barriers. A shape-only pair cannot become forced
    by crossing one of these stronger anchors.
 5. In each remaining region, use `(field, kind, shape_hash)` only as an index, partition hash
-   buckets by recursive shape equality, and build candidates within those verified shape classes.
-6. For at most 64 active children per side, compute a maximum-cardinality ordered alignment and
-   emit a pair as `model_forced` only when forbidding it lowers the optimum.
-7. Require a forced shape signature to occur once per side. This symmetry guard keeps
-   observationally identical duplicates ambiguous even when source order yields one optimal
-   diagonal alignment. If any duplicate participates in an optimum, the entire verified duplicate
-   bucket remains ambiguous so an arbitrary copy is not mislabeled as deleted.
-8. Preserve alignment ties and regions above the cap as `AmbiguityGroup` values. Oversized regions
-   are grouped by recursively verified shape class without constructing a quadratic candidate
-   matrix.
+   buckets by recursive shape equality, filter pairs against existing exact mappings, and join the
+   resulting bipartite candidate graph into order-interaction components. A boundary is valid only
+   when complete connected candidate groups form the same prefix on both sides, which proves that
+   choices in adjacent components cannot cross or share an endpoint.
+6. For at most 64 active children per side in each component, compute a maximum-cardinality ordered
+   alignment and emit a pair as `model_forced` only when forbidding it lowers the component optimum.
+7. Require a forced compatibility-connected candidate group to have one endpoint per side. This
+   symmetry guard keeps unconstrained observationally identical duplicates ambiguous even when
+   source order yields one optimal diagonal alignment. Exact descendant anchors may split a
+   repeated shape class into singleton candidate groups, making the containing root pair forced by
+   the declared model rather than by source order.
+8. Preserve alignment ties and components above the cap as `AmbiguityGroup` values. A shape class
+   requiring more than 16,384 compatibility checks is kept symbolic before pair enumeration;
+   otherwise connected candidate groups are derived exactly. No oversized component constructs a
+   quadratic DP matrix, and unrelated bounded components in the same anchor region are resolved.
 
 ## Change events
 
@@ -104,7 +109,8 @@ grammar.
 - one-to-one relation cardinality;
 - every declared byte, syntax, and shape predicate;
 - exact-anchor uniqueness and descendant membership;
-- stable-core all-optima membership, duplicate symmetry closure, and 64-node abstention;
+- stable-core interaction partitioning, all-optima membership, duplicate symmetry closure, and
+  64-node component abstention;
 - ambiguity groups, derived changes, and summary counters.
 
 The verifier independently re-derives these rules without calling the producer matcher. A later
@@ -113,9 +119,10 @@ objects where practical.
 
 ## Complexity
 
-For N syntax nodes and E bytes, parsing, hashing, indexes, and fixed-size candidate buckets use
-O(N + E) expected time and O(N) memory. A bounded active child region with dimensions A and B uses
-O(A × B) memory and O(U × A × B) time, where A and B are at most 64 and U is at most 64 unique
-possible-optimal pairs checked for forcedness. Regions above the cap stay linear and symbolic. Line
-anchoring uses the Patience implementation from `similar`; byte-level Myers is limited to 64 KiB
-per unmatched region.
+For N syntax nodes and E bytes, parsing, hashing, indexes, and component bookkeeping use O(N + E)
+expected space. Candidate compatibility scanning is capped at 16,384 pairs per verified shape
+class. A bounded component with dimensions A and B uses O(A × B) memory and O(U × A × B) time,
+where A and B are at most 64 and U is at most 64 unique possible-optimal pairs checked for
+forcedness. Components above the cap stay symbolic; independent bounded components in a larger
+region do not inherit that abstention. Line anchoring uses the Patience implementation from
+`similar`; byte-level Myers is limited to 64 KiB per unmatched region.
