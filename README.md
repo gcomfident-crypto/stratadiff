@@ -55,8 +55,11 @@ this run, multi-relation recall remains weak, and predictions outside the scorin
 reported but not counted as true or false positives. This subset and protocol are not directly
 comparable with published full-corpus GumTree or RefactoringMiner figures.
 
+The v5 adapter flattens only explicit `possible_pairs` into an edge-union coverage view. That union
+is not a jointly selectable mapping, and symbolic abstentions contribute no pair candidates.
+
 See the [complete results and limitations](docs/benchmarks.md), the
-[raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v4.json), and the
+[raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v5.json), and the
 [artifact checksums](benchmarks/SHA256SUMS).
 
 ## Quick start

@@ -5,10 +5,10 @@
 The latest provenance-complete Java evaluation was run on 2026-09-04 against the 285-case
 DiffBenchmark literature subset at commit
 `870592abd559d0bd822a27eb5c8ea45aee47015b`. The raw report is
-[`diffbenchmark-literature-evaluation-v4.json`](../benchmarks/diffbenchmark-literature-evaluation-v4.json),
+[`diffbenchmark-literature-evaluation-v5.json`](../benchmarks/diffbenchmark-literature-evaluation-v5.json),
 its canonical source manifest is
 [`diffbenchmark-literature-manifest-v3.json`](../benchmarks/diffbenchmark-literature-manifest-v3.json),
-and [`SHA256SUMS`](../benchmarks/SHA256SUMS) authenticates both files.
+and [`SHA256SUMS`](../benchmarks/SHA256SUMS) authenticates the checked-in artifacts.
 
 The evaluator selected all 285 cases. It evaluated 283, independently verified all 283 generated
 reports, and replayed all 283 targets byte for byte. It recorded one digest-pinned malformed Hive
@@ -41,20 +41,27 @@ false-positive edges incident to those groups. The engine emitted no ambiguity c
 covered a scorable gold relation in this run, so ambiguity coverage is 0%; this is a current recall
 limitation, not evidence of certainty.
 
-The measured `analyze_bytes` latency was 6.942 ms p50, 50.886 ms p95, and 217.715 ms maximum.
+The adapter's flattened ambiguity list is the edge union of explicit `possible_pairs`, not one
+jointly selectable mapping. `symbolic_abstention` scopes make no pair claims and therefore add no
+candidates. This run did not exercise a scorable exact ordered constraint, so it does not establish
+coverage for that representation.
+
+The measured `analyze_bytes` latency was 6.749 ms p50, 52.295 ms p95, and 203.982 ms maximum.
 Serialized per-case diff reports were 1,900,674 bytes p50, 13,628,735 bytes p95, and 49,257,509
-bytes maximum. The evaluator process reached 346,896 KiB `VmHWM`. Latency excludes JDT enumeration,
+bytes maximum. The evaluator process reached 350,608 KiB `VmHWM`. Latency excludes JDT enumeration,
 adaptation, verification, and scoring; `VmHWM` covers the Rust parent process, not the JDT JVM.
 
-Compared with v3, the scorable TP, FP, and FN counts are unchanged. Component-local alignment adds
-one fine mapping outside the scorer universe; it is disclosed in the unscored count and does not
-change any reported precision, recall, or F1 value.
+Compared with v4, the forced and scorable TP, FP, and FN counts and every reported precision,
+recall, and F1 value are unchanged. v5 upgrades single-file reports to the coupled report-v2
+ambiguity representation and projects only explicit `possible_pairs`; symbolic scopes no longer
+admit a Cartesian-product interpretation. The run produced no projected ambiguity candidate, so
+the benchmark does not yet measure exact-constraint coverage.
 
 Provenance:
 
-- StrataDiff engine commit: `4edbc6509f58c9fffb571a67530b03937674990d`
+- StrataDiff engine commit: `f1a818a890c9a3a4a474d00d05c01af54402e235`
 - clean release build: `true`
-- evaluator SHA-256: `7a319479e9dd6e59424f1dff91d45d6611edfabecda2da55ccf66abfe8a90bbb`
+- evaluator SHA-256: `008680d20ce19427ba5cd2681388536d8f81eab4999cfd2c04f27faf9ad64bbe`
 - `Cargo.lock` SHA-256: `2702a7853f01eac7b2c03259deefcc76e0915bb577004e9bb21a881a554d9cd1`
 - canonical manifest BLAKE3: `0012eecb59360ef45e9ccc2ecaa9c11ca1387bfa6c391238d0301a84ee44d9d3`
 - JDT profile: `gumtree-3.0.0-jdt-core-3.35.0-ecj-3.35.0-helper-v3`

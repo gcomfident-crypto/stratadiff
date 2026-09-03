@@ -15,20 +15,23 @@ Canonical manifest BLAKE3:
 
 ## Official literature result
 
-- [DiffBenchmark literature evaluation v4](diffbenchmark-literature-evaluation-v4.json)
+- [DiffBenchmark literature evaluation v5](diffbenchmark-literature-evaluation-v5.json)
+- [Prior v4 evaluation](diffbenchmark-literature-evaluation-v4.json)
 - [Prior v3 evaluation](diffbenchmark-literature-evaluation-v3.json)
 - [SHA-256 checksums](SHA256SUMS)
 
-This is the first-party StrataDiff result for the complete pinned literature subset. Its
-`benchmarkComplete: true` status records the expected 283 evaluated cases, one known malformed
-oracle, one known malformed source, and zero unexpected errors, together with complete engine
-provenance, a verified JDT cache, the canonical manifest, and the full 285-case selection. It is an
-evaluation artifact for this fixed corpus and engine, not a cross-tool comparison.
+The v5 artifact is the latest first-party StrataDiff result for the complete pinned literature
+subset. Its `benchmarkComplete: true` status records the expected 283 evaluated cases, one known
+malformed oracle, one known malformed source, and zero unexpected errors, together with complete
+engine provenance, a verified JDT cache, the canonical manifest, and the full 285-case selection.
+It is an evaluation artifact for this fixed corpus and engine, not a cross-tool comparison.
 
 Interpret the result within these limits:
 
-- the adapter produced no scorable projected ambiguity candidate, so this run does not establish
-  ambiguity coverage and must not be read as evidence that the engine emitted no ambiguity groups;
+- the adapter projects the edge union of explicit `possible_pairs`, not one jointly selectable
+  mapping, while symbolic abstentions contribute no pair candidates; this run produced no scorable
+  projected ambiguity candidate, so it does not establish ambiguity coverage and must not be read
+  as evidence that the engine emitted no ambiguity groups;
 - GumTree and RefactoringMiner comparison runs are not included;
 - Defects4J and cross-file evaluation remain future stages; and
 - relation scores apply only to the fixed parser-adapter universe. Excluded oracle relations and

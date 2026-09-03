@@ -16,12 +16,14 @@
 ## Current status
 
 - [x] The pinned 285-case DiffBenchmark literature intra-file stage is complete. The
-  [official v4 report](../benchmarks/diffbenchmark-literature-evaluation-v4.json) records 283
+  [official v5 report](../benchmarks/diffbenchmark-literature-evaluation-v5.json) records 283
   evaluated cases, one known malformed oracle, one known malformed source, zero unexpected errors,
   and `benchmarkComplete: true`.
-- [ ] Ambiguity/abstention evaluation remains incomplete: the adapter produced no scorable
-  projected ambiguity candidate, so zero measured coverage is not evidence that the engine emitted
-  no ambiguity or that ambiguity handling is ineffective.
+- [ ] Ambiguity/abstention evaluation remains incomplete. The flattened ambiguity list is only the
+  edge union of explicit `possible_pairs`, not one jointly selectable mapping, and
+  `symbolic_abstention` scopes contribute no pair candidates. This run produced no scorable
+  projected candidate, so zero measured coverage is not evidence that the engine emitted no
+  ambiguity or that ambiguity handling is ineffective.
 - [ ] Cross-tool comparison against GumTree and RefactoringMiner remains incomplete.
 - [ ] Defects4J and cross-file evaluation remain later, separately reported stages.
 
