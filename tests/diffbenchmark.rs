@@ -49,6 +49,29 @@ fn assert_resolves_range(
     );
 }
 
+fn assert_does_not_resolve_fragment(
+    source: &str,
+    candidates: &[ComparableNode],
+    node_type: &str,
+    fragment: &str,
+) {
+    let start = source
+        .find(fragment)
+        .unwrap_or_else(|| panic!("missing source fragment {fragment:?}"));
+    let oracle = JdtOracleNode {
+        node_type: node_type.to_owned(),
+        utf16_code_units: OffsetRange {
+            start: source[..start].encode_utf16().count(),
+            end: source[..start + fragment.len()].encode_utf16().count(),
+        },
+    };
+    assert_eq!(
+        resolve_jdt_node(&oracle, source, candidates).unwrap(),
+        None,
+        "unexpectedly resolved {node_type}"
+    );
+}
+
 #[test]
 fn parses_the_complete_god_report_shape() {
     let report = parse_god_report(
@@ -118,11 +141,6 @@ fn jdt_and_tree_sitter_types_share_explicit_roles() {
             "TypeDeclaration",
             "class_declaration",
             SharedNodeRole::TypeDeclaration,
-        ),
-        (
-            "TYPE_DECLARATION_KIND",
-            "class",
-            SharedNodeRole::TypeDeclarationKind,
         ),
         (
             "EnumDeclaration",
@@ -351,6 +369,42 @@ fn jdt_and_tree_sitter_types_share_explicit_roles() {
 }
 
 #[test]
+fn type_declaration_kind_requires_declaration_context() {
+    let source = "class Demo { Class<?> literal = Foo.class; }\ninterface Example {}";
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+
+    assert_eq!(
+        jdt_node_role("TYPE_DECLARATION_KIND"),
+        Some(SharedNodeRole::TypeDeclarationKind)
+    );
+    assert_eq!(tree_sitter_java_node_role("class"), None);
+    assert_eq!(tree_sitter_java_node_role("interface"), None);
+    assert_resolves_fragment(source, &nodes, "TYPE_DECLARATION_KIND", "class");
+    assert_resolves_fragment(source, &nodes, "TYPE_DECLARATION_KIND", "interface");
+    assert_resolves_fragment(source, &nodes, "TypeLiteral", "Foo.class");
+
+    let kind_ranges: Vec<_> = nodes
+        .iter()
+        .filter(|node| node.role == SharedNodeRole::TypeDeclarationKind)
+        .map(|node| node.utf8_bytes)
+        .collect();
+    let interface_start = source.find("interface").unwrap();
+    assert_eq!(
+        kind_ranges,
+        [
+            OffsetRange {
+                start: 0,
+                end: "class".len(),
+            },
+            OffsetRange {
+                start: interface_start,
+                end: interface_start + "interface".len(),
+            },
+        ]
+    );
+}
+
+#[test]
 fn parser_specific_aliases_map_only_to_their_declared_roles() {
     let jdt_aliases = [
         (
@@ -381,7 +435,6 @@ fn parser_specific_aliases_map_only_to_their_declared_roles() {
         ),
         ("constant_declaration", SharedNodeRole::FieldDeclaration),
         ("interface_declaration", SharedNodeRole::TypeDeclaration),
-        ("interface", SharedNodeRole::TypeDeclarationKind),
         ("constructor_body", SharedNodeRole::Block),
         ("try_with_resources_statement", SharedNodeRole::TryStatement),
         ("floating_point_type", SharedNodeRole::PrimitiveType),
@@ -415,10 +468,6 @@ fn parser_specific_aliases_map_only_to_their_declared_roles() {
         ),
         (
             "spread_parameter",
-            SharedNodeRole::SingleVariableDeclaration,
-        ),
-        (
-            "receiver_parameter",
             SharedNodeRole::SingleVariableDeclaration,
         ),
         ("field_access", SharedNodeRole::QualifiedAccess),
@@ -470,6 +519,9 @@ fn unsupported_types_are_not_guessed_from_spelling() {
         "scoped_type_identifier",
         "annotation",
         "argument_list",
+        "class",
+        "interface",
+        "receiver_parameter",
         "+",
         "modifiers",
         "enum",
@@ -533,7 +585,6 @@ fn expanded_roles_are_backed_by_tree_sitter_java_node_types() {
         "formal_parameter",
         "catch_formal_parameter",
         "spread_parameter",
-        "receiver_parameter",
         "marker_annotation",
         "annotation",
         "switch_label",
@@ -873,7 +924,7 @@ class Demo<Type> {
         assert_resolves_fragment(source, &nodes, node_type, fragment);
     }
 
-    assert_resolves_fragment(source, &nodes, "SingleVariableDeclaration", "Demo this");
+    assert_does_not_resolve_fragment(source, &nodes, "SingleVariableDeclaration", "Demo this");
     let empty_start = source.find("        ;\n").unwrap() + "        ".len();
     assert_resolves_range(
         source,
@@ -907,7 +958,7 @@ class Demo<Type> {
 
 #[test]
 fn synthetic_roles_require_exact_tree_sitter_field_context() {
-    let source = "class Demo extends Base { void run() { service.call(first, second); super.call(superArgument); boolean same = left == right; } }";
+    let source = "class Demo extends Base { void run() { service.call(first, second); super.call(superArgument); Outer.super.call(qualifiedSuperArgument); boolean same = left == right; } }";
     let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
 
     assert_resolves_fragment(source, &nodes, "METHOD_INVOCATION_RECEIVER", "service");
@@ -930,26 +981,88 @@ fn synthetic_roles_require_exact_tree_sitter_field_context() {
     assert_eq!(tree_sitter_java_node_role("argument_list"), None);
     assert_eq!(tree_sitter_java_node_role("=="), None);
 
-    let super_call_start = source.find("super.call(superArgument)").unwrap();
-    for node_type in ["MethodInvocation", "METHOD_INVOCATION_ARGUMENTS"] {
-        let range = if node_type == "MethodInvocation" {
-            OffsetRange {
-                start: super_call_start,
-                end: super_call_start + "super.call(superArgument)".len(),
-            }
-        } else {
-            let start = source.find("superArgument").unwrap();
-            OffsetRange {
-                start,
-                end: start + "superArgument".len(),
-            }
-        };
-        let oracle = JdtOracleNode {
-            node_type: node_type.to_owned(),
-            utf16_code_units: range,
-        };
-        assert_eq!(resolve_jdt_node(&oracle, source, &nodes).unwrap(), None);
+    for (node_type, fragment) in [
+        ("MethodInvocation", "super.call(superArgument)"),
+        ("METHOD_INVOCATION_ARGUMENTS", "superArgument"),
+        (
+            "MethodInvocation",
+            "Outer.super.call(qualifiedSuperArgument)",
+        ),
+        ("METHOD_INVOCATION_RECEIVER", "Outer"),
+        ("METHOD_INVOCATION_ARGUMENTS", "qualifiedSuperArgument"),
+    ] {
+        assert_does_not_resolve_fragment(source, &nodes, node_type, fragment);
     }
+}
+
+#[test]
+fn infix_operator_roles_follow_jdt_extended_operand_structure() {
+    fn operator_ranges(source: &str) -> Vec<OffsetRange> {
+        comparable_tree_sitter_java_nodes(source.as_bytes())
+            .unwrap()
+            .into_iter()
+            .filter(|node| node.role == SharedNodeRole::InfixExpressionOperator)
+            .map(|node| node.utf8_bytes)
+            .collect()
+    }
+
+    let homogeneous = "class Demo { int value = a + b + c; }";
+    let homogeneous_operators: Vec<_> = homogeneous
+        .match_indices('+')
+        .map(|(start, operator)| OffsetRange {
+            start,
+            end: start + operator.len(),
+        })
+        .collect();
+    assert_eq!(operator_ranges(homogeneous), [homogeneous_operators[0]]);
+
+    let mixed = "class Demo { int value = a + b - c; }";
+    let mixed_operators: Vec<_> = mixed
+        .match_indices(['+', '-'])
+        .map(|(start, operator)| OffsetRange {
+            start,
+            end: start + operator.len(),
+        })
+        .collect();
+    assert_eq!(operator_ranges(mixed), mixed_operators);
+
+    let parenthesized = "class Demo { int value = (a + b) + c; }";
+    let parenthesized_operators: Vec<_> = parenthesized
+        .match_indices('+')
+        .map(|(start, operator)| OffsetRange {
+            start,
+            end: start + operator.len(),
+        })
+        .collect();
+    assert_eq!(operator_ranges(parenthesized), parenthesized_operators);
+
+    for (operator, equality) in [
+        ("==", "class Demo { boolean value = a == b == c; }"),
+        ("!=", "class Demo { boolean value = a != b != c; }"),
+    ] {
+        let equality_operators: Vec<_> = equality
+            .match_indices(operator)
+            .map(|(start, operator)| OffsetRange {
+                start,
+                end: start + operator.len(),
+            })
+            .collect();
+        assert_eq!(operator_ranges(equality), equality_operators);
+    }
+}
+
+#[test]
+fn enhanced_for_variables_use_jdt_single_variable_declaration_ranges() {
+    let source = "class Demo { void run() { for (String item : items) {} for (final String row[] : matrix) {} } }";
+    let nodes = comparable_tree_sitter_java_nodes(source.as_bytes()).unwrap();
+
+    assert_resolves_fragment(source, &nodes, "SingleVariableDeclaration", "String item");
+    assert_resolves_fragment(
+        source,
+        &nodes,
+        "SingleVariableDeclaration",
+        "final String row[]",
+    );
 }
 
 #[test]

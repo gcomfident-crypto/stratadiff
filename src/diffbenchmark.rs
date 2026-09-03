@@ -168,14 +168,30 @@ pub fn comparable_tree_sitter_java_nodes(source: &[u8]) -> Result<Vec<Comparable
                 utf8_bytes: range,
             }));
         }
+        if node.kind == "enhanced_for_statement" {
+            comparable.push(ComparableNode {
+                role: SharedNodeRole::SingleVariableDeclaration,
+                utf8_bytes: enhanced_for_variable_range(&parsed, node.id)?,
+            });
+        }
 
         let Some(parent_id) = node.parent else {
             continue;
         };
         let parent = &parsed.nodes[parent_id];
+        if matches!(
+            (node.kind.as_str(), parent.kind.as_str()),
+            ("class", "class_declaration") | ("interface", "interface_declaration")
+        ) {
+            comparable.push(ComparableNode {
+                role: SharedNodeRole::TypeDeclarationKind,
+                utf8_bytes: range,
+            });
+        }
         if parent.kind == "binary_expression"
             && node.field.as_deref() == Some("operator")
             && is_binary_operator(&node.kind)
+            && !is_extended_infix_operator(&parsed, parent_id, &node.kind)
         {
             comparable.push(ComparableNode {
                 role: SharedNodeRole::InfixExpressionOperator,
@@ -219,10 +235,76 @@ pub fn comparable_tree_sitter_java_nodes(source: &[u8]) -> Result<Vec<Comparable
 }
 
 fn is_jdt_method_invocation(parsed: &crate::syntax::ParsedSyntax, invocation_id: usize) -> bool {
-    !parsed.nodes[invocation_id].children.iter().any(|id| {
-        let child = &parsed.nodes[*id];
-        child.field.as_deref() == Some("object") && child.kind == "super"
-    })
+    !parsed.nodes[invocation_id]
+        .children
+        .iter()
+        .any(|id| parsed.nodes[*id].kind == "super")
+}
+
+fn is_extended_infix_operator(
+    parsed: &crate::syntax::ParsedSyntax,
+    expression_id: usize,
+    operator: &str,
+) -> bool {
+    // JDT keeps equality expressions nested instead of using extended operands.
+    if matches!(operator, "==" | "!=") {
+        return false;
+    }
+    let expression = &parsed.nodes[expression_id];
+    let Some(left) = expression
+        .children
+        .iter()
+        .map(|id| &parsed.nodes[*id])
+        .find(|child| child.field.as_deref() == Some("left"))
+    else {
+        return false;
+    };
+    left.kind == "binary_expression"
+        && left.children.iter().any(|id| {
+            let child = &parsed.nodes[*id];
+            child.field.as_deref() == Some("operator") && child.kind == operator
+        })
+}
+
+fn enhanced_for_variable_range(
+    parsed: &crate::syntax::ParsedSyntax,
+    statement_id: usize,
+) -> Result<OffsetRange> {
+    let statement = &parsed.nodes[statement_id];
+    let variable_type = statement
+        .children
+        .iter()
+        .map(|id| &parsed.nodes[*id])
+        .find(|child| child.field.as_deref() == Some("type"))
+        .context("tree-sitter enhanced_for_statement has no variable type")?;
+    let name = statement
+        .children
+        .iter()
+        .map(|id| &parsed.nodes[*id])
+        .find(|child| child.field.as_deref() == Some("name"))
+        .context("tree-sitter enhanced_for_statement has no variable name")?;
+    let modifiers = statement
+        .children
+        .iter()
+        .map(|id| &parsed.nodes[*id])
+        .find(|child| child.kind == "modifiers");
+    let dimensions = statement
+        .children
+        .iter()
+        .map(|id| &parsed.nodes[*id])
+        .find(|child| child.field.as_deref() == Some("dimensions"));
+
+    let start = if let Some(modifiers) = modifiers {
+        modifiers.span.start_byte
+    } else {
+        variable_type.span.start_byte
+    };
+    let end = if let Some(dimensions) = dimensions {
+        dimensions.span.end_byte
+    } else {
+        name.span.end_byte
+    };
+    Ok(OffsetRange { start, end })
 }
 
 fn is_prefix_update(parsed: &crate::syntax::ParsedSyntax, update_id: usize) -> bool {
@@ -511,7 +593,6 @@ pub fn tree_sitter_java_node_roles(node_type: &str) -> &'static [SharedNodeRole]
         }
         "field_declaration" | "constant_declaration" => &[SharedNodeRole::FieldDeclaration],
         "class_declaration" | "interface_declaration" => &[SharedNodeRole::TypeDeclaration],
-        "class" | "interface" => &[SharedNodeRole::TypeDeclarationKind],
         "enum_declaration" => &[SharedNodeRole::EnumDeclaration],
         "enum_constant" => &[SharedNodeRole::EnumConstantDeclaration],
         "annotation_type_declaration" => &[SharedNodeRole::AnnotationTypeDeclaration],
@@ -535,10 +616,9 @@ pub fn tree_sitter_java_node_roles(node_type: &str) -> &'static [SharedNodeRole]
         "try_statement" | "try_with_resources_statement" => &[SharedNodeRole::TryStatement],
         "while_statement" => &[SharedNodeRole::WhileStatement],
         "yield_statement" => &[SharedNodeRole::YieldStatement],
-        "formal_parameter"
-        | "catch_formal_parameter"
-        | "spread_parameter"
-        | "receiver_parameter" => &[SharedNodeRole::SingleVariableDeclaration],
+        "formal_parameter" | "catch_formal_parameter" | "spread_parameter" => {
+            &[SharedNodeRole::SingleVariableDeclaration]
+        }
         "marker_annotation" => &[SharedNodeRole::MarkerAnnotation],
         "annotation" => &[
             SharedNodeRole::NormalAnnotation,
