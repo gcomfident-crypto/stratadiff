@@ -1,11 +1,11 @@
 use std::path::Path;
 
 use anyhow::{Result, bail};
-use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
 use tree_sitter::Language as TsLanguage;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
     Python,

@@ -2,7 +2,8 @@ use anyhow::{Result, bail};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use similar::{Algorithm, DiffTag, capture_diff_slices};
 
-use crate::model::{ByteEdit, LosslessPatch, ReplayCertificate};
+use stratadiff_core::model::{ByteEdit, LosslessPatch, ReplayCertificate};
+use stratadiff_verifier::apply_patch;
 
 pub(crate) fn create_patch(before: &[u8], after: &[u8]) -> LosslessPatch {
     let before_lines: Vec<_> = before.split_inclusive(|byte| *byte == b'\n').collect();
@@ -88,29 +89,6 @@ fn refine_changed_region(
             replacement_base64: STANDARD.encode(trimmed_new),
         });
     }
-}
-
-pub fn apply_patch(before: &[u8], patch: &LosslessPatch) -> Result<Vec<u8>> {
-    if patch.algorithm != "patience-lines+bounded-myers-bytes-v1" {
-        bail!("unsupported patch algorithm {}", patch.algorithm);
-    }
-
-    let mut cursor = 0;
-    let mut output = Vec::new();
-    for edit in &patch.edits {
-        if edit.old_start < cursor || edit.old_end < edit.old_start || edit.old_end > before.len() {
-            bail!(
-                "invalid or overlapping edit range {}..{}",
-                edit.old_start,
-                edit.old_end
-            );
-        }
-        output.extend_from_slice(&before[cursor..edit.old_start]);
-        output.extend(STANDARD.decode(&edit.replacement_base64)?);
-        cursor = edit.old_end;
-    }
-    output.extend_from_slice(&before[cursor..]);
-    Ok(output)
 }
 
 pub(crate) fn create_certificate(

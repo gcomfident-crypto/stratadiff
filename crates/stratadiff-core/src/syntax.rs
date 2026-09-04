@@ -5,7 +5,7 @@ use crate::language::Language;
 use crate::model::{NodeRef, Position, Span};
 
 #[derive(Clone, Debug)]
-pub(crate) struct SyntaxNode {
+pub struct SyntaxNode {
     pub id: usize,
     pub kind: String,
     pub named: bool,
@@ -39,14 +39,14 @@ impl SyntaxNode {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct ParsedSyntax {
+pub struct ParsedSyntax {
     pub source: Vec<u8>,
     pub nodes: Vec<SyntaxNode>,
     pub root: usize,
     pub root_kind: String,
 }
 
-pub(crate) fn parse(source: Vec<u8>, language: Language) -> Result<ParsedSyntax> {
+pub fn parse(source: Vec<u8>, language: Language) -> Result<ParsedSyntax> {
     let mut parser = Parser::new();
     parser
         .set_language(&language.parser_language())
@@ -264,7 +264,7 @@ fn hash_hex(hash: [u8; 32]) -> String {
     blake3::Hash::from_bytes(hash).to_hex().to_string()
 }
 
-pub(crate) fn syntax_equal(
+pub fn syntax_equal(
     left: &ParsedSyntax,
     left_id: usize,
     right: &ParsedSyntax,
@@ -294,7 +294,7 @@ pub(crate) fn syntax_equal(
         })
 }
 
-pub(crate) fn shape_equal(
+pub fn shape_equal(
     left: &ParsedSyntax,
     left_id: usize,
     right: &ParsedSyntax,

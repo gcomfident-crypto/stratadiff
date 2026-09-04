@@ -1247,7 +1247,20 @@ dependencies = [
  "serde_json",
  "sha2",
  "similar",
+ "stratadiff-core",
+ "stratadiff-verifier",
  "tempfile",
+ "tree-sitter-java",
+]
+
+[[package]]
+name = "stratadiff-core"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "clap",
+ "serde",
  "tree-sitter",
  "tree-sitter-java",
  "tree-sitter-javascript",
@@ -1255,6 +1268,16 @@ dependencies = [
  "tree-sitter-python",
  "tree-sitter-rust",
  "tree-sitter-typescript",
+]
+
+[[package]]
+name = "stratadiff-verifier"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "blake3",
+ "stratadiff-core",
 ]
 
 [[package]]

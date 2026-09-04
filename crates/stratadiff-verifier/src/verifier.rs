@@ -2,16 +2,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
-
-use crate::model::{
+use stratadiff_core::model::{
     AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact,
     ChangeKind, Correspondence, DiffReport, NodeRef, PairClaims, Predicate, Relation,
     StructuralChange, Summary,
 };
-use crate::patch::apply_patch;
-use crate::syntax::{ParsedSyntax, SyntaxNode, parse, shape_equal, syntax_equal};
+use stratadiff_core::syntax::{ParsedSyntax, SyntaxNode, parse, shape_equal, syntax_equal};
+use stratadiff_core::{PARSER_RUNTIME_VERSION, REPORT_ENGINE_VERSION, REPORT_SCHEMA};
 
-pub(crate) const REPORT_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json";
+use crate::patch::apply_patch;
 
 const INPUT_PAIR_EVIDENCE: &[&str] = &["caller_supplied_file_pair"];
 const GLOBAL_ANCHOR_EVIDENCE: &[&str] = &[
@@ -55,7 +54,7 @@ struct GlobalExactIndex {
     after: HashMap<(String, [u8; 32]), Vec<usize>>,
 }
 
-pub(crate) fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()> {
+pub fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()> {
     verify_header(report)?;
     verify_artifact("before", &report.before, before)?;
     verify_artifact("after", &report.after, after)?;
@@ -117,11 +116,11 @@ fn verify_header(report: &DiffReport) -> Result<()> {
     if report.schema != REPORT_SCHEMA {
         bail!("unsupported report schema {}", report.schema);
     }
-    if report.engine_version != env!("CARGO_PKG_VERSION") {
+    if report.engine_version != REPORT_ENGINE_VERSION {
         bail!(
             "report engine version {} is not supported by verifier {}",
             report.engine_version,
-            env!("CARGO_PKG_VERSION")
+            REPORT_ENGINE_VERSION
         );
     }
     Ok(())
@@ -198,7 +197,7 @@ fn verify_parser_manifest(
 ) -> Result<()> {
     let language = report.parser.language;
     if report.parser.engine != "tree-sitter"
-        || report.parser.runtime_version != "0.27.0"
+        || report.parser.runtime_version != PARSER_RUNTIME_VERSION
         || report.parser.grammar_name != language.grammar_name()
         || report.parser.grammar_version != language.grammar_version()
         || report.parser.grammar_abi != language.parser_language().abi_version()

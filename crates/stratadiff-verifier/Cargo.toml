@@ -1,0 +1,14 @@
+[package]
+name = "stratadiff-verifier"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Independent verifier for StrataDiff reports"
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow = "1.0"
+base64 = "0.22"
+blake3 = "1.8"
+stratadiff-core = { version = "=0.2.0", path = "../stratadiff-core", default-features = false }

@@ -1,10 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use crate::model::{
+use stratadiff_core::model::{
     AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, ChangeKind,
     Correspondence, PairClaims, Predicate, Relation, StructuralChange,
 };
-use crate::syntax::{ParsedSyntax, shape_equal, syntax_equal};
+use stratadiff_core::syntax::{ParsedSyntax, shape_equal, syntax_equal};
 
 /// Ordered alignment is quadratic in the number of active children in an order-interaction
 /// component. Larger components are preserved symbolically without constructing their matrix.
@@ -645,7 +645,7 @@ fn ordered_interaction_components(
     components
 }
 
-fn shape_key(node: &crate::syntax::SyntaxNode) -> ShapeKey {
+fn shape_key(node: &stratadiff_core::syntax::SyntaxNode) -> ShapeKey {
     (node.field.clone(), node.kind.clone(), node.shape_hash)
 }
 
@@ -948,7 +948,7 @@ fn unique_pairs<K: Ord>(
     state: &MappingState<'_>,
     before_ids: &[usize],
     after_ids: &[usize],
-    key: impl Fn(&crate::syntax::SyntaxNode) -> K,
+    key: impl Fn(&stratadiff_core::syntax::SyntaxNode) -> K,
 ) -> Vec<(usize, usize)> {
     let mut before_buckets: BTreeMap<K, Vec<usize>> = BTreeMap::new();
     let mut after_buckets: BTreeMap<K, Vec<usize>> = BTreeMap::new();
@@ -1148,8 +1148,8 @@ fn derive_changes(
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Position, Span};
-    use crate::syntax::{ParsedSyntax, SyntaxNode};
+    use stratadiff_core::model::{Position, Span};
+    use stratadiff_core::syntax::{ParsedSyntax, SyntaxNode};
 
     use super::{
         AlignmentComponent, CandidateGroup, CandidateGroups, DisjointSets, alignment_prefix_scores,

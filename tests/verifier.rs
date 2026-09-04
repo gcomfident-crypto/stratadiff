@@ -33,7 +33,7 @@ fn corrupt_hash(hash: &mut String) {
 
 #[test]
 fn verifier_source_does_not_call_the_producer_matcher() {
-    let source = include_str!("../src/verifier.rs");
+    let source = include_str!("../crates/stratadiff-verifier/src/verifier.rs");
     let producer_entry_point = ["match", "_trees"].concat();
     let matcher_path = ["matcher", "::"].concat();
 

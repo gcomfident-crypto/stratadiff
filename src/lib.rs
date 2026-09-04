@@ -3,30 +3,26 @@ pub mod diffbenchmark_case;
 pub mod diffbenchmark_eval;
 pub mod diffbenchmark_materialization;
 pub mod diffbenchmark_prediction;
-mod language;
 mod matcher;
-mod model;
 mod patch;
-mod syntax;
-mod verifier;
 
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
+use stratadiff_core::syntax::parse;
+use stratadiff_core::{PARSER_RUNTIME_VERSION, REPORT_ENGINE_VERSION, REPORT_SCHEMA};
 
-pub use language::Language;
-pub use model::{
+pub use stratadiff_core::Language;
+pub use stratadiff_core::model::{
     AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact,
     ByteEdit, ChangeKind, Correspondence, DiffReport, LosslessPatch, NodeRef, PairClaims,
     ParserManifest, Position, Predicate, Relation, ReplayCertificate, Span, StructuralChange,
     Summary,
 };
-pub use patch::apply_patch;
+pub use stratadiff_verifier::{apply_patch, verify_report};
 
 use matcher::match_trees;
 use patch::{create_certificate, create_patch};
-use syntax::parse;
-use verifier::REPORT_SCHEMA;
 
 pub fn analyze_files(
     before_path: &Path,
@@ -92,7 +88,7 @@ pub fn analyze_bytes(
 
     Ok(DiffReport {
         schema: REPORT_SCHEMA.to_owned(),
-        engine_version: env!("CARGO_PKG_VERSION").to_owned(),
+        engine_version: REPORT_ENGINE_VERSION.to_owned(),
         before: Artifact {
             path: before_label,
             byte_len: parsed_before.source.len(),
@@ -105,7 +101,7 @@ pub fn analyze_bytes(
         },
         parser: ParserManifest {
             engine: "tree-sitter".to_owned(),
-            runtime_version: "0.27.0".to_owned(),
+            runtime_version: PARSER_RUNTIME_VERSION.to_owned(),
             language,
             grammar_name: language.grammar_name().to_owned(),
             grammar_version: language.grammar_version().to_owned(),
@@ -131,8 +127,4 @@ pub fn analyze_bytes(
         patch,
         certificate,
     })
-}
-
-pub fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()> {
-    verifier::verify_report(report, before, after)
 }

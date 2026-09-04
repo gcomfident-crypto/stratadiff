@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::Language;
-use crate::syntax::parse;
+use stratadiff_core::syntax::parse;
 
 /// The two mapping categories published in each DiffBenchmark `GOD.json` group.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -435,7 +435,7 @@ pub fn comparable_tree_sitter_java_node_origins(
 
 fn push_comparable(
     output: &mut Vec<TreeSitterComparableNode>,
-    origin: &crate::syntax::SyntaxNode,
+    origin: &stratadiff_core::syntax::SyntaxNode,
     comparable: ComparableNode,
 ) {
     output.push(TreeSitterComparableNode {
@@ -449,7 +449,10 @@ fn push_comparable(
     });
 }
 
-fn is_jdt_method_invocation(parsed: &crate::syntax::ParsedSyntax, invocation_id: usize) -> bool {
+fn is_jdt_method_invocation(
+    parsed: &stratadiff_core::syntax::ParsedSyntax,
+    invocation_id: usize,
+) -> bool {
     !parsed.nodes[invocation_id]
         .children
         .iter()
@@ -457,7 +460,7 @@ fn is_jdt_method_invocation(parsed: &crate::syntax::ParsedSyntax, invocation_id:
 }
 
 fn is_extended_infix_operator(
-    parsed: &crate::syntax::ParsedSyntax,
+    parsed: &stratadiff_core::syntax::ParsedSyntax,
     expression_id: usize,
     operator: &str,
 ) -> bool {
@@ -482,7 +485,7 @@ fn is_extended_infix_operator(
 }
 
 fn enhanced_for_variable_range(
-    parsed: &crate::syntax::ParsedSyntax,
+    parsed: &stratadiff_core::syntax::ParsedSyntax,
     statement_id: usize,
 ) -> Result<OffsetRange> {
     let statement = &parsed.nodes[statement_id];
@@ -522,7 +525,7 @@ fn enhanced_for_variable_range(
     Ok(OffsetRange { start, end })
 }
 
-fn is_prefix_update(parsed: &crate::syntax::ParsedSyntax, update_id: usize) -> bool {
+fn is_prefix_update(parsed: &stratadiff_core::syntax::ParsedSyntax, update_id: usize) -> bool {
     let update = &parsed.nodes[update_id];
     update.children.first().is_some_and(|id| {
         let first = &parsed.nodes[*id];
@@ -531,7 +534,10 @@ fn is_prefix_update(parsed: &crate::syntax::ParsedSyntax, update_id: usize) -> b
     })
 }
 
-fn is_empty_statement_context(parent: &crate::syntax::SyntaxNode, field: Option<&str>) -> bool {
+fn is_empty_statement_context(
+    parent: &stratadiff_core::syntax::SyntaxNode,
+    field: Option<&str>,
+) -> bool {
     match parent.kind.as_str() {
         "block" | "switch_block_statement_group" | "labeled_statement" => true,
         "if_statement" => matches!(field, Some("consequence" | "alternative")),
@@ -543,7 +549,7 @@ fn is_empty_statement_context(parent: &crate::syntax::SyntaxNode, field: Option<
 }
 
 fn switch_case_range(
-    parsed: &crate::syntax::ParsedSyntax,
+    parsed: &stratadiff_core::syntax::ParsedSyntax,
     switch_label_id: usize,
 ) -> Result<OffsetRange> {
     let label = &parsed.nodes[switch_label_id];
@@ -573,7 +579,10 @@ fn switch_case_range(
     })
 }
 
-fn annotation_role(parsed: &crate::syntax::ParsedSyntax, annotation_id: usize) -> SharedNodeRole {
+fn annotation_role(
+    parsed: &stratadiff_core::syntax::ParsedSyntax,
+    annotation_id: usize,
+) -> SharedNodeRole {
     let annotation = &parsed.nodes[annotation_id];
     let arguments = annotation
         .children
@@ -599,7 +608,7 @@ fn annotation_role(parsed: &crate::syntax::ParsedSyntax, annotation_id: usize) -
 }
 
 fn method_invocation_argument_range(
-    parsed: &crate::syntax::ParsedSyntax,
+    parsed: &stratadiff_core::syntax::ParsedSyntax,
     argument_list_id: usize,
 ) -> Result<Option<OffsetRange>> {
     let argument_list = &parsed.nodes[argument_list_id];
