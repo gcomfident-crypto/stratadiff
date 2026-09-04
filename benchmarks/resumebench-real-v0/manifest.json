@@ -1,0 +1,323 @@
+{
+  "schema": "stratadiff-resumebench-real-manifest-v0",
+  "dataset_version": "0.1.0",
+  "created_at": "2026-09-04T19:30:34Z",
+  "frozen_at": "2026-09-04T19:30:34Z",
+  "name": "ResumeBench-Real v0",
+  "description": "A pinned diagnostic sample of public Gerrit patch-set transitions with an explicit reviewed checkpoint and a later submitted revision.",
+  "dataset_license": "MIT",
+  "selection_protocol": {
+    "kind": "diagnostic_stratified_sample",
+    "provider": "Gerrit",
+    "instance": "https://gerrit-review.googlesource.com",
+    "project": "gerrit",
+    "inclusion_rule": "Public merged changes with a Code-Review+2 event bound to an earlier patch set and at least one later patch set whose Git objects remain fetchable.",
+    "strata": [
+      "mixed_carried_changed_and_new",
+      "one_changed_among_many",
+      "submitted_with_one_unreviewed_file",
+      "no_code_change",
+      "base_drift_fail_closed"
+    ],
+    "prevalence_claim": false
+  },
+  "source_repository": {
+    "id": "gerrit",
+    "git_url": "https://gerrit.googlesource.com/gerrit",
+    "default_branch": "master",
+    "object_format": "sha1",
+    "license": {
+      "spdx_expression": "Apache-2.0",
+      "path": "COPYING",
+      "blob_oid": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "content_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  },
+  "oracle_contract": {
+    "schema": "stratadiff-resumebench-real-oracle-v0",
+    "generator": "tools/resumebench-real/resumebench_real.py",
+    "generator_sha256": "709b0efdca56d0c7bfb099ffdd197d7467d20ed6e1c5f8d6c996b471d9de1315",
+    "raw_git_command": "git diff-tree -r --raw -z --no-commit-id --no-abbrev --no-renames <left> <right> --",
+    "identity_fields": [
+      "status",
+      "similarity_percent",
+      "before_path_base64",
+      "after_path_base64",
+      "before_mode",
+      "after_mode",
+      "before_object_id",
+      "after_object_id"
+    ],
+    "exact_relocation_rule": "Pair a deletion and addition as R100 only when their object ID and mode are equal and that key has exactly one deletion and one addition.",
+    "sets": {
+      "checkpoint": "C = delta(requested_base, checkpoint)",
+      "head": "H = delta(requested_base, current)",
+      "resume_delta": "D = delta(checkpoint, current)",
+      "carried": "H intersection C",
+      "needs_review_now": "H minus C",
+      "retired": "C minus H"
+    }
+  },
+  "known_limitations": [
+    "The five cases are deliberately selected diagnostics from one project and do not estimate population frequency or market size.",
+    "A public Code-Review+2 event is evidence of Gerrit review state, not proof that every byte or cross-file effect was inspected.",
+    "Exact identity carry-forward does not establish semantic safety, approval, or permission to merge.",
+    "The benchmark measures classification correctness and observed focus share, not reviewer time, defect recall, or comprehension.",
+    "The base-drift case validates conservative refusal; rebase-aware identity lineage remains a separate research track.",
+    "Mutable Gerrit API response digests record the frozen collection response and may differ after later public comments are appended."
+  ],
+  "cases": [
+    {
+      "id": "gerrit-623361-ps1-ps2",
+      "stratum": "mixed_carried_changed_and_new",
+      "change_number": 623361,
+      "change_id": "Ida2bc62c52fe25e09184f8fa43330bd6c3b09996",
+      "subject": "Fix batch eviction by UUID in GroupCacheImpl",
+      "change_url": "https://gerrit-review.googlesource.com/c/gerrit/+/623361",
+      "revisions": {
+        "requested_base_commit": "4d022d2bdb0123c908a6e3d8f2b6a22c6b894a3f",
+        "checkpoint": {
+          "patch_set": 1,
+          "ref": "refs/changes/61/623361/1",
+          "commit": "81939facb91cbafb43603e2e7cc58620c513baec",
+          "parent": "4d022d2bdb0123c908a6e3d8f2b6a22c6b894a3f"
+        },
+        "current": {
+          "patch_set": 2,
+          "ref": "refs/changes/61/623361/2",
+          "commit": "21753757633159456faf8d52300a1a8bac3a8961",
+          "parent": "4d022d2bdb0123c908a6e3d8f2b6a22c6b894a3f"
+        }
+      },
+      "checkpoint_evidence": {
+        "kind": "public_gerrit_code_review",
+        "message_id": "b06a54852b930991c826df19f9c4d661e06e4598",
+        "message_url": "https://gerrit-review.googlesource.com/changes/623361/messages/b06a54852b930991c826df19f9c4d661e06e4598",
+        "patch_set": 1,
+        "label": "Code-Review",
+        "value": 2,
+        "recorded_at": "2026-08-31 11:00:03.000000000"
+      },
+      "api_capture": {
+        "detail_url": "https://gerrit-review.googlesource.com/changes/623361/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
+        "detail_response_sha256": "cce4cd5ad5094a1db840fe3aa18ec836b0169629c45a3365cce0025262ee3e6e",
+        "messages_url": "https://gerrit-review.googlesource.com/changes/623361/messages",
+        "messages_response_sha256": "4470a389d17f39578346a9bff3655f2c432c700745d8e62a03801a3fa65c8c9c"
+      },
+      "expectation": {
+        "kind": "exact_identity_partition",
+        "oracle": "oracles/gerrit-623361-ps1-ps2.json"
+      }
+    },
+    {
+      "id": "gerrit-617901-ps3-ps4",
+      "stratum": "one_changed_among_many",
+      "change_number": 617901,
+      "change_id": "I5c896c41cdd3b8128a99db008029f4f09fb51596",
+      "subject": "UI: Allow specifying the auto-merge base in the URL",
+      "change_url": "https://gerrit-review.googlesource.com/c/gerrit/+/617901",
+      "revisions": {
+        "requested_base_commit": "72ebe7fbcb37f689b34caf5261cf1b11064ea652",
+        "checkpoint": {
+          "patch_set": 3,
+          "ref": "refs/changes/01/617901/3",
+          "commit": "6930855cd7ddaf253451b0ea52442024ebb6dd03",
+          "parent": "72ebe7fbcb37f689b34caf5261cf1b11064ea652"
+        },
+        "current": {
+          "patch_set": 4,
+          "ref": "refs/changes/01/617901/4",
+          "commit": "2036c57ec9f72b9ab12366cdbde834153725ef25",
+          "parent": "72ebe7fbcb37f689b34caf5261cf1b11064ea652"
+        }
+      },
+      "checkpoint_evidence": {
+        "kind": "public_gerrit_code_review",
+        "message_id": "0444a7afc927e874ee50d68e367eb530217539d3",
+        "message_url": "https://gerrit-review.googlesource.com/changes/617901/messages/0444a7afc927e874ee50d68e367eb530217539d3",
+        "patch_set": 3,
+        "label": "Code-Review",
+        "value": 2,
+        "recorded_at": "2026-08-26 06:47:57.000000000"
+      },
+      "api_capture": {
+        "detail_url": "https://gerrit-review.googlesource.com/changes/617901/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
+        "detail_response_sha256": "f5cf7e60fe94af70000b7b9858556d44c57d69735d43b9adc6fe28e521a0a681",
+        "messages_url": "https://gerrit-review.googlesource.com/changes/617901/messages",
+        "messages_response_sha256": "8ce006c6661ace9ce722ab71431ee636f3543f319d054432c4d28b12d7c403d1"
+      },
+      "expectation": {
+        "kind": "exact_identity_partition",
+        "oracle": "oracles/gerrit-617901-ps3-ps4.json"
+      }
+    },
+    {
+      "id": "gerrit-438704-ps1-ps3",
+      "stratum": "submitted_with_one_unreviewed_file",
+      "change_number": 438704,
+      "change_id": "Ifc5ffa455460c091dd7155493f2ae9fa323b95bf",
+      "subject": "Generalize ProjectNameLockManager into LockManager",
+      "change_url": "https://gerrit-review.googlesource.com/c/gerrit/+/438704",
+      "revisions": {
+        "requested_base_commit": "e7a95cc7e132a1b814f72faaa823db976345ec66",
+        "checkpoint": {
+          "patch_set": 1,
+          "ref": "refs/changes/04/438704/1",
+          "commit": "ad739129ce3af7778cd587513b8d2d3d3b7fa3c1",
+          "parent": "e7a95cc7e132a1b814f72faaa823db976345ec66"
+        },
+        "current": {
+          "patch_set": 3,
+          "ref": "refs/changes/04/438704/3",
+          "commit": "b003ec60465682d2bcac3cdf3a209e47805bae18",
+          "parent": "e7a95cc7e132a1b814f72faaa823db976345ec66"
+        }
+      },
+      "checkpoint_evidence": {
+        "kind": "public_gerrit_code_review",
+        "message_id": "02d1eb6b856e860dc37d399bc4f395dffadc35a0",
+        "message_url": "https://gerrit-review.googlesource.com/changes/438704/messages/02d1eb6b856e860dc37d399bc4f395dffadc35a0",
+        "patch_set": 1,
+        "label": "Code-Review",
+        "value": 2,
+        "recorded_at": "2024-10-14 05:53:26.000000000"
+      },
+      "merge_evidence": {
+        "message_id": "f8c6a1a196026f9d32e726968c69a90123eb057b",
+        "message_url": "https://gerrit-review.googlesource.com/changes/438704/messages/f8c6a1a196026f9d32e726968c69a90123eb057b",
+        "recorded_at": "2024-10-14 12:37:07.000000000",
+        "message_contains": [
+          "1 is the latest approved patch-set.",
+          "The name of the file: java/com/google/gerrit/server/project/LockManager.java"
+        ],
+        "fact": "Gerrit recorded patch set 1 as latest approved and one unreviewed changed file at submission."
+      },
+      "api_capture": {
+        "detail_url": "https://gerrit-review.googlesource.com/changes/438704/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
+        "detail_response_sha256": "4918a9479036c7da1a26d5930a409308097bc9ab19019fa499f2ac14458797aa",
+        "messages_url": "https://gerrit-review.googlesource.com/changes/438704/messages",
+        "messages_response_sha256": "093cedad4f595f4894688d2f146aa99f2dc3edc0eae78c5f47e4d3e08348fe90"
+      },
+      "expectation": {
+        "kind": "exact_identity_partition",
+        "oracle": "oracles/gerrit-438704-ps1-ps3.json"
+      }
+    },
+    {
+      "id": "gerrit-620081-ps1-ps2",
+      "stratum": "no_code_change",
+      "change_number": 620081,
+      "change_id": "I2be4808b3465eca48b7fdda6daf17b462ceef830",
+      "subject": "Fix InlineMeInliner warnings by inlining Guava calls",
+      "change_url": "https://gerrit-review.googlesource.com/c/gerrit/+/620081",
+      "revisions": {
+        "requested_base_commit": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7",
+        "checkpoint": {
+          "patch_set": 1,
+          "ref": "refs/changes/81/620081/1",
+          "commit": "3d9d1fb600ea29cf8abc2d6048a7c983535a1726",
+          "parent": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7"
+        },
+        "current": {
+          "patch_set": 2,
+          "ref": "refs/changes/81/620081/2",
+          "commit": "13a865155ea19ee45dea4421ed705d6c1b383022",
+          "parent": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7"
+        }
+      },
+      "checkpoint_evidence": {
+        "kind": "public_gerrit_code_review",
+        "message_id": "433cc63bc628a43bf528df57363f179d9a09cf66",
+        "message_url": "https://gerrit-review.googlesource.com/changes/620081/messages/433cc63bc628a43bf528df57363f179d9a09cf66",
+        "patch_set": 1,
+        "label": "Code-Review",
+        "value": 2,
+        "recorded_at": "2026-08-18 20:39:41.000000000"
+      },
+      "merge_evidence": {
+        "message_id": "7f835a54983a23f1283e49323f60b477d18e1158",
+        "message_url": "https://gerrit-review.googlesource.com/changes/620081/messages/7f835a54983a23f1283e49323f60b477d18e1158",
+        "recorded_at": "2026-08-19 17:09:17.000000000",
+        "message_contains": [
+          "1 is the latest approved patch-set.",
+          "No files were changed between the latest approved patch-set and the submitted one."
+        ],
+        "fact": "Gerrit recorded no file changes between the latest approved and submitted patch sets."
+      },
+      "api_capture": {
+        "detail_url": "https://gerrit-review.googlesource.com/changes/620081/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
+        "detail_response_sha256": "44f8f54612bcc8b6b823b06fdd400e158abf321013026ab59588d5cae19e5cb5",
+        "messages_url": "https://gerrit-review.googlesource.com/changes/620081/messages",
+        "messages_response_sha256": "7a9c245ed8a6a1ad3727dc6800853f48b05fa5f0e8754f2c62883c73c5a3d698"
+      },
+      "expectation": {
+        "kind": "exact_identity_partition",
+        "oracle": "oracles/gerrit-620081-ps1-ps2.json"
+      }
+    },
+    {
+      "id": "gerrit-612221-ps8-ps10",
+      "stratum": "base_drift_fail_closed",
+      "change_number": 612221,
+      "change_id": "I997164463626c45b39a9b0895a7cb668f58d02c4",
+      "subject": "Add `onlypaths:` query predicate to find changes with exact file set",
+      "change_url": "https://gerrit-review.googlesource.com/c/gerrit/+/612221",
+      "revisions": {
+        "requested_base_commit": "007993f0eff2e36db56ad6159ec6cc577e9a0942",
+        "checkpoint": {
+          "patch_set": 8,
+          "ref": "refs/changes/21/612221/8",
+          "commit": "ea6533508e352206a656014a8aaea25397aec255",
+          "parent": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7"
+        },
+        "current": {
+          "patch_set": 10,
+          "ref": "refs/changes/21/612221/10",
+          "commit": "251e1f9966d7f00d954caac0d074e85d3819158d",
+          "parent": "007993f0eff2e36db56ad6159ec6cc577e9a0942"
+        }
+      },
+      "checkpoint_evidence": {
+        "kind": "public_gerrit_code_review",
+        "message_id": "d5871e0786fd762286c4f15ea6eff3001187138b",
+        "message_url": "https://gerrit-review.googlesource.com/changes/612221/messages/d5871e0786fd762286c4f15ea6eff3001187138b",
+        "patch_set": 8,
+        "label": "Code-Review",
+        "value": 2,
+        "recorded_at": "2026-08-19 17:09:57.000000000"
+      },
+      "merge_evidence": {
+        "message_id": "51760c1f6cbd16202844e9db6edc613ccac30481",
+        "message_url": "https://gerrit-review.googlesource.com/changes/612221/messages/51760c1f6cbd16202844e9db6edc613ccac30481",
+        "recorded_at": "2026-09-02 08:52:18.000000000",
+        "message_contains": [
+          "8 is the latest approved patch-set.",
+          "The name of the file: java/com/google/gerrit/server/query/change/RegexOnlyPathsPredicate.java",
+          "The name of the file: java/com/google/gerrit/server/query/change/ChangeQueryBuilder.java"
+        ],
+        "fact": "Gerrit recorded patch set 8 as latest approved and two unreviewed files at submission."
+      },
+      "rebase_evidence": {
+        "message_id": "459a9e458512ffa67c5f2cd53f28d6247ff485f5",
+        "message_url": "https://gerrit-review.googlesource.com/changes/612221/messages/459a9e458512ffa67c5f2cd53f28d6247ff485f5",
+        "patch_set": 9,
+        "recorded_at": "2026-08-24 08:15:29.000000000",
+        "message_contains": [
+          "Uploaded patch set 9: Patch Set 8 was rebased."
+        ],
+        "fact": "Gerrit recorded patch set 9 as a rebase of patch set 8."
+      },
+      "api_capture": {
+        "detail_url": "https://gerrit-review.googlesource.com/changes/612221/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
+        "detail_response_sha256": "3bc1d47f6c2cac3fee7340c1ef1d0320bbdd4eb930a7420fc19fb4fc04532cb2",
+        "messages_url": "https://gerrit-review.googlesource.com/changes/612221/messages",
+        "messages_response_sha256": "64540f50c83167886177301a48b03a7e645fefbd2135af0186adc83d4f07c44d"
+      },
+      "expectation": {
+        "kind": "base_mismatch_rejected",
+        "oracle": "oracles/gerrit-612221-ps8-ps10.json",
+        "error_contains": "checkpoint and current review must have the same merge base"
+      }
+    }
+  ]
+}

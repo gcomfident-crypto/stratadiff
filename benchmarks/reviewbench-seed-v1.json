@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "name": "reviewbench-seed-v1",
+  "description": "A hand-audited seed corpus that separates parser-model evidence from reviewer priority, including source-observable trivia changes that a CST-only policy must not deprioritize.",
+  "label_policy": {
+    "syntax_preserved": "The current parser/model sees the same non-trivia syntax. This is a factual evidence label, not a claim of unchanged behavior or lower priority.",
+    "behavior_sensitive": "The mutation can change observable behavior, so its attention priority must remain review_first even when its evidence class is syntax_preserved."
+  },
+  "known_limitations": [
+    "Seed-sized and hand-authored; it is not statistically representative of GitHub pull requests.",
+    "Labels are based on language semantics and manual inspection, not execution against project test suites.",
+    "Cases are isolated single-file snippets and do not cover cross-file effects, generated code, dependencies, or build configuration; one C stringification case is only an adversarial sentinel, not broad preprocessor coverage.",
+    "The corpus checks evidence classification and conservative attention priority only; it does not measure reviewer time saved or defect-detection recall."
+  ],
+  "cases": [
+    {
+      "id": "python-trivia-spacing-001",
+      "language": "python",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "calculator.py",
+      "after_path": "calculator.py",
+      "before": "def total(left, right):\n    return left+right\n",
+      "after": "def total(left, right):\n    return left + right\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Spaces around the binary operator are Python trivia and do not alter the parsed program."
+    },
+    {
+      "id": "python-boundary-operator-001",
+      "language": "python",
+      "category": "behavior_sensitive",
+      "mutation_operator": "relational_operator_replacement",
+      "before_path": "quota.py",
+      "after_path": "quota.py",
+      "before": "def within_quota(used, limit):\n    return used <= limit\n",
+      "after": "def within_quota(used, limit):\n    return used < limit\n",
+      "expected_lane": "review_first",
+      "rationale": "Changing <= to < rejects the boundary value where used equals limit."
+    },
+    {
+      "id": "python-debug-f-string-whitespace-001",
+      "language": "python",
+      "category": "behavior_sensitive",
+      "mutation_operator": "source_reflecting_whitespace",
+      "before_path": "debug_value.py",
+      "after_path": "debug_value.py",
+      "before": "x = 1\nprint(f\"{x=}\")\n",
+      "after": "x = 1\nprint(f\"{x =}\")\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Python debug f-strings preserve expression-source whitespace, changing output from 'x=1' to 'x =1' while the current CST predicate still matches."
+    },
+    {
+      "id": "javascript-trivia-spacing-001",
+      "language": "javascript",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "price.js",
+      "after_path": "price.js",
+      "before": "export function total(price,tax){\n  return price+tax;\n}\n",
+      "after": "export function total(price, tax) {\n  return price + tax;\n}\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Spacing changes between the same JavaScript tokens do not alter the parsed program."
+    },
+    {
+      "id": "javascript-boolean-operator-001",
+      "language": "javascript",
+      "category": "behavior_sensitive",
+      "mutation_operator": "boolean_operator_replacement",
+      "before_path": "access.js",
+      "after_path": "access.js",
+      "before": "export function mayEnter(isMember, isActive) {\n  return isMember && isActive;\n}\n",
+      "after": "export function mayEnter(isMember, isActive) {\n  return isMember || isActive;\n}\n",
+      "expected_lane": "review_first",
+      "rationale": "Changing conjunction to disjunction broadens access to callers satisfying only one condition."
+    },
+    {
+      "id": "typescript-trivia-spacing-001",
+      "language": "typescript",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "discount.ts",
+      "after_path": "discount.ts",
+      "before": "export function discount(price:number,rate:number):number{return price*rate;}\n",
+      "after": "export function discount(price: number, rate: number): number { return price * rate; }\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Spacing changes around type annotations and operators leave TypeScript syntax unchanged."
+    },
+    {
+      "id": "typescript-default-value-001",
+      "language": "typescript",
+      "category": "behavior_sensitive",
+      "mutation_operator": "literal_replacement",
+      "before_path": "retry.ts",
+      "after_path": "retry.ts",
+      "before": "export function retries(configured?: number): number {\n  return configured ?? 3;\n}\n",
+      "after": "export function retries(configured?: number): number {\n  return configured ?? 0;\n}\n",
+      "expected_lane": "review_first",
+      "rationale": "Replacing the fallback literal disables retries when no value is configured."
+    },
+    {
+      "id": "rust-trivia-spacing-001",
+      "language": "rust",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "src/lib.rs",
+      "after_path": "src/lib.rs",
+      "before": "pub fn total(left:i32,right:i32)->i32{left+right}\n",
+      "after": "pub fn total(left: i32, right: i32) -> i32 { left + right }\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Rust ignores the changed spacing between the same tokens."
+    },
+    {
+      "id": "rust-arithmetic-operator-001",
+      "language": "rust",
+      "category": "behavior_sensitive",
+      "mutation_operator": "arithmetic_operator_replacement",
+      "before_path": "src/fees.rs",
+      "after_path": "src/fees.rs",
+      "before": "pub fn net(amount: i64, fee: i64) -> i64 {\n    amount - fee\n}\n",
+      "after": "pub fn net(amount: i64, fee: i64) -> i64 {\n    amount + fee\n}\n",
+      "expected_lane": "review_first",
+      "rationale": "Replacing subtraction with addition reverses how the fee affects the returned amount."
+    },
+    {
+      "id": "rust-stringify-whitespace-001",
+      "language": "rust",
+      "category": "behavior_sensitive",
+      "mutation_operator": "macro_observable_whitespace",
+      "before_path": "src/label.rs",
+      "after_path": "src/label.rs",
+      "before": "const LABEL: &str = stringify!(a+b);\n",
+      "after": "const LABEL: &str = stringify!(a + b);\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Rust stringify! preserves this token spacing in its result, so the constant changes from 'a+b' to 'a + b' while the current CST predicate still matches."
+    },
+    {
+      "id": "java-trivia-spacing-001",
+      "language": "java",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "src/Limit.java",
+      "after_path": "src/Limit.java",
+      "before": "final class Limit{static int clamp(int value){return value;}}\n",
+      "after": "final class Limit { static int clamp(int value) { return value; } }\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Whitespace is added between the same Java tokens without changing the parse tree."
+    },
+    {
+      "id": "java-negated-guard-001",
+      "language": "java",
+      "category": "behavior_sensitive",
+      "mutation_operator": "condition_negation",
+      "before_path": "src/Access.java",
+      "after_path": "src/Access.java",
+      "before": "final class Access {\n    static boolean allowed(boolean blocked) { return !blocked; }\n}\n",
+      "after": "final class Access {\n    static boolean allowed(boolean blocked) { return blocked; }\n}\n",
+      "expected_lane": "review_first",
+      "rationale": "Removing logical negation inverts the authorization decision."
+    },
+    {
+      "id": "go-trivia-spacing-001",
+      "language": "go",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "limit.go",
+      "after_path": "limit.go",
+      "before": "package limit\n\nfunc Within(value,max int)bool{\n\treturn value<=max\n}\n",
+      "after": "package limit\n\nfunc Within(value, max int) bool {\n    return value <= max\n}\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Spacing and indentation change while all Go syntax tokens stay fixed."
+    },
+    {
+      "id": "go-error-path-001",
+      "language": "go",
+      "category": "behavior_sensitive",
+      "mutation_operator": "relational_operator_replacement",
+      "before_path": "retry.go",
+      "after_path": "retry.go",
+      "before": "package retry\n\nfunc ShouldRetry(attempt, max int) bool {\n\treturn attempt < max\n}\n",
+      "after": "package retry\n\nfunc ShouldRetry(attempt, max int) bool {\n\treturn attempt <= max\n}\n",
+      "expected_lane": "review_first",
+      "rationale": "Changing < to <= performs one additional retry at the configured boundary."
+    },
+    {
+      "id": "json-trivia-spacing-001",
+      "language": "json",
+      "category": "syntax_preserved",
+      "mutation_operator": "whitespace_only",
+      "before_path": "policy.json",
+      "after_path": "policy.json",
+      "before": "{\"enabled\":true,\"limit\":3}\n",
+      "after": "{ \"enabled\": true, \"limit\": 3 }\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "JSON ignores whitespace outside string values, and the parsed value tokens stay fixed."
+    },
+    {
+      "id": "json-boolean-value-001",
+      "language": "json",
+      "category": "behavior_sensitive",
+      "mutation_operator": "boolean_literal_replacement",
+      "before_path": "policy.json",
+      "after_path": "policy.json",
+      "before": "{\"enabled\":true}\n",
+      "after": "{\"enabled\":false}\n",
+      "expected_lane": "review_first",
+      "rationale": "Replacing the boolean value changes the configuration represented by the document."
+    },
+    {
+      "id": "c-preprocessor-stringification-trivia-001",
+      "language": "c",
+      "category": "behavior_sensitive",
+      "mutation_operator": "preprocessor_observable_whitespace",
+      "before_path": "label.c",
+      "after_path": "label.c",
+      "before": "#define LABEL(value) #value\nconst char *label = LABEL(a+b);\n",
+      "after": "#define LABEL(value) #value\nconst char *label = LABEL(a + b);\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "The C preprocessor stringification operator observes token spacing even when the Tree-sitter CST is unchanged."
+    },
+    {
+      "id": "html-inline-whitespace-rendering-001",
+      "language": "html",
+      "category": "behavior_sensitive",
+      "mutation_operator": "rendered_inline_whitespace",
+      "before_path": "status.html",
+      "after_path": "status.html",
+      "before": "<span>a</span><span>b</span>\n",
+      "after": "<span>a</span> <span>b</span>\n",
+      "expected_lane": "syntax_preserved",
+      "rationale": "Whitespace between inline elements changes rendered text from 'ab' to 'a b' even though the current Tree-sitter representation is unchanged."
+    }
+  ]
+}

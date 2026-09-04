@@ -1,20 +1,27 @@
 # StrataDiff
 
-**A structural diff that knows when it does not know.**
+**Resume the review. Verify what changed.**
 
-StrataDiff is a fast, proof-carrying source-code differ. It separates three questions that
-traditional AST differencers often mix together:
+StrataDiff is a local review-resume and evidence tool for large refactors, codemods, and AI-written
+changes. Give it the last complete PR snapshot you reviewed and the current head: only current
+changes with the same complete Git identity retain `unchanged_since_checkpoint`; every byte, path,
+mode, status, or object-ID difference becomes `needs_review_now`. The checkpoint policy is built on
+an evidence-carrying single-file differ whose report separates three questions that traditional AST
+diff tools often mix together:
 
 1. What byte transformation turns the old file into the new file?
 2. Which structural predicates can be checked directly?
 3. Which node correspondences are forced by the declared model, merely suggested, or ambiguous?
 
-The first question is answered losslessly. The second is independently rechecked by
-`stratadiff verify`. The third never silently turns a heuristic score into a historical fact.
+The first question is answered losslessly. The second is re-derived by the matcher-free verifier
+crate used by `stratadiff verify`. The third never silently turns a heuristic score into a
+historical fact.
 
-> **Project status:** research alpha. The replay certificate, conservative syntax anchors, bounded
-> all-optima child alignment, duplicate ambiguity handling, deterministic JSON report, independent
-> resource-bounded verifier crate, native Tree-sitter adapters, and an explicit Universal byte mode
+> **Project status:** research alpha. Exact Review Resume, the repository review-focus command,
+> replay certificate,
+> conservative syntax anchors, bounded
+> all-optima child alignment, duplicate ambiguity handling, deterministic JSON report,
+> resource-bounded matcher-free verifier crate, native Tree-sitter adapters, and an explicit Universal byte mode
 > work now. A provenance-complete DiffBenchmark literature-subset evaluation is published below.
 > Binding-aware rename proofs remain on the roadmap.
 
@@ -43,7 +50,7 @@ canonical/minimal edit script. The matcher abstains where identity is not observ
 ## Evaluated result
 
 The checked-in v6 evaluation was produced by StrataDiff 0.2.0 over all 285 cases in
-DiffBenchmark's pinned Java literature subset. It evaluated, independently verified, and
+DiffBenchmark's pinned Java literature subset. It evaluated, matcher-free verified, and
 byte-for-byte replayed all 283 well-formed cases. The two remaining inputs are digest-pinned
 upstream data defects: one malformed oracle and one malformed Java source. There were no
 unexpected case errors. These measurements are retained as historical evidence; changes after
@@ -69,6 +76,13 @@ See the [complete results and limitations](docs/benchmarks.md), the
 [raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v6.json), and the
 [artifact checksums](benchmarks/SHA256SUMS).
 
+The newer [ResumeBench-Real v0](benchmarks/resumebench-real-v0/README.md) diagnostic pins five
+public Gerrit review histories. Against an independent raw-Git oracle, StrataDiff classified all
+24 comparable current identities with zero false carries, zero false invalidations, and correctly
+refused the fifth history after its merge base changed. The selected comparable cases contain 20
+exact carries and 4 identities needing review. That 16.7% focus share demonstrates the mechanism
+on these histories; it is not a prevalence, time-saving, or defect-recall estimate.
+
 ## Quick start
 
 Rust 1.90 or newer is required. The repository includes the compiled Evidence Workbench in
@@ -77,6 +91,8 @@ frontend requires Node.js 24 and npm 11.
 
 ```console
 cargo build --release
+target/release/stratadiff review origin/main HEAD
+target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
 target/release/stratadiff diff examples/demo/before.py examples/demo/after.py \
   --output change.axd
 target/release/stratadiff verify change.axd \
@@ -86,21 +102,125 @@ target/release/stratadiff apply change.axd examples/demo/before.py \
 cmp rebuilt.py examples/demo/after.py
 ```
 
+### Repository review focus
+
+`review` compares the merge base of two Git revisions with the requested head and emits Markdown
+that can be written directly to a GitHub Actions step summary. The current `review-v1` JSON is a
+producer-attested focus summary: it records commit/blob provenance and a digest of each analyzed
+single-file report, but does not include those reports and cannot yet be replay-verified by itself.
+
+```console
+target/release/stratadiff review origin/main HEAD > review-focus.md
+target/release/stratadiff review origin/main HEAD --format json --output review-focus.json
+target/release/stratadiff review origin/main HEAD \
+  --checkpoint LAST_REVIEWED_SHA > review-resume.md
+```
+
+`--checkpoint` is an explicit caller attestation that the complete PR change set at that commit was
+reviewed. StrataDiff does not infer or prove the human action. It compares the checkpoint and current
+ranges only when both resolve to the same unique merge base, and carries a current file forward only
+when status, similarity, before/after paths and encodings, modes, and object IDs all match. Anything
+else needs review now. Checkpoint-only identities are counted as retired so superseded changes do
+not disappear silently.
+
+The Markdown output puts `needs_review_now` first and folds exact matches into a details section.
+This is snapshot-level review memory: it does not preserve partial-file comments, prove semantic
+safety, account for effects from a newly changed file elsewhere, or grant approval. Rebase-aware
+review already exists in products such as Reviewable and Graphite; StrataDiff's narrower goal is a
+deterministic, host-neutral rule whose evidence can become part of a portable Change Passport.
+
+Every changed file is retained and placed in one of four lanes:
+
+- `review first`: new, deleted, or structurally changed code;
+- `unverified`: unsupported, invalid, or resource-limited content, which stays in the human-review
+  queue instead of disappearing;
+- `same Git object`: Git reports the same object ID; path, copy, type, and file-mode effects stay in
+  the first-pass queue (for gitlinks the object is a target commit, not a blob);
+- `parser model matched (non-semantic)`: the pinned CST predicate matched, while textual, comment,
+  build, and semantic effects remain explicit non-claims.
+
+Evidence class and attention priority are separate. The conservative alpha policy keeps every file
+in the first pass, including same-object metadata changes and parser-model matches. This is
+intentional: Rust `stringify!`, Python debug f-strings, C preprocessing, and HTML rendering all show
+that discarded source trivia can be observable. A future policy may lower intrinsic priority only
+after context-specific adversarial evaluation; `review-v1` does not do so. Explicit checkpoint
+comparison is a separate axis: it remembers only complete, exact Git change identities. The current
+command does not automatically discover the last reviewed commit, retain partial-file state, match
+edited subtrees across files, or publish comments and checks through a GitHub App.
+
+Repository discovery disables Git's heuristic rename/copy prepass so oversized or adversarial blobs
+cannot consume unbounded work before StrataDiff's limits apply. A unique delete/add pair with the
+same object ID is reported as an exact relocation; rename-plus-edit and ambiguous duplicate cases
+remain separate changes. Per-file line counts are a linear-time common-prefix/suffix envelope, not
+a minimal Git diffstat, and may conservatively include unchanged lines between distant edits.
+
+In GitHub Actions, check out enough history for the merge base and append the Markdown output:
+
+```yaml
+- uses: actions/checkout@v5
+  with:
+    fetch-depth: 0
+- run: stratadiff review "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" >> "$GITHUB_STEP_SUMMARY"
+```
+
+The repository also ships an alpha composite action. Analysis runs inside the caller's GitHub
+runner and StrataDiff itself has no upload step. When consumed from a separately pinned remote ref,
+the Action builds from its own directory so a checkout-level `.cargo/config.toml` cannot redirect
+that build. A local `uses: ./` invocation has no such boundary because the Action and checkout are
+the same tree. The workflow still uses GitHub-hosted or self-hosted runner infrastructure plus
+third-party checkout, toolchain, cache, and optional artifact actions. This informational alpha is
+not a merge-approval or security gate. Audit and pin every action to an immutable full commit before
+using it in a protected production workflow; the mutable `main` reference below is only a preview:
+
+```yaml
+permissions:
+  contents: read
+
+steps:
+  - uses: actions/checkout@v5
+    with:
+      fetch-depth: 0
+  - id: review-focus
+    uses: gcomfident-crypto/stratadiff@main
+    with:
+      base: ${{ github.event.pull_request.base.sha }}
+      head: ${{ github.event.pull_request.head.sha }}
+      # Optional: a commit your workflow knows was fully reviewed.
+      # checkpoint: ${{ steps.review-ledger.outputs.reviewed_sha }}
+  - uses: actions/upload-artifact@v4
+    with:
+      name: stratadiff-review-focus
+      path: ${{ steps.review-focus.outputs.report }}
+```
+
 ### Evidence Workbench
 
 Open the same proof-carrying analysis as an interactive local review surface:
 
 ```console
 target/release/stratadiff view examples/demo/before.py examples/demo/after.py
+target/release/stratadiff review origin/main HEAD \
+  --checkpoint LAST_REVIEWED_SHA --workbench
 ```
 
-The viewer keeps the readable code diff, structural relations, ambiguity constraints, and exact
-byte edits as separate synchronized layers. Selecting an item opens its observable facts, model
-selection rule, non-claims, and verification trace. Invalid UTF-8 is rendered losslessly as bytes
-rather than decoded with replacement characters, and a symbolic abstention with
-`pair_claims: none` never becomes a set of speculative correspondence lines.
+Repository Review Resume opens on the real checkpoint → head snapshot delta: the edits introduced
+since the declared review point. Switch to full PR context to inspect merge base → head, where
+current identities can be filtered into needs-review, exactly carried, or all. These two views are
+deliberately different: a reverted checkpoint change can appear in the snapshot delta and retired
+accounting without remaining in the current PR diff. File sources are loaded from the object IDs
+recorded in the report, never from the mutable worktree.
 
-`view` performs the same bounded analysis and independent verification before starting the UI. It
+Files with a structural evidence digest can open the original single-file Workbench. That viewer
+keeps the readable code diff, structural relations, ambiguity constraints, and exact byte edits as
+separate synchronized layers. Selecting an item opens its observable facts, model selection rule,
+non-claims, and verification trace. Invalid UTF-8 is rendered losslessly as bytes rather than
+decoded with replacement characters, and a symbolic abstention with `pair_claims: none` never
+becomes a set of speculative correspondence lines.
+
+`view` performs the same bounded analysis and matcher-free verification before starting the UI.
+The repository-level summary is explicitly marked `producer_attested`; only an opened per-file
+report whose recorded digest is regenerated and checked receives the verified evidence treatment.
+The local server
 binds only to `127.0.0.1`, chooses an ephemeral port by default, protects the session endpoint with
 a random token, and embeds all UI assets in the release binary. No source or report data is sent to
 an external service. Pass `--no-open` to print the URL without launching a browser, or `--port PORT`
@@ -174,7 +294,7 @@ and `replay_patch_with_limits`.
 | Syntax nodes | 1,000,000 | Both fresh parses combined |
 | Syntax depth | 512 | Each parse |
 | Tree-sitter progress callbacks | 4,000,000 | Each parse |
-| Verification work | 128 Mi units | Deterministic semantic-work budget |
+| Verification work | 128 Mi units | Deterministic verification-work budget |
 
 The CLI uses these defaults and does not currently expose limit flags. It reads files through a
 `limit + 1` bounded reader, validates canonical Base64 and checked size arithmetic, and never writes
@@ -237,8 +357,8 @@ The JSON serialization and structural constraints are published as
 [v1](schema/report-v1.schema.json) and [v2](schema/report-v2.schema.json) schemas remain available
 for inspection. Old reports are not relabeled or silently upgraded; rerun the original snapshots
 to produce a v3 report. Report-model and claim validity are stricter than the schema alone and are
-established by `stratadiff verify`, which independently rebuilds the selected parser representation
-and re-derives the report's claims.
+established by `stratadiff verify`, whose matcher-free verifier crate rebuilds the selected parser
+representation and re-derives the report's claims.
 
 ## Report excerpt
 

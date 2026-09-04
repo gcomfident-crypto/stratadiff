@@ -2,6 +2,7 @@ use std::{
     fs,
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpStream},
+    path::Path,
     process::{Child, Command, Stdio},
     sync::mpsc,
     thread,
@@ -15,6 +16,29 @@ impl Drop for ChildGuard {
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
+}
+
+fn git(repository: &Path, arguments: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repository)
+        .args(arguments)
+        .env("LC_ALL", "C")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {} failed: {}",
+        arguments.join(" "),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
+fn commit(repository: &Path, message: &str) -> String {
+    git(repository, &["add", "--all"]);
+    git(repository, &["commit", "-q", "-m", message]);
+    git(repository, &["rev-parse", "HEAD"])
 }
 
 #[test]
@@ -81,6 +105,7 @@ fn viewer_serves_a_token_bound_verified_session_on_loopback() {
     let (_, body) = session.split_once("\r\n\r\n").unwrap();
     let payload: serde_json::Value = serde_json::from_str(body).unwrap();
     assert_eq!(payload["verification"]["verified"], true);
+    assert_eq!(payload["kind"], "file_diff");
     assert_eq!(payload["report"]["certificate"]["patch_verified"], true);
     assert_eq!(
         payload["report"]["before"]["path"],
@@ -117,6 +142,139 @@ fn viewer_serves_a_token_bound_verified_session_on_loopback() {
     assert!(
         wrong_host.starts_with("HTTP/1.1 404 Not Found\r\n"),
         "{wrong_host}"
+    );
+}
+
+#[test]
+fn repository_workbench_serves_checkpoint_delta_and_commit_bound_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("stable.py"), b"value = 0\n").unwrap();
+    fs::write(root.join("changing.py"), b"value = 0\n").unwrap();
+    let base = commit(root, "base");
+
+    fs::write(root.join("stable.py"), b"value = 1\n").unwrap();
+    fs::write(root.join("changing.py"), b"value = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &base]);
+    fs::write(root.join("stable.py"), b"value = 1\n").unwrap();
+    fs::write(root.join("changing.py"), b"value = 2\n").unwrap();
+    let head = commit(root, "current head");
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(root)
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--workbench")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .arg("--")
+        .arg(&base)
+        .arg(&head)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let stderr = child.0.stderr.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let _reader = thread::spawn(move || {
+        let mut stderr = BufReader::new(stderr);
+        let mut first_line = String::new();
+        let result = stderr.read_line(&mut first_line).map(|_| first_line);
+        let mut stop_hint = String::new();
+        let _ = stderr.read_line(&mut stop_hint);
+        let _ = sender.send(result);
+    });
+    let first_line = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("review workbench did not print its URL within 30 seconds")
+        .unwrap();
+    let url = first_line
+        .trim_end()
+        .strip_prefix("StrataDiff Review Resume Workbench: http://")
+        .unwrap();
+    let (address, token) = url.split_once("/?token=").unwrap();
+
+    let session = get(address, &format!("/api/session?token={token}"));
+    assert!(session.starts_with("HTTP/1.1 200 OK\r\n"), "{session}");
+    let (_, body) = session.split_once("\r\n\r\n").unwrap();
+    let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(payload["kind"], "repository_review");
+    assert!(payload.get("verification").is_none());
+    assert_eq!(payload["assessment"]["status"], "producer_attested");
+    assert_eq!(payload["review"]["summary"]["changed_files"], 2);
+    assert_eq!(
+        payload["review"]["summary"]["checkpoint"]["needs_review_now_files"],
+        1
+    );
+    assert_eq!(
+        payload["review"]["summary"]["checkpoint"]["unchanged_since_checkpoint_files"],
+        1
+    );
+    assert_eq!(
+        payload["review"]["summary"]["checkpoint"]["retired_change_count"],
+        1
+    );
+    assert_eq!(payload["resume_delta"]["summary"]["changed_files"], 1);
+    assert_eq!(
+        payload["resume_delta"]["files"][0]["after_path"],
+        "changing.py"
+    );
+
+    fs::write(root.join("changing.py"), b"uncommitted worktree mutation\n").unwrap();
+    let detail = get(
+        address,
+        &format!("/api/session?token={token}&file=0&scope=resume"),
+    );
+    let (_, detail_body) = detail.split_once("\r\n\r\n").unwrap();
+    let detail_payload: serde_json::Value = serde_json::from_str(detail_body).unwrap();
+    assert_eq!(detail_payload["kind"], "file_diff");
+    assert_eq!(detail_payload["verification"]["verified"], true);
+    assert_eq!(detail_payload["repository_context"]["file_index"], 0);
+    assert_eq!(detail_payload["repository_context"]["scope"], "resume");
+
+    let before = get_bytes(
+        address,
+        &format!("/api/source/before?token={token}&file=0&scope=resume"),
+    );
+    let (_, before_body) = split_response(&before);
+    assert_eq!(before_body, b"value = 1\n");
+    let after = get_bytes(
+        address,
+        &format!("/api/source/after?token={token}&file=0&scope=resume"),
+    );
+    let (_, after_body) = split_response(&after);
+    assert_eq!(after_body, b"value = 2\n");
+
+    let denied = get(
+        address,
+        "/api/source/after?token=invalid&file=0&scope=resume",
+    );
+    assert!(denied.starts_with("HTTP/1.1 404 Not Found\r\n"), "{denied}");
+
+    let missing_session = get(
+        address,
+        &format!("/api/session?token={token}&file=999&scope=resume"),
+    );
+    assert!(
+        missing_session.starts_with("HTTP/1.1 404 Not Found\r\n"),
+        "{missing_session}"
+    );
+    let missing_source = get(
+        address,
+        &format!("/api/source/after?token={token}&file=999&scope=full"),
+    );
+    assert!(
+        missing_source.starts_with("HTTP/1.1 404 Not Found\r\n"),
+        "{missing_source}"
     );
 }
 

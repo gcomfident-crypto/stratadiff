@@ -10,6 +10,7 @@ if [[ -n "$(git status --porcelain --untracked-files=all -- web/dist)" ]]; then
   exit 1
 fi
 cargo package --list --locked --allow-dirty | grep -Fx 'web/dist/index.html'
+python3 tools/resumebench-real/resumebench_real.py self-test
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

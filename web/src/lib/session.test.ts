@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { sessionFixture } from '../test/fixture'
+import { repositorySessionFixture, sessionFixture } from '../test/fixture'
 import { decodeUtf8, fetchSession, getSessionToken } from './session'
 
 describe('session loading', () => {
@@ -26,8 +26,22 @@ describe('session loading', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/session?token=abc%2F123', expect.objectContaining({ cache: 'no-store' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/source/before?token=abc%2F123', expect.objectContaining({ cache: 'no-store' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/source/after?token=abc%2F123', expect.objectContaining({ cache: 'no-store' }))
+    expect(session.kind).toBe('file_diff')
+    if (session.kind !== 'file_diff') throw new Error('Expected a file diff session.')
     expect(session.decodedBefore.text).toBe('const before = 1\n')
     expect(Array.from(session.decodedAfter.bytes)).toEqual(Array.from(new TextEncoder().encode('const after = 2\n')))
+  })
+
+  it('loads a repository review without prefetching every file', async () => {
+    const payload = repositorySessionFixture()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const session = await fetchSession('?token=repository-token')
+
+    expect(session.kind).toBe('repository_review')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/session?token=repository-token', expect.objectContaining({ cache: 'no-store' }))
   })
 
   it('detects invalid UTF-8 without replacement characters', () => {

@@ -5,6 +5,7 @@ pub mod diffbenchmark_materialization;
 pub mod diffbenchmark_prediction;
 mod matcher;
 mod patch;
+pub mod review;
 
 use std::path::Path;
 

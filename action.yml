@@ -1,0 +1,70 @@
+name: StrataDiff Review Focus (alpha)
+description: Informational byte/CST triage inside the caller's runner; StrataDiff has no upload step
+author: StrataDiff contributors
+
+branding:
+  icon: layers
+  color: green
+
+inputs:
+  base:
+    description: Base revision; StrataDiff compares its merge base with head
+    required: true
+  head:
+    description: Head revision to review
+    required: true
+  checkpoint:
+    description: Optional commit whose complete PR change set was already reviewed
+    required: false
+    default: ''
+  repository:
+    description: Checked-out Git repository directory
+    required: false
+    default: .
+
+outputs:
+  report:
+    description: Absolute path to the deterministic JSON review-focus report
+    value: ${{ steps.review.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain
+      uses: dtolnay/rust-toolchain@49fda20b3f489226feadfba7767be1db54e2cee1 # 1.90.0
+    - name: Cache the StrataDiff build
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      with:
+        workspaces: ${{ github.action_path }}
+    - name: Build and analyze the Git range
+      id: review
+      shell: bash
+      env:
+        STRATADIFF_BASE: ${{ inputs.base }}
+        STRATADIFF_HEAD: ${{ inputs.head }}
+        STRATADIFF_CHECKPOINT: ${{ inputs.checkpoint }}
+        STRATADIFF_REPOSITORY: ${{ inputs.repository }}
+      run: |
+        set -euo pipefail
+        target_directory="${RUNNER_TEMP}/stratadiff-target"
+        report_path="$(mktemp "${RUNNER_TEMP}/stratadiff-review-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX.json")"
+        (
+          cd -- "${GITHUB_ACTION_PATH}"
+          cargo build --release --locked --manifest-path Cargo.toml --target-dir "${target_directory}"
+        )
+        review_args=(
+          "--repo=${STRATADIFF_REPOSITORY}"
+          --format json
+          "--output=${report_path}"
+          --github-summary
+        )
+        if [[ -n "${STRATADIFF_CHECKPOINT}" ]]; then
+          review_args+=("--checkpoint=${STRATADIFF_CHECKPOINT}")
+        fi
+        review_args+=(-- "${STRATADIFF_BASE}" "${STRATADIFF_HEAD}")
+        "${target_directory}/release/stratadiff" review "${review_args[@]}"
+        if [[ ! -s "${report_path}" ]]; then
+          echo "StrataDiff did not produce a non-empty JSON report" >&2
+          exit 1
+        fi
+        echo "report=${report_path}" >> "${GITHUB_OUTPUT}"

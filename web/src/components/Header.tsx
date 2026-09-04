@@ -1,10 +1,10 @@
-import { Check, Download, FileCode2, PanelRightOpen, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Check, Download, FileCode2, PanelRightOpen, ShieldCheck } from 'lucide-react'
 import type { Ref } from 'react'
-import type { LoadedSession } from '../types'
+import type { LoadedFileSession } from '../types'
 import { visibleInlineText } from '../lib/visibleText'
 
 interface HeaderProps {
-  session: LoadedSession
+  session: LoadedFileSession
   onOpenInspector: () => void
   inspectorButtonRef: Ref<HTMLButtonElement>
 }
@@ -14,7 +14,7 @@ function fileName(path: string): string {
   return visibleInlineText(normalized.slice(normalized.lastIndexOf('/') + 1))
 }
 
-function exportReport(session: LoadedSession): void {
+function exportReport(session: LoadedFileSession): void {
   const blob = new Blob([JSON.stringify(session.report)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement('a')
@@ -22,6 +22,13 @@ function exportReport(session: LoadedSession): void {
   anchor.download = 'stratadiff-report-v3.json'
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+function backToReviewQueue(): void {
+  const params = new URLSearchParams(window.location.search)
+  params.delete('file')
+  params.delete('scope')
+  window.location.assign(`/?${params.toString()}`)
 }
 
 export function Header({ session, onOpenInspector, inspectorButtonRef }: HeaderProps) {
@@ -60,6 +67,11 @@ export function Header({ session, onOpenInspector, inspectorButtonRef }: HeaderP
       </div>
 
       <div className="header-actions">
+        {session.repository_context !== undefined && (
+          <button className="export-button" type="button" onClick={backToReviewQueue}>
+            <ArrowLeft size={15} aria-hidden="true" /> Back to queue
+          </button>
+        )}
         <button ref={inspectorButtonRef} className="icon-button inspector-toggle" type="button" onClick={onOpenInspector} aria-label="Open evidence inspector">
           <PanelRightOpen size={17} />
         </button>

@@ -1,0 +1,106 @@
+{
+  "benchmark_complete": true,
+  "cases": [
+    {
+      "current_identities": 3,
+      "duplicate_product_identities": [],
+      "engine_version": "0.3.0",
+      "expected_needs_review_now": 2,
+      "expected_retired": 1,
+      "expected_unchanged_since_checkpoint": 1,
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "gerrit-623361-ps1-ps2",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "retired_mismatch": false,
+      "state_mismatches": [],
+      "summary_mismatch": false
+    },
+    {
+      "current_identities": 10,
+      "duplicate_product_identities": [],
+      "engine_version": "0.3.0",
+      "expected_needs_review_now": 1,
+      "expected_retired": 1,
+      "expected_unchanged_since_checkpoint": 9,
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "gerrit-617901-ps3-ps4",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "retired_mismatch": false,
+      "state_mismatches": [],
+      "summary_mismatch": false
+    },
+    {
+      "current_identities": 9,
+      "duplicate_product_identities": [],
+      "engine_version": "0.3.0",
+      "expected_needs_review_now": 1,
+      "expected_retired": 1,
+      "expected_unchanged_since_checkpoint": 8,
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "gerrit-438704-ps1-ps3",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "retired_mismatch": false,
+      "state_mismatches": [],
+      "summary_mismatch": false
+    },
+    {
+      "current_identities": 2,
+      "duplicate_product_identities": [],
+      "engine_version": "0.3.0",
+      "expected_needs_review_now": 0,
+      "expected_retired": 0,
+      "expected_unchanged_since_checkpoint": 2,
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "gerrit-620081-ps1-ps2",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "retired_mismatch": false,
+      "state_mismatches": [],
+      "summary_mismatch": false
+    },
+    {
+      "exit_code": 1,
+      "expected_rejection": "base_mismatch_rejected",
+      "id": "gerrit-612221-ps8-ps10",
+      "matched_error": true,
+      "passed": true
+    }
+  ],
+  "claim_boundary": "Diagnostic exact-identity correctness on five selected Gerrit histories; not a reviewer-time or population-frequency estimate.",
+  "dataset_version": "0.1.0",
+  "evaluated_at": "2026-09-04T20:14:23.404789Z",
+  "provenance": {
+    "manifest_sha256": "f6413bc6f322a92fd504eca3dd07c856bb9409e3d1ac3eed3b88bde9789c3114",
+    "oracle_sha256": {
+      "gerrit-438704-ps1-ps3": "558bde9b18e172ea8bb1349fe36b4df251e96a165af8b4eb6a626b1a63e47b7d",
+      "gerrit-612221-ps8-ps10": "8571da34b8e72d71dd85047f6a1c212b041ff2d05b81769f93340229456acd88",
+      "gerrit-617901-ps3-ps4": "02863072f98dec223237292b78c327a137288ac74d0bf47a14a0e54eb3907c44",
+      "gerrit-620081-ps1-ps2": "afd2dd427263d5e2703722ec4ae0ccbf773b6f5681970397477bbb7097c1df95",
+      "gerrit-623361-ps1-ps2": "36ad1a670d35f1a3db3cbc6663b5f037eec283448a419dad3c476164c0bc95d9"
+    },
+    "stratadiff_binary_sha256": "130d0cf0044baa370052ed41c8cc22c76995e587bca1a17d20cc1e0d973ade97"
+  },
+  "schema": "stratadiff-resumebench-real-evaluation-v0",
+  "summary": {
+    "cases": 5,
+    "current_identities": 24,
+    "false_carry": 0,
+    "false_invalidation": 0,
+    "needs_review_now": 4,
+    "observed_focus_share": 0.16666666666666666,
+    "passed_cases": 5,
+    "retired": 3,
+    "unchanged_since_checkpoint": 20
+  }
+}

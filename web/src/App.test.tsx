@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { sessionFixture } from './test/fixture'
+import { repositorySessionFixture, sessionFixture } from './test/fixture'
 
 vi.mock('@pierre/diffs/react', () => ({
   MultiFileDiff: ({ oldFile, newFile }: { oldFile: { contents: string }; newFile: { contents: string } }) => (
@@ -152,5 +152,85 @@ describe('Evidence Workbench', () => {
     render(<App />)
     expect(await screen.findByText('Could not open this report')).toBeInTheDocument()
     expect(screen.getByText(/Missing viewer session token/)).toBeInTheDocument()
+  })
+
+  it('starts a repository session at the checkpoint-to-head queue and keeps full PR context available', async () => {
+    const payload = repositorySessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      const source = url.includes('/before') ? 'const before = 1\n' : 'const after = 2\n'
+      return Promise.resolve(new Response(new TextEncoder().encode(source), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('2 files changed since checkpoint')).toBeInTheDocument()
+    expect(screen.getAllByText('src/changed.ts').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('src/retired.ts').length).toBeGreaterThan(0)
+    expect(screen.queryByText('src/carried.ts')).not.toBeInTheDocument()
+    expect(screen.getByText('Exact identity · caller-attested checkpoint')).toBeInTheDocument()
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument()
+    expect(await screen.findByTestId('review-file-diff')).toHaveTextContent('const before = 1')
+
+    fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
+    expect((await screen.findAllByText('src/new-risk.ts')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('src/carried.ts')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
+    expect((await screen.findAllByText('src/carried.ts')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('src/changed.ts')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Exactly carried/ })).toBeInTheDocument()
+  })
+
+  it('does not claim snapshots match when search or filters hide real changes', async () => {
+    const payload = repositorySessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+    render(<App />)
+    await screen.findByText('2 files changed since checkpoint')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search files' }), { target: { value: 'not-present' } })
+
+    expect(await screen.findByText('No files match this view')).toBeInTheDocument()
+    expect(screen.queryByText('No changes between checkpoint and head')).not.toBeInTheDocument()
+  })
+
+  it('shows the true empty checkpoint state only when the raw resume delta is empty', async () => {
+    const payload = repositorySessionFixture()
+    payload.resume_delta.files = []
+    payload.resume_delta.summary.changed_files = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+    render(<App />)
+
+    expect((await screen.findAllByText('No changes between checkpoint and head')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('No files match this view')).not.toBeInTheDocument()
+  })
+
+  it('keeps details, evidence, and claim limits available in the narrow drawer', async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => mediaQueryResult(query, query === '(max-width: 1279px)'))
+    const payload = repositorySessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+    render(<App />)
+    await screen.findByText('2 files changed since checkpoint')
+
+    const trigger = screen.getByRole('button', { name: 'Open details and evidence' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const drawer = screen.getByRole('dialog', { name: 'Selected file details' })
+    expect(within(drawer).getByText('Why it is here')).toBeInTheDocument()
+    expect(within(drawer).getByText('File evidence')).toBeInTheDocument()
+    expect(within(drawer).getByText(/No row establishes approval/)).toBeInTheDocument()
+
+    fireEvent.keyDown(drawer, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Selected file details' })).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 })

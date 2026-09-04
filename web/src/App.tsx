@@ -5,6 +5,7 @@ import { CodeDiffView } from './components/CodeDiffView'
 import { Header } from './components/Header'
 import { HelpDialog } from './components/HelpDialog'
 import { Inspector } from './components/Inspector'
+import { ReviewWorkbench } from './components/ReviewWorkbench'
 import { Sidebar, type SidebarFilters } from './components/Sidebar'
 import { StructureView } from './components/StructureView'
 import { TrustStrip } from './components/TrustStrip'
@@ -12,7 +13,7 @@ import { ViewTabs } from './components/ViewTabs'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { buildEvidenceNavigation, buildEvidenceSearchIndex, stepEvidence } from './lib/evidenceNavigation'
 import { fetchSession } from './lib/session'
-import type { DiffReport, DiffStyle, EvidenceSelection, LoadedSession, ViewMode } from './types'
+import type { DiffReport, DiffStyle, EvidenceSelection, LoadedFileSession, LoadedSession, ViewMode } from './types'
 
 function defaultSelection(report: DiffReport): EvidenceSelection {
   if (report.changes.length > 0) return { type: 'change', index: 0 }
@@ -39,14 +40,14 @@ function ErrorScreen({ message }: { message: string }) {
       <span className="eyebrow">SESSION UNAVAILABLE</span>
       <h1>Could not open this report</h1>
       <p>{message}</p>
-      <code>stratadiff view &lt;before&gt; &lt;after&gt;</code>
+      <code>stratadiff view &lt;before&gt; &lt;after&gt;<br />stratadiff review &lt;base&gt; &lt;head&gt; --checkpoint &lt;rev&gt; --workbench</code>
       <button type="button" onClick={() => window.location.reload()}><RefreshCw size={15} />Retry</button>
       <small>For safety, this viewer requires the one-time token created by the local StrataDiff server.</small>
     </main>
   )
 }
 
-function Workbench({ session }: { session: LoadedSession }) {
+function Workbench({ session }: { session: LoadedFileSession }) {
   const [view, setView] = useState<ViewMode>('code')
   const [diffStyle, setDiffStyle] = useState<DiffStyle>('split')
   const [selection, setSelection] = useState<EvidenceSelection>(() => defaultSelection(session.report))
@@ -238,5 +239,6 @@ export default function App() {
 
   if (error !== null) return <ErrorScreen message={error} />
   if (session === null) return <LoadingScreen />
+  if (session.kind === 'repository_review') return <ReviewWorkbench session={session} />
   return <Workbench session={session} />
 }

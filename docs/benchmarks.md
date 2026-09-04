@@ -1,5 +1,28 @@
 # Benchmarks
 
+## ResumeBench-Real v0
+
+The first real-history review-resume diagnostic pins five merged changes from the public Gerrit
+project. Each case has an earlier patch set with a public `Code-Review+2` event and a later submitted
+patch set. Four cases retain the same merge base; the fifth rebases between the reviewed and current
+snapshots and must be rejected.
+
+An independent Python/Git oracle—not the StrataDiff library—derives complete change identities for
+the base-to-checkpoint, base-to-head, and checkpoint-to-head ranges. It stores raw-diff digests,
+base64 paths, modes, Git object IDs, canonical identity SHA-256 values, and blob content SHA-256
+values. The checked-in StrataDiff 0.3.0 run reports:
+
+| Cases | Current identities | Exactly carried | Need review now | Retired | False carry | False invalidation |
+|---:|---:|---:|---:|---:|---:|---:|
+| 5 (4 partitions + 1 refusal) | 24 | 20 | 4 | 3 | 0 | 0 |
+
+All five cases passed, including the expected base-drift refusal. The observed focus share is
+4 / 24 = 16.7% in the deliberately selected comparable cases. It is not a population estimate and
+does not establish reviewer-time savings or defect recall. See the
+[`ResumeBench-Real v0` dataset card](../benchmarks/resumebench-real-v0/README.md),
+[`manifest`](../benchmarks/resumebench-real-v0/manifest.json), and
+[`evaluation`](../benchmarks/resumebench-real-v0/evaluation-v0.1.0.json).
+
 ## DiffBenchmark literature-subset result
 
 The latest provenance-complete Java evaluation was run on 2026-09-04 against the 285-case

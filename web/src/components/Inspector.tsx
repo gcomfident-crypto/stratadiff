@@ -1,12 +1,12 @@
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleDashed, Eye, Fingerprint, Link2, Sparkles, X } from 'lucide-react'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { base64DecodedLength, base64Preview, byteRange, editAfterRanges, nodeLabel, nodeLocation, predicateLabel, shortHash, titleCase } from '../lib/format'
-import type { AmbiguityPair, EvidenceSelection, LoadedSession, NodeRef } from '../types'
+import type { AmbiguityPair, EvidenceSelection, LoadedFileSession, NodeRef } from '../types'
 
 const PAIRS_PER_PAGE = 80
 
 interface InspectorProps {
-  session: LoadedSession
+  session: LoadedFileSession
   selection: EvidenceSelection
   open: boolean
   drawer: boolean

@@ -3,6 +3,31 @@ use std::{fs, fs::File, process::Command};
 use serde_json::{Value, json};
 use stratadiff::{Language, VerificationLimits, analyze_bytes};
 
+#[test]
+fn build_info_is_machine_readable_and_bound_to_the_executable() {
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("build-info")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let info: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(info["schema"], "stratadiff-build-info-v1");
+    assert_eq!(info["engine_version"], env!("CARGO_PKG_VERSION"));
+    let git_revision = info["git_revision"].as_str().unwrap();
+    assert!(git_revision == "unavailable" || git_revision.len() == 40);
+    assert!(info["git_dirty"].is_boolean() || info["git_dirty"].is_null());
+    let cargo_lock_sha256 = info["cargo_lock_sha256"].as_str().unwrap();
+    assert!(cargo_lock_sha256 == "unavailable" || cargo_lock_sha256.len() == 64);
+    assert!(!info["build_profile"].as_str().unwrap().is_empty());
+    let rustc_version = info["rustc_version"].as_str().unwrap();
+    assert!(rustc_version == "unavailable" || rustc_version.starts_with("rustc "));
+}
+
 fn assert_apply_rejects(report: &Value, before: &[u8], expected_error: &str) {
     let directory = tempfile::tempdir().unwrap();
     let report_path = directory.path().join("report.json");
