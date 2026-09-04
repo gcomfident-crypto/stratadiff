@@ -357,7 +357,7 @@ if [[ -n "${resolved_checkpoint}" ]]; then
   review_args+=("--checkpoint=${resolved_checkpoint}")
 fi
 case "${STRATADIFF_FAIL_ON_REVIEW_RESIDUE}" in
-  true) review_args+=(--fail-on-review-residue) ;;
+  true) review_args+=(--github-annotations --fail-on-review-residue) ;;
   false) ;;
   *)
     echo "fail-on-review-residue must be true or false" >&2

@@ -227,6 +227,9 @@ checkout are the same tree. The workflow still uses GitHub-hosted or self-hosted
 infrastructure plus third-party checkout, toolchain, cache, and optional artifact actions.
 `fail-on-review-residue` makes the Action suitable as an experimental required check, but it still
 does not grant or restore approval, prove semantic safety, or establish reviewer authorization.
+When that gate fails, the Action adds file-scoped GitHub error annotations for up to 20 current PR
+files that still need review. Larger residues stay bounded in the log and report their remaining
+count; the step summary and JSON artifact retain the complete queue.
 Audit and pin every action to an immutable full commit before using it in a protected production
 workflow; the mutable `main` reference below is only a preview:
 

@@ -13,7 +13,9 @@ use stratadiff::github::{
     MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES, resolve_github_review_checkpoint,
     verify_github_commit_object,
 };
-use stratadiff::review::{markdown_report, review_git_range_with_checkpoint};
+use stratadiff::review::{
+    github_workflow_annotations, markdown_report, review_git_range_with_checkpoint,
+};
 use stratadiff::{
     AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_bytes, apply_patch,
     verify_and_replay_report_bytes, verify_report_bytes,
@@ -126,6 +128,9 @@ enum Command {
         /// Append Markdown to the path named by GITHUB_STEP_SUMMARY.
         #[arg(long)]
         github_summary: bool,
+        /// Emit GitHub workflow error annotations for the current review residue.
+        #[arg(long, requires = "output", conflicts_with = "workbench")]
+        github_annotations: bool,
         /// Exit unsuccessfully unless a checkpoint exists and no current PR change needs review.
         #[arg(long)]
         fail_on_review_residue: bool,
@@ -384,6 +389,7 @@ fn run(command: Command) -> Result<()> {
             format,
             output,
             github_summary,
+            github_annotations,
             fail_on_review_residue,
             workbench,
             port,
@@ -426,6 +432,10 @@ fn run(command: Command) -> Result<()> {
                         stdout.write_all(b"\n")?;
                     }
                 }
+            }
+            if github_annotations {
+                let mut stdout = std::io::stdout().lock();
+                stdout.write_all(github_workflow_annotations(&review).as_bytes())?;
             }
             if fail_on_review_residue {
                 let checkpoint_summary = review
