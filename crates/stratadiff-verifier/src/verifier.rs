@@ -10,9 +10,7 @@ use stratadiff_core::model::{
     StructuralChange, Summary,
 };
 use stratadiff_core::syntax::{ParsedSyntax, SyntaxNode, shape_equal, syntax_equal};
-use stratadiff_core::{
-    PARSER_RUNTIME_VERSION, ParseLimits, REPORT_ENGINE_VERSION, REPORT_SCHEMA, parse_with_limits,
-};
+use stratadiff_core::{ParseLimits, REPORT_ENGINE_VERSION, REPORT_SCHEMA, parse_with_limits};
 
 use crate::json_preflight::preflight_json_collections;
 use crate::limits::{
@@ -332,13 +330,13 @@ fn verify_parser_manifest(
     after: &ParsedSyntax,
 ) -> Result<()> {
     let language = report.parser.language;
-    if report.parser.engine != "tree-sitter"
-        || report.parser.runtime_version != PARSER_RUNTIME_VERSION
+    if report.parser.engine != language.parser_engine()
+        || report.parser.runtime_version != language.parser_runtime_version()
         || report.parser.grammar_name != language.grammar_name()
         || report.parser.grammar_version != language.grammar_version()
-        || report.parser.grammar_abi != language.parser_language().abi_version()
+        || report.parser.grammar_abi != language.grammar_abi()
         || report.parser.node_types_blake3 != digest(language.node_types().as_bytes())
-        || report.parser.coordinate_unit != "zero_based_row_utf8_byte_column"
+        || report.parser.coordinate_unit != language.coordinate_unit()
         || report.parser.root_kind != before.root_kind
         || report.parser.root_kind != after.root_kind
         || report.parser.before_nodes != before.nodes.len()
@@ -1844,7 +1842,8 @@ fn derive_changes(
                 kind: ChangeKind::EquivalentRelocation,
                 before: Some(before.nodes[before_id].as_ref()),
                 after: Some(after.nodes[after_id].as_ref()),
-                detail: "an exact syntax subtree occurs under a different mapped parent".to_owned(),
+                detail: "the before parent's mapped counterpart is not the exact subtree's actual after parent"
+                    .to_owned(),
             });
         }
         if relation.predicate == Predicate::ShapeEqual
@@ -2366,7 +2365,7 @@ mod tests {
     use std::collections::HashMap;
 
     use stratadiff_core::{
-        Artifact, Correspondence, DiffReport, Language, LosslessPatch, PARSER_RUNTIME_VERSION,
+        Artifact, Correspondence, DiffReport, Language, LosslessPatch, PATCH_ALGORITHM,
         ParseLimits, ParserManifest, Predicate, REPORT_ENGINE_VERSION, REPORT_SCHEMA, Relation,
         ReplayCertificate, Summary, parse_with_limits,
     };
@@ -2654,14 +2653,14 @@ mod tests {
                 blake3: empty_hash.clone(),
             },
             parser: ParserManifest {
-                engine: "tree-sitter".to_owned(),
-                runtime_version: PARSER_RUNTIME_VERSION.to_owned(),
+                engine: language.parser_engine().to_owned(),
+                runtime_version: language.parser_runtime_version().to_owned(),
                 language,
                 grammar_name: language.grammar_name().to_owned(),
                 grammar_version: language.grammar_version().to_owned(),
-                grammar_abi: language.parser_language().abi_version(),
+                grammar_abi: language.grammar_abi(),
                 node_types_blake3: digest(language.node_types().as_bytes()),
-                coordinate_unit: "zero_based_row_utf8_byte_column".to_owned(),
+                coordinate_unit: language.coordinate_unit().to_owned(),
                 root_kind: parsed.root_kind.clone(),
                 before_nodes: parsed.nodes.len(),
                 after_nodes: parsed.nodes.len(),
@@ -2677,7 +2676,7 @@ mod tests {
             ambiguities: Vec::new(),
             changes: Vec::new(),
             patch: LosslessPatch {
-                algorithm: "patience-lines+bounded-myers-bytes-v1".to_owned(),
+                algorithm: PATCH_ALGORITHM.to_owned(),
                 edits: Vec::new(),
             },
             certificate: ReplayCertificate {

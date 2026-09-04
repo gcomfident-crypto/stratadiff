@@ -1,7 +1,7 @@
 use std::io::{self, Write};
 
 use anyhow::{Context, Result, bail};
-use stratadiff_core::{AmbiguityConstraint, DiffReport, LosslessPatch};
+use stratadiff_core::{AmbiguityConstraint, DiffReport, LosslessPatch, PATCH_ALGORITHM};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VerificationLimits {
@@ -219,7 +219,7 @@ pub(crate) fn inspect_patch(
     patch: &LosslessPatch,
     limits: &VerificationLimits,
 ) -> Result<PatchStats> {
-    if patch.algorithm != "patience-lines+bounded-myers-bytes-v1" {
+    if patch.algorithm != PATCH_ALGORITHM {
         bail!("unsupported patch algorithm {}", patch.algorithm);
     }
     check_limit("patch edits", patch.edits.len(), limits.max_patch_edits)?;
@@ -359,8 +359,9 @@ impl Write for LimitWriter {
 mod tests {
     use stratadiff_core::{
         AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact, ByteEdit, ChangeKind,
-        Correspondence, DiffReport, Language, LosslessPatch, NodeRef, ParserManifest, Position,
-        Predicate, Relation, ReplayCertificate, Span, StructuralChange, Summary,
+        Correspondence, DiffReport, Language, LosslessPatch, NodeRef, PATCH_ALGORITHM,
+        ParserManifest, Position, Predicate, Relation, ReplayCertificate, Span, StructuralChange,
+        Summary,
     };
 
     use super::{VerificationLimits, WorkBudget, checked_add, preflight_report};
@@ -554,7 +555,7 @@ mod tests {
                 detail: "test".to_owned(),
             }],
             patch: LosslessPatch {
-                algorithm: "patience-lines+bounded-myers-bytes-v1".to_owned(),
+                algorithm: PATCH_ALGORITHM.to_owned(),
                 edits: vec![ByteEdit {
                     old_start: 0,
                     old_end: 1,

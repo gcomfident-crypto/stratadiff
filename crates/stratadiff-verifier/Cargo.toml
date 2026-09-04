@@ -13,4 +13,4 @@ base64 = "0.22"
 blake3 = "1.8"
 serde = "1.0"
 serde_json = "1.0"
-stratadiff-core = { version = "=0.2.0", path = "../stratadiff-core", default-features = false }
+stratadiff-core = { version = "=0.3.0", path = "../stratadiff-core", default-features = false }

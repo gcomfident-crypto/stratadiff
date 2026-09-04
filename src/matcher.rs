@@ -1075,7 +1075,8 @@ fn derive_changes(
                 kind: ChangeKind::EquivalentRelocation,
                 before: Some(state.before.nodes[before_id].as_ref()),
                 after: Some(state.after.nodes[after_id].as_ref()),
-                detail: "an exact syntax subtree occurs under a different mapped parent".to_owned(),
+                detail: "the before parent's mapped counterpart is not the exact subtree's actual after parent"
+                    .to_owned(),
             });
         }
         if fact.predicate == Predicate::ShapeEqual
@@ -1481,6 +1482,7 @@ mod tests {
             ],
             root: 0,
             root_kind: "container".to_owned(),
+            language: stratadiff_core::Language::Python,
         }
     }
 

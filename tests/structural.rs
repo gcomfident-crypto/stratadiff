@@ -147,6 +147,68 @@ fn wrapper_insertion_keeps_only_the_exact_inner_anchor() {
 }
 
 #[test]
+fn exact_subtree_under_a_new_wrapper_reports_its_mapped_parent_context() {
+    let before = concat!(
+        "def moved():\n    return 1\n\n",
+        "def stable():\n    return 2\n",
+    );
+    let after = concat!(
+        "if ready:\n    def moved():\n        return 1\n\n",
+        "def stable():\n    return 2\n",
+    );
+    let report = python(before, after);
+
+    let relocation = report
+        .changes
+        .iter()
+        .find(|change| {
+            change.kind == ChangeKind::EquivalentRelocation
+                && change
+                    .before
+                    .as_ref()
+                    .is_some_and(|node| node.kind == "function_definition")
+        })
+        .expect("the exact function crosses its before parent's mapped context");
+    assert_eq!(
+        relocation.detail,
+        "the before parent's mapped counterpart is not the exact subtree's actual after parent"
+    );
+    verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
+}
+
+#[test]
+fn one_sided_exact_descendant_does_not_relax_later_mapping_compatibility() {
+    let before = concat!(
+        "def two_old():\n    moved()\n    reused()\n\n",
+        "def three_old():\n    old_slot()\n    reused()\n    old_tail()\n",
+    );
+    let after = concat!(
+        "def two_new():\n    reused()\n    replacement()\n\n",
+        "def three_new():\n    moved()\n    new_slot()\n    new_tail()\n",
+    );
+    let report = python(before, after);
+
+    assert!(!report.relations.iter().any(|relation| {
+        relation.before.kind == "function_definition" && relation.predicate == Predicate::ShapeEqual
+    }));
+    assert!(
+        !report
+            .changes
+            .iter()
+            .any(|change| change.kind == ChangeKind::EquivalentRelocation)
+    );
+    assert_eq!(
+        report
+            .changes
+            .iter()
+            .filter(|change| matches!(change.kind, ChangeKind::Insert | ChangeKind::Delete))
+            .count(),
+        4
+    );
+    verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
+}
+
+#[test]
 fn move_plus_edit_does_not_create_a_forced_crossing_pair() {
     let before = concat!(
         "def left_old(value):\n    return value + 1\n\n",
@@ -489,6 +551,7 @@ fn malformed_syntax_fails_clearly() {
 #[test]
 fn all_advertised_grammars_parse_and_replay() {
     let cases = [
+        (Language::Python, "value = 1\n", "value = 2\n"),
         (Language::Javascript, "const x = 1;\n", "const x = 2;\n"),
         (
             Language::Typescript,
@@ -511,6 +574,48 @@ fn all_advertised_grammars_parse_and_replay() {
             "class Main { int value() { return 2; } }\n",
         ),
         (Language::Json, "{\"x\":1}\n", "{\"x\":2}\n"),
+        (Language::C, "int x = 1;\n", "int x = 2;\n"),
+        (Language::Cpp, "int x = 1;\n", "int x = 2;\n"),
+        (
+            Language::CSharp,
+            "class C { int X = 1; }\n",
+            "class C { int X = 2; }\n",
+        ),
+        (
+            Language::Go,
+            "package main\nvar x = 1\n",
+            "package main\nvar x = 2\n",
+        ),
+        (Language::Ruby, "x = 1\n", "x = 2\n"),
+        (Language::Bash, "x=1\n", "x=2\n"),
+        (Language::Php, "<?php $x = 1; ?>\n", "<?php $x = 2; ?>\n"),
+        (Language::Html, "<p>a</p>\n", "<p>b</p>\n"),
+        (Language::Css, "p { color: red; }\n", "p { color: blue; }\n"),
+        (Language::Yaml, "value: 1\n", "value: 2\n"),
+        (Language::Toml, "value = 1\n", "value = 2\n"),
+        (
+            Language::Markdown,
+            "# Before\n\nText.\n",
+            "# After\n\nText.\n",
+        ),
+        (
+            Language::Kotlin,
+            "fun main() { val x = 1 }\n",
+            "fun main() { val x = 2 }\n",
+        ),
+        (Language::Swift, "let x = 1\n", "let x = 2\n"),
+        (Language::Lua, "local x = 1\n", "local x = 2\n"),
+        (
+            Language::Scala,
+            "object Main { val x = 1 }\n",
+            "object Main { val x = 2 }\n",
+        ),
+        (Language::R, "x <- 1\n", "x <- 2\n"),
+        (Language::Elixir, "x = 1\n", "x = 2\n"),
+        (Language::Haskell, "x = 1\n", "x = 2\n"),
+        (Language::Ocaml, "let x = 1\n", "let x = 2\n"),
+        (Language::OcamlInterface, "val x : int\n", "val y : int\n"),
+        (Language::Zig, "const x: i32 = 1;\n", "const x: i32 = 2;\n"),
     ];
     for (language, before, after) in cases {
         let report = analyze_bytes(
@@ -523,6 +628,46 @@ fn all_advertised_grammars_parse_and_replay() {
         .unwrap();
         verify_report(&report, before.as_bytes(), after.as_bytes()).unwrap();
     }
+}
+
+#[test]
+fn universal_mode_is_byte_defined_conservative_and_independently_verified() {
+    let before = [
+        0xff, 0x00, b'a', b' ', b'+', b'\n', b's', b'a', b'm', b'e', b'\n',
+    ];
+    let after = [
+        0xff, 0x01, b'b', b' ', b'-', b'\n', b's', b'a', b'm', b'e', b'\n',
+    ];
+    let report = analyze_bytes(
+        before.to_vec(),
+        after.to_vec(),
+        "before.unknown".to_owned(),
+        "after.unknown".to_owned(),
+        Language::Universal,
+    )
+    .unwrap();
+
+    assert_eq!(report.parser.language, Language::Universal);
+    assert_eq!(report.parser.engine, "stratadiff-universal");
+    assert_eq!(report.parser.root_kind, "universal_file");
+    assert_eq!(report.parser.coordinate_unit, "zero_based_row_byte_column");
+    assert!(
+        report
+            .relations
+            .iter()
+            .all(|relation| relation.predicate != Predicate::ShapeEqual)
+    );
+    verify_report(&report, &before, &after).unwrap();
+
+    let second = analyze_bytes(
+        before.to_vec(),
+        after.to_vec(),
+        "before.unknown".to_owned(),
+        "after.unknown".to_owned(),
+        Language::Universal,
+    )
+    .unwrap();
+    assert_eq!(report, second);
 }
 
 #[test]

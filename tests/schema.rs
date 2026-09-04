@@ -5,9 +5,21 @@ use stratadiff::{
 };
 
 #[test]
+fn every_published_schema_is_valid_draft_2020_12() {
+    for source in [
+        include_str!("../schema/report-v1.schema.json"),
+        include_str!("../schema/report-v2.schema.json"),
+        include_str!("../schema/report-v3.schema.json"),
+    ] {
+        let schema: serde_json::Value = serde_json::from_str(source).unwrap();
+        jsonschema::draft202012::new(&schema).unwrap();
+    }
+}
+
+#[test]
 fn emitted_report_conforms_to_the_published_schema() {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schema/report-v2.schema.json")).unwrap();
+        serde_json::from_str(include_str!("../schema/report-v3.schema.json")).unwrap();
     let validator = jsonschema::draft202012::new(&schema).unwrap();
     let reports = [
         analyze_bytes(
@@ -34,6 +46,14 @@ fn emitted_report_conforms_to_the_published_schema() {
             Language::Python,
         )
         .unwrap(),
+        analyze_bytes(
+            vec![0xff, 0x00, b'a', b'\n'],
+            vec![0xff, 0x01, b'b', b'\n'],
+            "before.unknown".to_owned(),
+            "after.unknown".to_owned(),
+            Language::Universal,
+        )
+        .unwrap(),
     ];
     for report in reports {
         let instance = serde_json::to_value(report).unwrap();
@@ -48,7 +68,7 @@ fn emitted_report_conforms_to_the_published_schema() {
 #[test]
 fn schema_enums_track_every_serialized_public_variant() {
     let schema: serde_json::Value =
-        serde_json::from_str(include_str!("../schema/report-v2.schema.json")).unwrap();
+        serde_json::from_str(include_str!("../schema/report-v3.schema.json")).unwrap();
     assert_enum(
         &schema["$defs"]["predicate"]["enum"],
         &[
@@ -81,6 +101,7 @@ fn schema_enums_track_every_serialized_public_variant() {
     assert_enum(
         &schema["$defs"]["parser"]["properties"]["language"]["enum"],
         &[
+            Language::Universal,
             Language::Python,
             Language::Javascript,
             Language::Typescript,
@@ -88,6 +109,28 @@ fn schema_enums_track_every_serialized_public_variant() {
             Language::Rust,
             Language::Java,
             Language::Json,
+            Language::C,
+            Language::Cpp,
+            Language::CSharp,
+            Language::Go,
+            Language::Ruby,
+            Language::Bash,
+            Language::Php,
+            Language::Html,
+            Language::Css,
+            Language::Yaml,
+            Language::Toml,
+            Language::Markdown,
+            Language::Kotlin,
+            Language::Swift,
+            Language::Lua,
+            Language::Scala,
+            Language::R,
+            Language::Elixir,
+            Language::Haskell,
+            Language::Ocaml,
+            Language::OcamlInterface,
+            Language::Zig,
         ],
     );
     assert_enum(
@@ -98,6 +141,59 @@ fn schema_enums_track_every_serialized_public_variant() {
             AmbiguityAbstentionCause::CandidateScanLimit,
         ],
     );
+}
+
+#[test]
+fn schema_binds_universal_identity_and_native_engine() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/report-v3.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let universal = analyze_bytes(
+        b"old\n".to_vec(),
+        b"new\n".to_vec(),
+        "before.data".to_owned(),
+        "after.data".to_owned(),
+        Language::Universal,
+    )
+    .unwrap();
+
+    for (field, value) in [
+        ("engine", serde_json::json!("tree-sitter")),
+        ("runtime_version", serde_json::json!("0.27.0")),
+        ("grammar_name", serde_json::json!("tree-sitter-python")),
+        ("grammar_version", serde_json::json!("0.0.0")),
+        ("grammar_abi", serde_json::json!(2)),
+        (
+            "node_types_blake3",
+            serde_json::json!("0000000000000000000000000000000000000000000000000000000000000000"),
+        ),
+        (
+            "coordinate_unit",
+            serde_json::json!("zero_based_row_utf8_byte_column"),
+        ),
+        ("root_kind", serde_json::json!("module")),
+    ] {
+        let mut candidate = serde_json::to_value(&universal).unwrap();
+        candidate["parser"][field] = value;
+        assert!(
+            !validator.is_valid(&candidate),
+            "schema accepted a Universal manifest with tampered {field}"
+        );
+    }
+
+    let mut wrong_tree_sitter_engine = serde_json::to_value(
+        analyze_bytes(
+            b"value = 1\n".to_vec(),
+            b"value = 2\n".to_vec(),
+            "before.py".to_owned(),
+            "after.py".to_owned(),
+            Language::Python,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    wrong_tree_sitter_engine["parser"]["engine"] = "stratadiff-universal".into();
+    assert!(!validator.is_valid(&wrong_tree_sitter_engine));
 }
 
 #[test]

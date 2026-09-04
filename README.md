@@ -14,9 +14,9 @@ The first question is answered losslessly. The second is independently rechecked
 
 > **Project status:** research alpha. The replay certificate, conservative syntax anchors, bounded
 > all-optima child alignment, duplicate ambiguity handling, deterministic JSON report, independent
-> resource-bounded verifier crate, and seven grammar adapters work now. A provenance-complete
-> DiffBenchmark literature-subset evaluation is published below. Binding-aware rename proofs remain
-> on the roadmap.
+> resource-bounded verifier crate, native Tree-sitter adapters, and an explicit Universal byte mode
+> work now. A provenance-complete DiffBenchmark literature-subset evaluation is published below.
+> Binding-aware rename proofs remain on the roadmap.
 
 ## Why another code diff?
 
@@ -28,22 +28,26 @@ StrataDiff makes uncertainty part of the data model:
 
 - `predicate` says what is observable: `byte_equal`, `syntax_equal`, or `shape_equal`.
 - `correspondence` says how a pair was selected. The current engine emits `model_forced` pairs;
-  `suggested` remains reserved in the v2 data model for future explicitly evidenced rules.
+  `suggested` remains reserved in the v3 data model for future explicitly evidenced rules.
 - `ambiguities` encode coupled ordered choices as explicit pair constraints. Repeated or oversized
   regions carry `pair_claims: none`, so endpoint sets can never be mistaken for a Cartesian product.
 - `patch` and `certificate` rebuild and hash-check the target byte for byte.
 
 Two snapshots cannot reveal whether identical blocks were swapped, deleted and pasted, or left
-untouched. No snapshot-only algorithm can be 100% correct about that hidden history. StrataDiff's
-100% target is therefore precise: every certified predicate must be true, and applying a valid
-report must reproduce the target bytes exactly. It abstains where identity is not observable.
+untouched. No snapshot-only algorithm can be 100% correct about that hidden history. StrataDiff
+therefore makes a narrower contract for each report accepted by its verifier: every serialized
+predicate is rechecked, and applying the patch reproduces the supplied target bytes exactly. This
+is not a claim of perfect historical identity, semantic equivalence, complete correspondence, or a
+canonical/minimal edit script. The matcher abstains where identity is not observable.
 
 ## Evaluated result
 
-The checked-in evaluation selected all 285 cases in DiffBenchmark's pinned Java literature subset.
-It evaluated, independently verified, and byte-for-byte replayed all 283 well-formed cases. The two
-remaining inputs are digest-pinned upstream data defects: one malformed oracle and one malformed
-Java source. There were no unexpected case errors.
+The checked-in v6 evaluation was produced by StrataDiff 0.2.0 over all 285 cases in
+DiffBenchmark's pinned Java literature subset. It evaluated, independently verified, and
+byte-for-byte replayed all 283 well-formed cases. The two remaining inputs are digest-pinned
+upstream data defects: one malformed oracle and one malformed Java source. There were no
+unexpected case errors. These measurements are retained as historical evidence; changes after
+0.2.0 require a fresh run before they can claim the same scores.
 
 | Fixed scorable adapter universe | Precision | Recall | F1 | Oracle coverage |
 |---|---:|---:|---:|---:|
@@ -53,7 +57,8 @@ Java source. There were no unexpected case errors.
 These correspondence scores apply only inside the declared scoring universe; they are not a claim
 of 100% historical identity accuracy. In particular, ambiguity-covered gold relations were 0 in
 this run, multi-relation recall remains weak, and predictions outside the scoring universe are
-reported but not counted as true or false positives. This subset and protocol are not directly
+reported but not counted as true or false positives: 170 forced program-element predictions and
+560,684 forced fine-mapping predictions were unscored. This subset and protocol are not directly
 comparable with published full-corpus GumTree or RefactoringMiner figures.
 
 In the v6 evaluation, the adapter flattens only explicit `possible_pairs` into an edge-union
@@ -90,9 +95,36 @@ Print the full machine-readable result with `--json`:
 stratadiff diff old.ts new.ts --json
 ```
 
-Supported grammars in the current build are Python, JavaScript, TypeScript, TSX, Rust, Java, and JSON.
-Unknown extensions and parser error nodes fail explicitly; StrataDiff does not disguise a text
-fallback as a successful structural analysis.
+For a file type without a native grammar, select the conservative Universal byte mode explicitly:
+
+```console
+stratadiff diff old.unknown new.unknown --language universal --output change.axd
+```
+
+Universal builds a deterministic `file → line → byte-token-run` tree and works on arbitrary byte
+content within the declared resource limits, including NULs, invalid UTF-8, mixed line endings, and
+files without an extension. It is not a language grammar, AST, semantic analysis, or automatic
+fallback. Unknown and ambiguous extensions fail explicitly unless the caller chooses a parser
+mode; native parser error nodes also fail.
+
+The current binary ships 29 native grammar modes: Bash, C, C++, C#, CSS, Elixir, Go, Haskell,
+HTML, Java, JavaScript/JSX, JSON, Kotlin, Lua, Markdown block structure, OCaml implementation and
+interface files, PHP with embedded markup, Python, R, Ruby, Rust, Scala, Swift, TOML, TypeScript,
+TSX, YAML, and Zig. These provide concrete-syntax structure, not compiler-level semantics. `.h`
+and `.m` are deliberately not guessed because their extensions are ambiguous.
+
+The coverage contract has three distinct layers:
+
+| Layer | Coverage now | Verified claim |
+|---|---|---|
+| Byte transformation | Arbitrary byte content when Universal is explicitly selected, and valid native-mode input, within the same declared limits | Applying an accepted patch reproduces the supplied target bytes exactly |
+| CST structure | Only the native grammars compiled into this build | Serialized syntax/shape predicates hold under the pinned grammar and runtime |
+| Language semantics | None in report v3; the JDT bridge is evaluation-only | No binding, type, control-flow, or refactoring-semantic claim |
+
+The default terminal summary renders every terminal byte edit only after replay proves that the
+edits reconstruct the target. It prints before/after byte ranges, JSON-quoted UTF-8 with terminal
+control characters escaped, and Base64 for non-UTF-8 payloads. This is exact patch-hunk rendering,
+not a claim that the structural view is a complete AST or semantic explanation.
 
 ## Resource-bounded verification
 
@@ -122,7 +154,7 @@ and `replay_patch_with_limits`.
 The CLI uses these defaults and does not currently expose limit flags. It reads files through a
 `limit + 1` bounded reader, validates canonical Base64 and checked size arithmetic, and never writes
 an `apply` output until replay and the full structural verification have succeeded. Each relation
-may carry at most four evidence items, matching the largest evidence recipe in report v2.
+may carry at most four evidence items, matching the largest evidence recipe in report v3.
 
 These controls bound attacker-selected input, collection growth, parser progress, recursive
 comparison, candidate scanning, sorting, and alignment DP. They are not a process sandbox, a wall
@@ -135,7 +167,8 @@ using the typed API give up the decode-time collection protection.
 
 The alpha implements the first useful slice of Proof-Carrying Structural Diff (PCSD):
 
-1. Parse both byte arrays into concrete syntax trees with Tree-sitter.
+1. Build both trees with the selected native Tree-sitter grammar or the explicit Universal byte
+   parser.
 2. Compute domain-separated byte, syntax, and shape Merkle fingerprints bottom-up.
 3. Verify hash hits recursively, so correctness does not depend on collision resistance alone.
 4. Map globally unique identical subtrees and unique identical children under mapped parents.
@@ -145,30 +178,41 @@ The alpha implements the first useful slice of Proof-Carrying Structural Diff (P
    maximum-cardinality ordered alignment.
 6. Encode singleton-group ties as exact coupled ordered constraints. Preserve duplicate symmetry
    and oversized interaction components as symbolic abstentions that make no pair claims.
-7. Derive insertions, deletions, exact equivalent relocations, child-order changes, and
-   model-forced shape updates without conflating their evidence levels.
-8. Build an exact patch using line-level Patience anchors, bounded byte-level Myers refinement, and
-   a linear replacement path for large unmatched regions.
+7. Derive insertions, deletions, child-order changes, and model-forced shape updates without
+   conflating their evidence levels. The report model also retains `equivalent_relocation`, emitted
+   only when an exact pair's before parent has a mapped counterpart different from the pair's
+   actual after parent. Its current recall has not been established; it describes the snapshots
+   under this mapping model, not the author's historical edit, and the matcher keeps the safer
+   delete/insert or ambiguity result when exact anchors conflict.
+8. Build an exact patch under the
+   `bounded-patience-lines+bounded-byte-refinement-v2` contract using budgeted line-level Patience
+   anchors, bounded byte-level Myers refinement, and linear aligned-byte or replacement paths for
+   large unmatched regions.
 9. Replay the patch immediately and emit a BLAKE3 certificate only if the output is byte-identical.
 
 Typical matching and hashing are linear in syntax-tree size. Ordered dynamic programming is
 restricted to independent interaction components of at most 64 active nodes per side; larger
 components remain symbolic and never allocate a quadratic candidate matrix. Candidate compatibility
-scanning is capped at 16,384 pairs per verified shape class. Expensive byte refinement is capped at
-64 KiB per unmatched region.
+scanning is capped at 16,384 pairs per verified shape class. Patience anchoring is capped at 65,536
+lines across both inputs, Myers refinement when the two trimmed sides total at most 64 KiB, aligned large-region
+output at 4,096 edits per region, and total patch output at 65,536 edits. The aligned path does not
+infer resynchronization for a length-neutral insertion plus deletion, so that case may be displayed
+as a larger exact replacement; replay correctness is unaffected.
 
-Source rows and columns follow Tree-sitter: zero-based rows and UTF-8 byte columns.
+Native-grammar source positions follow Tree-sitter: zero-based rows and UTF-8 byte columns.
+Universal positions use zero-based rows and raw-byte columns.
 
 See [DESIGN.md](DESIGN.md) for invariants, [docs/research.md](docs/research.md) for the tool and paper
 survey that motivated the design, and [docs/benchmarks.md](docs/benchmarks.md) for reproducible
 evaluation results and the local performance baseline.
 
 The JSON serialization and structural constraints are published as
-[schema/report-v2.schema.json](schema/report-v2.schema.json). The historical
-[v1 schema](schema/report-v1.schema.json) remains available for inspection, but v1 ambiguity sets
-cannot be losslessly upgraded without rerunning the original snapshots. Semantic validity is
-stricter than the schema alone and is established by `stratadiff verify`, which independently
-reparses the snapshots and re-derives the report's claims.
+[schema/report-v3.schema.json](schema/report-v3.schema.json). Historical
+[v1](schema/report-v1.schema.json) and [v2](schema/report-v2.schema.json) schemas remain available
+for inspection. Old reports are not relabeled or silently upgraded; rerun the original snapshots
+to produce a v3 report. Report-model and claim validity are stricter than the schema alone and are
+established by `stratadiff verify`, which independently rebuilds the selected parser representation
+and re-derives the report's claims.
 
 ## Report excerpt
 
@@ -213,6 +257,8 @@ reparses the snapshots and re-derives the report's claims.
 - More compact correspondence proof objects for cheaper independent verification.
 - Repository mode with conservative file pairing and parallel parsing.
 - Java and C/C++ semantic adapters using compiler-grade front ends.
+- A dedicated relocation-evidence phase that can recover more moves without relaxing exact-anchor
+  compatibility.
 - IDE provenance mode, which can observe actual node lineage instead of inferring history.
 - Accuracy and abstention benchmarks against GumTree, RefactoringMiner, and curated adversarial
   edits.

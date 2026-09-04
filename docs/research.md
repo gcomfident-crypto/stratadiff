@@ -75,9 +75,9 @@ shorter edit scripts are not evidence that every selected mapping reflects the t
 
 ## Measured StrataDiff result
 
-The provenance-complete v6 run on DiffBenchmark's fixed 285-case intra-file literature subset is
-described in the [benchmark notes](benchmarks.md#diffbenchmark-literature-subset-result), with the
-complete case-level data in the
+The provenance-complete v6 run, produced by StrataDiff 0.2.0 on DiffBenchmark's fixed 285-case
+intra-file literature subset, is described in the
+[benchmark notes](benchmarks.md#diffbenchmark-literature-subset-result), with the complete case-level data in the
 [official evaluation report](../benchmarks/diffbenchmark-literature-evaluation-v6.json). Of the 285
 selected cases, 283 were evaluated, independently verified, and replayed byte for byte. One
 digest-pinned malformed oracle and one digest-pinned malformed source were classified separately;
@@ -96,11 +96,11 @@ For scoring in the v6 evaluation, the adapter flattens only explicit `possible_p
 edge-union coverage view; that union is not a jointly selectable mapping. Symbolic abstention
 scopes make no pair claims and contribute no candidates.
 
-These measurements characterize this adapter and protocol on the fixed literature subset. They are
-not directly comparable with published full-corpus results or results produced under a different
-protocol, including the RefactoringMiner and GumTree figures above. Differences in corpus coverage,
-node taxonomy, adapter exclusions, relation categories, and scoring denominators preclude a valid
-head-to-head ranking or improvement claim from these numbers alone.
+These measurements characterize StrataDiff 0.2.0, this adapter, and this protocol on the fixed
+literature subset. They are not directly comparable with published full-corpus results or results
+produced under a different protocol, including the RefactoringMiner and GumTree figures above.
+Differences in corpus coverage, node taxonomy, adapter exclusions, relation categories, and scoring
+denominators preclude a valid head-to-head ranking or improvement claim from these numbers alone.
 
 ## Design lessons adopted by StrataDiff
 
@@ -114,17 +114,22 @@ head-to-head ranking or improvement claim from these numbers alone.
    ordered dynamic programming or min-cost matching; large repeated regions stay symbolic.
 5. **Treat Difftastic and SemanticDiff as presentation references.** A useful terminal/UI view can
    suppress trivia, but the machine report must retain raw bytes and uncertainty.
-6. **Support one-to-many relations explicitly.** Extract, inline, copy, split, and merge cannot be
-   represented honestly by a universal one-to-one node map.
-7. **Keep language semantics pluggable.** Lossless CST is universal; bindings, overload resolution,
-   macro expansion, and typed equivalence require compiler-grade language adapters.
+6. **Add explicit one-to-many relations in a future report model.** Verified report-v3 relations
+   remain one-to-one; extract, inline, copy, split, and merge are not yet represented.
+7. **Keep language semantics pluggable.** Exact byte replay is universal. CST structure exists only
+   for loaded native grammars; the Universal mode is a byte-defined line/token-run tree. Bindings,
+   overload resolution, macro expansion, and typed equivalence require compiler-grade language
+   adapters.
 
 ## What “100%” means here
 
-StrataDiff aims for 100% replay success and 100% precision of claims marked as verified. It does not
-claim 100% correspondence recall. A low-coverage result with explicit ambiguity is preferable to a
-plausible-looking false move. Accuracy reports will therefore publish coverage and abstention beside
-precision and recall.
+For every report it accepts, StrataDiff's contract is exact replay and independently rechecked
+serialized predicates. This is a verifier contract, not empirical proof that every possible input
+or parser implementation is flawless. StrataDiff does not claim 100% historical-identity accuracy,
+semantic equivalence, correspondence recall, or canonical/minimal edit attribution. A low-coverage
+result with explicit ambiguity is preferable to a plausible-looking false move. Accuracy reports
+therefore publish coverage and abstention beside precision and recall.
 
-Tree-sitter positions in the report use zero-based rows and UTF-8 byte columns. Consumers needing
-Unicode code-point or UTF-16 editor coordinates must convert them explicitly.
+Tree-sitter positions in the report use zero-based rows and UTF-8 byte columns. Universal positions
+use zero-based rows and raw-byte columns. Consumers needing Unicode code-point or UTF-16 editor
+coordinates must convert them explicitly.

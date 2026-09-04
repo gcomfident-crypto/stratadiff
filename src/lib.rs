@@ -9,16 +9,17 @@ mod patch;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use stratadiff_core::syntax::parse;
-use stratadiff_core::{PARSER_RUNTIME_VERSION, REPORT_ENGINE_VERSION, REPORT_SCHEMA};
+use stratadiff_core::ParseLimits;
+use stratadiff_core::syntax::parse_with_limits;
+use stratadiff_core::{REPORT_ENGINE_VERSION, REPORT_SCHEMA};
 
-pub use stratadiff_core::Language;
 pub use stratadiff_core::model::{
     AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact,
     ByteEdit, ChangeKind, Correspondence, DiffReport, LosslessPatch, NodeRef, PairClaims,
     ParserManifest, Position, Predicate, Relation, ReplayCertificate, Span, StructuralChange,
     Summary,
 };
+pub use stratadiff_core::{Language, PATCH_ALGORITHM};
 pub use stratadiff_verifier::{
     VerificationLimits, VerificationStats, apply_patch, decode_report_bytes,
     replay_patch_with_limits, verify_and_replay_report_bytes, verify_and_replay_report_with_limits,
@@ -66,8 +67,63 @@ pub fn analyze_bytes(
     after_label: String,
     language: Language,
 ) -> Result<DiffReport> {
-    let parsed_before = parse(before, language)?;
-    let parsed_after = parse(after, language)?;
+    analyze_bytes_with_limits(
+        before,
+        after,
+        before_label,
+        after_label,
+        language,
+        &VerificationLimits::default(),
+    )
+}
+
+pub fn analyze_bytes_with_limits(
+    before: Vec<u8>,
+    after: Vec<u8>,
+    before_label: String,
+    after_label: String,
+    language: Language,
+    limits: &VerificationLimits,
+) -> Result<DiffReport> {
+    if before.len() > limits.max_source_bytes {
+        bail!(
+            "before source bytes limit exceeded: observed {}, limit {}",
+            before.len(),
+            limits.max_source_bytes
+        );
+    }
+    if after.len() > limits.max_source_bytes {
+        bail!(
+            "after source bytes limit exceeded: observed {}, limit {}",
+            after.len(),
+            limits.max_source_bytes
+        );
+    }
+
+    let parsed_before = parse_with_limits(
+        before,
+        language,
+        &ParseLimits {
+            max_nodes: limits.max_syntax_nodes,
+            max_depth: limits.max_syntax_depth,
+            max_parse_callbacks: limits.max_parse_callbacks,
+        },
+    )
+    .map_err(|error| anyhow::anyhow!("before source parse failed: {error:#}"))?;
+    let remaining_nodes = limits
+        .max_syntax_nodes
+        .checked_sub(parsed_before.nodes.len())
+        .context("before syntax nodes exceed the analysis limit")?;
+    let parsed_after = parse_with_limits(
+        after,
+        language,
+        &ParseLimits {
+            max_nodes: remaining_nodes,
+            max_depth: limits.max_syntax_depth,
+            max_parse_callbacks: limits.max_parse_callbacks,
+        },
+    )
+    .map_err(|error| anyhow::anyhow!("after source parse failed: {error:#}"))?;
     if parsed_before.root_kind != parsed_after.root_kind {
         bail!(
             "parser roots differ: {} versus {}",
@@ -78,7 +134,8 @@ pub fn analyze_bytes(
 
     let matched = match_trees(&parsed_before, &parsed_after);
     let patch = create_patch(&parsed_before.source, &parsed_after.source);
-    let certificate = create_certificate(&parsed_before.source, &parsed_after.source, &patch)?;
+    let certificate =
+        create_certificate(&parsed_before.source, &parsed_after.source, &patch, limits)?;
     let model_forced_relations = matched
         .relations
         .iter()
@@ -90,7 +147,7 @@ pub fn analyze_bytes(
         .filter(|relation| relation.correspondence == Correspondence::Suggested)
         .count();
 
-    Ok(DiffReport {
+    let report = DiffReport {
         schema: REPORT_SCHEMA.to_owned(),
         engine_version: REPORT_ENGINE_VERSION.to_owned(),
         before: Artifact {
@@ -104,16 +161,16 @@ pub fn analyze_bytes(
             blake3: blake3::hash(&parsed_after.source).to_hex().to_string(),
         },
         parser: ParserManifest {
-            engine: "tree-sitter".to_owned(),
-            runtime_version: PARSER_RUNTIME_VERSION.to_owned(),
+            engine: language.parser_engine().to_owned(),
+            runtime_version: language.parser_runtime_version().to_owned(),
             language,
             grammar_name: language.grammar_name().to_owned(),
             grammar_version: language.grammar_version().to_owned(),
-            grammar_abi: language.parser_language().abi_version(),
+            grammar_abi: language.grammar_abi(),
             node_types_blake3: blake3::hash(language.node_types().as_bytes())
                 .to_hex()
                 .to_string(),
-            coordinate_unit: "zero_based_row_utf8_byte_column".to_owned(),
+            coordinate_unit: language.coordinate_unit().to_owned(),
             root_kind: parsed_before.root_kind.clone(),
             before_nodes: parsed_before.nodes.len(),
             after_nodes: parsed_after.nodes.len(),
@@ -130,5 +187,13 @@ pub fn analyze_bytes(
         changes: matched.changes,
         patch,
         certificate,
-    })
+    };
+
+    let before_source = parsed_before.source;
+    let after_source = parsed_after.source;
+    drop(parsed_before.nodes);
+    drop(parsed_after.nodes);
+    verify_report_with_limits(&report, &before_source, &after_source, limits)
+        .context("generated report failed independent verification")?;
+    Ok(report)
 }

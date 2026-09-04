@@ -14,8 +14,8 @@ Instead, the engine has five invariants:
    events are separate fields.
 4. **Conservative ambiguity:** repeated candidates remain a set unless the declared model forces a
    pair.
-5. **Determinism:** identical bytes, grammar versions, and options produce identical structural
-   output.
+5. **Determinism:** identical bytes, artifact labels, parser identity and version, and options
+   produce identical report output.
 
 `model_forced` means forced by the documented matching model. It is not a claim about the author's
 unobserved editing history. A future provenance mode can add `observed_identity` when an editor or
@@ -23,14 +23,16 @@ LSP event log actually records that history.
 
 ## Snapshot model
 
-Each syntax node records:
+Native Tree-sitter syntax nodes record:
 
 - snapshot-local preorder ID;
 - kind, parent field, byte span, and source position;
 - ordered children and subtree size;
 - `byte_hash`: exact bytes in the node span, including internal trivia;
 - `syntax_hash`: kind and child syntax, with inter-node trivia omitted;
-- `shape_hash`: syntax with identifier and literal values normalized.
+- `shape_hash`: syntax with grammar kinds containing `identifier`, `string`, `integer`, `float`,
+  `number`, or `comment` normalized into coarse classes; other leaf kinds retain their grammar
+  identity.
 
 Hashes are domain-separated BLAKE3 indexes. A hash match is only a candidate: the engine recursively
 checks kind, arity, leaves, and children before emitting an equality predicate.
@@ -38,6 +40,12 @@ checks kind, arity, leaves, and children before emitting an equality predicate.
 Whitespace between syntax nodes is intentionally absent from the CST equality view but remains in
 the original byte tape and lossless patch. Consequently, formatting-only changes are visible and
 replayable without pretending they changed program structure.
+
+Universal mode is a separate byte-defined representation: `universal_file` contains line nodes,
+which contain runs of ASCII word bytes, whitespace, LF, ASCII punctuation, or opaque bytes. Its
+leaves retain exact bytes even in the shape hash. It provides conservative structure and exact
+replay for arbitrary byte content within declared resource limits, not language syntax or
+semantics.
 
 ## Matching strata
 
@@ -74,7 +82,8 @@ The current alpha applies these rules in order:
 Events are derived after matching and cannot influence certified equality:
 
 - `formatting_only`: root syntax is equal while bytes differ;
-- `equivalent_relocation`: an exact subtree is under a different mapped parent;
+- `equivalent_relocation`: under the declared mapping model, an exact pair's before parent has a
+  mapped counterpart different from the pair's actual after parent;
 - `child_order_changed`: mapped direct children have a different relative order;
 - `model_forced_update`: a shape-equal pair occurs in every optimal ordered alignment but has
   different syntax;
@@ -82,29 +91,46 @@ Events are derived after matching and cannot influence certified equality:
 - `insert` and `delete`: maximal unmatched, non-ambiguous subtrees.
 
 The wording is deliberate. `equivalent_relocation` describes the snapshots; it does not assert that
-the user executed a move command.
+the user executed a move command. The current exact-anchor compatibility rule is intentionally
+conservative and does not promise relocation recall; move-plus-edit cases may remain insert/delete
+or explicit ambiguity until a dedicated evidence phase can prove more.
 
 ## Patch and certificate
 
-The lossless layer is independent from parsing:
+The lossless layer is independent from parser semantics. Its current producer strategy identifier is
+`bounded-patience-lines+bounded-byte-refinement-v2`:
 
-1. Patience diff finds stable complete-line anchors.
-2. Changed regions of at most 64 KiB use Myers over bytes.
-3. Larger unmatched regions become a single replacement after trimming their common prefix and
-   suffix.
-4. Each edit addresses a non-overlapping before-byte interval and carries replacement bytes as
+1. Patience diff finds stable complete-line anchors when the two inputs contain at most 65,536
+   lines in total. Inputs above that budget bypass line-index materialization.
+2. Changed regions whose two trimmed sides total at most 64 KiB use Myers over bytes.
+3. Larger equal-length regions are scanned linearly into aligned unequal-byte runs, capped at 4,096
+   edits per region. When that cap is reached, the remaining tail becomes one replacement.
+4. Larger unequal-length regions become a single replacement after trimming their common prefix
+   and suffix. Patch output is capped at 65,536 edits and falls back to one whole-file replacement
+   if later regions would exceed that cap.
+5. Each edit addresses a non-overlapping before-byte interval and carries replacement bytes as
    base64.
-5. Report construction replays all edits and refuses to issue a certificate unless the resulting
+6. Report construction replays all edits and refuses to issue a certificate unless the resulting
    bytes and BLAKE3 digest match the target.
 
 This keeps the common case compact and caps pathological refinement costs. The byte-patch primitive
-works for BOMs, NULs, invalid UTF-8, mixed line endings, and files with no final newline. The
-structural `diff` command still requires both snapshots to parse successfully under the selected
-grammar.
+works for BOMs, NULs, invalid UTF-8, mixed line endings, and files with no final newline. Native
+structural modes require both snapshots to parse successfully under the selected grammar;
+Universal mode accepts arbitrary byte content within the declared source, syntax-node, and work
+limits but makes no language-level claim.
+
+The producer emits at most 65,536 edits. The default verifier accepts at most 250,000 so it can
+validate conforming reports from other producers; it checks the strategy identifier, edit bounds,
+canonical Base64, and exact replay, but does not rerun this producer strategy or certify that a
+patch is minimal or canonical.
+
+The large-region aligned scan does not infer insert/delete resynchronization. An insertion followed
+by a deletion with no net length change can therefore appear as a larger exact replacement between
+the two synchronization points. This affects presentation granularity, never replay correctness.
 
 ## Verification boundary
 
-`stratadiff verify` currently performs a fresh parse and checks:
+`stratadiff verify` currently rebuilds the selected parser representation and checks:
 
 - both input sizes and BLAKE3 digests;
 - patch bounds, non-overlap, replay bytes, and target digest;
@@ -130,12 +156,14 @@ The bytes entry points enforce the boundary in layers:
    typed report can allocate their vectors.
 2. Preflight the typed report with checked arithmetic, canonical RFC 4648 Base64 validation, patch
    range checks, decoded-replacement limits, and replay-output limits.
-3. Reparse both snapshots with combined node, per-tree depth, and per-tree Tree-sitter progress
-   callback limits. Invalid-tree diagnosis runs inside the same node and depth bounds.
-4. Charge the independent semantic passes for relation scans, recursive equality, exact-anchor
-   traversal, candidate construction, component partitioning, sorting, dynamic-programming cells,
-   and per-candidate forcedness. A charge is checked before the corresponding expensive loop or
-   allocation.
+3. Rebuild both parser representations with combined node and per-tree depth limits. Native
+   Tree-sitter modes also enforce per-tree progress-callback limits; Universal is bounded by source,
+   node, depth, and verification-work limits. Invalid-tree diagnosis stays inside the applicable
+   bounds.
+4. Charge the independent structural/model verification passes for relation scans, recursive
+   equality, exact-anchor traversal, candidate construction, component partitioning, sorting,
+   dynamic-programming cells, and per-candidate forcedness. A charge is checked before the
+   corresponding expensive loop or allocation.
 5. `apply` decodes replacement bytes once, reuses that replay for certificate and structural
    verification, and opens the destination only after every check succeeds.
 
@@ -151,8 +179,11 @@ deterministic conservative accounting model rather than elapsed time or machine 
 
 For N syntax nodes and E bytes, parsing, hashing, indexes, and component bookkeeping use O(N + E)
 expected space. Candidate compatibility scanning is capped at 16,384 pairs per verified shape
-class. A bounded component with dimensions A and B uses O(A × B) memory and O(U × A × B) time,
-where A and B are at most 64 and U is at most 64 unique possible-optimal pairs checked for
-forcedness. Components above the cap stay symbolic; independent bounded components in a larger
-region do not inherit that abstention. Line anchoring uses the Patience implementation from
-`similar`; byte-level Myers is limited to 64 KiB per unmatched region.
+class. The ordered-DP portion for a bounded component with dimensions A and B uses O(A × B) memory
+and O((U + 1) × A × B) scalar DP work, where A and B are at most 64 and U is at most 64 unique
+possible-optimal pairs checked for forcedness. Recursive equality and compatibility work is charged
+separately by visited subtree nodes. Components above the cap stay symbolic; independent bounded
+components in a larger region do not inherit that abstention. Line anchoring uses the Patience
+implementation from `similar` only within the 65,536-line combined budget; byte-level Myers is
+limited to 64 KiB across both trimmed sides of an unmatched region, and larger equal-length
+refinement is linear.

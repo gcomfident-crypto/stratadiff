@@ -56,7 +56,7 @@ pub fn replay_patch_with_limits(
 
 #[cfg(test)]
 mod tests {
-    use stratadiff_core::{ByteEdit, LosslessPatch};
+    use stratadiff_core::{ByteEdit, LosslessPatch, PATCH_ALGORITHM};
 
     use super::{apply_patch, replay_patch_with_limits};
     use crate::VerificationLimits;
@@ -104,7 +104,7 @@ mod tests {
 
     fn replacement(encoded: &str) -> LosslessPatch {
         LosslessPatch {
-            algorithm: "patience-lines+bounded-myers-bytes-v1".to_owned(),
+            algorithm: PATCH_ALGORITHM.to_owned(),
             edits: vec![ByteEdit {
                 old_start: 0,
                 old_end: 1,

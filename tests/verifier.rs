@@ -1,6 +1,7 @@
 use stratadiff::{
     AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
-    Language, Predicate, Relation, analyze_bytes, verify_report,
+    Language, Predicate, Relation, VerificationLimits, analyze_bytes, analyze_bytes_with_limits,
+    verify_report,
 };
 
 fn python(before: &str, after: &str) -> DiffReport {
@@ -191,9 +192,16 @@ fn patch_algorithm_ranges_payload_and_replay_are_checked() {
     let after = "value = 200\n";
     let report = python(before, after);
     assert!(!report.patch.edits.is_empty());
+    assert_eq!(
+        report.patch.algorithm,
+        "bounded-patience-lines+bounded-byte-refinement-v2"
+    );
 
     assert_tampered(&report, before, after, |report| {
         report.patch.algorithm = "untrusted".to_owned();
+    });
+    assert_tampered(&report, before, after, |report| {
+        report.patch.algorithm = "patience-lines+bounded-myers-bytes-v1".to_owned();
     });
     assert_tampered(&report, before, after, |report| {
         report.patch.edits[0].old_end = before.len() + 1;
@@ -248,6 +256,81 @@ fn every_parser_manifest_field_is_checked() {
     assert_tampered(&report, before, after, |report| {
         report.parser.error_free = false;
     });
+}
+
+#[test]
+fn universal_reports_are_reparsed_and_manifest_bound() {
+    let before = b"same\nold\n";
+    let after = b"same\nnew\n";
+    let report = analyze_bytes(
+        before.to_vec(),
+        after.to_vec(),
+        "before.data".to_owned(),
+        "after.data".to_owned(),
+        Language::Universal,
+    )
+    .unwrap();
+
+    verify_report(&report, before, after).unwrap();
+    let manifest_mutations: &[fn(&mut DiffReport)] = &[
+        |candidate| candidate.parser.engine = "tree-sitter".to_owned(),
+        |candidate| candidate.parser.runtime_version = "0.27.0".to_owned(),
+        |candidate| candidate.parser.grammar_name = "tree-sitter-python".to_owned(),
+        |candidate| candidate.parser.grammar_version = "0.0.0".to_owned(),
+        |candidate| candidate.parser.grammar_abi += 1,
+        |candidate| corrupt_hash(&mut candidate.parser.node_types_blake3),
+        |candidate| candidate.parser.coordinate_unit = "zero_based_row_utf8_byte_column".to_owned(),
+        |candidate| candidate.parser.root_kind = "module".to_owned(),
+    ];
+    for mutate in manifest_mutations {
+        let mut candidate = report.clone();
+        mutate(&mut candidate);
+        assert!(
+            verify_report(&candidate, before, after).is_err(),
+            "tampered Universal parser manifest unexpectedly verified"
+        );
+    }
+
+    let mut wrong_node = report;
+    let relation = wrong_node
+        .relations
+        .iter_mut()
+        .find(|relation| relation.before.kind == "universal_line")
+        .unwrap();
+    relation.before.kind = "universal_other".to_owned();
+    assert!(verify_report(&wrong_node, before, after).is_err());
+}
+
+#[test]
+fn producer_and_verifier_share_the_combined_syntax_node_limit() {
+    let mut limits = VerificationLimits {
+        max_syntax_nodes: 6,
+        ..VerificationLimits::default()
+    };
+    let report = analyze_bytes_with_limits(
+        b"a".to_vec(),
+        b"a".to_vec(),
+        "before.data".to_owned(),
+        "after.data".to_owned(),
+        Language::Universal,
+        &limits,
+    )
+    .unwrap();
+    assert_eq!(report.parser.before_nodes + report.parser.after_nodes, 6);
+
+    limits.max_syntax_nodes = 5;
+    let error = analyze_bytes_with_limits(
+        b"a".to_vec(),
+        b"a".to_vec(),
+        "before.data".to_owned(),
+        "after.data".to_owned(),
+        Language::Universal,
+        &limits,
+    )
+    .unwrap_err();
+    let error = format!("{error:#}");
+    assert!(error.contains("after source parse failed"), "{error}");
+    assert!(error.contains("node count of 2"), "{error}");
 }
 
 #[test]

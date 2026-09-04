@@ -71,9 +71,11 @@ Provenance:
 - CPU: Intel Core i7-14700; Linux 5.15 x86-64; Rust 1.98.1
 
 This run uses JDT only to enumerate exact oracle-compatible node identities; it is not a GumTree
-matcher baseline. It covers the intra-file literature subset, not all DiffBenchmark, Defects4J,
-cross-file, or one-to-many cases. Published RefactoringMiner and GumTree figures use different
-corpora and protocols and are not directly comparable to this table.
+matcher baseline. It covers the intra-file literature subset, not all DiffBenchmark or Defects4J,
+and excludes cross-file cases. The subset contains 22 program-element and 2,256 fine-mapping
+multi-relations, but report v3 has only one-to-one verified relations; this is not a dedicated
+one-to-many evaluation. Published RefactoringMiner and GumTree figures use different corpora and
+protocols and are not directly comparable to this table.
 
 Formal command (no `--limit`):
 

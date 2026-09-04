@@ -4,7 +4,8 @@ mod patch;
 mod verifier;
 
 pub use stratadiff_core::{
-    Language, PARSER_RUNTIME_VERSION, REPORT_ENGINE_VERSION, REPORT_SCHEMA, model::*,
+    Language, PARSER_RUNTIME_VERSION, PATCH_ALGORITHM, REPORT_ENGINE_VERSION, REPORT_SCHEMA,
+    model::*,
 };
 
 pub use limits::{VerificationLimits, VerificationStats};
