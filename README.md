@@ -71,7 +71,9 @@ See the [complete results and limitations](docs/benchmarks.md), the
 
 ## Quick start
 
-Rust 1.90 or newer is required.
+Rust 1.90 or newer is required. The repository includes the compiled Evidence Workbench in
+`web/dist`, so an ordinary Cargo build does not require Node.js. Rebuilding or verifying the web
+frontend requires Node.js 24 and npm 11.
 
 ```console
 cargo build --release
@@ -83,6 +85,29 @@ target/release/stratadiff apply change.axd examples/demo/before.py \
   --output rebuilt.py
 cmp rebuilt.py examples/demo/after.py
 ```
+
+### Evidence Workbench
+
+Open the same proof-carrying analysis as an interactive local review surface:
+
+```console
+target/release/stratadiff view examples/demo/before.py examples/demo/after.py
+```
+
+The viewer keeps the readable code diff, structural relations, ambiguity constraints, and exact
+byte edits as separate synchronized layers. Selecting an item opens its observable facts, model
+selection rule, non-claims, and verification trace. Invalid UTF-8 is rendered losslessly as bytes
+rather than decoded with replacement characters, and a symbolic abstention with
+`pair_claims: none` never becomes a set of speculative correspondence lines.
+
+`view` performs the same bounded analysis and independent verification before starting the UI. It
+binds only to `127.0.0.1`, chooses an ephemeral port by default, protects the session endpoint with
+a random token, and embeds all UI assets in the release binary. No source or report data is sent to
+an external service. Pass `--no-open` to print the URL without launching a browser, or `--port PORT`
+to choose a loopback port. On a shared multi-user host, prefer `--no-open`: the automatic browser
+launcher receives the token-bearing URL as a command-line argument, which may be briefly visible
+to other local users through process inspection. Treat the printed URL as a session secret. Press
+Ctrl+C to stop the server.
 
 Run the complete local CI gate with `scripts/ci.sh`.
 
@@ -265,4 +290,6 @@ and re-derives the report's claims.
 
 ## License
 
-MIT.
+StrataDiff is licensed under the MIT License. The bundled Evidence Workbench includes
+`@pierre/diffs`, `@pierre/theme`, and `@pierre/theming` under Apache-2.0; their shared license and
+the original `@pierre/theme` notice are preserved in [third_party/pierre](third_party/pierre).

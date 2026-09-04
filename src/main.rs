@@ -14,6 +14,8 @@ use stratadiff::{
     verify_and_replay_report_bytes, verify_report_bytes,
 };
 
+mod viewer;
+
 const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
 const LEGACY_REPORT_SCHEMA_V2: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json";
 
@@ -53,6 +55,19 @@ enum Command {
         before: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
+    },
+    /// Open an independently verified report in the local evidence workbench.
+    View {
+        before: PathBuf,
+        after: PathBuf,
+        #[arg(long, value_enum)]
+        language: Option<Language>,
+        /// Loopback port to listen on. Zero asks the operating system to choose one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the workbench URL without opening a browser.
+        #[arg(long)]
+        no_open: bool,
     },
 }
 
@@ -180,6 +195,27 @@ fn run(command: Command) -> Result<()> {
             std::fs::write(&output, rebuilt)
                 .with_context(|| format!("failed to write {}", display_path(&output)))?;
             println!("rebuilt certified target at {}", display_path(&output));
+        }
+        Command::View {
+            before,
+            after,
+            language,
+            port,
+            no_open,
+        } => {
+            let limits = VerificationLimits::default();
+            let before_bytes =
+                read_bounded(&before, limits.max_source_bytes, "before source bytes")?;
+            let after_bytes = read_bounded(&after, limits.max_source_bytes, "after source bytes")?;
+            let language = select_language(&before, &after, language)?;
+            let report = analyze_bytes(
+                before_bytes.clone(),
+                after_bytes.clone(),
+                before.to_string_lossy().into_owned(),
+                after.to_string_lossy().into_owned(),
+                language,
+            )?;
+            viewer::serve(report, before_bytes, after_bytes, port, !no_open)?;
         }
     }
     Ok(())
