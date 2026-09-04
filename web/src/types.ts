@@ -150,6 +150,8 @@ export interface FileSessionPayload {
   repository_context?: {
     file_index: number
     scope: 'resume' | 'full'
+    checkpoint_state?: CheckpointState
+    checkpoint_match_basis?: 'exact_git_change_identity' | 'exact_noninteracting_four_way_byte_replay'
   }
 }
 

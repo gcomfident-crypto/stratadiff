@@ -245,6 +245,16 @@ fn repository_workbench_serves_checkpoint_delta_and_commit_bound_sources() {
     assert_eq!(detail_payload["verification"]["verified"], true);
     assert_eq!(detail_payload["repository_context"]["file_index"], 0);
     assert_eq!(detail_payload["repository_context"]["scope"], "resume");
+    assert!(
+        detail_payload["repository_context"]
+            .get("checkpoint_state")
+            .is_none()
+    );
+    assert!(
+        detail_payload["repository_context"]
+            .get("checkpoint_match_basis")
+            .is_none()
+    );
 
     let before = get_bytes(
         address,
@@ -369,6 +379,37 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
         queue
             .iter()
             .all(|file| file["after_path"] != "upstream-only.py")
+    );
+
+    let detail = get(
+        address,
+        &format!("/api/session?token={token}&file=0&scope=resume"),
+    );
+    let (_, detail_body) = detail.split_once("\r\n\r\n").unwrap();
+    let detail_payload: serde_json::Value = serde_json::from_str(detail_body).unwrap();
+    assert_eq!(
+        detail_payload["repository_context"]["checkpoint_state"],
+        "needs_review_now"
+    );
+    assert!(
+        detail_payload["repository_context"]
+            .get("checkpoint_match_basis")
+            .is_none()
+    );
+
+    let carried_detail = get(
+        address,
+        &format!("/api/session?token={token}&file=1&scope=full"),
+    );
+    let (_, carried_detail_body) = carried_detail.split_once("\r\n\r\n").unwrap();
+    let carried_payload: serde_json::Value = serde_json::from_str(carried_detail_body).unwrap();
+    assert_eq!(
+        carried_payload["repository_context"]["checkpoint_state"],
+        "unchanged_since_checkpoint"
+    );
+    assert_eq!(
+        carried_payload["repository_context"]["checkpoint_match_basis"],
+        "exact_git_change_identity"
     );
 
     fs::write(root.join("current.py"), b"uncommitted worktree mutation\n").unwrap();

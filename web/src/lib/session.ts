@@ -78,7 +78,11 @@ function assertDiffSession(value: unknown): asserts value is FileSessionPayload 
     !isRecord(value.repository_context) ||
     !Number.isSafeInteger(value.repository_context.file_index) ||
     (value.repository_context.file_index as number) < 0 ||
-    !['resume', 'full'].includes(String(value.repository_context.scope))
+    !['resume', 'full'].includes(String(value.repository_context.scope)) ||
+    (value.repository_context.checkpoint_state !== undefined &&
+      !['needs_review_now', 'unchanged_since_checkpoint'].includes(String(value.repository_context.checkpoint_state))) ||
+    (value.repository_context.checkpoint_match_basis !== undefined &&
+      !['exact_git_change_identity', 'exact_noninteracting_four_way_byte_replay'].includes(String(value.repository_context.checkpoint_match_basis)))
   )) {
     throw new Error('The viewer returned invalid repository navigation context.')
   }

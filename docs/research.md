@@ -44,6 +44,12 @@ Public reports captured on 2026-09-05 show why a direct checkpoint-to-head diff 
 - GitLab [issue #439234](https://gitlab.com/gitlab-org/gitlab/-/issues/439234) reports unwanted
   patch-ID invalidation for about 15% of merge-from-parent events in one organization with more
   than 1,000 developers and 50,000 files.
+- GitHub's own `gh-stack` users report that a sync can erase changes-since-view
+  ([#354](https://github.com/github/gh-stack/issues/354)) and that a byte-identical restack can
+  dismiss three approvals and restart CI ([#446](https://github.com/github/gh-stack/issues/446)).
+- Graphite's [stack-review guidance](https://graphite.com/docs/best-practices-for-reviewing-stacks)
+  recommends disabling stale-approval dismissal and latest-push approval requirements for smoother
+  stacks. This makes the unresolved tradeoff explicit: avoid repeated work or retain a strict gate.
 
 StrataDiff therefore treats the current PR range, not the raw checkpoint-to-head snapshot delta, as
 the source of the residue after a base change. It tries complete Git identity first. A unique
@@ -57,7 +63,10 @@ new base, and current file. It does not establish semantic equivalence, cross-fi
 the checkpoint was reviewed. Reviewable's documented
 [file review state](https://docs.reviewable.io/files#file-review-state) provides a capable product
 comparison; StrataDiff's distinct claim is portable proof and explicit fail-closed behavior, not
-the invention of incremental review.
+the invention of incremental review. [Pyor](https://pyor.review/) also markets an agent-era review
+surface and [interdiff workflow](https://pyor.review/blog/re-reviewing-pull-requests-interdiff), so a
+standalone “show me less diff” UI is not a sufficient product wedge. The defensible integration is
+a required review-coverage check backed by the portable evidence.
 
 ## Leading systems
 

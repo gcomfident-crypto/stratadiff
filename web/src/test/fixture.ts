@@ -85,7 +85,7 @@ export function sessionFixture(): FileSessionPayload {
         structural_changes: 1,
       },
     },
-    verification: { verified: true, message: 'Report verified and replay matched the target.' },
+    verification: { verified: true, message: 'Diff evidence verified and the rebuilt target matched.' },
   }
 }
 
@@ -108,7 +108,7 @@ function reviewFile(path: string, state?: ReviewFile['checkpoint_state']): Revie
     lane: 'review_first',
     checkpoint_state: state,
     checkpoint_match_basis: state === 'unchanged_since_checkpoint' ? 'exact_git_change_identity' : undefined,
-    reason: 'the byte patch replayed exactly; a structural delta remains in the first pass',
+    reason: 'the single-file diff patch rebuilt the target bytes exactly; a structural delta remains in the first pass',
     evidence: {
       report_blake3: 'c'.repeat(64),
       replay_check_passed_during_analysis: true,

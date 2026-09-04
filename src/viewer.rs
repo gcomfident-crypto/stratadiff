@@ -26,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use stratadiff::{
     DiffReport, VerificationLimits,
     review::{
-        RepositoryReview, ReviewFile, ReviewFileSources, load_review_file_sources,
-        regenerate_review_file_report, review_git_resume_delta,
+        CheckpointCarryBasis, CheckpointState, RepositoryReview, ReviewFile, ReviewFileSources,
+        load_review_file_sources, regenerate_review_file_report, review_git_resume_delta,
     },
 };
 use tokio::{net::TcpListener, runtime::Builder};
@@ -87,6 +87,10 @@ struct RepositoryAssessment {
 struct RepositoryContext {
     file_index: usize,
     scope: ReviewScope,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkpoint_state: Option<CheckpointState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    checkpoint_match_basis: Option<CheckpointCarryBasis>,
 }
 
 #[derive(Deserialize)]
@@ -150,7 +154,7 @@ pub fn serve_review(
                 "exact_git_change_identity"
             },
             message: if base_changed {
-                "The merge base changed. Upstream-only files are excluded; the queue contains current PR identities that were not carried exactly. This is not proof of review, semantic safety, or approval."
+                "The merge base changed. Upstream-only files are excluded; the queue contains current PR changes that were carried by neither exact identity nor non-interacting four-way replay. This is not proof of review, semantic safety, or approval."
             } else {
                 "Checkpoint carry-forward is an exact Git identity comparison. It is not proof of review, semantic safety, or approval."
             },
@@ -199,7 +203,7 @@ fn file_session(
         &mut session_json,
         &ViewerVerification {
             verified: true,
-            message: "Replay, parser manifest, relations, ambiguities, changes, and summary independently verified.",
+            message: "Single-file patch reconstruction, parser manifest, relations, ambiguities, changes, and summary independently verified.",
         },
     )?;
     if let Some(context) = repository_context {
@@ -426,6 +430,8 @@ async fn cached_review_file(
                 Some(RepositoryContext {
                     file_index: index,
                     scope,
+                    checkpoint_state: file.checkpoint_state,
+                    checkpoint_match_basis: file.checkpoint_match_basis,
                 }),
             )?)
         } else {

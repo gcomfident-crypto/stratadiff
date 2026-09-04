@@ -21,10 +21,12 @@ crate used by `stratadiff verify`. The third never silently turns a heuristic sc
 historical fact.
 
 > **Project status:** research alpha. Exact Review Resume, strict base-drift replay, the repository
-> review-focus command, replay certificates, conservative syntax anchors, bounded all-optima child
+> review-focus command, patch reconstruction certificates, conservative syntax anchors, bounded all-optima child
 > alignment, duplicate ambiguity handling, deterministic JSON reports, a resource-bounded
 > matcher-free verifier crate, native Tree-sitter adapters, and an explicit Universal byte mode work
-> now. A provenance-complete DiffBenchmark literature-subset evaluation is published below.
+> now. The alpha Action can resolve an explicitly named reviewer's latest completed GitHub review
+> and optionally fail a required check while any current PR file remains in the residue. A
+> provenance-complete DiffBenchmark literature-subset evaluation is published below.
 > Binding-aware rename proofs remain on the roadmap.
 
 ## Why another code diff?
@@ -84,11 +86,12 @@ review histories: four exact partitions totaling 20 carries and 4 identities nee
 one expected refusal after the merge base changed. Its evaluation predates four-way replay and must
 not be presented as validation of the current base-drift behavior.
 
-On 2026-09-05, the current engine was also run against that pinned Gerrit base-drift history. It
-classified 5 of the 7 current PR files as carried and left the 2 files named by Gerrit's public
-submission record in the residue. This is a verified case result, not a checked-in benchmark run. A
-new versioned oracle and provenance-bound evaluation are still required before it becomes benchmark
-evidence. Neither result estimates reviewer time or defect recall.
+The checked-in [ResumeBench-Real v1](benchmarks/resumebench-real-v1/README.md) freezes that Gerrit
+base-drift history under the current policy. An independent four-snapshot oracle and clean release
+evaluation agree on 5 carried files (4 exact identities plus 1 four-way replay), the same 2
+needs-review files named by Gerrit's public submission record, and 2 retired checkpoint changes.
+This is one deliberately selected correctness case; neither v0 nor v1 estimates reviewer time or
+defect recall.
 
 ## Quick start
 
@@ -101,6 +104,9 @@ cargo build --release
 target/release/stratadiff build-info
 target/release/stratadiff review origin/main HEAD
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
+target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA \
+  --fail-on-review-residue
+target/release/stratadiff github-checkpoint reviews.json --reviewer REVIEWER_LOGIN
 target/release/stratadiff diff examples/demo/before.py examples/demo/after.py \
   --output change.axd
 target/release/stratadiff verify change.axd \
@@ -109,6 +115,26 @@ target/release/stratadiff apply change.axd examples/demo/before.py \
   --output rebuilt.py
 cmp rebuilt.py examples/demo/after.py
 ```
+
+### See the review-coverage gate on a real rebase
+
+From a clean checkout, one command builds StrataDiff, materializes a pinned Gerrit review history,
+checks the independent oracle, and proves that the required check blocks on exactly the two files
+Gerrit recorded as changed after approval:
+
+```console
+python3 scripts/demo_review_coverage.py --open
+```
+
+The first run uses the network to fetch the pinned Git objects and writes all artifacts under
+`target/review-coverage-demo/`. Later runs can be reproduced without network access:
+
+```console
+python3 scripts/demo_review_coverage.py --offline --open
+```
+
+The demo deliberately exits successfully after verifying that the inner required check exits 1;
+that red check is the expected product result, not a failed benchmark.
 
 ### Repository review focus
 
@@ -164,9 +190,12 @@ intentional: Rust `stringify!`, Python debug f-strings, C preprocessing, and HTM
 that discarded source trivia can be observable. A future policy may lower intrinsic priority only
 after context-specific adversarial evaluation; `review-v1` does not do so. Explicit checkpoint
 comparison is a separate axis. It carries complete Git change identities and, across base drift,
-the narrow class of same-file changes that pass non-interacting four-way byte replay. The current
-command does not automatically discover the last reviewed commit, retain partial-file state, match
-edited subtrees across files, or publish comments and checks through a GitHub App.
+the narrow class of same-file changes that pass non-interacting four-way byte replay. The
+`github-checkpoint` command resolves an explicitly named reviewer's latest non-dismissed human
+`APPROVED` or `CHANGES_REQUESTED` review from GitHub's list-reviews JSON. It ignores comments, bots,
+pending reviews, deleted users, and dismissed reviews. This resolves a historical commit; it does
+not prove reviewer authority, preserve partial-file state, or restore a GitHub approval. A GitHub
+App and CODEOWNERS-aware multi-reviewer policy remain future work.
 
 Repository discovery disables Git's heuristic rename/copy prepass so oversized or adversarial blobs
 cannot consume unbounded work before StrataDiff's limits apply. A unique delete/add pair with the
@@ -184,17 +213,22 @@ In GitHub Actions, check out enough history for the merge base and append the Ma
 ```
 
 The repository also ships an alpha composite action. Analysis runs inside the caller's GitHub
-runner and StrataDiff itself has no upload step. When consumed from a separately pinned remote ref,
+runner and StrataDiff itself has no upload step. If `reviewer` is configured, the Action downloads
+up to 100 review records from GitHub's API using the caller-provided token; it fails closed above
+that bound. When consumed from a separately pinned remote ref,
 the Action builds from its own directory so a checkout-level `.cargo/config.toml` cannot redirect
 that build. A local `uses: ./` invocation has no such boundary because the Action and checkout are
 the same tree. The workflow still uses GitHub-hosted or self-hosted runner infrastructure plus
-third-party checkout, toolchain, cache, and optional artifact actions. This informational alpha is
-not a merge-approval or security gate. Audit and pin every action to an immutable full commit before
-using it in a protected production workflow; the mutable `main` reference below is only a preview:
+third-party checkout, toolchain, cache, and optional artifact actions. `fail-on-review-residue`
+makes the Action suitable as an experimental required check, but it still does not grant or restore
+approval, prove semantic safety, or establish reviewer authorization. Audit and pin every action to
+an immutable full commit before using it in a protected production workflow; the mutable `main`
+reference below is only a preview:
 
 ```yaml
 permissions:
   contents: read
+  pull-requests: read
 
 steps:
   - uses: actions/checkout@v5
@@ -205,13 +239,22 @@ steps:
     with:
       base: ${{ github.event.pull_request.base.sha }}
       head: ${{ github.event.pull_request.head.sha }}
-      # Optional: a commit your workflow knows was fully reviewed.
-      # checkpoint: ${{ steps.review-ledger.outputs.reviewed_sha }}
+      reviewer: alice
+      github-token: ${{ github.token }}
+      fail-on-review-residue: true
   - uses: actions/upload-artifact@v4
     with:
       name: stratadiff-review-focus
       path: ${{ steps.review-focus.outputs.report }}
 ```
+
+An explicit `checkpoint` overrides API discovery. With `fail-on-review-residue: true`, the report is
+still written before the step exits unsuccessfully. A required-check workflow must run both when the
+PR head changes and when the configured reviewer submits a new review; otherwise a completed review
+cannot turn the check green. The current alpha resolves one explicitly configured reviewer and does
+not infer CODEOWNER or branch-protection authority. See the
+[review-coverage integration guide](docs/github-review-coverage.md) for the full event lifecycle and
+security boundary.
 
 ### Evidence Workbench
 

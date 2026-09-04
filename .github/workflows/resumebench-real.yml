@@ -18,6 +18,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@49fda20b3f489226feadfba7767be1db54e2cee1 # 1.90.0
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: python3 tools/resumebench-real/resumebench_real.py self-test
+      - run: python3 benchmarks/resumebench-real-v1/verify.py self-test
       - name: Materialize pinned upstream objects
         run: |
           python3 tools/resumebench-real/resumebench_real.py materialize \
@@ -36,8 +37,22 @@ jobs:
             --repository "$RUNNER_TEMP/resumebench-real-v0/repository.git" \
             --stratadiff target/release/stratadiff \
             --output "$RUNNER_TEMP/resumebench-real-evaluation.json"
+      - name: Materialize rebase-aware v1 case
+        run: |
+          python3 benchmarks/resumebench-real-v1/verify.py materialize \
+            --output "$RUNNER_TEMP/resumebench-real-v1"
+      - name: Reproduce the review-coverage gate offline
+        run: |
+          python3 scripts/demo_review_coverage.py \
+            --offline \
+            --workspace "$RUNNER_TEMP/resumebench-real-v1" \
+            --stratadiff target/release/stratadiff
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: resumebench-real-evaluation
-          path: ${{ runner.temp }}/resumebench-real-evaluation.json
+          path: |
+            ${{ runner.temp }}/resumebench-real-evaluation.json
+            ${{ runner.temp }}/resumebench-real-v1/evaluation.json
+            ${{ runner.temp }}/resumebench-real-v1/review-report.json
+            ${{ runner.temp }}/resumebench-real-v1/review-summary.md
           if-no-files-found: error

@@ -9,7 +9,7 @@ interface TrustStripProps {
 export function TrustStrip({ report }: TrustStripProps) {
   const abstentions = report.ambiguities.filter(({ constraint }) => constraint.kind === 'symbolic_abstention').length
   const stats = [
-    { label: 'Replay', value: report.certificate.patch_verified ? 'Verified' : 'Failed', icon: ShieldCheck, tone: 'verified' },
+    { label: 'Reconstruction', value: report.certificate.patch_verified ? 'Verified' : 'Failed', icon: ShieldCheck, tone: 'verified' },
     { label: 'Claims', value: compactNumber(report.relations.length), icon: GitCompareArrows, tone: 'neutral' },
     { label: 'Forced', value: compactNumber(report.summary.model_forced_relations), icon: Braces, tone: 'forced' },
     { label: 'Ambiguous', value: compactNumber(report.summary.ambiguity_groups), icon: AlertTriangle, tone: 'ambiguous' },

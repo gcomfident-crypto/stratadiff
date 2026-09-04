@@ -97,6 +97,15 @@ pub enum CheckpointCarryBasis {
     ExactNoninteractingFourWayByteReplay,
 }
 
+impl CheckpointCarryBasis {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ExactGitChangeIdentity => "exact-identity carry",
+            Self::ExactNoninteractingFourWayByteReplay => "four-way carry",
+        }
+    }
+}
+
 impl ReviewPriority {
     fn label(self) -> &'static str {
         match self {
@@ -889,6 +898,21 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
             .checkpoint
             .as_ref()
             .expect("checkpoint metadata has a checkpoint summary");
+        let exact_identity_carries = review
+            .files
+            .iter()
+            .filter(|file| {
+                file.checkpoint_match_basis == Some(CheckpointCarryBasis::ExactGitChangeIdentity)
+            })
+            .count();
+        let four_way_replay_carries = review
+            .files
+            .iter()
+            .filter(|file| {
+                file.checkpoint_match_basis
+                    == Some(CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay)
+            })
+            .count();
         if checkpoint.base_commit == review.base_commit {
             output.push_str(&format!(
                 "- Checkpoint: {} (same merge base; exact Git change identity only)\n",
@@ -903,11 +927,13 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
             ));
         }
         output.push_str(&format!(
-            "- Needs review now: **{}** of {} current {}; **{}** unchanged since checkpoint; **{}** checkpoint changes retired\n",
+            "- Review coverage: **{}** of {} current {} need review; **{}** carried (**{}** exact-identity, **{}** four-way); **{}** checkpoint changes retired\n",
             checkpoint_summary.needs_review_now_files,
             review.summary.changed_files,
             file_word(review.summary.changed_files),
             checkpoint_summary.unchanged_since_checkpoint_files,
+            exact_identity_carries,
+            four_way_replay_carries,
             checkpoint_summary.retired_change_count
         ));
         output.push_str(
@@ -933,7 +959,7 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
         file_word(review.summary.content_preserved_files)
     ));
     output.push_str(&format!(
-        "- Byte replay check: passed during analysis for **{}** paired {}; not run/not applicable for **{}** {}\n",
+        "- Per-file diff reconstruction: passed during analysis for **{}** paired {}; not run/not applicable for **{}** {}\n",
         review.summary.replay_check_passed_files,
         file_word(review.summary.replay_check_passed_files),
         review.summary.replay_check_not_run_files,
@@ -982,9 +1008,19 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
                 unchanged.len()
             )
         } else {
+            let exact_identity_carries = unchanged
+                .iter()
+                .filter(|file| {
+                    file.checkpoint_match_basis
+                        == Some(CheckpointCarryBasis::ExactGitChangeIdentity)
+                })
+                .count();
+            let four_way_replay_carries = unchanged.len() - exact_identity_carries;
             format!(
-                "\n<details>\n<summary>Unchanged since checkpoint: <strong>{}</strong> exactly carried changes</summary>\n\n> Each entry either has the same complete Git change identity or passed exact non-interacting four-way byte replay against the changed base. Cross-file effects were not checked.\n\n",
-                unchanged.len()
+                "\n<details>\n<summary>Carried from checkpoint: <strong>{}</strong> changes ({} exact-identity; {} four-way)</summary>\n\n> Each entry either has the same complete Git change identity or passed exact non-interacting four-way byte replay against the changed base. Cross-file effects were not checked.\n\n",
+                unchanged.len(),
+                exact_identity_carries,
+                four_way_replay_carries
             )
         };
         if output.len() + details.len() + 32 <= MAX_REVIEW_MARKDOWN_BYTES {
@@ -1031,9 +1067,14 @@ fn append_markdown_file_table(
         let row = if include_checkpoint_state {
             format!(
                 "| {} | {} | {} | {} | {} | {} | {} |\n",
-                file.checkpoint_state
-                    .expect("checkpoint report files have checkpoint state")
-                    .label(),
+                file.checkpoint_match_basis.map_or_else(
+                    || {
+                        file.checkpoint_state
+                            .expect("checkpoint report files have checkpoint state")
+                            .label()
+                    },
+                    CheckpointCarryBasis::label,
+                ),
                 file.priority.label(),
                 file.lane.label(),
                 markdown_code(&file.display_path()),
@@ -1519,7 +1560,7 @@ fn analyze_change(
                 .to_owned()
         }
         ReviewLane::ReviewFirst => {
-            "the byte patch replayed exactly; the parser/model report still contains a structural delta that remains in the first pass".to_owned()
+            "the single-file diff patch rebuilt the target bytes exactly; the parser/model report still contains a structural delta that remains in the first pass".to_owned()
         }
         ReviewLane::ContentPreserved | ReviewLane::Unverified => {
             unreachable!("paired structural analysis produces only review or syntax lanes")

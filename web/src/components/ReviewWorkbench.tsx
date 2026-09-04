@@ -49,9 +49,17 @@ function lineSummary(file: ReviewFile): string {
 
 function checkpointStateLabel(file: ReviewFile): string | null {
   if (file.checkpoint_state === 'needs_review_now') return 'Needs review now'
-  if (file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') return 'Replay carried'
-  if (file.checkpoint_state === 'unchanged_since_checkpoint') return 'Exactly carried'
+  if (file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') return 'Four-way carry'
+  if (file.checkpoint_match_basis === 'exact_git_change_identity') return 'Exact-identity carry'
   return null
+}
+
+function checkpointCarryDetail(file: ReviewFile, scope: ReviewScope, resumeComparison: RepositorySessionPayload['resume_delta']['comparison']): string {
+  if (file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') return 'four-way carry'
+  if (file.checkpoint_match_basis === 'exact_git_change_identity') return 'exact-identity carry'
+  if (file.checkpoint_state === 'needs_review_now') return 'not carried'
+  if (scope === 'resume' && resumeComparison === 'snapshot_to_snapshot') return 'changed after checkpoint'
+  return 'not evaluated'
 }
 
 function exportSession(session: RepositorySessionPayload): void {
@@ -206,7 +214,7 @@ function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawe
           {scope === 'resume'
             ? resumeComparison === 'snapshot_to_snapshot'
               ? 'This row compares the declared checkpoint snapshot directly with the current head.'
-              : 'This row is a current PR change that could not be carried exactly across the base update; upstream-only files are excluded.'
+              : 'This row is a current PR change carried by neither exact identity nor non-interacting four-way replay; upstream-only files are excluded.'
             : file.checkpoint_state === 'unchanged_since_checkpoint'
               ? file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay'
                 ? 'The reviewed byte edits and upstream base edits were non-interacting, and both replay orders reproduced this exact current blob.'
@@ -218,7 +226,8 @@ function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawe
         <section>
           <h3><Check size={14} /> File evidence</h3>
           <dl>
-            <div><dt>Replay</dt><dd>{file.evidence.replay_check_passed_during_analysis ? 'passed' : 'not passed'}</dd></div>
+            <div><dt>Checkpoint carry</dt><dd>{checkpointCarryDetail(file, scope, resumeComparison)}</dd></div>
+            <div><dt>Diff reconstruction</dt><dd>{file.evidence.replay_check_passed_during_analysis ? 'target matched' : 'not matched'}</dd></div>
             <div><dt>Byte edits</dt><dd>{file.evidence.byte_edits}</dd></div>
             <div><dt>Ambiguities</dt><dd>{file.evidence.ambiguity_groups}</dd></div>
             <div><dt>Report</dt><dd title={file.evidence.report_blake3}>{shortHash(file.evidence.report_blake3)}</dd></div>
@@ -259,6 +268,8 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
   const detailsButtonRef = useRef<HTMLButtonElement>(null)
   const detailsAreDrawer = useMediaQuery('(max-width: 1279px)')
   const baseChanged = session.resume_delta.comparison === 'current_pr_unmatched_identities'
+  const exactIdentityCarries = session.review.files.filter((file) => file.checkpoint_match_basis === 'exact_git_change_identity').length
+  const fourWayReplayCarries = session.review.files.filter((file) => file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay').length
   const files = scope === 'resume' ? session.resume_delta.files : session.review.files
   const entries = useMemo(() => files.map((file, index) => ({ file, index })).filter(({ file }) => {
     if (scope === 'full' && fullFilter !== 'all') {
@@ -342,7 +353,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           <span>{shortHash(checkpoint.commit)}</span><ArrowLeftRight size={14} /><span>{shortHash(session.review.head_commit)}</span>
         </div>
         <div className="review-header-actions">
-          <span className="attested-chip"><CircleDot size={13} /> {baseChanged ? 'Identity + four-way replay' : 'Exact identity'} · caller-attested checkpoint</span>
+          <span className="attested-chip"><CircleDot size={13} /> {baseChanged ? 'Exact identity + four-way carry' : 'Exact identity'} · caller-attested checkpoint</span>
           <button className="export-button" type="button" onClick={() => exportSession(session)}><Download size={15} /> Export session</button>
         </div>
       </header>
@@ -351,7 +362,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
         <div className="resume-copy">
           <span className="eyebrow">{baseChanged ? 'PR-RELATIVE RESIDUE AFTER BASE CHANGE' : 'WHAT CHANGED AFTER YOUR CHECKPOINT'}</span>
           <h1>{session.resume_delta.files.length === 0
-            ? baseChanged ? 'No unmatched current PR changes' : 'No changes between checkpoint and head'
+            ? baseChanged ? 'No review residue' : 'No changes between checkpoint and head'
             : baseChanged
               ? `${session.resume_delta.files.length.toLocaleString('en')} current PR ${session.resume_delta.files.length === 1 ? 'file needs' : 'files need'} review`
               : `${session.resume_delta.files.length.toLocaleString('en')} ${session.resume_delta.files.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
@@ -360,9 +371,9 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
             : 'Start with the checkpoint → head delta. Switch to full PR context whenever you need the original base → head story.'}</p>
         </div>
         <div className="resume-stats" aria-label="Review resume summary">
-          <div className="attention"><span>{baseChanged ? 'Review residue' : 'Changed since checkpoint'}</span><strong>{compactNumber(session.resume_delta.summary.changed_files)}</strong></div>
-          <div><span>Need review now</span><strong>{compactNumber(checkpointSummary.needs_review_now_files)}</strong></div>
-          <div className="carried"><span>Exactly carried</span><strong>{compactNumber(checkpointSummary.unchanged_since_checkpoint_files)}</strong></div>
+          <div className="attention"><span>Need review now</span><strong>{compactNumber(checkpointSummary.needs_review_now_files)}</strong></div>
+          <div className="carried"><span>Exact-identity carry</span><strong>{compactNumber(exactIdentityCarries)}</strong></div>
+          <div className="carried"><span>Four-way carry</span><strong>{compactNumber(fourWayReplayCarries)}</strong></div>
           <div className="retired"><span>Retired identities</span><strong>{compactNumber(checkpointSummary.retired_change_count)}</strong></div>
         </div>
       </section>
@@ -374,7 +385,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
         </div>
         <p><ShieldAlert size={14} /> {session.assessment.message}</p>
       </div>
-      <div className="review-trust-banner"><ShieldAlert size={13} /> {baseChanged ? 'Base changed · exact identity or non-interacting four-way replay · unresolved changes need review' : 'Exact Git identity only · caller-attested checkpoint · not approval or semantic safety'}</div>
+      <div className="review-trust-banner"><ShieldAlert size={13} /> {baseChanged ? 'Base changed · exact-identity or four-way carry · unresolved changes need review' : 'Exact Git identity only · caller-attested checkpoint · not approval or semantic safety'}</div>
 
       <div className="review-workspace">
         <aside className="review-file-panel">
@@ -405,7 +416,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
             entries.length === 0 && files.length > 0 ? (
               <div className="review-empty large"><FileSearch size={28} /><strong>No files match this view</strong><span>Clear the search or choose another checkpoint-state filter.</span></div>
             ) : scope === 'resume' ? baseChanged ? (
-              <div className="review-empty large"><Check size={28} /><strong>No unmatched current PR changes</strong><span>Every current PR change identity exactly matches the checkpoint range.</span></div>
+              <div className="review-empty large"><Check size={28} /><strong>No review residue</strong><span>Every current PR change was carried by exact identity or non-interacting four-way replay.</span></div>
             ) : (
               <div className="review-empty large"><Check size={28} /><strong>No changes between checkpoint and head</strong><span>There is no incremental file delta to inspect.</span></div>
             ) : (
@@ -414,7 +425,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           ) : (
             <>
               <div className="review-diff-heading">
-                <div><span className="surface-kicker">{scope === 'resume' ? baseChanged ? 'CURRENT PR · UNMATCHED' : 'CHECKPOINT → HEAD' : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
+                <div><span className="surface-kicker">{scope === 'resume' ? baseChanged ? 'CURRENT PR · NEEDS REVIEW' : 'CHECKPOINT → HEAD' : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
                 <div className="review-diff-actions">
                   <span>{lineSummary(selectedFile)}</span>
                   <button ref={detailsButtonRef} type="button" className="review-detail-trigger" onClick={() => setDetailsOpen(true)} aria-label="Open details and evidence"><Eye size={14} /> Details &amp; evidence</button>

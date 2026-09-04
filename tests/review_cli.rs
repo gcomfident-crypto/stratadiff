@@ -288,7 +288,10 @@ fn checkpoint_resume_matches_only_complete_git_change_identities() {
     );
 
     let markdown = markdown_report(&report);
-    assert!(markdown.contains("Needs review now: **2** of 6 current files"));
+    assert!(markdown.contains("Review coverage: **2** of 6 current files need review"));
+    assert!(markdown.contains("**4** carried (**4** exact-identity, **0** four-way)"));
+    assert!(markdown.contains("| exact-identity carry |"));
+    assert!(markdown.contains("Per-file diff reconstruction"));
     assert!(markdown.contains("<details>"));
     assert!(markdown.contains("Unchanged since checkpoint: <strong>4</strong>"));
     assert!(markdown.contains("**2** checkpoint changes retired"));
@@ -337,6 +340,90 @@ fn review_command_accepts_an_explicit_checkpoint() {
     assert_eq!(summary.needs_review_now_files, 2);
     assert_eq!(summary.unchanged_since_checkpoint_files, 4);
     assert_eq!(summary.retired_change_count, 2);
+}
+
+#[test]
+fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
+    let (directory, base, checkpoint, head) = checkpoint_fixture();
+    let residue_report = directory.path().join("residue.json");
+    let residue = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(directory.path())
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--format")
+        .arg("json")
+        .arg("--output")
+        .arg(&residue_report)
+        .arg("--fail-on-review-residue")
+        .arg("--")
+        .arg(&base)
+        .arg(&head)
+        .output()
+        .unwrap();
+    assert!(!residue.status.success());
+    assert!(
+        String::from_utf8_lossy(&residue.stderr)
+            .contains("review residue gate is open: 2 current PR files need review")
+    );
+    assert!(!fs::read(&residue_report).unwrap().is_empty());
+
+    let no_checkpoint_report = directory.path().join("no-checkpoint.json");
+    let no_checkpoint = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(directory.path())
+        .arg("--format")
+        .arg("json")
+        .arg("--output")
+        .arg(&no_checkpoint_report)
+        .arg("--fail-on-review-residue")
+        .arg("--")
+        .arg(&base)
+        .arg(&head)
+        .output()
+        .unwrap();
+    assert!(!no_checkpoint.status.success());
+    assert!(
+        String::from_utf8_lossy(&no_checkpoint.stderr)
+            .contains("review residue gate requires a resolved checkpoint")
+    );
+    assert!(!fs::read(&no_checkpoint_report).unwrap().is_empty());
+
+    let clean_report = directory.path().join("clean.json");
+    let clean = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(directory.path())
+        .arg("--checkpoint")
+        .arg(&head)
+        .arg("--format")
+        .arg("json")
+        .arg("--output")
+        .arg(&clean_report)
+        .arg("--fail-on-review-residue")
+        .arg("--")
+        .arg(&base)
+        .arg(&head)
+        .output()
+        .unwrap();
+    assert!(
+        clean.status.success(),
+        "{}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+    let report: RepositoryReview =
+        serde_json::from_slice(&fs::read(clean_report).unwrap()).unwrap();
+    assert_eq!(
+        report
+            .summary
+            .checkpoint
+            .as_ref()
+            .unwrap()
+            .needs_review_now_files,
+        0
+    );
 }
 
 #[test]
@@ -437,6 +524,8 @@ fn checkpoint_resume_carries_noninteracting_rebase_changes_in_the_same_file() {
     assert_eq!(residue.summary.changed_files, 0);
     let markdown = markdown_report(&report);
     assert!(markdown.contains("non-interacting four-way byte replay"));
+    assert!(markdown.contains("**1** carried (**0** exact-identity, **1** four-way)"));
+    assert!(markdown.contains("four-way carry"));
 }
 
 #[test]
@@ -651,9 +740,16 @@ fn composite_action_separates_revision_inputs_and_rejects_an_empty_report() {
     let action = include_str!("../action.yml");
     assert!(action.contains("cd -- \"${GITHUB_ACTION_PATH}\""));
     assert!(action.contains("\"--repo=${STRATADIFF_REPOSITORY}\""));
-    assert!(action.contains("review_args+=(\"--checkpoint=${STRATADIFF_CHECKPOINT}\")"));
+    assert!(action.contains("github-checkpoint \"${reviews_path}\" --reviewer"));
+    assert!(action.contains("! \"${resolved_checkpoint}\" =~ ^[0-9a-f]{40}$"));
+    assert!(action.contains("review_args+=(\"--checkpoint=${resolved_checkpoint}\")"));
+    assert!(action.contains("true) review_args+=(--fail-on-review-residue)"));
     assert!(action.contains("review_args+=(-- \"${STRATADIFF_BASE}\" \"${STRATADIFF_HEAD}\")"));
     assert!(action.contains("[[ ! -s \"${report_path}\" ]]"));
+    assert!(action.contains("review_status=$?"));
+    assert!(action.contains("exit \"${review_status}\""));
+    assert!(action.contains("grep -qi 'rel=\"next\"'"));
+    assert!(!action.contains("Authorization: Bearer ${STRATADIFF_GITHUB_TOKEN}"));
 }
 
 #[test]

@@ -31,8 +31,24 @@ function backToReviewQueue(): void {
   window.location.assign(`/?${params.toString()}`)
 }
 
+function reviewCoverage(session: LoadedFileSession): { label: string; tone: 'carried' | 'needs' | 'changed' } | null {
+  const context = session.repository_context
+  if (context === undefined) return null
+  if (context.checkpoint_match_basis === 'exact_git_change_identity') {
+    return { label: 'Coverage: exact-identity carry', tone: 'carried' }
+  }
+  if (context.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') {
+    return { label: 'Coverage: four-way carry', tone: 'carried' }
+  }
+  if (context.checkpoint_state === 'needs_review_now') {
+    return { label: 'Coverage: needs review', tone: 'needs' }
+  }
+  return { label: 'Coverage: changed after checkpoint', tone: 'changed' }
+}
+
 export function Header({ session, onOpenInspector, inspectorButtonRef }: HeaderProps) {
   const { report } = session
+  const coverage = reviewCoverage(session)
   const beforePath = visibleInlineText(report.before.path)
   const afterPath = visibleInlineText(report.after.path)
   return (
@@ -59,9 +75,10 @@ export function Header({ session, onOpenInspector, inspectorButtonRef }: HeaderP
       <div className="header-meta" aria-label="Report metadata">
         <span className="meta-chip language-chip">{report.parser.language}</span>
         <span className="meta-chip">report v3</span>
+        {coverage !== null && <span className={`meta-chip review-coverage-chip ${coverage.tone}`}>{coverage.label}</span>}
         <span className="verified-chip" title={session.verification.message}>
           <ShieldCheck size={14} aria-hidden="true" />
-          <span>Verified</span>
+          <span>Diff evidence verified</span>
           <Check size={12} aria-hidden="true" />
         </span>
       </div>

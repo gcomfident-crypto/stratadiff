@@ -107,6 +107,10 @@ fn emitted_report_verifies_and_applies_with_default_limits() {
     );
     let stdout = String::from_utf8(diff.stdout).unwrap();
     assert!(stdout.contains("exact byte edits (1):"), "{stdout}");
+    assert!(
+        stdout.contains("patch reconstruction certificate: verified"),
+        "{stdout}"
+    );
     assert!(stdout.contains("- utf8 \"1\""), "{stdout}");
     assert!(stdout.contains("+ utf8 \"2\""), "{stdout}");
     assert!(!fs::read(&report_path).unwrap().contains(&b'\n'));
@@ -122,6 +126,10 @@ fn emitted_report_verifies_and_applies_with_default_limits() {
         verify.status.success(),
         "{}",
         String::from_utf8_lossy(&verify.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(verify.stdout).unwrap(),
+        "verified: patch reconstruction, parser manifest, relations, ambiguities, changes, and summary\n"
     );
 
     let apply = Command::new(env!("CARGO_BIN_EXE_stratadiff"))

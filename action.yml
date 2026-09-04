@@ -1,5 +1,5 @@
-name: StrataDiff Review Focus (alpha)
-description: Informational byte/CST triage inside the caller's runner; StrataDiff has no upload step
+name: StrataDiff Review Coverage (alpha)
+description: Rebase-safe review-residue check inside the caller's runner; StrataDiff has no upload step
 author: StrataDiff contributors
 
 branding:
@@ -17,6 +17,22 @@ inputs:
     description: Optional commit whose complete PR change set was already reviewed
     required: false
     default: ''
+  reviewer:
+    description: Optional exact GitHub login whose latest completed review should become the checkpoint
+    required: false
+    default: ''
+  github-token:
+    description: GitHub token used only to list pull request reviews when reviewer is set
+    required: false
+    default: ''
+  pull-request-number:
+    description: Pull request number; inferred from a pull_request event when omitted
+    required: false
+    default: ''
+  fail-on-review-residue:
+    description: Fail the check unless every current PR change is carried from a resolved checkpoint
+    required: false
+    default: 'false'
   repository:
     description: Checked-out Git repository directory
     required: false
@@ -26,6 +42,12 @@ outputs:
   report:
     description: Absolute path to the deterministic JSON review-focus report
     value: ${{ steps.review.outputs.report }}
+  checkpoint:
+    description: Resolved checkpoint commit, or empty when the full PR remains in review
+    value: ${{ steps.review.outputs.checkpoint }}
+  checkpoint_source:
+    description: explicit, github_review, or none
+    value: ${{ steps.review.outputs.checkpoint_source }}
 
 runs:
   using: composite
@@ -43,28 +65,103 @@ runs:
         STRATADIFF_BASE: ${{ inputs.base }}
         STRATADIFF_HEAD: ${{ inputs.head }}
         STRATADIFF_CHECKPOINT: ${{ inputs.checkpoint }}
+        STRATADIFF_REVIEWER: ${{ inputs.reviewer }}
+        STRATADIFF_GITHUB_TOKEN: ${{ inputs.github-token }}
+        STRATADIFF_PULL_REQUEST_INPUT: ${{ inputs.pull-request-number }}
+        STRATADIFF_FAIL_ON_REVIEW_RESIDUE: ${{ inputs.fail-on-review-residue }}
         STRATADIFF_REPOSITORY: ${{ inputs.repository }}
+        STRATADIFF_GITHUB_API_URL: ${{ github.api_url }}
+        STRATADIFF_GITHUB_REPOSITORY: ${{ github.repository }}
+        STRATADIFF_EVENT_PULL_REQUEST: ${{ github.event.pull_request.number }}
       run: |
         set -euo pipefail
+        umask 077
         target_directory="${RUNNER_TEMP}/stratadiff-target"
         report_path="$(mktemp "${RUNNER_TEMP}/stratadiff-review-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX.json")"
         (
           cd -- "${GITHUB_ACTION_PATH}"
           cargo build --release --locked --manifest-path Cargo.toml --target-dir "${target_directory}"
         )
+        stratadiff="${target_directory}/release/stratadiff"
+        resolved_checkpoint="${STRATADIFF_CHECKPOINT}"
+        checkpoint_source=none
+        if [[ -n "${resolved_checkpoint}" ]]; then
+          checkpoint_source=explicit
+        elif [[ -n "${STRATADIFF_REVIEWER}" ]]; then
+          if [[ -z "${STRATADIFF_GITHUB_TOKEN}" ]]; then
+            echo "reviewer requires the caller's GitHub token" >&2
+            exit 1
+          fi
+          pull_request="${STRATADIFF_PULL_REQUEST_INPUT:-${STRATADIFF_EVENT_PULL_REQUEST}}"
+          if [[ ! "${pull_request}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "reviewer requires a pull request event or pull-request-number" >&2
+            exit 1
+          fi
+          if [[ ! "${STRATADIFF_GITHUB_REPOSITORY}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+            echo "github.repository is not a valid owner/repository name" >&2
+            exit 1
+          fi
+          reviews_path="$(mktemp "${RUNNER_TEMP}/stratadiff-reviews-XXXXXX.json")"
+          headers_path="$(mktemp "${RUNNER_TEMP}/stratadiff-review-headers-XXXXXX.txt")"
+          curl_config="$(mktemp "${RUNNER_TEMP}/stratadiff-curl-XXXXXX.conf")"
+          cleanup_review_lookup() {
+            rm -f -- "${reviews_path}" "${headers_path}" "${curl_config}"
+          }
+          trap cleanup_review_lookup EXIT
+          {
+            printf 'silent\n'
+            printf 'show-error\n'
+            printf 'fail-with-body\n'
+            printf 'header = "Authorization: Bearer %s"\n' "${STRATADIFF_GITHUB_TOKEN}"
+            printf 'header = "Accept: application/vnd.github+json"\n'
+            printf 'header = "X-GitHub-Api-Version: 2022-11-28"\n'
+          } > "${curl_config}"
+          curl --config "${curl_config}" \
+            --dump-header "${headers_path}" \
+            --output "${reviews_path}" \
+            "${STRATADIFF_GITHUB_API_URL}/repos/${STRATADIFF_GITHUB_REPOSITORY}/pulls/${pull_request}/reviews?per_page=100"
+          if grep -qi 'rel="next"' "${headers_path}"; then
+            echo "pull request has more than 100 reviews; pass an explicit checkpoint" >&2
+            exit 1
+          fi
+          resolved_checkpoint="$("${stratadiff}" github-checkpoint "${reviews_path}" --reviewer "${STRATADIFF_REVIEWER}")"
+          if [[ -n "${resolved_checkpoint}" ]]; then
+            checkpoint_source=github_review
+          fi
+          cleanup_review_lookup
+          trap - EXIT
+        fi
+        if [[ -n "${resolved_checkpoint}" && ! "${resolved_checkpoint}" =~ ^[0-9a-f]{40}$ ]]; then
+          echo "checkpoint must resolve to a full lowercase SHA-1 commit ID" >&2
+          exit 1
+        fi
         review_args=(
           "--repo=${STRATADIFF_REPOSITORY}"
           --format json
           "--output=${report_path}"
           --github-summary
         )
-        if [[ -n "${STRATADIFF_CHECKPOINT}" ]]; then
-          review_args+=("--checkpoint=${STRATADIFF_CHECKPOINT}")
+        if [[ -n "${resolved_checkpoint}" ]]; then
+          review_args+=("--checkpoint=${resolved_checkpoint}")
         fi
+        case "${STRATADIFF_FAIL_ON_REVIEW_RESIDUE}" in
+          true) review_args+=(--fail-on-review-residue) ;;
+          false) ;;
+          *)
+            echo "fail-on-review-residue must be true or false" >&2
+            exit 1
+            ;;
+        esac
         review_args+=(-- "${STRATADIFF_BASE}" "${STRATADIFF_HEAD}")
-        "${target_directory}/release/stratadiff" review "${review_args[@]}"
+        set +e
+        "${stratadiff}" review "${review_args[@]}"
+        review_status=$?
+        set -e
         if [[ ! -s "${report_path}" ]]; then
           echo "StrataDiff did not produce a non-empty JSON report" >&2
           exit 1
         fi
         echo "report=${report_path}" >> "${GITHUB_OUTPUT}"
+        echo "checkpoint=${resolved_checkpoint}" >> "${GITHUB_OUTPUT}"
+        echo "checkpoint_source=${checkpoint_source}" >> "${GITHUB_OUTPUT}"
+        exit "${review_status}"

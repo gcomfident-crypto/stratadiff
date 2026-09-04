@@ -44,7 +44,27 @@ describe('Evidence Workbench', () => {
     expect(screen.getByText('Opening evidence workbench')).toBeInTheDocument()
     expect(await screen.findByText('Evidence Workbench')).toBeInTheDocument()
     expect(screen.getByTestId('rendered-diff')).toHaveTextContent('const before = 1')
-    expect(screen.getAllByText('Verified')).toHaveLength(2)
+    expect(screen.getByText('Diff evidence verified')).toBeInTheDocument()
+    expect(screen.getByText('Reconstruction').nextElementSibling).toHaveTextContent('Verified')
+  })
+
+  it('keeps diff verification distinct from review coverage on repository drill-down', async () => {
+    const payload = sessionFixture()
+    payload.repository_context = {
+      file_index: 0,
+      scope: 'resume',
+      checkpoint_state: 'needs_review_now',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      const source = url.includes('/before') ? 'const before = 1\n' : 'const after = 2\n'
+      return Promise.resolve(new Response(new TextEncoder().encode(source), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('Coverage: needs review')).toBeInTheDocument()
+    expect(screen.getByText('Diff evidence verified')).toBeInTheDocument()
   })
 
   it('switches all three evidence layers from the keyboard', async () => {
@@ -56,7 +76,7 @@ describe('Evidence Workbench', () => {
     expect(screen.getByText('pair_claims: none')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: '3' })
-    expect(await screen.findByText('LOSSLESS REPLAY LAYER')).toBeInTheDocument()
+    expect(await screen.findByText('LOSSLESS PATCH RECONSTRUCTION')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: '1' })
     await waitFor(() => expect(screen.getByTestId('rendered-diff')).toBeInTheDocument())
@@ -170,6 +190,8 @@ describe('Evidence Workbench', () => {
     expect(screen.queryByText('src/carried.ts')).not.toBeInTheDocument()
     expect(screen.getByText('Exact identity · caller-attested checkpoint')).toBeInTheDocument()
     expect(screen.queryByText('Verified')).not.toBeInTheDocument()
+    expect(screen.getByText('Diff reconstruction')).toBeInTheDocument()
+    expect(screen.getByText('target matched')).toBeInTheDocument()
     expect(await screen.findByTestId('review-file-diff')).toHaveTextContent('const before = 1')
 
     fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
@@ -179,7 +201,10 @@ describe('Evidence Workbench', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
     expect((await screen.findAllByText('src/carried.ts')).length).toBeGreaterThan(0)
     expect(screen.queryByText('src/changed.ts')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Exactly carried/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Exact-identity carry/ })).toBeInTheDocument()
+    const stats = within(screen.getByLabelText('Review resume summary'))
+    expect(stats.getByText('Exact-identity carry').nextElementSibling).toHaveTextContent('1')
+    expect(stats.getByText('Four-way carry').nextElementSibling).toHaveTextContent('0')
   })
 
   it('uses singular copy for a one-file checkpoint delta', async () => {
@@ -217,12 +242,14 @@ describe('Evidence Workbench', () => {
 
     expect(await screen.findByText('1 current PR file needs review')).toBeInTheDocument()
     expect(screen.getByText(/This queue excludes upstream-only files/)).toBeInTheDocument()
-    expect(screen.getByText(/Base changed · exact identity or non-interacting four-way replay/)).toBeInTheDocument()
+    expect(screen.getByText(/Base changed · exact-identity or four-way carry/)).toBeInTheDocument()
+    expect(screen.getByText('Checkpoint carry').nextElementSibling).toHaveTextContent('not carried')
     expect(screen.queryByText('src/retired.ts')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
-    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Replay carried/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Four-way carry/ })).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Review resume summary')).getByText('Four-way carry').nextElementSibling).toHaveTextContent('1')
   })
 
   it('does not claim snapshots match when search or filters hide real changes', async () => {

@@ -9,6 +9,7 @@ use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
+use stratadiff::github::{MAX_GITHUB_REVIEWS_BYTES, resolve_github_review_checkpoint};
 use stratadiff::review::{markdown_report, review_git_range_with_checkpoint};
 use stratadiff::{
     AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_bytes, apply_patch,
@@ -39,20 +40,34 @@ struct Cli {
 enum Command {
     /// Print machine-readable provenance for this exact executable.
     BuildInfo,
+    /// Resolve one reviewer's latest completed GitHub review to a commit checkpoint.
+    GithubCheckpoint {
+        /// JSON array returned by GitHub's list pull request reviews endpoint.
+        reviews: PathBuf,
+        /// Exact GitHub login whose review history should be resumed.
+        #[arg(long)]
+        reviewer: String,
+        /// Print only the commit ID or the complete selection record.
+        #[arg(long, value_enum, default_value_t = GithubCheckpointOutput::Sha)]
+        format: GithubCheckpointOutput,
+        /// Write the result to this path instead of stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
     /// Compare two source files and produce a structural report.
     Diff {
         before: PathBuf,
         after: PathBuf,
         #[arg(long, value_enum)]
         language: Option<Language>,
-        /// Write the complete JSON report and replay certificate to this path.
+        /// Write the complete JSON report and patch reconstruction certificate to this path.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Print the complete report as JSON instead of the terminal summary.
         #[arg(long)]
         json: bool,
     },
-    /// Re-run all independently checkable predicates and the byte replay certificate.
+    /// Re-run all independently checkable predicates and the patch reconstruction certificate.
     Verify {
         report: PathBuf,
         before: PathBuf,
@@ -100,6 +115,9 @@ enum Command {
         /// Append Markdown to the path named by GITHUB_STEP_SUMMARY.
         #[arg(long)]
         github_summary: bool,
+        /// Exit unsuccessfully unless a checkpoint exists and no current PR change needs review.
+        #[arg(long)]
+        fail_on_review_residue: bool,
         /// Open the repository review queue in the local Evidence Workbench.
         #[arg(
             long,
@@ -119,6 +137,12 @@ enum Command {
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum ReviewOutput {
     Markdown,
+    Json,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum GithubCheckpointOutput {
+    Sha,
     Json,
 }
 
@@ -186,6 +210,35 @@ fn run(command: Command) -> Result<()> {
             let mut stdout = std::io::stdout().lock();
             serde_json::to_writer(&mut stdout, &embedded_build_info())?;
             stdout.write_all(b"\n")?;
+        }
+        Command::GithubCheckpoint {
+            reviews,
+            reviewer,
+            format,
+            output,
+        } => {
+            let review_bytes = read_bounded(
+                &reviews,
+                MAX_GITHUB_REVIEWS_BYTES,
+                "GitHub pull request reviews bytes",
+            )?;
+            let resolution = resolve_github_review_checkpoint(&review_bytes, &reviewer)?;
+            let encoded = match format {
+                GithubCheckpointOutput::Sha => resolution
+                    .checkpoint
+                    .as_ref()
+                    .map(|checkpoint| checkpoint.commit_id.as_bytes().to_vec())
+                    .unwrap_or_default(),
+                GithubCheckpointOutput::Json => serde_json::to_vec(&resolution)?,
+            };
+            if let Some(path) = output {
+                std::fs::write(&path, &encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+            } else if !encoded.is_empty() {
+                let mut stdout = std::io::stdout().lock();
+                stdout.write_all(&encoded)?;
+                stdout.write_all(b"\n")?;
+            }
         }
         Command::Diff {
             before,
@@ -255,7 +308,7 @@ fn run(command: Command) -> Result<()> {
             let after_bytes = read_bounded(&after, limits.max_source_bytes, "after source bytes")?;
             verify_report_bytes(&report_bytes, &before_bytes, &after_bytes, &limits)?;
             println!(
-                "verified: replay, parser manifest, relations, ambiguities, changes, and summary"
+                "verified: patch reconstruction, parser manifest, relations, ambiguities, changes, and summary"
             );
         }
         Command::Apply {
@@ -309,6 +362,7 @@ fn run(command: Command) -> Result<()> {
             format,
             output,
             github_summary,
+            fail_on_review_residue,
             workbench,
             port,
             no_open,
@@ -350,6 +404,23 @@ fn run(command: Command) -> Result<()> {
                         stdout.write_all(b"\n")?;
                     }
                 }
+            }
+            if fail_on_review_residue {
+                let checkpoint_summary = review
+                    .summary
+                    .checkpoint
+                    .as_ref()
+                    .context("review residue gate requires a resolved checkpoint")?;
+                ensure!(
+                    checkpoint_summary.needs_review_now_files == 0,
+                    "review residue gate is open: {} current PR {} need review",
+                    checkpoint_summary.needs_review_now_files,
+                    if checkpoint_summary.needs_review_now_files == 1 {
+                        "file"
+                    } else {
+                        "files"
+                    }
+                );
             }
         }
     }
@@ -472,7 +543,7 @@ fn print_summary(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()>
         }
     }
     println!(
-        "replay certificate: {}",
+        "patch reconstruction certificate: {}",
         if report.certificate.patch_verified {
             "verified"
         } else {

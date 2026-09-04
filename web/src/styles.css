@@ -213,6 +213,9 @@ kbd {
 }
 
 .language-chip { color: #c2d3cc; }
+.review-coverage-chip.carried { border-color: #285437; color: var(--verified); background: #12251a; }
+.review-coverage-chip.needs { border-color: #6e3b38; color: var(--coral); background: #261716; }
+.review-coverage-chip.changed { border-color: #65542e; color: #d8bd7c; background: #211c12; }
 
 .verified-chip {
   gap: 5px;
