@@ -11,6 +11,8 @@
 The oracle is deliberately Python standard-library code and Git plumbing. It must not import the
 StrataDiff package, call the StrataDiff binary, or deserialize production Rust types while
 generating expectations. Only `evaluate` launches the system under test.
+The evaluator accepts only a clean release build with complete `stratadiff build-info` provenance
+as a complete benchmark run.
 
 See the [dataset card](../../benchmarks/resumebench-real-v0/README.md) for commands, provenance,
 scope, and claim limits.

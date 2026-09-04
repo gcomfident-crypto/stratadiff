@@ -85,28 +85,32 @@ python3 tools/resumebench-real/resumebench_real.py verify \
   --repository /absolute/path/to/resumebench-real-v0/repository.git
 ```
 
-Run StrataDiff against the frozen oracle:
+Run StrataDiff against the frozen oracle from a clean checkout so the evaluator can bind the
+result to an exact source revision:
 
 ```text
-cargo build --locked --bin stratadiff
+cargo build --locked --release --bin stratadiff
 python3 tools/resumebench-real/resumebench_real.py evaluate \
   --manifest benchmarks/resumebench-real-v0/manifest.json \
   --repository /absolute/path/to/resumebench-real-v0/repository.git \
-  --stratadiff target/debug/stratadiff \
+  --stratadiff target/release/stratadiff \
   --output /tmp/resumebench-real-evaluation.json
 ```
 
 The evaluator reports false carry, false invalidation, identity omissions/extras, retired-count
-mismatches, and fail-closed behavior. `benchmark_complete=true` requires every frozen case to run
-and pass.
+mismatches, and fail-closed behavior. It also records the exact binary digest plus the embedded Git
+revision, dirty state, Cargo.lock digest, build profile, and Rust compiler version from
+`stratadiff build-info`. `benchmark_complete=true` requires every frozen case to run and pass using
+a clean release build with complete engine provenance.
 
 ## Claim boundary and licensing
 
 The manifest, oracle, and evaluation metadata are released under the repository's MIT license.
 Gerrit source remains Apache-2.0 and is fetched only into the user's materialization directory.
-The dataset records stable public URLs, Git object IDs, review-state message IDs, timestamps, and
-captured API-response digests; it intentionally excludes reviewer names, email addresses, review
-bodies, and source snapshots.
+The dataset records stable public URLs, Git object IDs, review-state message IDs, and timestamps;
+it intentionally excludes mutable raw API responses, reviewer names, email addresses, review
+bodies, and source snapshots. The online provenance check validates the frozen semantic fields
+rather than treating an append-only response body as immutable.
 
 Passing this benchmark establishes exact-identity classification on these five histories. It does
 not show how common the pattern is, how much reviewer time is saved, whether developers understand

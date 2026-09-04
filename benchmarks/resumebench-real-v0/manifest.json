@@ -36,7 +36,7 @@
   "oracle_contract": {
     "schema": "stratadiff-resumebench-real-oracle-v0",
     "generator": "tools/resumebench-real/resumebench_real.py",
-    "generator_sha256": "709b0efdca56d0c7bfb099ffdd197d7467d20ed6e1c5f8d6c996b471d9de1315",
+    "generator_sha256": "e553563d4c64af8b2a0a3a8cd2451a06587d14d29d8e70c6203cb465558e089d",
     "raw_git_command": "git diff-tree -r --raw -z --no-commit-id --no-abbrev --no-renames <left> <right> --",
     "identity_fields": [
       "status",
@@ -64,7 +64,7 @@
     "Exact identity carry-forward does not establish semantic safety, approval, or permission to merge.",
     "The benchmark measures classification correctness and observed focus share, not reviewer time, defect recall, or comprehension.",
     "The base-drift case validates conservative refusal; rebase-aware identity lineage remains a separate research track.",
-    "Mutable Gerrit API response digests record the frozen collection response and may differ after later public comments are appended."
+    "Online provenance checks depend on Gerrit's public API remaining available and preserving the frozen semantic fields."
   ],
   "cases": [
     {
@@ -98,11 +98,9 @@
         "value": 2,
         "recorded_at": "2026-08-31 11:00:03.000000000"
       },
-      "api_capture": {
+      "api_evidence": {
         "detail_url": "https://gerrit-review.googlesource.com/changes/623361/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
-        "detail_response_sha256": "cce4cd5ad5094a1db840fe3aa18ec836b0169629c45a3365cce0025262ee3e6e",
-        "messages_url": "https://gerrit-review.googlesource.com/changes/623361/messages",
-        "messages_response_sha256": "4470a389d17f39578346a9bff3655f2c432c700745d8e62a03801a3fa65c8c9c"
+        "messages_url": "https://gerrit-review.googlesource.com/changes/623361/messages"
       },
       "expectation": {
         "kind": "exact_identity_partition",
@@ -140,11 +138,9 @@
         "value": 2,
         "recorded_at": "2026-08-26 06:47:57.000000000"
       },
-      "api_capture": {
+      "api_evidence": {
         "detail_url": "https://gerrit-review.googlesource.com/changes/617901/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
-        "detail_response_sha256": "f5cf7e60fe94af70000b7b9858556d44c57d69735d43b9adc6fe28e521a0a681",
-        "messages_url": "https://gerrit-review.googlesource.com/changes/617901/messages",
-        "messages_response_sha256": "8ce006c6661ace9ce722ab71431ee636f3543f319d054432c4d28b12d7c403d1"
+        "messages_url": "https://gerrit-review.googlesource.com/changes/617901/messages"
       },
       "expectation": {
         "kind": "exact_identity_partition",
@@ -192,11 +188,9 @@
         ],
         "fact": "Gerrit recorded patch set 1 as latest approved and one unreviewed changed file at submission."
       },
-      "api_capture": {
+      "api_evidence": {
         "detail_url": "https://gerrit-review.googlesource.com/changes/438704/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
-        "detail_response_sha256": "4918a9479036c7da1a26d5930a409308097bc9ab19019fa499f2ac14458797aa",
-        "messages_url": "https://gerrit-review.googlesource.com/changes/438704/messages",
-        "messages_response_sha256": "093cedad4f595f4894688d2f146aa99f2dc3edc0eae78c5f47e4d3e08348fe90"
+        "messages_url": "https://gerrit-review.googlesource.com/changes/438704/messages"
       },
       "expectation": {
         "kind": "exact_identity_partition",
@@ -244,11 +238,9 @@
         ],
         "fact": "Gerrit recorded no file changes between the latest approved and submitted patch sets."
       },
-      "api_capture": {
+      "api_evidence": {
         "detail_url": "https://gerrit-review.googlesource.com/changes/620081/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
-        "detail_response_sha256": "44f8f54612bcc8b6b823b06fdd400e158abf321013026ab59588d5cae19e5cb5",
-        "messages_url": "https://gerrit-review.googlesource.com/changes/620081/messages",
-        "messages_response_sha256": "7a9c245ed8a6a1ad3727dc6800853f48b05fa5f0e8754f2c62883c73c5a3d698"
+        "messages_url": "https://gerrit-review.googlesource.com/changes/620081/messages"
       },
       "expectation": {
         "kind": "exact_identity_partition",
@@ -307,11 +299,9 @@
         ],
         "fact": "Gerrit recorded patch set 9 as a rebase of patch set 8."
       },
-      "api_capture": {
+      "api_evidence": {
         "detail_url": "https://gerrit-review.googlesource.com/changes/612221/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
-        "detail_response_sha256": "3bc1d47f6c2cac3fee7340c1ef1d0320bbdd4eb930a7420fc19fb4fc04532cb2",
-        "messages_url": "https://gerrit-review.googlesource.com/changes/612221/messages",
-        "messages_response_sha256": "64540f50c83167886177301a48b03a7e645fefbd2135af0186adc83d4f07c44d"
+        "messages_url": "https://gerrit-review.googlesource.com/changes/612221/messages"
       },
       "expectation": {
         "kind": "base_mismatch_rejected",

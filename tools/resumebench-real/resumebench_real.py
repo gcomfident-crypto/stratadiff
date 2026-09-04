@@ -24,6 +24,7 @@ STATUS_NAMES = {
     "renamed": "R",
     "type_changed": "T",
 }
+BUILD_INFO_SCHEMA = "stratadiff-build-info-v1"
 
 
 def isolated_environment():
@@ -640,8 +641,57 @@ def evaluate_rejection_case(case, oracle, repository, binary):
     }
 
 
+def read_engine_provenance(binary):
+    result = subprocess.run(
+        [str(binary), "build-info"],
+        env=isolated_environment(),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"stratadiff build-info failed: {result.stderr.decode('utf-8', errors='replace').strip()}"
+        )
+    if result.stderr:
+        raise RuntimeError(
+            "stratadiff build-info produced diagnostics: "
+            f"{result.stderr.decode('utf-8', errors='replace').strip()}"
+        )
+    info = json.loads(result.stdout)
+    if info["schema"] != BUILD_INFO_SCHEMA:
+        raise ValueError(f"unsupported StrataDiff build-info schema: {info['schema']}")
+    if not isinstance(info["engine_version"], str) or not info["engine_version"]:
+        raise ValueError("StrataDiff build-info has an invalid engine version")
+    git_revision = info["git_revision"]
+    if git_revision != "unavailable":
+        validate_oid(git_revision, "StrataDiff build Git revision")
+    git_dirty = info["git_dirty"]
+    if git_dirty is not None and not isinstance(git_dirty, bool):
+        raise ValueError("StrataDiff build-info has an invalid Git dirty state")
+    cargo_lock_sha256 = info["cargo_lock_sha256"]
+    if cargo_lock_sha256 != "unavailable" and (
+        len(cargo_lock_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in cargo_lock_sha256)
+    ):
+        raise ValueError("StrataDiff build-info has an invalid Cargo.lock SHA-256")
+    if not isinstance(info["build_profile"], str) or not info["build_profile"]:
+        raise ValueError("StrataDiff build-info has an invalid build profile")
+    if not isinstance(info["rustc_version"], str) or not info["rustc_version"]:
+        raise ValueError("StrataDiff build-info has an invalid rustc version")
+    complete = (
+        git_revision != "unavailable"
+        and git_dirty is False
+        and cargo_lock_sha256 != "unavailable"
+        and info["build_profile"] == "release"
+        and info["rustc_version"].startswith("rustc ")
+    )
+    return info, complete
+
+
 def evaluate_all(manifest_path, repository, binary, output):
     manifest = load_manifest(manifest_path)
+    engine_provenance, engine_provenance_complete = read_engine_provenance(binary)
     results = []
     current_identities = 0
     needs_review_now = 0
@@ -665,7 +715,11 @@ def evaluate_all(manifest_path, repository, binary, output):
         else:
             raise ValueError(f"unsupported oracle expectation: {oracle['expectation']}")
         results.append(result)
-    benchmark_complete = len(results) == len(manifest["cases"]) and all(result["passed"] for result in results)
+    benchmark_complete = (
+        engine_provenance_complete
+        and len(results) == len(manifest["cases"])
+        and all(result["passed"] for result in results)
+    )
     evaluation = {
         "schema": "stratadiff-resumebench-real-evaluation-v0",
         "dataset_version": manifest["dataset_version"],
@@ -675,6 +729,8 @@ def evaluate_all(manifest_path, repository, binary, output):
         "provenance": {
             "manifest_sha256": sha256_bytes(manifest_path.read_bytes()),
             "stratadiff_binary_sha256": sha256_bytes(binary.read_bytes()),
+            "engine": engine_provenance,
+            "engine_provenance_complete": engine_provenance_complete,
             "oracle_sha256": {
                 case["id"]: sha256_bytes(oracle_path(manifest_path, case).read_bytes())
                 for case in manifest["cases"]
@@ -716,16 +772,17 @@ def read_gerrit_json(url):
     return json.loads(payload[len(prefix):])
 
 
-def verify_message_evidence(change_number, evidence, expected_fragments):
+def verify_message_evidence(change_number, evidence, expected_fragments, messages):
     expected_url = (
         f"https://gerrit-review.googlesource.com/changes/{change_number}/messages/"
         f"{evidence['message_id']}"
     )
     if evidence["message_url"] != expected_url:
         raise ValueError(f"Gerrit message URL is not bound to change {change_number}")
-    message = read_gerrit_json(evidence["message_url"])
-    if message["id"] != evidence["message_id"]:
-        raise ValueError(f"Gerrit message ID mismatch at {evidence['message_url']}")
+    matches = [message for message in messages if message["id"] == evidence["message_id"]]
+    if len(matches) != 1:
+        raise ValueError(f"Gerrit message ID is not unique at {evidence['message_url']}")
+    message = matches[0]
     if "patch_set" in evidence and message["_revision_number"] != evidence["patch_set"]:
         raise ValueError(f"Gerrit patch-set mismatch at {evidence['message_url']}")
     if "recorded_at" in evidence and message["date"] != evidence["recorded_at"]:
@@ -735,17 +792,40 @@ def verify_message_evidence(change_number, evidence, expected_fragments):
             raise ValueError(f"Gerrit message is missing expected evidence at {evidence['message_url']}")
 
 
-def verify_case_provenance(case):
+def verify_case_provenance(manifest, case):
     change_number = case["change_number"]
+    api_evidence = case["api_evidence"]
+    expected_detail_url = (
+        f"https://gerrit-review.googlesource.com/changes/{change_number}/detail"
+        "?o=ALL_REVISIONS&o=ALL_COMMITS"
+    )
+    expected_messages_url = f"https://gerrit-review.googlesource.com/changes/{change_number}/messages"
+    if api_evidence["detail_url"] != expected_detail_url:
+        raise ValueError(f"Gerrit detail URL is not bound to change {change_number}")
+    if api_evidence["messages_url"] != expected_messages_url:
+        raise ValueError(f"Gerrit messages URL is not bound to change {change_number}")
+    detail = read_gerrit_json(api_evidence["detail_url"])
+    messages = read_gerrit_json(api_evidence["messages_url"])
+    if detail["_number"] != change_number:
+        raise ValueError(f"Gerrit detail number mismatch for change {change_number}")
+    if detail["project"] != manifest["source_repository"]["id"]:
+        raise ValueError(f"Gerrit project mismatch for change {change_number}")
+    if detail["change_id"] != case["change_id"]:
+        raise ValueError(f"Gerrit Change-Id mismatch for change {change_number}")
+    if detail["subject"] != case["subject"]:
+        raise ValueError(f"Gerrit subject mismatch for change {change_number}")
+    if detail["status"] != "MERGED":
+        raise ValueError(f"Gerrit change {change_number} is not merged")
+    if detail["current_revision"] != case["revisions"]["current"]["commit"]:
+        raise ValueError(f"Gerrit submitted revision mismatch for change {change_number}")
     for side in ("checkpoint", "current"):
         revision = case["revisions"][side]
-        commit_url = (
-            f"https://gerrit-review.googlesource.com/changes/{change_number}/revisions/"
-            f"{revision['patch_set']}/commit"
-        )
-        commit = read_gerrit_json(commit_url)
-        if commit["commit"] != revision["commit"]:
-            raise ValueError(f"Gerrit commit mismatch for change {change_number} {side}")
+        detail_revision = detail["revisions"][revision["commit"]]
+        if detail_revision["_number"] != revision["patch_set"]:
+            raise ValueError(f"Gerrit patch-set mismatch for change {change_number} {side}")
+        if detail_revision["ref"] != revision["ref"]:
+            raise ValueError(f"Gerrit ref mismatch for change {change_number} {side}")
+        commit = detail_revision["commit"]
         parents = commit["parents"]
         if len(parents) != 1 or parents[0]["commit"] != revision["parent"]:
             raise ValueError(f"Gerrit parent mismatch for change {change_number} {side}")
@@ -754,10 +834,16 @@ def verify_case_provenance(case):
         change_number,
         checkpoint,
         [f"Patch Set {checkpoint['patch_set']}: {checkpoint['label']}+{checkpoint['value']}"],
+        messages,
     )
     for field in ("merge_evidence", "rebase_evidence"):
         if field in case:
-            verify_message_evidence(change_number, case[field], case[field]["message_contains"])
+            verify_message_evidence(
+                change_number,
+                case[field],
+                case[field]["message_contains"],
+                messages,
+            )
 
 
 def materialize(manifest_path, output):
@@ -770,7 +856,7 @@ def materialize(manifest_path, output):
     completed = False
     try:
         for case in manifest["cases"]:
-            verify_case_provenance(case)
+            verify_case_provenance(manifest, case)
         run_external_git(["init", "--bare", "-q", str(repository)])
         run_external_git(
             ["-C", str(repository), "remote", "add", "origin", manifest["source_repository"]["git_url"]],
@@ -897,7 +983,7 @@ def main():
     if args.command == "verify-provenance":
         manifest = load_manifest(manifest_path)
         for case in manifest["cases"]:
-            verify_case_provenance(case)
+            verify_case_provenance(manifest, case)
         print(f"verified provenance for {len(manifest['cases'])} cases")
     elif args.command == "materialize":
         repository = materialize(manifest_path, args.output.resolve())

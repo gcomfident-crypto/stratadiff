@@ -91,6 +91,7 @@ frontend requires Node.js 24 and npm 11.
 
 ```console
 cargo build --release
+target/release/stratadiff build-info
 target/release/stratadiff review origin/main HEAD
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
 target/release/stratadiff diff examples/demo/before.py examples/demo/after.py \

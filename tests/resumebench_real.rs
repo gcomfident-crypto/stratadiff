@@ -102,6 +102,18 @@ fn real_manifest_oracles_and_evaluation_are_internally_complete() {
             case["checkpoint_evidence"]["patch_set"],
             case["revisions"]["checkpoint"]["patch_set"]
         );
+        assert!(
+            case["api_evidence"]["detail_url"]
+                .as_str()
+                .unwrap()
+                .contains(case_id.split('-').nth(1).unwrap())
+        );
+        assert!(
+            case["api_evidence"]["messages_url"]
+                .as_str()
+                .unwrap()
+                .contains(case_id.split('-').nth(1).unwrap())
+        );
 
         let oracle = read_json(&dataset.join(case["expectation"]["oracle"].as_str().unwrap()));
         assert_eq!(oracle["schema"], ORACLE_SCHEMA);
@@ -223,6 +235,23 @@ fn real_manifest_oracles_and_evaluation_are_internally_complete() {
             .len(),
         64
     );
+    assert_eq!(evaluation["provenance"]["engine_provenance_complete"], true);
+    let engine = &evaluation["provenance"]["engine"];
+    assert_eq!(engine["schema"], "stratadiff-build-info-v1");
+    assert_eq!(engine["engine_version"], "0.3.0");
+    assert_eq!(engine["git_dirty"], false);
+    assert_eq!(engine["build_profile"], "release");
+    assert_eq!(
+        engine["cargo_lock_sha256"],
+        sha256(&fs::read(root().join("Cargo.lock")).unwrap())
+    );
+    assert!(engine["git_revision"].as_str().unwrap().len() == 40);
+    assert!(
+        engine["rustc_version"]
+            .as_str()
+            .unwrap()
+            .starts_with("rustc ")
+    );
     let evaluated_cases: BTreeMap<_, _> = evaluation["cases"]
         .as_array()
         .unwrap()
@@ -240,6 +269,7 @@ fn real_manifest_oracles_and_evaluation_are_internally_complete() {
             sha256(&fs::read(dataset.join(oracle_path)).unwrap())
         );
         if case["expectation"]["kind"] == "exact_identity_partition" {
+            assert_eq!(result["engine_version"], engine["engine_version"], "{id}");
             for field in [
                 "false_carry",
                 "false_invalidation",
