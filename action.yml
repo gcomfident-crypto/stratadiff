@@ -1,0 +1,78 @@
+name: StrataDiff Review Coverage (alpha)
+description: Rebase-safe review-residue check inside the caller's runner; StrataDiff has no upload step
+author: StrataDiff contributors
+
+branding:
+  icon: layers
+  color: green
+
+inputs:
+  base:
+    description: Base revision; StrataDiff compares its merge base with head
+    required: true
+  head:
+    description: Head revision to review
+    required: true
+  checkpoint:
+    description: Optional commit whose complete PR change set was already reviewed
+    required: false
+    default: ''
+  reviewer:
+    description: Optional exact GitHub login whose latest completed review should become the checkpoint
+    required: false
+    default: ''
+  github-token:
+    description: GitHub token used only to list pull request reviews when reviewer is set
+    required: false
+    default: ''
+  pull-request-number:
+    description: Pull request number; inferred from a pull_request event when omitted
+    required: false
+    default: ''
+  fail-on-review-residue:
+    description: Fail the check unless every current PR change is carried from a resolved checkpoint
+    required: false
+    default: 'false'
+  repository:
+    description: Checked-out Git repository directory
+    required: false
+    default: .
+
+outputs:
+  report:
+    description: Absolute path to the deterministic JSON review-focus report
+    value: ${{ steps.review.outputs.report }}
+  checkpoint:
+    description: Resolved checkpoint commit, or empty when the full PR remains in review
+    value: ${{ steps.review.outputs.checkpoint }}
+  checkpoint_source:
+    description: explicit, github_review, or none
+    value: ${{ steps.review.outputs.checkpoint_source }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Rust toolchain
+      uses: dtolnay/rust-toolchain@49fda20b3f489226feadfba7767be1db54e2cee1 # 1.90.0
+    - name: Cache the StrataDiff build
+      uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      with:
+        workspaces: ${{ github.action_path }}
+    - name: Build and analyze the Git range
+      id: review
+      shell: bash
+      env:
+        STRATADIFF_BASE: ${{ inputs.base }}
+        STRATADIFF_HEAD: ${{ inputs.head }}
+        STRATADIFF_CHECKPOINT: ${{ inputs.checkpoint }}
+        STRATADIFF_REVIEWER: ${{ inputs.reviewer }}
+        STRATADIFF_GITHUB_TOKEN: ${{ inputs.github-token }}
+        STRATADIFF_PULL_REQUEST_INPUT: ${{ inputs.pull-request-number }}
+        STRATADIFF_FAIL_ON_REVIEW_RESIDUE: ${{ inputs.fail-on-review-residue }}
+        STRATADIFF_REPOSITORY: ${{ inputs.repository }}
+        STRATADIFF_GITHUB_API_URL: ${{ github.api_url }}
+        STRATADIFF_GITHUB_SERVER_URL: ${{ github.server_url }}
+        STRATADIFF_GITHUB_REPOSITORY: ${{ github.repository }}
+        STRATADIFF_EVENT_PULL_REQUEST: ${{ github.event.pull_request.number }}
+      run: |
+        bash --noprofile --norc "${GITHUB_ACTION_PATH}/scripts/github_action_review.sh"

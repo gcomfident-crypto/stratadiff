@@ -3,8 +3,10 @@ pub mod diffbenchmark_case;
 pub mod diffbenchmark_eval;
 pub mod diffbenchmark_materialization;
 pub mod diffbenchmark_prediction;
+pub mod github;
 mod matcher;
 mod patch;
+pub mod review;
 
 use std::path::Path;
 

@@ -2,6 +2,7 @@ use serde::Serialize;
 use stratadiff::{
     AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
     Language, Predicate, analyze_bytes,
+    review::{CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState},
 };
 
 #[test]
@@ -10,6 +11,7 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/report-v1.schema.json"),
         include_str!("../schema/report-v2.schema.json"),
         include_str!("../schema/report-v3.schema.json"),
+        include_str!("../schema/review-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
         jsonschema::draft202012::new(&schema).unwrap();
@@ -139,6 +141,33 @@ fn schema_enums_track_every_serialized_public_variant() {
             AmbiguityAbstentionCause::DuplicateSymmetry,
             AmbiguityAbstentionCause::ComponentLimit,
             AmbiguityAbstentionCause::CandidateScanLimit,
+        ],
+    );
+}
+
+#[test]
+fn review_schema_tracks_checkpoint_variants() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-v1.schema.json")).unwrap();
+    assert_enum(
+        &schema["$defs"]["checkpoint_state"]["enum"],
+        &[
+            CheckpointState::NeedsReviewNow,
+            CheckpointState::UnchangedSinceCheckpoint,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["checkpoint_match_basis"]["enum"],
+        &[
+            CheckpointCarryBasis::ExactGitChangeIdentity,
+            CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["review_checkpoint"]["properties"]["match_basis"]["enum"],
+        &[
+            CheckpointMatchBasis::ExactGitChangeIdentity,
+            CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay,
         ],
     );
 }

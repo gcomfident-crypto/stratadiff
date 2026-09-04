@@ -14,11 +14,11 @@ name = "stratadiff"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Proof-carrying, ambiguity-aware structural code differencing"
+description = "Exact review resume and proof-carrying structural diff for Git changes"
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-keywords = ["diff", "ast", "tree-sitter", "structural", "code-analysis"]
+keywords = ["code-review", "git", "diff", "tree-sitter", "code-analysis"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
@@ -35,7 +35,7 @@ serde_json = "1.0"
 sha2 = "0.10"
 similar = "3.2"
 tempfile = "3.22"
-tokio = { version = "1.47", features = ["net", "rt-multi-thread"] }
+tokio = { version = "1.47", features = ["net", "rt-multi-thread", "sync"] }
 stratadiff-core = { version = "=0.3.0", path = "crates/stratadiff-core", default-features = false, features = ["clap"] }
 stratadiff-verifier = { version = "=0.3.0", path = "crates/stratadiff-verifier" }
 

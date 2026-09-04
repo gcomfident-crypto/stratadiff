@@ -1,12 +1,12 @@
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, CircleDashed, Eye, Fingerprint, Link2, Sparkles, X } from 'lucide-react'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { base64DecodedLength, base64Preview, byteRange, editAfterRanges, nodeLabel, nodeLocation, predicateLabel, shortHash, titleCase } from '../lib/format'
-import type { AmbiguityPair, EvidenceSelection, LoadedSession, NodeRef } from '../types'
+import type { AmbiguityPair, EvidenceSelection, LoadedFileSession, NodeRef } from '../types'
 
 const PAIRS_PER_PAGE = 80
 
 interface InspectorProps {
-  session: LoadedSession
+  session: LoadedFileSession
   selection: EvidenceSelection
   open: boolean
   drawer: boolean
@@ -156,23 +156,23 @@ export function Inspector({ session, selection, open, drawer, onClose }: Inspect
     if (edit === undefined) throw new Error(`Byte edit ${selection.index} is missing.`)
     const replacementLength = base64DecodedLength(edit.replacement_base64)
     const afterRange = afterRanges[selection.index]
-    if (afterRange === undefined) throw new Error(`Byte edit ${selection.index} has no replay range.`)
+    if (afterRange === undefined) throw new Error(`Byte edit ${selection.index} has no target range.`)
     const [afterStart, afterEnd] = afterRange
     heading = `Byte edit ${String(selection.index + 1).padStart(2, '0')}`
-    subheading = 'Lossless replay operation'
+    subheading = 'Lossless patch operation'
     content = (
       <>
         <InspectorSection icon={<Eye size={15} />} title="Observed">
           <dl>
             <div><dt>Old range</dt><dd>{byteRange(edit.old_start, edit.old_end)}</dd></div>
-            <div><dt>Replay range</dt><dd>{byteRange(afterStart, afterEnd)}</dd></div>
+            <div><dt>Target range</dt><dd>{byteRange(afterStart, afterEnd)}</dd></div>
             <div><dt>Removed</dt><dd>{edit.old_end - edit.old_start} bytes</dd></div>
             <div><dt>Inserted</dt><dd>{replacementLength} bytes</dd></div>
           </dl>
           <code className="base64-value">{base64Preview(edit.replacement_base64)}</code>
         </InspectorSection>
         <InspectorSection icon={<Fingerprint size={15} />} title="Selected by model">
-          <p>Replay applies this exact replacement under <code>{report.patch.algorithm}</code>.</p>
+          <p>The patch applies this exact replacement under <code>{report.patch.algorithm}</code>.</p>
         </InspectorSection>
         <InspectorSection icon={<CircleDashed size={15} />} title="Not claimed">
           <ClaimBoundary>The byte edit sequence is exact, but is not claimed to be the unique or minimal patch.</ClaimBoundary>
@@ -214,9 +214,9 @@ export function Inspector({ session, selection, open, drawer, onClose }: Inspect
         <dl>
           <div><dt>Before</dt><dd title={report.certificate.before_blake3}>{shortHash(report.certificate.before_blake3)}</dd></div>
           <div><dt>Target</dt><dd title={report.certificate.after_blake3}>{shortHash(report.certificate.after_blake3)}</dd></div>
-          <div><dt>Replay</dt><dd title={report.certificate.reconstructed_blake3}>{shortHash(report.certificate.reconstructed_blake3)}</dd></div>
+          <div><dt>Rebuilt</dt><dd title={report.certificate.reconstructed_blake3}>{shortHash(report.certificate.reconstructed_blake3)}</dd></div>
         </dl>
-        <p><Check size={12} /> Replay digest equals target digest</p>
+        <p><Check size={12} /> Rebuilt digest equals target digest</p>
       </div>
     </aside>
   )

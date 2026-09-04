@@ -236,7 +236,7 @@ export function CodeDiffView({ before, after, diffStyle, onDiffStyleChange, comp
       <div className="claim-boundary">
         {renderInteractiveDiff
           ? 'This is an exact snapshot comparison—not a claim of authorship, semantic equivalence, or a minimal patch.'
-          : 'This preview is intentionally bounded. Exact bytes preserves the complete snapshots and lossless replay evidence.'}
+          : 'This preview is intentionally bounded. Exact bytes preserves the complete snapshots and lossless reconstruction evidence.'}
       </div>
     </div>
   )

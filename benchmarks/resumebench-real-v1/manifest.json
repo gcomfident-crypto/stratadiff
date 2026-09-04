@@ -1,0 +1,116 @@
+{
+  "schema": "stratadiff-resumebench-real-manifest-v1",
+  "dataset_version": "1.0.0",
+  "created_at": "2026-09-04T21:50:00Z",
+  "name": "ResumeBench-Real v1",
+  "description": "A pinned Gerrit rebase history with provider-recorded changed-since-approval paths and a strict four-snapshot carry witness.",
+  "dataset_license": "MIT",
+  "selection_protocol": {
+    "kind": "single_provenance_case",
+    "reason": "ResumeBench-Real v0 froze this transition as a base-drift refusal. Gerrit's submission record independently names the two post-approval changes, making the same transition a strong diagnostic for the new rebase-aware contract.",
+    "prevalence_claim": false
+  },
+  "source_repository": {
+    "id": "gerrit",
+    "git_url": "https://gerrit.googlesource.com/gerrit",
+    "object_format": "sha1",
+    "license": {
+      "spdx_expression": "Apache-2.0",
+      "path": "COPYING",
+      "blob_oid": "d645695673349e3947e8e5ae42332d0ac3164cd7",
+      "content_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  },
+  "oracle_contract": {
+    "schema": "stratadiff-resumebench-real-oracle-v1",
+    "oracle": "oracle.json",
+    "verifier": "verify.py",
+    "current_pr_delta": "C -> D",
+    "checkpoint_delta": "A -> B",
+    "carry_rule": "Full raw Git change identity equality, or a same-path regular-file four-snapshot byte witness whose A->B and A->C edits are non-overlapping, non-adjacent, and replay exactly to D in both orders.",
+    "provider_ground_truth": "The Gerrit submission message binds PS8 as the latest approved patch set and names exactly two files changed since that checkpoint."
+  },
+  "case": {
+    "id": "gerrit-612221-ps8-ps10-rebase",
+    "change_number": 612221,
+    "change_id": "I997164463626c45b39a9b0895a7cb668f58d02c4",
+    "subject": "Add `onlypaths:` query predicate to find changes with exact file set",
+    "change_url": "https://gerrit-review.googlesource.com/c/gerrit/+/612221",
+    "snapshots": {
+      "A": {
+        "role": "checkpoint_base",
+        "commit": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7"
+      },
+      "B": {
+        "role": "reviewed_checkpoint",
+        "patch_set": 8,
+        "ref": "refs/changes/21/612221/8",
+        "commit": "ea6533508e352206a656014a8aaea25397aec255",
+        "parent": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7"
+      },
+      "C": {
+        "role": "current_base",
+        "commit": "007993f0eff2e36db56ad6159ec6cc577e9a0942"
+      },
+      "D": {
+        "role": "submitted_head",
+        "patch_set": 10,
+        "ref": "refs/changes/21/612221/10",
+        "commit": "251e1f9966d7f00d954caac0d074e85d3819158d",
+        "parent": "007993f0eff2e36db56ad6159ec6cc577e9a0942"
+      }
+    },
+    "provenance": {
+      "detail_url": "https://gerrit-review.googlesource.com/changes/612221/detail?o=ALL_REVISIONS&o=ALL_COMMITS",
+      "messages_url": "https://gerrit-review.googlesource.com/changes/612221/messages",
+      "checkpoint_event": {
+        "message_id": "d5871e0786fd762286c4f15ea6eff3001187138b",
+        "message_url": "https://gerrit-review.googlesource.com/changes/612221/messages/d5871e0786fd762286c4f15ea6eff3001187138b",
+        "patch_set": 8,
+        "recorded_at": "2026-08-19 17:09:57.000000000",
+        "message_contains": [
+          "Patch Set 8: Code-Review+2"
+        ]
+      },
+      "rebase_event": {
+        "message_id": "459a9e458512ffa67c5f2cd53f28d6247ff485f5",
+        "message_url": "https://gerrit-review.googlesource.com/changes/612221/messages/459a9e458512ffa67c5f2cd53f28d6247ff485f5",
+        "patch_set": 9,
+        "recorded_at": "2026-08-24 08:15:29.000000000",
+        "message_contains": [
+          "Uploaded patch set 9: Patch Set 8 was rebased."
+        ]
+      },
+      "submission_event": {
+        "message_id": "51760c1f6cbd16202844e9db6edc613ccac30481",
+        "message_url": "https://gerrit-review.googlesource.com/changes/612221/messages/51760c1f6cbd16202844e9db6edc613ccac30481",
+        "recorded_at": "2026-09-02 08:52:18.000000000",
+        "message_contains": [
+          "8 is the latest approved patch-set.",
+          "The change was submitted with unreviewed changes in the following files:",
+          "The name of the file: java/com/google/gerrit/server/query/change/RegexOnlyPathsPredicate.java",
+          "The name of the file: java/com/google/gerrit/server/query/change/ChangeQueryBuilder.java"
+        ],
+        "changed_since_approval_paths": [
+          "java/com/google/gerrit/server/query/change/ChangeQueryBuilder.java",
+          "java/com/google/gerrit/server/query/change/RegexOnlyPathsPredicate.java"
+        ]
+      }
+    },
+    "expected_summary": {
+      "current_pr_files": 7,
+      "carried": 5,
+      "exactly_carried": 4,
+      "replay_carried": 1,
+      "needs_review_now": 2,
+      "retired_checkpoint_changes": 2
+    }
+  },
+  "known_limitations": [
+    "This is one deliberately selected change from one project and cannot estimate prevalence or market size.",
+    "Code-Review+2 and Gerrit's submission record are review-state evidence, not proof that every byte or cross-file effect was inspected.",
+    "The byte witness proves non-interacting textual composition for one file, not semantic equivalence or merge safety.",
+    "The benchmark measures classification correctness, not reviewer time, comprehension, or defect recall.",
+    "Online provenance verification depends on the public Gerrit API; offline oracle verification depends only on frozen metadata and local Git objects."
+  ]
+}

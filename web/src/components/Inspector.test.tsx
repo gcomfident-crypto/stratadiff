@@ -1,10 +1,10 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { sessionFixture } from '../test/fixture'
-import type { LoadedSession } from '../types'
+import type { LoadedFileSession } from '../types'
 import { Inspector } from './Inspector'
 
-function loadedSession(): LoadedSession {
+function loadedSession(): LoadedFileSession {
   const payload = sessionFixture()
   const beforeText = 'const before = 1\n'
   const afterText = 'const after = 2\n'

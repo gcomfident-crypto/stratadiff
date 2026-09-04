@@ -1,0 +1,108 @@
+{
+  "blob_evidence": [
+    {
+      "byte_len": 3197,
+      "content_sha256": "f53ab8f5c8262c7c3e276662e508c082a0d2ff20d436996cc6275f7456d5a4d2",
+      "object_id": "66a9fba4472ca8ec2c8a94041c7763be4f8766f1"
+    },
+    {
+      "byte_len": 13824,
+      "content_sha256": "ce9dd026fdac4e491355ea616f3e9f9af3bb15705c84b29d4a7dd2ae33c8aa8e",
+      "object_id": "8ea456101a41006bb8bcd2898fc22ea255954dce"
+    },
+    {
+      "byte_len": 3154,
+      "content_sha256": "8c01269a6bcb41e7ff31de5aec9cec8c4ad3de70f1e53919b844d1b70899675e",
+      "object_id": "f5dc3da23e06f3cdc49a02f1628798ce1d18d00c"
+    },
+    {
+      "byte_len": 13827,
+      "content_sha256": "af4d4b676da1a54546fb4e87ec7c86090e4fe831d20d1f86d1aee31e920bfdbc",
+      "object_id": "fb69ece93f4bb6d518bb3fe86d896746d9f2bf8f"
+    }
+  ],
+  "case_id": "gerrit-620081-ps1-ps2",
+  "checkpoint_commit": "3d9d1fb600ea29cf8abc2d6048a7c983535a1726",
+  "checkpoint_merge_base": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7",
+  "current_commit": "13a865155ea19ee45dea4421ed705d6c1b383022",
+  "current_merge_base": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7",
+  "expectation": "exact_identity_partition",
+  "expected_head": [
+    {
+      "checkpoint_state": "unchanged_since_checkpoint",
+      "identity_sha256": "8a665b5256681f41c7265ce6baadc18befabbc7a47bf4ee2be2ef37372b719ce"
+    },
+    {
+      "checkpoint_state": "unchanged_since_checkpoint",
+      "identity_sha256": "b9d9493ffa74fbf7c20f5d93eb02c8c052c893158426f1575fb43277f2f694ed"
+    }
+  ],
+  "identities": {
+    "checkpoint": [
+      {
+        "after_mode": "100644",
+        "after_object_id": "f5dc3da23e06f3cdc49a02f1628798ce1d18d00c",
+        "after_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9pbmRleC9JbmRleENvbGxlY3Rpb24uamF2YQ==",
+        "before_mode": "100644",
+        "before_object_id": "66a9fba4472ca8ec2c8a94041c7763be4f8766f1",
+        "before_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9pbmRleC9JbmRleENvbGxlY3Rpb24uamF2YQ==",
+        "identity_sha256": "8a665b5256681f41c7265ce6baadc18befabbc7a47bf4ee2be2ef37372b719ce",
+        "similarity_percent": null,
+        "status": "M"
+      },
+      {
+        "after_mode": "100644",
+        "after_object_id": "fb69ece93f4bb6d518bb3fe86d896746d9f2bf8f",
+        "after_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9lbnRpdGllcy9QYXRjaFNldC5qYXZh",
+        "before_mode": "100644",
+        "before_object_id": "8ea456101a41006bb8bcd2898fc22ea255954dce",
+        "before_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9lbnRpdGllcy9QYXRjaFNldC5qYXZh",
+        "identity_sha256": "b9d9493ffa74fbf7c20f5d93eb02c8c052c893158426f1575fb43277f2f694ed",
+        "similarity_percent": null,
+        "status": "M"
+      }
+    ],
+    "head": [
+      {
+        "after_mode": "100644",
+        "after_object_id": "f5dc3da23e06f3cdc49a02f1628798ce1d18d00c",
+        "after_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9pbmRleC9JbmRleENvbGxlY3Rpb24uamF2YQ==",
+        "before_mode": "100644",
+        "before_object_id": "66a9fba4472ca8ec2c8a94041c7763be4f8766f1",
+        "before_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9pbmRleC9JbmRleENvbGxlY3Rpb24uamF2YQ==",
+        "identity_sha256": "8a665b5256681f41c7265ce6baadc18befabbc7a47bf4ee2be2ef37372b719ce",
+        "similarity_percent": null,
+        "status": "M"
+      },
+      {
+        "after_mode": "100644",
+        "after_object_id": "fb69ece93f4bb6d518bb3fe86d896746d9f2bf8f",
+        "after_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9lbnRpdGllcy9QYXRjaFNldC5qYXZh",
+        "before_mode": "100644",
+        "before_object_id": "8ea456101a41006bb8bcd2898fc22ea255954dce",
+        "before_path_base64": "amF2YS9jb20vZ29vZ2xlL2dlcnJpdC9lbnRpdGllcy9QYXRjaFNldC5qYXZh",
+        "identity_sha256": "b9d9493ffa74fbf7c20f5d93eb02c8c052c893158426f1575fb43277f2f694ed",
+        "similarity_percent": null,
+        "status": "M"
+      }
+    ],
+    "resume_delta": []
+  },
+  "raw_diff_sha256": {
+    "checkpoint": "9cf2f1b4595b1e11d031f55dd38e7bb5e5e3e1c0c6144c2543fdc2c646a06d6d",
+    "head": "9cf2f1b4595b1e11d031f55dd38e7bb5e5e3e1c0c6144c2543fdc2c646a06d6d",
+    "resume_delta": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "requested_base_commit": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7",
+  "retired_identity_sha256": [],
+  "schema": "stratadiff-resumebench-real-oracle-v0",
+  "source_repository": "https://gerrit.googlesource.com/gerrit",
+  "summary": {
+    "checkpoint_identities": 2,
+    "current_identities": 2,
+    "needs_review_now": 0,
+    "resume_delta_identities": 0,
+    "retired": 0,
+    "unchanged_since_checkpoint": 2
+  }
+}

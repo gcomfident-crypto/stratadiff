@@ -10,6 +10,7 @@ const GIT_REVISION_ENV: &str = "STRATADIFF_BUILD_GIT_REVISION";
 const GIT_DIRTY_ENV: &str = "STRATADIFF_BUILD_GIT_DIRTY";
 const CARGO_LOCK_SHA256_ENV: &str = "STRATADIFF_BUILD_CARGO_LOCK_SHA256";
 const BUILD_PROFILE_ENV: &str = "STRATADIFF_BUILD_PROFILE";
+const RUSTC_VERSION_ENV: &str = "STRATADIFF_BUILD_RUSTC_VERSION";
 
 struct GitProvenance {
     revision: String,
@@ -41,14 +42,35 @@ fn main() {
             println!("cargo:warning=Cargo build profile is unavailable; embedding a sentinel");
             UNAVAILABLE.to_owned()
         });
+    let rustc_version = read_rustc_version().unwrap_or_else(|| {
+        println!("cargo:warning=rustc provenance is unavailable; embedding a sentinel");
+        UNAVAILABLE.to_owned()
+    });
 
     emit_rustc_env(GIT_REVISION_ENV, &git_revision);
     emit_rustc_env(GIT_DIRTY_ENV, &git_dirty);
     emit_rustc_env(CARGO_LOCK_SHA256_ENV, &cargo_lock_sha256);
     emit_rustc_env(BUILD_PROFILE_ENV, &build_profile);
+    emit_rustc_env(RUSTC_VERSION_ENV, &rustc_version);
+}
+
+fn read_rustc_version() -> Option<String> {
+    let rustc = env::var_os("RUSTC")?;
+    let output = Command::new(rustc).arg("--version").output().ok()?;
+    if !output.status.success() || !output.stderr.is_empty() {
+        return None;
+    }
+    let version = std::str::from_utf8(&output.stdout)
+        .ok()?
+        .trim_end_matches(['\r', '\n']);
+    is_safe_metadata_line(version).then(|| version.to_owned())
 }
 
 fn read_git_provenance(manifest_dir: &Path) -> Option<GitProvenance> {
+    let repository_root = PathBuf::from(git_line(manifest_dir, &["rev-parse", "--show-toplevel"])?);
+    if fs::canonicalize(repository_root).ok()? != fs::canonicalize(manifest_dir).ok()? {
+        return None;
+    }
     let revision = git_line(manifest_dir, &["rev-parse", "--verify", "HEAD^{commit}"])?;
     if !is_lower_hex(&revision, 40) {
         return None;
@@ -104,7 +126,12 @@ fn is_safe_profile(profile: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
+fn is_safe_metadata_line(value: &str) -> bool {
+    !value.is_empty() && !value.chars().any(char::is_control)
+}
+
 fn emit_rerun_directives(manifest_dir: &Path) {
+    println!("cargo:rerun-if-env-changed=RUSTC");
     println!("cargo:rerun-if-changed=Cargo.lock");
     if let Some(paths) = git_worktree_paths(manifest_dir) {
         for path in paths {
@@ -181,5 +208,12 @@ mod tests {
         assert!(is_safe_profile("bench_release-1"));
         assert!(!is_safe_profile(""));
         assert!(!is_safe_profile("release\ninjected"));
+    }
+
+    #[test]
+    fn metadata_line_rejects_empty_and_control_characters() {
+        assert!(is_safe_metadata_line("rustc 1.90.0 (1159e78c4 2025-09-14)"));
+        assert!(!is_safe_metadata_line(""));
+        assert!(!is_safe_metadata_line("rustc 1.90.0\ninjected"));
     }
 }

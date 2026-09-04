@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
     process::ExitCode,
@@ -7,8 +7,13 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use clap::{Parser, Subcommand};
-use serde::Deserialize;
+use clap::{Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
+use stratadiff::github::{
+    MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES, resolve_github_review_checkpoint,
+    verify_github_commit_object,
+};
+use stratadiff::review::{markdown_report, review_git_range_with_checkpoint};
 use stratadiff::{
     AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_bytes, apply_patch,
     verify_and_replay_report_bytes, verify_report_bytes,
@@ -18,10 +23,16 @@ mod viewer;
 
 const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
 const LEGACY_REPORT_SCHEMA_V2: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json";
+const BUILD_INFO_SCHEMA: &str = "stratadiff-build-info-v1";
+const BUILD_GIT_REVISION: &str = env!("STRATADIFF_BUILD_GIT_REVISION");
+const BUILD_GIT_DIRTY: &str = env!("STRATADIFF_BUILD_GIT_DIRTY");
+const BUILD_CARGO_LOCK_SHA256: &str = env!("STRATADIFF_BUILD_CARGO_LOCK_SHA256");
+const BUILD_PROFILE: &str = env!("STRATADIFF_BUILD_PROFILE");
+const BUILD_RUSTC_VERSION: &str = env!("STRATADIFF_BUILD_RUSTC_VERSION");
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff")]
-#[command(about = "Proof-carrying, ambiguity-aware structural code differencing")]
+#[command(about = "Resume code review from exact Git evidence")]
 #[command(version)]
 struct Cli {
     #[command(subcommand)]
@@ -30,20 +41,44 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Print machine-readable provenance for this exact executable.
+    BuildInfo,
+    /// Resolve one reviewer's latest completed GitHub review to a commit checkpoint.
+    GithubCheckpoint {
+        /// JSON array returned by GitHub's list pull request reviews endpoint.
+        reviews: PathBuf,
+        /// Exact GitHub login whose review history should be resumed.
+        #[arg(long)]
+        reviewer: String,
+        /// Print only the commit ID or the complete selection record.
+        #[arg(long, value_enum, default_value_t = GithubCheckpointOutput::Sha)]
+        format: GithubCheckpointOutput,
+        /// Write the result to this path instead of stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Verify that GitHub's Git commit-object response is bound to an expected review commit.
+    GithubCommitObject {
+        /// JSON returned by GitHub's get-a-Git-commit endpoint.
+        object: PathBuf,
+        /// Full commit ID selected from the pull request's review records.
+        #[arg(long)]
+        expected: String,
+    },
     /// Compare two source files and produce a structural report.
     Diff {
         before: PathBuf,
         after: PathBuf,
         #[arg(long, value_enum)]
         language: Option<Language>,
-        /// Write the complete JSON report and replay certificate to this path.
+        /// Write the complete JSON report and patch reconstruction certificate to this path.
         #[arg(short, long)]
         output: Option<PathBuf>,
         /// Print the complete report as JSON instead of the terminal summary.
         #[arg(long)]
         json: bool,
     },
-    /// Re-run all independently checkable predicates and the byte replay certificate.
+    /// Re-run all independently checkable predicates and the patch reconstruction certificate.
     Verify {
         report: PathBuf,
         before: PathBuf,
@@ -69,6 +104,85 @@ enum Command {
         #[arg(long)]
         no_open: bool,
     },
+    /// Triage a Git commit range into evidence-backed review lanes.
+    Review {
+        /// Base revision. The comparison starts at its merge base with the requested head.
+        base: String,
+        /// Head revision to review.
+        #[arg(default_value = "HEAD")]
+        head: String,
+        /// Commit whose complete PR change set the caller has already reviewed.
+        #[arg(long)]
+        checkpoint: Option<String>,
+        /// Git worktree or repository directory.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Render a GitHub-ready Markdown summary or stable JSON.
+        #[arg(long, value_enum, default_value_t = ReviewOutput::Markdown)]
+        format: ReviewOutput,
+        /// Write the review report to this path instead of stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Append Markdown to the path named by GITHUB_STEP_SUMMARY.
+        #[arg(long)]
+        github_summary: bool,
+        /// Exit unsuccessfully unless a checkpoint exists and no current PR change needs review.
+        #[arg(long)]
+        fail_on_review_residue: bool,
+        /// Open the repository review queue in the local Evidence Workbench.
+        #[arg(
+            long,
+            requires = "checkpoint",
+            conflicts_with_all = ["output", "github_summary", "format"]
+        )]
+        workbench: bool,
+        /// Loopback port for --workbench. Zero asks the operating system to choose one.
+        #[arg(long, default_value_t = 0, requires = "workbench")]
+        port: u16,
+        /// Print the workbench URL without opening a browser.
+        #[arg(long, requires = "workbench")]
+        no_open: bool,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum ReviewOutput {
+    Markdown,
+    Json,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum GithubCheckpointOutput {
+    Sha,
+    Json,
+}
+
+#[derive(Debug, Serialize)]
+struct BuildInfo {
+    schema: &'static str,
+    engine_version: &'static str,
+    git_revision: &'static str,
+    git_dirty: Option<bool>,
+    cargo_lock_sha256: &'static str,
+    build_profile: &'static str,
+    rustc_version: &'static str,
+}
+
+fn embedded_build_info() -> BuildInfo {
+    let git_dirty = match BUILD_GIT_DIRTY {
+        "false" => Some(false),
+        "true" => Some(true),
+        _ => None,
+    };
+    BuildInfo {
+        schema: BUILD_INFO_SCHEMA,
+        engine_version: env!("CARGO_PKG_VERSION"),
+        git_revision: BUILD_GIT_REVISION,
+        git_dirty,
+        cargo_lock_sha256: BUILD_CARGO_LOCK_SHA256,
+        build_profile: BUILD_PROFILE,
+        rustc_version: BUILD_RUSTC_VERSION,
+    }
 }
 
 fn main() -> ExitCode {
@@ -103,6 +217,51 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::BuildInfo => {
+            let mut stdout = std::io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &embedded_build_info())?;
+            stdout.write_all(b"\n")?;
+        }
+        Command::GithubCheckpoint {
+            reviews,
+            reviewer,
+            format,
+            output,
+        } => {
+            let review_bytes = read_bounded(
+                &reviews,
+                MAX_GITHUB_REVIEWS_BYTES,
+                "GitHub pull request reviews bytes",
+            )?;
+            let resolution = resolve_github_review_checkpoint(&review_bytes, &reviewer)?;
+            let encoded = match format {
+                GithubCheckpointOutput::Sha => resolution
+                    .checkpoint
+                    .as_ref()
+                    .map(|checkpoint| checkpoint.commit_id.as_bytes().to_vec())
+                    .unwrap_or_default(),
+                GithubCheckpointOutput::Json => serde_json::to_vec(&resolution)?,
+            };
+            if let Some(path) = output {
+                std::fs::write(&path, &encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+            } else if !encoded.is_empty() {
+                let mut stdout = std::io::stdout().lock();
+                stdout.write_all(&encoded)?;
+                stdout.write_all(b"\n")?;
+            }
+        }
+        Command::GithubCommitObject { object, expected } => {
+            let object_bytes = read_bounded(
+                &object,
+                MAX_GITHUB_COMMIT_OBJECT_BYTES,
+                "GitHub Git commit object bytes",
+            )?;
+            verify_github_commit_object(&object_bytes, &expected)?;
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(expected.as_bytes())?;
+            stdout.write_all(b"\n")?;
+        }
         Command::Diff {
             before,
             after,
@@ -171,7 +330,7 @@ fn run(command: Command) -> Result<()> {
             let after_bytes = read_bounded(&after, limits.max_source_bytes, "after source bytes")?;
             verify_report_bytes(&report_bytes, &before_bytes, &after_bytes, &limits)?;
             println!(
-                "verified: replay, parser manifest, relations, ambiguities, changes, and summary"
+                "verified: patch reconstruction, parser manifest, relations, ambiguities, changes, and summary"
             );
         }
         Command::Apply {
@@ -216,6 +375,75 @@ fn run(command: Command) -> Result<()> {
                 language,
             )?;
             viewer::serve(report, before_bytes, after_bytes, port, !no_open)?;
+        }
+        Command::Review {
+            base,
+            head,
+            checkpoint,
+            repo,
+            format,
+            output,
+            github_summary,
+            fail_on_review_residue,
+            workbench,
+            port,
+            no_open,
+        } => {
+            let review =
+                review_git_range_with_checkpoint(&repo, &base, &head, checkpoint.as_deref())?;
+            if workbench {
+                return viewer::serve_review(review, repo, port, !no_open);
+            }
+            if github_summary {
+                let summary_path = std::env::var_os("GITHUB_STEP_SUMMARY")
+                    .context("--github-summary requires GITHUB_STEP_SUMMARY")?;
+                let mut summary = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&summary_path)
+                    .with_context(|| {
+                        format!(
+                            "failed to open GitHub step summary {}",
+                            display_path(Path::new(&summary_path))
+                        )
+                    })?;
+                summary.write_all(markdown_report(&review).as_bytes())?;
+            }
+            let encoded = match format {
+                ReviewOutput::Markdown => markdown_report(&review).into_bytes(),
+                ReviewOutput::Json => serde_json::to_vec(&review)?,
+            };
+            if let Some(path) = output {
+                std::fs::write(&path, &encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+                eprintln!("wrote repository review to {}", display_path(&path));
+            } else {
+                let mut stdout = std::io::stdout().lock();
+                match format {
+                    ReviewOutput::Markdown => stdout.write_all(&encoded)?,
+                    ReviewOutput::Json => {
+                        stdout.write_all(escape_terminal_unsafe_json(&encoded).as_bytes())?;
+                        stdout.write_all(b"\n")?;
+                    }
+                }
+            }
+            if fail_on_review_residue {
+                let checkpoint_summary = review
+                    .summary
+                    .checkpoint
+                    .as_ref()
+                    .context("review residue gate requires a resolved checkpoint")?;
+                ensure!(
+                    checkpoint_summary.needs_review_now_files == 0,
+                    "review residue gate is open: {} current PR {} need review",
+                    checkpoint_summary.needs_review_now_files,
+                    if checkpoint_summary.needs_review_now_files == 1 {
+                        "file"
+                    } else {
+                        "files"
+                    }
+                );
+            }
         }
     }
     Ok(())
@@ -337,7 +565,7 @@ fn print_summary(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()>
         }
     }
     println!(
-        "replay certificate: {}",
+        "patch reconstruction certificate: {}",
         if report.certificate.patch_verified {
             "verified"
         } else {

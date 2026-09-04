@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "name": "resumebench-seed-v1",
+  "description": "Controlled Git snapshot scenarios for Exact Review Resume. The corpus tests whether a current PR change may retain caller-attested review state only when its complete Git change identity is unchanged from the checkpoint.",
+  "claim": "For ranges with the same unique merge base, unchanged_since_checkpoint requires an exact match of status, similarity, both paths and encodings, both modes, and both object IDs. Every other current change needs review now.",
+  "known_limitations": [
+    "This seed is synthetic and does not estimate how often real pull requests retain exact change identity across pushes.",
+    "The checkpoint is supplied by the caller; the corpus does not prove that a human reviewed or approved that commit.",
+    "The label is file-level and does not preserve partial-file or hunk-level review state.",
+    "Exact identity does not establish semantic safety, absence of cross-file effects, or permission to merge.",
+    "Reviewer-time reduction and issue recall require a separate counterbalanced human study."
+  ],
+  "scenarios": [
+    {
+      "id": "force-push-one-byte-mutation",
+      "mutation_operator": "one_of_three_files_changes_after_checkpoint",
+      "base_files": [
+        { "path": "src/a.py", "mode": "100644", "content": "value = 0\n" },
+        { "path": "src/b.py", "mode": "100644", "content": "value = 0\n" },
+        { "path": "src/c.py", "mode": "100644", "content": "value = 0\n" }
+      ],
+      "checkpoint_files": [
+        { "path": "src/a.py", "mode": "100644", "content": "value = 1\n" },
+        { "path": "src/b.py", "mode": "100644", "content": "value = 1\n" },
+        { "path": "src/c.py", "mode": "100644", "content": "value = 1\n" }
+      ],
+      "current_files": [
+        { "path": "src/a.py", "mode": "100644", "content": "value = 1\n" },
+        { "path": "src/b.py", "mode": "100644", "content": "value = 2\n" },
+        { "path": "src/c.py", "mode": "100644", "content": "value = 1\n" }
+      ],
+      "expected_needs_review_now": ["src/b.py"],
+      "expected_unchanged_since_checkpoint": ["src/a.py", "src/c.py"],
+      "expected_retired_change_count": 1,
+      "rationale": "Rewritten commit history must not invalidate two byte-identical PR changes, while a one-byte content mutation must invalidate the third."
+    },
+    {
+      "id": "new-and-retired-change",
+      "mutation_operator": "replace_one_checkpoint_change_with_a_new_path",
+      "base_files": [
+        { "path": "kept.py", "mode": "100644", "content": "value = 0\n" },
+        { "path": "retired.py", "mode": "100644", "content": "value = 0\n" },
+        { "path": "new.py", "mode": "100644", "content": "value = 0\n" }
+      ],
+      "checkpoint_files": [
+        { "path": "kept.py", "mode": "100644", "content": "value = 1\n" },
+        { "path": "retired.py", "mode": "100644", "content": "value = 1\n" },
+        { "path": "new.py", "mode": "100644", "content": "value = 0\n" }
+      ],
+      "current_files": [
+        { "path": "kept.py", "mode": "100644", "content": "value = 1\n" },
+        { "path": "retired.py", "mode": "100644", "content": "value = 0\n" },
+        { "path": "new.py", "mode": "100644", "content": "value = 1\n" }
+      ],
+      "expected_needs_review_now": ["new.py"],
+      "expected_unchanged_since_checkpoint": ["kept.py"],
+      "expected_retired_change_count": 1,
+      "rationale": "A disappeared checkpoint change is counted as retired, while a newly introduced change cannot inherit review state."
+    },
+    {
+      "id": "rename-target-changed",
+      "mutation_operator": "exact_relocation_changes_destination",
+      "base_files": [
+        { "path": "old.py", "mode": "100644", "content": "value = 1\n" }
+      ],
+      "checkpoint_files": [
+        { "path": "reviewed.py", "mode": "100644", "content": "value = 1\n" }
+      ],
+      "current_files": [
+        { "path": "current.py", "mode": "100644", "content": "value = 1\n" }
+      ],
+      "expected_needs_review_now": ["old.py -> current.py"],
+      "expected_unchanged_since_checkpoint": [],
+      "expected_retired_change_count": 1,
+      "rationale": "Equal bytes do not preserve review state when the destination path—and therefore the complete change identity—differs."
+    },
+    {
+      "id": "unsupported-content-still-carries-by-git-identity",
+      "mutation_operator": "identical_unsupported_file_change",
+      "base_files": [
+        { "path": "notes.txt", "mode": "100644", "content": "before\n" }
+      ],
+      "checkpoint_files": [
+        { "path": "notes.txt", "mode": "100644", "content": "after\n" }
+      ],
+      "current_files": [
+        { "path": "notes.txt", "mode": "100644", "content": "after\n" }
+      ],
+      "expected_needs_review_now": [],
+      "expected_unchanged_since_checkpoint": ["notes.txt"],
+      "expected_retired_change_count": 0,
+      "rationale": "Resume evidence depends on exact Git identity, not parser support; the original unverified evidence class remains visible."
+    },
+    {
+      "id": "identical-deletion",
+      "mutation_operator": "same_file_deleted_in_both_snapshots",
+      "base_files": [
+        { "path": "obsolete.py", "mode": "100644", "content": "remove_me = True\n" }
+      ],
+      "checkpoint_files": [],
+      "current_files": [],
+      "expected_needs_review_now": [],
+      "expected_unchanged_since_checkpoint": ["obsolete.py"],
+      "expected_retired_change_count": 0,
+      "rationale": "The exact deletion against the same merge-base object can retain caller-attested review state."
+    },
+    {
+      "id": "mode-change-invalidates-content-match",
+      "mutation_operator": "same_target_bytes_different_target_mode",
+      "base_files": [
+        { "path": "script.sh", "mode": "100644", "content": "#!/bin/sh\necho before\n" }
+      ],
+      "checkpoint_files": [
+        { "path": "script.sh", "mode": "100755", "content": "#!/bin/sh\necho after\n" }
+      ],
+      "current_files": [
+        { "path": "script.sh", "mode": "100644", "content": "#!/bin/sh\necho after\n" }
+      ],
+      "expected_needs_review_now": ["script.sh"],
+      "expected_unchanged_since_checkpoint": [],
+      "expected_retired_change_count": 1,
+      "rationale": "Matching target bytes are insufficient when the executable bit differs from the reviewed change."
+    }
+  ]
+}

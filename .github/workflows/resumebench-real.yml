@@ -1,0 +1,60 @@
+name: ResumeBench Real
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  gerrit:
+    name: Pinned Gerrit histories
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@49fda20b3f489226feadfba7767be1db54e2cee1 # 1.90.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - run: python3 tools/resumebench-real/resumebench_real.py self-test
+      - run: python3 benchmarks/resumebench-real-v1/verify.py self-test
+      - name: Materialize pinned upstream objects
+        run: |
+          python3 tools/resumebench-real/resumebench_real.py materialize \
+            --manifest benchmarks/resumebench-real-v0/manifest.json \
+            --output "$RUNNER_TEMP/resumebench-real-v0"
+      - run: cargo build --locked --release --bin stratadiff
+      - name: Verify independent oracles
+        run: |
+          python3 tools/resumebench-real/resumebench_real.py verify \
+            --manifest benchmarks/resumebench-real-v0/manifest.json \
+            --repository "$RUNNER_TEMP/resumebench-real-v0/repository.git"
+      - name: Evaluate StrataDiff
+        run: |
+          python3 tools/resumebench-real/resumebench_real.py evaluate \
+            --manifest benchmarks/resumebench-real-v0/manifest.json \
+            --repository "$RUNNER_TEMP/resumebench-real-v0/repository.git" \
+            --stratadiff target/release/stratadiff \
+            --output "$RUNNER_TEMP/resumebench-real-evaluation.json"
+      - name: Materialize rebase-aware v1 case
+        run: |
+          python3 benchmarks/resumebench-real-v1/verify.py materialize \
+            --output "$RUNNER_TEMP/resumebench-real-v1"
+      - name: Remove the fixture remote
+        run: git -C "$RUNNER_TEMP/resumebench-real-v1/repository.git" remote remove origin
+      - name: Reproduce the review-coverage gate without a Git remote
+        run: |
+          python3 scripts/demo_review_coverage.py \
+            --offline \
+            --workspace "$RUNNER_TEMP/resumebench-real-v1" \
+            --stratadiff target/release/stratadiff
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: resumebench-real-evaluation
+          path: |
+            ${{ runner.temp }}/resumebench-real-evaluation.json
+            ${{ runner.temp }}/resumebench-real-v1/evaluation.json
+            ${{ runner.temp }}/resumebench-real-v1/review-report.json
+            ${{ runner.temp }}/resumebench-real-v1/review-summary.md
+          if-no-files-found: error

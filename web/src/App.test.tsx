@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { sessionFixture } from './test/fixture'
+import { repositorySessionFixture, sessionFixture } from './test/fixture'
 
 vi.mock('@pierre/diffs/react', () => ({
   MultiFileDiff: ({ oldFile, newFile }: { oldFile: { contents: string }; newFile: { contents: string } }) => (
@@ -44,7 +44,27 @@ describe('Evidence Workbench', () => {
     expect(screen.getByText('Opening evidence workbench')).toBeInTheDocument()
     expect(await screen.findByText('Evidence Workbench')).toBeInTheDocument()
     expect(screen.getByTestId('rendered-diff')).toHaveTextContent('const before = 1')
-    expect(screen.getAllByText('Verified')).toHaveLength(2)
+    expect(screen.getByText('Diff evidence verified')).toBeInTheDocument()
+    expect(screen.getByText('Reconstruction').nextElementSibling).toHaveTextContent('Verified')
+  })
+
+  it('keeps diff verification distinct from review coverage on repository drill-down', async () => {
+    const payload = sessionFixture()
+    payload.repository_context = {
+      file_index: 0,
+      scope: 'resume',
+      checkpoint_state: 'needs_review_now',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      const source = url.includes('/before') ? 'const before = 1\n' : 'const after = 2\n'
+      return Promise.resolve(new Response(new TextEncoder().encode(source), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('Coverage: needs review')).toBeInTheDocument()
+    expect(screen.getByText('Diff evidence verified')).toBeInTheDocument()
   })
 
   it('switches all three evidence layers from the keyboard', async () => {
@@ -56,7 +76,7 @@ describe('Evidence Workbench', () => {
     expect(screen.getByText('pair_claims: none')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: '3' })
-    expect(await screen.findByText('LOSSLESS REPLAY LAYER')).toBeInTheDocument()
+    expect(await screen.findByText('LOSSLESS PATCH RECONSTRUCTION')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: '1' })
     await waitFor(() => expect(screen.getByTestId('rendered-diff')).toBeInTheDocument())
@@ -89,11 +109,11 @@ describe('Evidence Workbench', () => {
     fireEvent.keyDown(window, { key: 'j' })
 
     expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
-    expect(screen.getByText('Relation R1')).toBeInTheDocument()
+    expect(await screen.findByText('Relation R1')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'k' })
     expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
-    expect(screen.getByText('Byte edit 01')).toBeInTheDocument()
+    expect(await screen.findByText('Byte edit 01')).toBeInTheDocument()
   })
 
   it('preserves modified browser shortcuts while the evidence drawer is open', async () => {
@@ -152,5 +172,135 @@ describe('Evidence Workbench', () => {
     render(<App />)
     expect(await screen.findByText('Could not open this report')).toBeInTheDocument()
     expect(screen.getByText(/Missing viewer session token/)).toBeInTheDocument()
+  })
+
+  it('starts a repository session at the checkpoint-to-head queue and keeps full PR context available', async () => {
+    const payload = repositorySessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      const source = url.includes('/before') ? 'const before = 1\n' : 'const after = 2\n'
+      return Promise.resolve(new Response(new TextEncoder().encode(source), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('2 files changed since checkpoint')).toBeInTheDocument()
+    expect(screen.getAllByText('src/changed.ts').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('src/retired.ts').length).toBeGreaterThan(0)
+    expect(screen.queryByText('src/carried.ts')).not.toBeInTheDocument()
+    expect(screen.getByText('Exact identity · caller-attested checkpoint')).toBeInTheDocument()
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument()
+    expect(screen.getByText('Diff reconstruction')).toBeInTheDocument()
+    expect(screen.getByText('target matched')).toBeInTheDocument()
+    expect(await screen.findByTestId('review-file-diff')).toHaveTextContent('const before = 1')
+
+    fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
+    expect((await screen.findAllByText('src/new-risk.ts')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('src/carried.ts')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
+    expect((await screen.findAllByText('src/carried.ts')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('src/changed.ts')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Exact-identity carry/ })).toBeInTheDocument()
+    const stats = within(screen.getByLabelText('Review resume summary'))
+    expect(stats.getByText('Exact-identity carry').nextElementSibling).toHaveTextContent('1')
+    expect(stats.getByText('Four-way carry').nextElementSibling).toHaveTextContent('0')
+  })
+
+  it('uses singular copy for a one-file checkpoint delta', async () => {
+    const payload = repositorySessionFixture()
+    payload.resume_delta.files = payload.resume_delta.files.slice(0, 1)
+    payload.resume_delta.summary.changed_files = 1
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('1 file changed since checkpoint')).toBeInTheDocument()
+  })
+
+  it('explains the PR-relative fallback when the merge base changed', async () => {
+    const payload = repositorySessionFixture()
+    payload.review.checkpoint!.base_commit = '3'.repeat(40)
+    payload.review.checkpoint!.match_basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+    payload.assessment.basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+    const replayCarried = payload.review.files.find((file) => file.after_path === 'src/carried.ts')
+    if (replayCarried === undefined) throw new Error('Missing carried fixture file.')
+    replayCarried.checkpoint_match_basis = 'exact_noninteracting_four_way_byte_replay'
+    payload.resume_delta.comparison = 'current_pr_unmatched_identities'
+    payload.resume_delta.source_base_commit = payload.review.base_commit
+    payload.resume_delta.files = payload.review.files.slice(0, 1)
+    payload.resume_delta.summary.changed_files = 1
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('1 current PR file needs review')).toBeInTheDocument()
+    expect(screen.getByText(/This queue excludes upstream-only files/)).toBeInTheDocument()
+    expect(screen.getByText(/Base changed · exact-identity or four-way carry/)).toBeInTheDocument()
+    expect(screen.getByText('Checkpoint carry').nextElementSibling).toHaveTextContent('not carried')
+    expect(screen.queryByText('src/retired.ts')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
+    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Four-way carry/ })).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Review resume summary')).getByText('Four-way carry').nextElementSibling).toHaveTextContent('1')
+  })
+
+  it('does not claim snapshots match when search or filters hide real changes', async () => {
+    const payload = repositorySessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+    render(<App />)
+    await screen.findByText('2 files changed since checkpoint')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search files' }), { target: { value: 'not-present' } })
+
+    expect(await screen.findByText('No files match this view')).toBeInTheDocument()
+    expect(screen.queryByText('No changes between checkpoint and head')).not.toBeInTheDocument()
+  })
+
+  it('shows the true empty checkpoint state only when the raw resume delta is empty', async () => {
+    const payload = repositorySessionFixture()
+    payload.resume_delta.files = []
+    payload.resume_delta.summary.changed_files = 0
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+    render(<App />)
+
+    expect((await screen.findAllByText('No changes between checkpoint and head')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('No files match this view')).not.toBeInTheDocument()
+  })
+
+  it('keeps details, evidence, and claim limits available in the narrow drawer', async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => mediaQueryResult(query, query === '(max-width: 1279px)'))
+    const payload = repositorySessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+    render(<App />)
+    await screen.findByText('2 files changed since checkpoint')
+
+    const trigger = screen.getByRole('button', { name: 'Open details and evidence' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const drawer = screen.getByRole('dialog', { name: 'Selected file details' })
+    expect(within(drawer).getByText('Why it is here')).toBeInTheDocument()
+    expect(within(drawer).getByText('File evidence')).toBeInTheDocument()
+    expect(within(drawer).getByText(/No row establishes approval/)).toBeInTheDocument()
+
+    fireEvent.keyDown(drawer, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Selected file details' })).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 })

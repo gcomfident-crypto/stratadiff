@@ -137,7 +137,7 @@ export function ByteView({ report, before, after, selection, onSelect }: ByteVie
     <div ref={surfaceRef} className="surface byte-surface">
       <div className="surface-toolbar byte-toolbar">
         <div>
-          <span className="surface-kicker">LOSSLESS REPLAY LAYER</span>
+          <span className="surface-kicker">LOSSLESS PATCH RECONSTRUCTION</span>
           <h2>Exact bytes</h2>
         </div>
         <div className="algorithm-chip"><Fingerprint size={14} /><span>{report.patch.algorithm}</span></div>
@@ -154,7 +154,7 @@ export function ByteView({ report, before, after, selection, onSelect }: ByteVie
         {visibleEdits.map((item, pageIndex) => {
           const index = firstEdit + pageIndex
           const afterRange = afterRanges[index]
-          if (afterRange === undefined) throw new Error(`Byte edit ${index} has no replay range.`)
+          if (afterRange === undefined) throw new Error(`Byte edit ${index} has no target range.`)
           return (
           <EditCard
             edit={item}
@@ -166,7 +166,7 @@ export function ByteView({ report, before, after, selection, onSelect }: ByteVie
           />
           )
         })}
-        {report.patch.edits.length === 0 && <div className="zero-edits"><Check size={15} />Identical byte streams; replay needs no edits.</div>}
+        {report.patch.edits.length === 0 && <div className="zero-edits"><Check size={15} />Identical byte streams; reconstruction needs no edits.</div>}
       </div>
       {editPageCount > 1 && (
         <div className="byte-edit-pagination" aria-label="Byte edit pages">

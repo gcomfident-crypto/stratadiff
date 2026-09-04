@@ -1,0 +1,71 @@
+{
+  "benchmark_complete": true,
+  "case": {
+    "files": [
+      {
+        "checkpoint_match_basis": "exact_noninteracting_four_way_byte_replay",
+        "checkpoint_state": "unchanged_since_checkpoint",
+        "path_utf8": "Documentation/user-search.txt"
+      },
+      {
+        "checkpoint_match_basis": "exact_git_change_identity",
+        "checkpoint_state": "unchanged_since_checkpoint",
+        "path_utf8": "java/com/google/gerrit/server/query/change/OnlyPathsPostFilterPredicate.java"
+      },
+      {
+        "checkpoint_match_basis": "exact_git_change_identity",
+        "checkpoint_state": "unchanged_since_checkpoint",
+        "path_utf8": "java/com/google/gerrit/server/query/change/ChangePredicates.java"
+      },
+      {
+        "checkpoint_match_basis": null,
+        "checkpoint_state": "needs_review_now",
+        "path_utf8": "java/com/google/gerrit/server/query/change/ChangeQueryBuilder.java"
+      },
+      {
+        "checkpoint_match_basis": null,
+        "checkpoint_state": "needs_review_now",
+        "path_utf8": "java/com/google/gerrit/server/query/change/RegexOnlyPathsPredicate.java"
+      },
+      {
+        "checkpoint_match_basis": "exact_git_change_identity",
+        "checkpoint_state": "unchanged_since_checkpoint",
+        "path_utf8": "javatests/com/google/gerrit/server/query/change/AbstractQueryChangesTest.java"
+      },
+      {
+        "checkpoint_match_basis": "exact_git_change_identity",
+        "checkpoint_state": "unchanged_since_checkpoint",
+        "path_utf8": "polygerrit-ui/app/elements/core/gr-search-autocomplete/gr-search-autocomplete.ts"
+      }
+    ],
+    "id": "gerrit-612221-ps8-ps10-rebase",
+    "passed": true
+  },
+  "claim_boundary": "One provider-labeled Gerrit rebase history; not a reviewer-time, defect-recall, semantic-safety, or prevalence estimate.",
+  "dataset_version": "1.0.0",
+  "evaluated_at": "2026-09-04T21:53:22.080886Z",
+  "provenance": {
+    "engine": {
+      "build_profile": "release",
+      "cargo_lock_sha256": "87c022712b959486fe4968eeb2171b41fe289f598403364fc819023ac30d4e9a",
+      "engine_version": "0.3.0",
+      "git_dirty": false,
+      "git_revision": "74c782df86d16a48c6af68747c6842bcef6d6a19",
+      "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "schema": "stratadiff-build-info-v1"
+    },
+    "manifest_sha256": "a6ede58c5eb4990b622df2195bbd81716708da44dcfc4872897832c090710590",
+    "oracle_sha256": "ed9ff3c5cfbb14a368e52d6c25dc53af27f60bff27d3cd3b83d34800f06656f7",
+    "stratadiff_binary_sha256": "58b59e2a774aa7285aa5945c049c935f9c9fe1620fdbfc4d34d0926d79d48da4",
+    "verifier_sha256": "face51044cec932578c9d2b5e82619f942b314c48381c7a0a44a174a3c604ae2"
+  },
+  "schema": "stratadiff-resumebench-real-evaluation-v1",
+  "summary": {
+    "carried": 5,
+    "current_pr_files": 7,
+    "exactly_carried": 4,
+    "needs_review_now": 2,
+    "replay_carried": 1,
+    "retired_checkpoint_changes": 2
+  }
+}

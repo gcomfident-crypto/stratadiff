@@ -293,7 +293,7 @@ fn verify_patch_and_certificate(
     replayed: Option<&[u8]>,
 ) -> Result<()> {
     if !report.certificate.patch_verified {
-        bail!("report does not carry a successful replay certificate");
+        bail!("report does not carry a successful patch reconstruction certificate");
     }
     if report.certificate.before_len != before.len() || report.certificate.after_len != after.len()
     {

@@ -1,0 +1,12 @@
+{
+  "case_id": "gerrit-612221-ps8-ps10",
+  "checkpoint_commit": "ea6533508e352206a656014a8aaea25397aec255",
+  "checkpoint_merge_base": "c84d40eb4da8e63a46cc1617c187bf0ae53965f7",
+  "current_commit": "251e1f9966d7f00d954caac0d074e85d3819158d",
+  "current_merge_base": "007993f0eff2e36db56ad6159ec6cc577e9a0942",
+  "error_contains": "checkpoint and current review must have the same merge base",
+  "expectation": "base_mismatch_rejected",
+  "requested_base_commit": "007993f0eff2e36db56ad6159ec6cc577e9a0942",
+  "schema": "stratadiff-resumebench-real-oracle-v0",
+  "source_repository": "https://gerrit.googlesource.com/gerrit"
+}

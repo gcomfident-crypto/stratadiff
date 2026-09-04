@@ -1,4 +1,6 @@
 /target/
+__pycache__/
+*.py[cod]
 *.axd
 /web/node_modules/
 /web/coverage/
