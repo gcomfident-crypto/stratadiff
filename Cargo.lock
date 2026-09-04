@@ -1277,6 +1277,8 @@ dependencies = [
  "anyhow",
  "base64",
  "blake3",
+ "serde",
+ "serde_json",
  "stratadiff-core",
 ]
 

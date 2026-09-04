@@ -1,16 +1,25 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+};
 
 use anyhow::{Context, Result, bail, ensure};
-use base64::{Engine, engine::general_purpose::STANDARD};
 use stratadiff_core::model::{
     AmbiguityAbstentionCause, AmbiguityConstraint, AmbiguityGroup, AmbiguityPair, Artifact,
     ChangeKind, Correspondence, DiffReport, NodeRef, PairClaims, Predicate, Relation,
     StructuralChange, Summary,
 };
-use stratadiff_core::syntax::{ParsedSyntax, SyntaxNode, parse, shape_equal, syntax_equal};
-use stratadiff_core::{PARSER_RUNTIME_VERSION, REPORT_ENGINE_VERSION, REPORT_SCHEMA};
+use stratadiff_core::syntax::{ParsedSyntax, SyntaxNode, shape_equal, syntax_equal};
+use stratadiff_core::{
+    PARSER_RUNTIME_VERSION, ParseLimits, REPORT_ENGINE_VERSION, REPORT_SCHEMA, parse_with_limits,
+};
 
-use crate::patch::apply_patch;
+use crate::json_preflight::preflight_json_collections;
+use crate::limits::{
+    VerificationLimits, VerificationStats, WorkBudget, check_limit, checked_add,
+    measure_report_bytes, preflight_report,
+};
+use crate::patch::replay_patch_with_limits;
 
 const INPUT_PAIR_EVIDENCE: &[&str] = &["caller_supplied_file_pair"];
 const GLOBAL_ANCHOR_EVIDENCE: &[&str] = &[
@@ -37,6 +46,7 @@ const ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT: usize =
 
 type ExactKey = (Option<String>, String, [u8; 32]);
 type ShapeKey = (Option<String>, String, [u8; 32]);
+type GlobalExactBuckets = HashMap<(String, [u8; 32]), Vec<usize>>;
 
 struct VerifiedMappings<'a> {
     before_to_after: Vec<Option<usize>>,
@@ -50,33 +60,160 @@ struct PhaseMappings {
 }
 
 struct GlobalExactIndex {
-    before: HashMap<(String, [u8; 32]), Vec<usize>>,
-    after: HashMap<(String, [u8; 32]), Vec<usize>>,
+    before: GlobalExactBuckets,
+    after: GlobalExactBuckets,
+}
+
+pub fn decode_report_bytes(report_bytes: &[u8], limits: &VerificationLimits) -> Result<DiffReport> {
+    check_limit("report bytes", report_bytes.len(), limits.max_report_bytes)?;
+    preflight_json_collections(report_bytes, limits)?;
+    serde_json::from_slice(report_bytes).context("failed to decode StrataDiff report JSON")
+}
+
+pub fn verify_report_bytes(
+    report_bytes: &[u8],
+    before: &[u8],
+    after: &[u8],
+    limits: &VerificationLimits,
+) -> Result<VerificationStats> {
+    let report = decode_report_bytes(report_bytes, limits)?;
+    verify_report_inner(&report, before, after, limits, report_bytes.len(), None)
+}
+
+pub fn verify_and_replay_report_bytes(
+    report_bytes: &[u8],
+    before: &[u8],
+    limits: &VerificationLimits,
+) -> Result<(Vec<u8>, VerificationStats)> {
+    let report = decode_report_bytes(report_bytes, limits)?;
+    verify_and_replay_report_inner(&report, before, limits, report_bytes.len())
 }
 
 pub fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()> {
+    verify_report_with_limits(report, before, after, &VerificationLimits::default()).map(drop)
+}
+
+pub fn verify_report_with_limits(
+    report: &DiffReport,
+    before: &[u8],
+    after: &[u8],
+    limits: &VerificationLimits,
+) -> Result<VerificationStats> {
+    let report_bytes = measure_report_bytes(report, limits)?;
+    verify_report_inner(report, before, after, limits, report_bytes, None)
+}
+
+pub fn verify_and_replay_report_with_limits(
+    report: &DiffReport,
+    before: &[u8],
+    limits: &VerificationLimits,
+) -> Result<(Vec<u8>, VerificationStats)> {
+    let report_bytes = measure_report_bytes(report, limits)?;
+    verify_and_replay_report_inner(report, before, limits, report_bytes)
+}
+
+fn verify_and_replay_report_inner(
+    report: &DiffReport,
+    before: &[u8],
+    limits: &VerificationLimits,
+    report_bytes: usize,
+) -> Result<(Vec<u8>, VerificationStats)> {
+    let rebuilt = replay_patch_with_limits(before, &report.patch, limits)?;
+    let stats = verify_report_inner(
+        report,
+        before,
+        &rebuilt,
+        limits,
+        report_bytes,
+        Some(&rebuilt),
+    )?;
+    Ok((rebuilt, stats))
+}
+
+fn verify_report_inner(
+    report: &DiffReport,
+    before: &[u8],
+    after: &[u8],
+    limits: &VerificationLimits,
+    report_bytes: usize,
+    replayed: Option<&[u8]>,
+) -> Result<VerificationStats> {
+    let mut stats = preflight_report(report, report_bytes, before, after, limits)?;
+    let mut work = WorkBudget::new(limits.max_verification_work);
     verify_header(report)?;
     verify_artifact("before", &report.before, before)?;
     verify_artifact("after", &report.after, after)?;
-    verify_patch_and_certificate(report, before, after)?;
+    verify_patch_and_certificate(report, before, after, limits, replayed)?;
 
-    let parsed_before = parse(before.to_vec(), report.parser.language)?;
-    let parsed_after = parse(after.to_vec(), report.parser.language)?;
+    let parsed_before = parse_with_limits(
+        before.to_vec(),
+        report.parser.language,
+        &ParseLimits {
+            max_nodes: limits.max_syntax_nodes,
+            max_depth: limits.max_syntax_depth,
+            max_parse_callbacks: limits.max_parse_callbacks,
+        },
+    )
+    .context("before source parse failed")?;
+    work.charge(
+        parsed_before.nodes.len(),
+        "accounting for parsed before nodes",
+    )?;
+    let remaining_nodes = limits
+        .max_syntax_nodes
+        .checked_sub(parsed_before.nodes.len())
+        .context("before syntax nodes exceed the verification limit")?;
+    let parsed_after = parse_with_limits(
+        after.to_vec(),
+        report.parser.language,
+        &ParseLimits {
+            max_nodes: remaining_nodes,
+            max_depth: limits.max_syntax_depth,
+            max_parse_callbacks: limits.max_parse_callbacks,
+        },
+    )
+    .context("after source parse failed")?;
+    work.charge(
+        parsed_after.nodes.len(),
+        "accounting for parsed after nodes",
+    )?;
+    stats.syntax_nodes = checked_add(
+        "syntax node count",
+        parsed_before.nodes.len(),
+        parsed_after.nodes.len(),
+    )?;
     verify_parser_manifest(report, &parsed_before, &parsed_after)?;
 
-    let mappings = verify_relations(report, &parsed_before, &parsed_after)?;
-    let global_index = global_exact_index(&parsed_before, &parsed_after);
+    let mappings = verify_relations(report, &parsed_before, &parsed_after, &mut work)?;
+    let global_index = global_exact_index(&parsed_before, &parsed_after, &mut work)?;
     verify_exact_anchor_evidence(
         report,
         &parsed_before,
         &parsed_after,
         &mappings,
         &global_index,
+        &mut work,
     )?;
-    verify_global_anchor_completeness(&parsed_before, &parsed_after, &mappings, &global_index)?;
-    verify_local_exact_relations(&parsed_before, &parsed_after, &mappings)?;
-    let expected_ambiguities = verify_stable_core(&parsed_before, &parsed_after, &mappings)?;
-    verify_ambiguity_node_references(report, &parsed_before, &parsed_after)?;
+    verify_global_anchor_completeness(
+        &parsed_before,
+        &parsed_after,
+        &mappings,
+        &global_index,
+        &mut work,
+    )?;
+    verify_local_exact_relations(&parsed_before, &parsed_after, &mappings, &mut work)?;
+    let expected_ambiguities =
+        verify_stable_core(&parsed_before, &parsed_after, &mappings, &mut work)?;
+    verify_ambiguity_node_references(report, &parsed_before, &parsed_after, &mut work)?;
+    work.charge(
+        report.ambiguities.len(),
+        "comparing verified ambiguity groups",
+    )?;
+    work.charge(
+        stats.ambiguity_endpoints,
+        "comparing verified ambiguity endpoints",
+    )?;
+    work.charge(stats.ambiguity_pairs, "comparing verified ambiguity pairs")?;
     if report.ambiguities != expected_ambiguities {
         bail!("ambiguity constraints do not match the independently derived choice spaces");
     }
@@ -86,12 +223,25 @@ pub fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) -> Result
         &parsed_after,
         &mappings,
         &expected_ambiguities,
-    );
-    verify_change_node_references(report, &parsed_before, &parsed_after)?;
+        &mut work,
+    )?;
+    verify_change_node_references(report, &parsed_before, &parsed_after, &mut work)?;
+    work.charge(
+        report.changes.len(),
+        "comparing verified structural changes",
+    )?;
     if report.changes != expected_changes {
         bail!("structural changes do not match the independently derived events");
     }
 
+    work.charge(
+        report.relations.len(),
+        "counting model-forced relation summary",
+    )?;
+    work.charge(
+        report.relations.len(),
+        "counting suggested relation summary",
+    )?;
     let expected_summary = Summary {
         model_forced_relations: report
             .relations
@@ -109,7 +259,8 @@ pub fn verify_report(report: &DiffReport, before: &[u8], after: &[u8]) -> Result
     if report.summary != expected_summary {
         bail!("summary does not match the verified structural claims");
     }
-    Ok(())
+    stats.verification_work = work.used();
+    Ok(stats)
 }
 
 fn verify_header(report: &DiffReport) -> Result<()> {
@@ -136,31 +287,13 @@ fn verify_artifact(side: &str, artifact: &Artifact, bytes: &[u8]) -> Result<()> 
     Ok(())
 }
 
-fn verify_patch_and_certificate(report: &DiffReport, before: &[u8], after: &[u8]) -> Result<()> {
-    if report.patch.algorithm != "patience-lines+bounded-myers-bytes-v1" {
-        bail!("unsupported patch algorithm {}", report.patch.algorithm);
-    }
-    let mut previous_end = 0;
-    for edit in &report.patch.edits {
-        if edit.old_start < previous_end
-            || edit.old_end < edit.old_start
-            || edit.old_end > before.len()
-        {
-            bail!(
-                "invalid or overlapping edit range {}..{}",
-                edit.old_start,
-                edit.old_end
-            );
-        }
-        let replacement = STANDARD
-            .decode(&edit.replacement_base64)
-            .context("patch replacement is not valid base64")?;
-        if STANDARD.encode(&replacement) != edit.replacement_base64 {
-            bail!("patch replacement is not canonical RFC 4648 base64");
-        }
-        previous_end = edit.old_end;
-    }
-
+fn verify_patch_and_certificate(
+    report: &DiffReport,
+    before: &[u8],
+    after: &[u8],
+    limits: &VerificationLimits,
+    replayed: Option<&[u8]>,
+) -> Result<()> {
     if !report.certificate.patch_verified {
         bail!("report does not carry a successful replay certificate");
     }
@@ -178,11 +311,14 @@ fn verify_patch_and_certificate(report: &DiffReport, before: &[u8], after: &[u8]
         bail!("certificate hashes do not match the supplied artifacts");
     }
 
-    let reconstructed = apply_patch(before, &report.patch)?;
-    if reconstructed != after {
+    let reconstructed = match replayed {
+        Some(replayed) => Cow::Borrowed(replayed),
+        None => Cow::Owned(replay_patch_with_limits(before, &report.patch, limits)?),
+    };
+    if reconstructed.as_ref() != after {
         bail!("patch replay differs from the supplied after snapshot");
     }
-    if report.certificate.reconstructed_blake3 != digest(&reconstructed)
+    if report.certificate.reconstructed_blake3 != digest(reconstructed.as_ref())
         || report.certificate.reconstructed_blake3 != after_hash
     {
         bail!("reconstructed bytes do not match the certificate hashes");
@@ -218,6 +354,7 @@ fn verify_relations<'a>(
     report: &'a DiffReport,
     before: &ParsedSyntax,
     after: &ParsedSyntax,
+    work: &mut WorkBudget,
 ) -> Result<VerifiedMappings<'a>> {
     let mut mappings = VerifiedMappings {
         before_to_after: vec![None; before.nodes.len()],
@@ -228,6 +365,7 @@ fn verify_relations<'a>(
     let mut input_pairs = 0;
 
     for relation in &report.relations {
+        work.charge(1, "verifying a relation")?;
         verify_node_ref(before, &relation.before, "relation before endpoint")?;
         verify_node_ref(after, &relation.after, "relation after endpoint")?;
         if previous_before_id.is_some_and(|id| relation.before.id <= id) {
@@ -244,15 +382,30 @@ fn verify_relations<'a>(
             Predicate::InputPair => {
                 relation.before.id == before.root && relation.after.id == after.root
             }
-            Predicate::ByteEqual => {
-                node_bytes(before, relation.before.id) == node_bytes(after, relation.after.id)
-            }
-            Predicate::SyntaxEqual => {
-                syntax_equal(before, relation.before.id, after, relation.after.id)
-            }
-            Predicate::ShapeEqual => {
-                shape_equal(before, relation.before.id, after, relation.after.id)
-            }
+            Predicate::ByteEqual => budgeted_node_bytes_equal(
+                before,
+                relation.before.id,
+                after,
+                relation.after.id,
+                work,
+                "checking a relation byte predicate",
+            )?,
+            Predicate::SyntaxEqual => budgeted_syntax_equal(
+                before,
+                relation.before.id,
+                after,
+                relation.after.id,
+                work,
+                "checking a relation syntax predicate",
+            )?,
+            Predicate::ShapeEqual => budgeted_shape_equal(
+                before,
+                relation.before.id,
+                after,
+                relation.after.id,
+                work,
+                "checking a relation shape predicate",
+            )?,
         };
         if !predicate_holds {
             bail!(
@@ -280,9 +433,14 @@ fn verify_relations<'a>(
                         bail!("stable-core relation does not carry the shape predicate");
                     }
                 } else {
-                    let expected_predicate =
-                        exact_predicate(before, relation.before.id, after, relation.after.id)
-                            .context("exact model-forced relation has unequal syntax")?;
+                    let expected_predicate = exact_predicate(
+                        before,
+                        relation.before.id,
+                        after,
+                        relation.after.id,
+                        work,
+                    )?
+                    .context("exact model-forced relation has unequal syntax")?;
                     if relation.predicate != expected_predicate {
                         bail!("exact relation does not use its strongest predicate");
                     }
@@ -325,9 +483,11 @@ fn verify_exact_anchor_evidence(
     after: &ParsedSyntax,
     mappings: &VerifiedMappings<'_>,
     global_index: &GlobalExactIndex,
+    work: &mut WorkBudget,
 ) -> Result<()> {
     let mut certified_descendants = HashMap::new();
     for relation in &report.relations {
+        work.charge(1, "checking exact-anchor relation evidence")?;
         if relation.correspondence != Correspondence::ModelForced {
             continue;
         }
@@ -340,6 +500,7 @@ fn verify_exact_anchor_evidence(
                 relation.before.id,
                 relation.after.id,
                 &mut certified_descendants,
+                work,
             )?;
         } else if has_evidence(relation, LOCAL_ANCHOR_EVIDENCE) {
             verify_mapped_parents(before, after, mappings, relation)?;
@@ -350,11 +511,13 @@ fn verify_exact_anchor_evidence(
                 relation.before.id,
                 relation.after.id,
                 &mut certified_descendants,
+                work,
             )?;
         }
     }
 
     for relation in &report.relations {
+        work.charge(1, "checking exact-descendant relation evidence")?;
         if has_evidence(relation, EXACT_DESCENDANT_EVIDENCE)
             && certified_descendants.get(&relation.before.id) != Some(&relation.after.id)
         {
@@ -400,7 +563,9 @@ fn certify_exact_subtree(
     before_id: usize,
     after_id: usize,
     certified_descendants: &mut HashMap<usize, usize>,
+    work: &mut WorkBudget,
 ) -> Result<()> {
+    work.charge(1, "traversing an exact-anchor subtree")?;
     let before_node = &before.nodes[before_id];
     let after_node = &after.nodes[after_id];
     if before_node.children.len() != after_node.children.len() {
@@ -434,6 +599,7 @@ fn certify_exact_subtree(
             *before_child,
             *after_child,
             certified_descendants,
+            work,
         )?;
     }
     Ok(())
@@ -444,14 +610,23 @@ fn verify_global_anchor_completeness(
     after: &ParsedSyntax,
     mappings: &VerifiedMappings<'_>,
     global_index: &GlobalExactIndex,
+    work: &mut WorkBudget,
 ) -> Result<()> {
     for (key, before_ids) in &global_index.before {
+        work.charge(1, "checking a global exact bucket")?;
         let Some(after_ids) = global_index.after.get(key) else {
             continue;
         };
         if before_ids.len() == 1
             && after_ids.len() == 1
-            && syntax_equal(before, before_ids[0], after, after_ids[0])
+            && budgeted_syntax_equal(
+                before,
+                before_ids[0],
+                after,
+                after_ids[0],
+                work,
+                "checking global exact-anchor completeness",
+            )?
             && (mappings.before_to_after[before_ids[0]] != Some(after_ids[0])
                 || !is_exact_before(mappings, before_ids[0]))
         {
@@ -461,41 +636,64 @@ fn verify_global_anchor_completeness(
     Ok(())
 }
 
-fn global_exact_index(before: &ParsedSyntax, after: &ParsedSyntax) -> GlobalExactIndex {
-    GlobalExactIndex {
-        before: exact_subtree_buckets(before),
-        after: exact_subtree_buckets(after),
-    }
+fn global_exact_index(
+    before: &ParsedSyntax,
+    after: &ParsedSyntax,
+    work: &mut WorkBudget,
+) -> Result<GlobalExactIndex> {
+    Ok(GlobalExactIndex {
+        before: exact_subtree_buckets(before, work)?,
+        after: exact_subtree_buckets(after, work)?,
+    })
 }
 
-fn exact_subtree_buckets(syntax: &ParsedSyntax) -> HashMap<(String, [u8; 32]), Vec<usize>> {
+fn exact_subtree_buckets(
+    syntax: &ParsedSyntax,
+    work: &mut WorkBudget,
+) -> Result<GlobalExactBuckets> {
     let mut buckets = HashMap::new();
-    for node in syntax
-        .nodes
-        .iter()
-        .filter(|node| node.id != syntax.root && node.subtree_size >= 3)
-    {
-        buckets
-            .entry((node.kind.clone(), node.syntax_hash))
-            .or_insert_with(Vec::new)
-            .push(node.id);
+    for node in &syntax.nodes {
+        work.charge(1, "building global exact buckets")?;
+        if node.id != syntax.root && node.subtree_size >= 3 {
+            buckets
+                .entry((node.kind.clone(), node.syntax_hash))
+                .or_insert_with(Vec::new)
+                .push(node.id);
+        }
     }
-    buckets
+    Ok(buckets)
 }
 
 fn verify_local_exact_relations(
     before: &ParsedSyntax,
     after: &ParsedSyntax,
     mappings: &VerifiedMappings<'_>,
+    work: &mut WorkBudget,
 ) -> Result<()> {
     let mut verified_local_pairs = HashSet::new();
+    work.charge(
+        mappings.before_to_after.len(),
+        "scanning mapped parents for local exact relations",
+    )?;
     for (before_parent, after_parent) in mapped_pairs(mappings) {
-        let before_children = local_exact_candidates(before, before_parent, mappings);
-        let after_children = local_exact_candidates_after(after, after_parent, mappings);
-        for (before_id, after_id) in
-            unique_pairs(before, after, &before_children, &after_children, exact_key)
-        {
-            if syntax_equal(before, before_id, after, after_id) {
+        let before_children = local_exact_candidates(before, before_parent, mappings, work)?;
+        let after_children = local_exact_candidates_after(after, after_parent, mappings, work)?;
+        for (before_id, after_id) in unique_pairs(
+            before,
+            after,
+            &before_children,
+            &after_children,
+            exact_key,
+            work,
+        )? {
+            if budgeted_syntax_equal(
+                before,
+                before_id,
+                after,
+                after_id,
+                work,
+                "checking local exact-pair syntax",
+            )? {
                 if mappings.before_to_after[before_id] != Some(after_id)
                     || !is_exact_before(mappings, before_id)
                 {
@@ -506,6 +704,10 @@ fn verify_local_exact_relations(
         }
     }
 
+    work.charge(
+        mappings.by_before.len(),
+        "scanning local exact relation certificates",
+    )?;
     for relation in mappings
         .by_before
         .iter()
@@ -524,13 +726,18 @@ fn verify_stable_core(
     before: &ParsedSyntax,
     after: &ParsedSyntax,
     mappings: &VerifiedMappings<'_>,
+    work: &mut WorkBudget,
 ) -> Result<Vec<AmbiguityGroup>> {
     let mut expected_pairs = HashSet::new();
     let mut ambiguities = Vec::new();
-    let global_mappings = global_phase_mappings(before, after, mappings)?;
+    let global_mappings = global_phase_mappings(before, after, mappings, work)?;
+    work.charge(
+        mappings.before_to_after.len(),
+        "scanning mapped parents for stable-core verification",
+    )?;
     for (before_parent, after_parent) in mapped_pairs(mappings) {
         for (before_children, after_children) in
-            ordered_alignment_regions(before, after, mappings, before_parent, after_parent)
+            ordered_alignment_regions(before, after, mappings, before_parent, after_parent, work)?
         {
             let outcome = independent_stable_core(
                 before,
@@ -538,6 +745,7 @@ fn verify_stable_core(
                 &global_mappings,
                 &before_children,
                 &after_children,
+                work,
             )?;
             for (before_id, after_id) in outcome.forced {
                 expected_pairs.insert((before_id, after_id));
@@ -552,6 +760,14 @@ fn verify_stable_core(
                 }
             }
             for ambiguity in outcome.ambiguities {
+                work.charge(
+                    ambiguity.before.len(),
+                    "materializing verified ambiguity before endpoints",
+                )?;
+                work.charge(
+                    ambiguity.after.len(),
+                    "materializing verified ambiguity after endpoints",
+                )?;
                 ambiguities.push(AmbiguityGroup {
                     parent_before: before_parent,
                     parent_after: after_parent,
@@ -572,6 +788,10 @@ fn verify_stable_core(
         }
     }
 
+    work.charge(
+        mappings.by_before.len(),
+        "checking stable-core relation certificates",
+    )?;
     for relation in mappings
         .by_before
         .iter()
@@ -583,6 +803,7 @@ fn verify_stable_core(
         }
     }
 
+    work.charge_n_log_n(ambiguities.len(), "ordering verified ambiguity groups")?;
     ambiguities.sort_by_key(|group| {
         (
             group.parent_before,
@@ -600,36 +821,48 @@ fn ordered_alignment_regions(
     mappings: &VerifiedMappings<'_>,
     before_parent: usize,
     after_parent: usize,
-) -> Vec<(Vec<usize>, Vec<usize>)> {
+    work: &mut WorkBudget,
+) -> Result<Vec<(Vec<usize>, Vec<usize>)>> {
     let before_children = &before.nodes[before_parent].children;
     let after_children = &after.nodes[after_parent].children;
+    work.charge(
+        after_children.len(),
+        "indexing after children for ordered alignment",
+    )?;
     let after_positions: HashMap<_, _> = after_children
         .iter()
         .enumerate()
         .map(|(position, id)| (*id, position))
         .collect();
-    let exact_anchors: Vec<_> = before_children
-        .iter()
-        .enumerate()
-        .filter_map(|(before_position, before_id)| {
-            let relation = mappings.by_before[*before_id]?;
-            if !is_exact_relation(relation) {
-                return None;
+    let mut exact_anchors = Vec::new();
+    for (before_position, before_id) in before_children.iter().enumerate() {
+        work.charge(1, "scanning before children for exact alignment anchors")?;
+        let Some(relation) = mappings.by_before[*before_id] else {
+            continue;
+        };
+        if !is_exact_relation(relation) {
+            continue;
+        }
+        if let Some(after_position) = after_positions.get(&relation.after.id).copied() {
+            exact_anchors.push((before_position, after_position));
+        }
+    }
+    let mut barriers = Vec::new();
+    for (before_position, after_position) in exact_anchors.iter().copied() {
+        let mut barrier = true;
+        for (other_before, other_after) in &exact_anchors {
+            work.charge(1, "checking exact-anchor order barriers")?;
+            if before_position != *other_before
+                && (before_position < *other_before) != (after_position < *other_after)
+            {
+                barrier = false;
+                break;
             }
-            let after_position = after_positions.get(&relation.after.id).copied()?;
-            Some((before_position, after_position))
-        })
-        .collect();
-    let barriers: Vec<_> = exact_anchors
-        .iter()
-        .copied()
-        .filter(|(before_position, after_position)| {
-            exact_anchors.iter().all(|(other_before, other_after)| {
-                before_position == other_before
-                    || (before_position < other_before) == (after_position < other_after)
-            })
-        })
-        .collect();
+        }
+        if barrier {
+            barriers.push((before_position, after_position));
+        }
+    }
 
     let mut regions = Vec::with_capacity(barriers.len() + 1);
     let mut before_start = 0;
@@ -638,11 +871,19 @@ fn ordered_alignment_regions(
         before_children.len(),
         after_children.len(),
     ))) {
+        work.charge(
+            before_end - before_start,
+            "collecting before ordered-alignment region",
+        )?;
         let before_region = before_children[before_start..before_end]
             .iter()
             .copied()
             .filter(|id| !is_exact_before(mappings, *id))
             .collect();
+        work.charge(
+            after_end - after_start,
+            "collecting after ordered-alignment region",
+        )?;
         let after_region = after_children[after_start..after_end]
             .iter()
             .copied()
@@ -652,18 +893,28 @@ fn ordered_alignment_regions(
         before_start = before_end.saturating_add(1);
         after_start = after_end.saturating_add(1);
     }
-    regions
+    Ok(regions)
 }
 
 fn global_phase_mappings(
     before: &ParsedSyntax,
     after: &ParsedSyntax,
     mappings: &VerifiedMappings<'_>,
+    work: &mut WorkBudget,
 ) -> Result<PhaseMappings> {
+    work.charge(
+        before.nodes.len(),
+        "allocating before global phase mappings",
+    )?;
+    work.charge(after.nodes.len(), "allocating after global phase mappings")?;
     let mut phase = PhaseMappings {
         before_to_after: vec![None; before.nodes.len()],
         after_to_before: vec![None; after.nodes.len()],
     };
+    work.charge(
+        mappings.by_before.len(),
+        "scanning global exact relations for phase mappings",
+    )?;
     for relation in mappings
         .by_before
         .iter()
@@ -677,6 +928,7 @@ fn global_phase_mappings(
             relation.before.id,
             relation.after.id,
             &mut phase,
+            work,
         )?;
     }
     Ok(phase)
@@ -689,7 +941,9 @@ fn mark_phase_subtree(
     before_id: usize,
     after_id: usize,
     phase: &mut PhaseMappings,
+    work: &mut WorkBudget,
 ) -> Result<()> {
+    work.charge(1, "traversing a global phase-mapping subtree")?;
     if mappings.before_to_after[before_id] != Some(after_id) {
         bail!("global-phase exact certificate is incomplete");
     }
@@ -705,7 +959,15 @@ fn mark_phase_subtree(
         .iter()
         .zip(&after.nodes[after_id].children)
     {
-        mark_phase_subtree(before, after, mappings, *before_child, *after_child, phase)?;
+        mark_phase_subtree(
+            before,
+            after,
+            mappings,
+            *before_child,
+            *after_child,
+            phase,
+            work,
+        )?;
     }
     Ok(())
 }
@@ -792,10 +1054,28 @@ fn verified_shape_classes(
     after: &ParsedSyntax,
     before_ids: &[usize],
     after_ids: &[usize],
-) -> VerifiedShapeClasses {
-    let before_index = buckets(before, before_ids, shape_key);
-    let after_index = buckets(after, after_ids, shape_key);
+    work: &mut WorkBudget,
+) -> Result<VerifiedShapeClasses> {
+    let before_index = buckets(
+        before,
+        before_ids,
+        shape_key,
+        work,
+        "building before shape buckets",
+    )?;
+    let after_index = buckets(
+        after,
+        after_ids,
+        shape_key,
+        work,
+        "building after shape buckets",
+    )?;
     let mut classes = Vec::new();
+    work.charge_product(
+        before_index.len(),
+        map_lookup_levels(after_index.len()),
+        "joining exact shape buckets",
+    )?;
     for (raw_key, before_bucket) in before_index {
         let Some(after_bucket) = after_index.get(&raw_key) else {
             continue;
@@ -803,27 +1083,52 @@ fn verified_shape_classes(
         classes.extend(partition_index_bucket(
             &before_bucket,
             after_bucket,
-            |id, representative| shape_equal(before, id, before, representative),
-            |representative, id| shape_equal(before, representative, after, id),
-        ));
+            work,
+            |id, representative, work| {
+                budgeted_shape_equal(
+                    before,
+                    id,
+                    before,
+                    representative,
+                    work,
+                    "comparing before nodes during shape-class partitioning",
+                )
+            },
+            |representative, id, work| {
+                budgeted_shape_equal(
+                    before,
+                    representative,
+                    after,
+                    id,
+                    work,
+                    "comparing snapshots during shape-class partitioning",
+                )
+            },
+        )?);
     }
 
-    VerifiedShapeClasses { classes }
+    Ok(VerifiedShapeClasses { classes })
 }
 
 fn partition_index_bucket(
     before_ids: &[usize],
     after_ids: &[usize],
-    same_before_shape: impl Fn(usize, usize) -> bool,
-    cross_shape: impl Fn(usize, usize) -> bool,
-) -> Vec<VerifiedShapeClass> {
+    work: &mut WorkBudget,
+    same_before_shape: impl Fn(usize, usize, &mut WorkBudget) -> Result<bool>,
+    cross_shape: impl Fn(usize, usize, &mut WorkBudget) -> Result<bool>,
+) -> Result<Vec<VerifiedShapeClass>> {
     let mut classes: Vec<VerifiedShapeClass> = Vec::new();
     for id in before_ids {
-        if let Some(class) = classes
-            .iter_mut()
-            .find(|class| same_before_shape(*id, class.before[0]))
-        {
-            class.before.push(*id);
+        let mut matching_class = None;
+        for (index, class) in classes.iter().enumerate() {
+            work.charge(1, "partitioning a before shape bucket")?;
+            if same_before_shape(*id, class.before[0], work)? {
+                matching_class = Some(index);
+                break;
+            }
+        }
+        if let Some(index) = matching_class {
+            classes[index].before.push(*id);
         } else {
             classes.push(VerifiedShapeClass {
                 before: vec![*id],
@@ -832,15 +1137,21 @@ fn partition_index_bucket(
         }
     }
     for id in after_ids {
-        if let Some(class) = classes
-            .iter_mut()
-            .find(|class| cross_shape(class.before[0], *id))
-        {
-            class.after.push(*id);
+        let mut matching_class = None;
+        for (index, class) in classes.iter().enumerate() {
+            work.charge(1, "partitioning an after shape bucket")?;
+            if cross_shape(class.before[0], *id, work)? {
+                matching_class = Some(index);
+                break;
+            }
+        }
+        if let Some(index) = matching_class {
+            classes[index].after.push(*id);
         }
     }
+    work.charge(classes.len(), "filtering empty shape classes")?;
     classes.retain(|class| !class.after.is_empty());
-    classes
+    Ok(classes)
 }
 
 fn verified_candidate_groups(
@@ -848,15 +1159,25 @@ fn verified_candidate_groups(
     after: &ParsedSyntax,
     global_mappings: &PhaseMappings,
     partition: &VerifiedShapeClasses,
-) -> CandidateGroups {
+    work: &mut WorkBudget,
+) -> Result<CandidateGroups> {
     let mut groups = Vec::new();
     for shape_class in &partition.classes {
+        work.charge(1, "visiting a verified shape class")?;
         let within_scan_limit = shape_class
             .before
             .len()
             .checked_mul(shape_class.after.len())
             .is_some_and(|pairs| pairs <= ORDERED_ALIGNMENT_CANDIDATE_SCAN_LIMIT);
         if !within_scan_limit {
+            work.charge(
+                shape_class.before.len(),
+                "copying unscanned before shape-class endpoints",
+            )?;
+            work.charge(
+                shape_class.after.len(),
+                "copying unscanned after shape-class endpoints",
+            )?;
             groups.push(CandidateGroup {
                 before: shape_class.before.clone(),
                 after: shape_class.after.clone(),
@@ -866,8 +1187,19 @@ fn verified_candidate_groups(
         }
 
         let before_len = shape_class.before.len();
-        let mut sets = DisjointSets::new(before_len + shape_class.after.len());
-        let mut incident = vec![false; before_len + shape_class.after.len()];
+        work.charge_product(
+            shape_class.before.len(),
+            shape_class.after.len(),
+            "scanning verified shape candidates",
+        )?;
+        let vertex_count = checked_add(
+            "verified candidate vertex count",
+            before_len,
+            shape_class.after.len(),
+        )?;
+        work.charge(vertex_count, "allocating verified candidate vertices")?;
+        let mut sets = DisjointSets::new(vertex_count);
+        let mut incident = vec![false; vertex_count];
         for (before_index, before_id) in shape_class.before.iter().copied().enumerate() {
             for (after_index, after_id) in shape_class.after.iter().copied().enumerate() {
                 if phase_mappings_are_compatible(
@@ -876,7 +1208,8 @@ fn verified_candidate_groups(
                     global_mappings,
                     before_id,
                     after_id,
-                ) {
+                    work,
+                )? {
                     let after_vertex = before_len + after_index;
                     sets.union(before_index, after_vertex);
                     incident[before_index] = true;
@@ -886,6 +1219,7 @@ fn verified_candidate_groups(
         }
 
         let mut connected: BTreeMap<usize, CandidateGroup> = BTreeMap::new();
+        work.charge_n_log_n(vertex_count, "collecting connected candidate groups")?;
         for (before_index, before_id) in shape_class.before.iter().copied().enumerate() {
             if incident[before_index] {
                 connected
@@ -916,24 +1250,27 @@ fn verified_candidate_groups(
         groups.extend(connected.into_values());
     }
 
+    work.charge_n_log_n(groups.len(), "ordering verified candidate groups")?;
     groups.sort_by_key(|group| (group.before[0], group.after[0]));
     let mut before_group = HashMap::new();
     let mut after_group = HashMap::new();
     for (group_id, group) in groups.iter().enumerate() {
+        work.charge(group.before.len(), "indexing before candidate endpoints")?;
         for before_id in &group.before {
             let previous = before_group.insert(*before_id, group_id);
             debug_assert!(previous.is_none());
         }
+        work.charge(group.after.len(), "indexing after candidate endpoints")?;
         for after_id in &group.after {
             let previous = after_group.insert(*after_id, group_id);
             debug_assert!(previous.is_none());
         }
     }
-    CandidateGroups {
+    Ok(CandidateGroups {
         groups,
         before_group,
         after_group,
-    }
+    })
 }
 
 fn independent_stable_core(
@@ -942,28 +1279,37 @@ fn independent_stable_core(
     global_mappings: &PhaseMappings,
     before_ids: &[usize],
     after_ids: &[usize],
+    work: &mut WorkBudget,
 ) -> Result<AlignmentOutcome> {
-    let partition = verified_shape_classes(before, after, before_ids, after_ids);
+    let partition = verified_shape_classes(before, after, before_ids, after_ids, work)?;
     if partition.classes.is_empty() {
         return Ok(AlignmentOutcome::default());
     }
-    let candidates = verified_candidate_groups(before, after, global_mappings, &partition);
+    let candidates = verified_candidate_groups(before, after, global_mappings, &partition, work)?;
     if candidates.groups.is_empty() {
         return Ok(AlignmentOutcome::default());
     }
 
     let mut outcome = AlignmentOutcome::default();
-    for component in ordered_interaction_components(&candidates, before_ids, after_ids)? {
+    for component in ordered_interaction_components(&candidates, before_ids, after_ids, work)? {
         let component_outcome = if component.before.len() <= ORDERED_ALIGNMENT_COMPONENT_LIMIT
             && component.after.len() <= ORDERED_ALIGNMENT_COMPONENT_LIMIT
         {
-            verify_bounded_component(before, after, global_mappings, &candidates, &component)?
+            verify_bounded_component(
+                before,
+                after,
+                global_mappings,
+                &candidates,
+                &component,
+                work,
+            )?
         } else {
-            oversized_alignment(&candidates, &component)
+            oversized_alignment(&candidates, &component, work)?
         };
         outcome.forced.extend(component_outcome.forced);
         outcome.ambiguities.extend(component_outcome.ambiguities);
     }
+    work.charge_n_log_n(outcome.forced.len(), "ordering stable-core forced pairs")?;
     outcome.forced.sort_unstable();
     Ok(outcome)
 }
@@ -974,10 +1320,16 @@ fn verify_bounded_component(
     global_mappings: &PhaseMappings,
     candidate_groups: &CandidateGroups,
     component: &AlignmentComponent,
+    work: &mut WorkBudget,
 ) -> Result<AlignmentOutcome> {
     let active_before = &component.before;
     let active_after = &component.after;
 
+    work.charge_product(
+        active_before.len(),
+        active_after.len(),
+        "building a bounded candidate matrix",
+    )?;
     let mut candidates = vec![vec![false; active_after.len()]; active_before.len()];
     for (before_index, before_id) in active_before.iter().copied().enumerate() {
         let before_group = candidate_groups
@@ -989,20 +1341,36 @@ fn verify_bounded_component(
                 .after_group
                 .get(&after_id)
                 .context("active after node is missing its verified candidate group")?;
-            candidates[before_index][after_index] = before_group == after_group
-                && shape_equal(before, before_id, after, after_id)
-                && phase_mappings_are_compatible(
+            candidates[before_index][after_index] = if before_group == after_group {
+                budgeted_shape_equal(
+                    before,
+                    before_id,
+                    after,
+                    after_id,
+                    work,
+                    "checking a bounded candidate shape",
+                )? && phase_mappings_are_compatible(
                     before,
                     after,
                     global_mappings,
                     before_id,
                     after_id,
-                );
+                    work,
+                )?
+            } else {
+                false
+            };
         }
     }
 
-    let prefix = alignment_prefix_scores(&candidates, None);
-    let suffix = alignment_suffix_scores(&candidates);
+    let prefix = alignment_prefix_scores(
+        &candidates,
+        None,
+        work,
+        "computing ordered-alignment prefix DP",
+    )?;
+    let suffix =
+        alignment_suffix_scores(&candidates, work, "computing ordered-alignment suffix DP")?;
     let optimum = prefix[active_before.len()][active_after.len()];
     if optimum == 0 {
         return Ok(AlignmentOutcome::default());
@@ -1013,6 +1381,11 @@ fn verify_bounded_component(
     let mut ambiguous_after = BTreeSet::new();
     let mut possible_pairs = Vec::new();
     let mut has_duplicate_symmetry = false;
+    work.charge_product(
+        active_before.len(),
+        active_after.len(),
+        "scanning optimal ordered-alignment candidates",
+    )?;
     for (before_index, _) in active_before.iter().enumerate() {
         for (after_index, _) in active_after.iter().enumerate() {
             if !candidates[before_index][after_index]
@@ -1031,7 +1404,12 @@ fn verify_bounded_component(
             let candidate_group_is_singleton =
                 candidate_group.before.len() == 1 && candidate_group.after.len() == 1;
             if candidate_group_is_singleton
-                && alignment_score(&candidates, Some((before_index, after_index))) < optimum
+                && alignment_score(
+                    &candidates,
+                    Some((before_index, after_index)),
+                    work,
+                    "recomputing per-candidate forcedness",
+                )? < optimum
             {
                 outcome.forced.push((before_id, after_id));
             } else {
@@ -1050,6 +1428,7 @@ fn verify_bounded_component(
             }
         }
     }
+    work.charge_n_log_n(outcome.forced.len(), "ordering component forced pairs")?;
     outcome.forced.sort_unstable();
     if !possible_pairs.is_empty() {
         let constraint = if has_duplicate_symmetry {
@@ -1068,6 +1447,8 @@ fn verify_bounded_component(
                 possible_pairs,
             }
         };
+        work.charge(active_before.len(), "collecting ambiguous before endpoints")?;
+        work.charge(active_after.len(), "collecting ambiguous after endpoints")?;
         outcome.ambiguities.push(AlignmentAmbiguity {
             before: active_before
                 .iter()
@@ -1094,12 +1475,21 @@ fn ordered_interaction_components(
     candidates: &CandidateGroups,
     before_ids: &[usize],
     after_ids: &[usize],
+    work: &mut WorkBudget,
 ) -> Result<Vec<AlignmentComponent>> {
+    work.charge(
+        before_ids.len(),
+        "collecting active before candidate endpoints",
+    )?;
     let active_before: Vec<_> = before_ids
         .iter()
         .copied()
         .filter(|id| candidates.before_group.contains_key(id))
         .collect();
+    work.charge(
+        after_ids.len(),
+        "collecting active after candidate endpoints",
+    )?;
     let active_after: Vec<_> = after_ids
         .iter()
         .copied()
@@ -1109,7 +1499,16 @@ fn ordered_interaction_components(
         return Ok(Vec::new());
     }
 
+    work.charge_product(
+        candidates.groups.len(),
+        3,
+        "allocating candidate-component indexes",
+    )?;
     let mut before_last = vec![0; candidates.groups.len()];
+    work.charge(
+        active_before.len(),
+        "indexing before candidate-component positions",
+    )?;
     for (position, id) in active_before.iter().enumerate() {
         let group_id = *candidates
             .before_group
@@ -1119,6 +1518,10 @@ fn ordered_interaction_components(
     }
     let mut after_last = vec![0; candidates.groups.len()];
     let mut after_counts = vec![0; candidates.groups.len()];
+    work.charge(
+        active_after.len(),
+        "indexing after candidate-component positions",
+    )?;
     for (position, id) in active_after.iter().enumerate() {
         let group_id = *candidates
             .after_group
@@ -1139,6 +1542,10 @@ fn ordered_interaction_components(
 
     // Re-derive only cuts whose complete groups occupy prefixes on both sides. This proves that
     // no candidate in one component can share an endpoint with or cross a candidate in the next.
+    work.charge(
+        active_before.len(),
+        "partitioning ordered candidate components",
+    )?;
     for (position, id) in active_before.iter().enumerate() {
         let group_id = *candidates
             .before_group
@@ -1152,6 +1559,14 @@ fn ordered_interaction_components(
             after_prefix_count += after_counts[group_id];
         }
         if position == before_prefix_last && after_prefix_count == after_prefix_last + 1 {
+            work.charge(
+                position + 1 - before_start,
+                "copying a before interaction component",
+            )?;
+            work.charge(
+                after_prefix_count - after_start,
+                "copying an after interaction component",
+            )?;
             components.push(AlignmentComponent {
                 before: active_before[before_start..=position].to_vec(),
                 after: active_after[after_start..after_prefix_count].to_vec(),
@@ -1174,7 +1589,12 @@ fn ordered_interaction_components(
 fn oversized_alignment(
     candidates: &CandidateGroups,
     component: &AlignmentComponent,
-) -> AlignmentOutcome {
+    work: &mut WorkBudget,
+) -> Result<AlignmentOutcome> {
+    work.charge(
+        component.groups.len(),
+        "checking an oversized alignment component",
+    )?;
     let scan_complete = component
         .groups
         .iter()
@@ -1184,6 +1604,8 @@ fn oversized_alignment(
     } else {
         AmbiguityAbstentionCause::CandidateScanLimit
     };
+    work.charge(component.before.len(), "copying oversized before endpoints")?;
+    work.charge(component.after.len(), "copying oversized after endpoints")?;
     let ambiguities = vec![AlignmentAmbiguity {
         before: component.before.clone(),
         after: component.after.clone(),
@@ -1201,10 +1623,10 @@ fn oversized_alignment(
             )
         },
     }];
-    AlignmentOutcome {
+    Ok(AlignmentOutcome {
         forced: Vec::new(),
         ambiguities,
-    }
+    })
 }
 
 fn phase_mappings_are_compatible(
@@ -1213,29 +1635,44 @@ fn phase_mappings_are_compatible(
     mappings: &PhaseMappings,
     before_id: usize,
     after_id: usize,
-) -> bool {
+    work: &mut WorkBudget,
+) -> Result<bool> {
+    work.charge(1, "checking recursive phase compatibility")?;
     if mappings.before_to_after[before_id].is_some_and(|mapped_after| mapped_after != after_id)
         || mappings.after_to_before[after_id]
             .is_some_and(|mapped_before| mapped_before != before_id)
     {
-        return false;
+        return Ok(false);
     }
     let before_node = &before.nodes[before_id];
     let after_node = &after.nodes[after_id];
-    before_node.children.len() == after_node.children.len()
-        && before_node.children.iter().zip(&after_node.children).all(
-            |(before_child, after_child)| {
-                phase_mappings_are_compatible(before, after, mappings, *before_child, *after_child)
-            },
-        )
+    if before_node.children.len() != after_node.children.len() {
+        return Ok(false);
+    }
+    for (before_child, after_child) in before_node.children.iter().zip(&after_node.children) {
+        if !phase_mappings_are_compatible(
+            before,
+            after,
+            mappings,
+            *before_child,
+            *after_child,
+            work,
+        )? {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 fn alignment_prefix_scores(
     candidates: &[Vec<bool>],
     forbidden: Option<(usize, usize)>,
-) -> Vec<Vec<usize>> {
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<Vec<Vec<usize>>> {
     let before_len = candidates.len();
     let after_len = candidates.first().map_or(0, Vec::len);
+    work.charge_product(before_len, after_len, context)?;
     let mut scores = vec![vec![0; after_len + 1]; before_len + 1];
     for before_index in 0..before_len {
         for after_index in 0..after_len {
@@ -1249,12 +1686,17 @@ fn alignment_prefix_scores(
             scores[before_index + 1][after_index + 1] = best;
         }
     }
-    scores
+    Ok(scores)
 }
 
-fn alignment_suffix_scores(candidates: &[Vec<bool>]) -> Vec<Vec<usize>> {
+fn alignment_suffix_scores(
+    candidates: &[Vec<bool>],
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<Vec<Vec<usize>>> {
     let before_len = candidates.len();
     let after_len = candidates.first().map_or(0, Vec::len);
+    work.charge_product(before_len, after_len, context)?;
     let mut scores = vec![vec![0; after_len + 1]; before_len + 1];
     for before_index in (0..before_len).rev() {
         for after_index in (0..after_len).rev() {
@@ -1266,12 +1708,17 @@ fn alignment_suffix_scores(candidates: &[Vec<bool>]) -> Vec<Vec<usize>> {
             scores[before_index][after_index] = best;
         }
     }
-    scores
+    Ok(scores)
 }
 
-fn alignment_score(candidates: &[Vec<bool>], forbidden: Option<(usize, usize)>) -> usize {
-    let scores = alignment_prefix_scores(candidates, forbidden);
-    scores[candidates.len()][candidates.first().map_or(0, Vec::len)]
+fn alignment_score(
+    candidates: &[Vec<bool>],
+    forbidden: Option<(usize, usize)>,
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<usize> {
+    let scores = alignment_prefix_scores(candidates, forbidden, work, context)?;
+    Ok(scores[candidates.len()][candidates.first().map_or(0, Vec::len)])
 }
 
 fn derive_changes(
@@ -1279,7 +1726,22 @@ fn derive_changes(
     after: &ParsedSyntax,
     mappings: &VerifiedMappings<'_>,
     ambiguities: &[AmbiguityGroup],
-) -> Vec<StructuralChange> {
+    work: &mut WorkBudget,
+) -> Result<Vec<StructuralChange>> {
+    work.charge(
+        ambiguities.len(),
+        "traversing ambiguities for derived changes",
+    )?;
+    for group in ambiguities {
+        work.charge(
+            group.before.len(),
+            "collecting ambiguous before nodes for derived changes",
+        )?;
+        work.charge(
+            group.after.len(),
+            "collecting ambiguous after nodes for derived changes",
+        )?;
+    }
     let ambiguous_before: HashSet<_> = ambiguities
         .iter()
         .flat_map(|group| group.before.iter().map(|node| node.id))
@@ -1290,7 +1752,24 @@ fn derive_changes(
         .collect();
     let mut changes = Vec::new();
 
-    if syntax_equal(before, before.root, after, after.root) && before.source != after.source {
+    let syntax_identical = budgeted_syntax_equal(
+        before,
+        before.root,
+        after,
+        after.root,
+        work,
+        "checking formatting-only syntax equality",
+    )?;
+    let formatting_only = if syntax_identical {
+        work.charge(
+            before.source.len().max(after.source.len()),
+            "checking formatting-only source bytes",
+        )?;
+        before.source != after.source
+    } else {
+        false
+    };
+    if formatting_only {
         changes.push(StructuralChange {
             kind: ChangeKind::FormattingOnly,
             before: Some(before.nodes[before.root].as_ref()),
@@ -1299,13 +1778,25 @@ fn derive_changes(
         });
     }
 
+    work.charge(
+        mappings.before_to_after.len(),
+        "scanning mapped parents for derived changes",
+    )?;
     for (before_parent, after_parent) in mapped_pairs(mappings) {
+        work.charge(
+            after.nodes[after_parent].children.len(),
+            "indexing after children for derived changes",
+        )?;
         let after_positions: HashMap<_, _> = after.nodes[after_parent]
             .children
             .iter()
             .enumerate()
             .map(|(position, id)| (*id, position))
             .collect();
+        work.charge(
+            before.nodes[before_parent].children.len(),
+            "scanning before children for derived changes",
+        )?;
         let positions: Vec<_> = before.nodes[before_parent]
             .children
             .iter()
@@ -1328,6 +1819,10 @@ fn derive_changes(
         }
     }
 
+    work.charge(
+        mappings.by_before.len(),
+        "scanning relations for derived changes",
+    )?;
     for relation in mappings.by_before.iter().flatten().filter(|relation| {
         relation.before.id != before.root && relation.correspondence != Correspondence::InputPair
     }) {
@@ -1353,7 +1848,14 @@ fn derive_changes(
             });
         }
         if relation.predicate == Predicate::ShapeEqual
-            && !syntax_equal(before, before_id, after, after_id)
+            && !budgeted_syntax_equal(
+                before,
+                before_id,
+                after,
+                after_id,
+                work,
+                "checking update syntax equality",
+            )?
             && !before_parent.is_some_and(|parent| {
                 mappings.by_before[parent].is_some_and(|parent_relation| {
                     parent_relation.predicate == Predicate::ShapeEqual
@@ -1380,6 +1882,10 @@ fn derive_changes(
         }
     }
 
+    work.charge(
+        before.nodes.len().saturating_sub(1),
+        "scanning before nodes for deletions",
+    )?;
     for node in before.nodes.iter().skip(1) {
         if mappings.before_to_after[node.id].is_none()
             && !ambiguous_before.contains(&node.id)
@@ -1395,6 +1901,10 @@ fn derive_changes(
             });
         }
     }
+    work.charge(
+        after.nodes.len().saturating_sub(1),
+        "scanning after nodes for insertions",
+    )?;
     for node in after.nodes.iter().skip(1) {
         if mappings.after_to_before[node.id].is_none()
             && !ambiguous_after.contains(&node.id)
@@ -1410,16 +1920,19 @@ fn derive_changes(
             });
         }
     }
+    work.charge_n_log_n(changes.len(), "ordering derived changes")?;
     changes.sort_by_key(change_order);
-    changes
+    Ok(changes)
 }
 
 fn verify_ambiguity_node_references(
     report: &DiffReport,
     before: &ParsedSyntax,
     after: &ParsedSyntax,
+    work: &mut WorkBudget,
 ) -> Result<()> {
     for group in &report.ambiguities {
+        work.charge(1, "verifying an ambiguity group")?;
         before
             .nodes
             .get(group.parent_before)
@@ -1429,17 +1942,21 @@ fn verify_ambiguity_node_references(
             .get(group.parent_after)
             .context("ambiguity references an unknown after parent")?;
         for node in &group.before {
+            work.charge(1, "verifying an ambiguity before endpoint")?;
             verify_node_ref(before, node, "ambiguity before member")?;
         }
         for node in &group.after {
+            work.charge(1, "verifying an ambiguity after endpoint")?;
             verify_node_ref(after, node, "ambiguity after member")?;
         }
+        work.charge(group.before.len(), "indexing ambiguity before endpoints")?;
         let before_positions: HashMap<_, _> = group
             .before
             .iter()
             .enumerate()
             .map(|(position, node)| (node.id, position))
             .collect();
+        work.charge(group.after.len(), "indexing ambiguity after endpoints")?;
         let after_positions: HashMap<_, _> = group
             .after
             .iter()
@@ -1473,6 +1990,10 @@ fn verify_ambiguity_node_references(
                 *required_matches <= group.before.len().min(group.after.len()),
                 "exact ordered ambiguity requires more matches than its endpoint sets permit"
             );
+            work.charge(
+                possible_pairs.len(),
+                "allocating and validating ambiguity possible pairs",
+            )?;
             let mut seen_pairs = HashSet::new();
             let mut pair_order = Vec::with_capacity(possible_pairs.len());
             let mut referenced_before = HashSet::new();
@@ -1489,13 +2010,24 @@ fn verify_ambiguity_node_references(
                     "exact ordered ambiguity contains a duplicate pair"
                 );
                 ensure!(
-                    shape_equal(before, pair.before_id, after, pair.after_id),
+                    budgeted_shape_equal(
+                        before,
+                        pair.before_id,
+                        after,
+                        pair.after_id,
+                        work,
+                        "checking an ambiguity-pair shape predicate",
+                    )?,
                     "exact ordered ambiguity pair does not satisfy its predicate"
                 );
                 referenced_before.insert(pair.before_id);
                 referenced_after.insert(pair.after_id);
                 pair_order.push((before_position, after_position));
             }
+            work.charge(
+                pair_order.len().saturating_sub(1),
+                "checking canonical ambiguity-pair order",
+            )?;
             ensure!(
                 pair_order.windows(2).all(|pair| pair[0] < pair[1]),
                 "exact ordered ambiguity pairs are not in canonical order"
@@ -1514,8 +2046,10 @@ fn verify_change_node_references(
     report: &DiffReport,
     before: &ParsedSyntax,
     after: &ParsedSyntax,
+    work: &mut WorkBudget,
 ) -> Result<()> {
     for change in &report.changes {
+        work.charge(1, "verifying a structural change")?;
         if let Some(node) = &change.before {
             verify_node_ref(before, node, "change before endpoint")?;
         }
@@ -1571,18 +2105,85 @@ fn verify_mapped_parents(
     Ok(())
 }
 
+fn budgeted_syntax_equal(
+    left: &ParsedSyntax,
+    left_id: usize,
+    right: &ParsedSyntax,
+    right_id: usize,
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<bool> {
+    let subtree_work = left.nodes[left_id]
+        .subtree_size
+        .max(right.nodes[right_id].subtree_size);
+    work.charge(subtree_work, context)?;
+    let byte_work = node_span_len(left, left_id)?.max(node_span_len(right, right_id)?);
+    work.charge(byte_work, context)?;
+    Ok(syntax_equal(left, left_id, right, right_id))
+}
+
+fn budgeted_shape_equal(
+    left: &ParsedSyntax,
+    left_id: usize,
+    right: &ParsedSyntax,
+    right_id: usize,
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<bool> {
+    let subtree_work = left.nodes[left_id]
+        .subtree_size
+        .max(right.nodes[right_id].subtree_size);
+    work.charge(subtree_work, context)?;
+    Ok(shape_equal(left, left_id, right, right_id))
+}
+
+fn budgeted_node_bytes_equal(
+    left: &ParsedSyntax,
+    left_id: usize,
+    right: &ParsedSyntax,
+    right_id: usize,
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<bool> {
+    let byte_work = node_span_len(left, left_id)?.max(node_span_len(right, right_id)?);
+    work.charge(byte_work, context)?;
+    Ok(node_bytes(left, left_id) == node_bytes(right, right_id))
+}
+
+fn node_span_len(syntax: &ParsedSyntax, id: usize) -> Result<usize> {
+    let span = &syntax.nodes[id].span;
+    span.end_byte
+        .checked_sub(span.start_byte)
+        .context("syntax node span length exceeds usize capacity")
+}
+
 fn exact_predicate(
     before: &ParsedSyntax,
     before_id: usize,
     after: &ParsedSyntax,
     after_id: usize,
-) -> Option<Predicate> {
-    if !syntax_equal(before, before_id, after, after_id) {
-        None
-    } else if node_bytes(before, before_id) == node_bytes(after, after_id) {
-        Some(Predicate::ByteEqual)
+    work: &mut WorkBudget,
+) -> Result<Option<Predicate>> {
+    if !budgeted_syntax_equal(
+        before,
+        before_id,
+        after,
+        after_id,
+        work,
+        "checking an exact relation predicate",
+    )? {
+        Ok(None)
+    } else if budgeted_node_bytes_equal(
+        before,
+        before_id,
+        after,
+        after_id,
+        work,
+        "checking exact relation bytes",
+    )? {
+        Ok(Some(Predicate::ByteEqual))
     } else {
-        Some(Predicate::SyntaxEqual)
+        Ok(Some(Predicate::SyntaxEqual))
     }
 }
 
@@ -1590,8 +2191,13 @@ fn local_exact_candidates(
     syntax: &ParsedSyntax,
     parent: usize,
     mappings: &VerifiedMappings<'_>,
-) -> Vec<usize> {
-    syntax.nodes[parent]
+    work: &mut WorkBudget,
+) -> Result<Vec<usize>> {
+    work.charge(
+        syntax.nodes[parent].children.len(),
+        "collecting local before exact candidates",
+    )?;
+    Ok(syntax.nodes[parent]
         .children
         .iter()
         .copied()
@@ -1600,15 +2206,20 @@ fn local_exact_candidates(
                 !is_exact_relation(relation) || has_evidence(relation, LOCAL_ANCHOR_EVIDENCE)
             })
         })
-        .collect()
+        .collect())
 }
 
 fn local_exact_candidates_after(
     syntax: &ParsedSyntax,
     parent: usize,
     mappings: &VerifiedMappings<'_>,
-) -> Vec<usize> {
-    syntax.nodes[parent]
+    work: &mut WorkBudget,
+) -> Result<Vec<usize>> {
+    work.charge(
+        syntax.nodes[parent].children.len(),
+        "collecting local after exact candidates",
+    )?;
+    Ok(syntax.nodes[parent]
         .children
         .iter()
         .copied()
@@ -1618,7 +2229,7 @@ fn local_exact_candidates_after(
                 !is_exact_relation(relation) || has_evidence(relation, LOCAL_ANCHOR_EVIDENCE)
             })
         })
-        .collect()
+        .collect())
 }
 
 fn is_exact_relation(relation: &Relation) -> bool {
@@ -1647,35 +2258,64 @@ fn mapped_pairs<'a>(
         .filter_map(|(before_id, after_id)| after_id.map(|after_id| (before_id, after_id)))
 }
 
+fn map_lookup_levels(len: usize) -> usize {
+    if len <= 1 {
+        1
+    } else {
+        usize::BITS as usize - (len - 1).leading_zeros() as usize
+    }
+}
+
 fn unique_pairs<K: Ord + Clone>(
     before: &ParsedSyntax,
     after: &ParsedSyntax,
     before_ids: &[usize],
     after_ids: &[usize],
     key: impl Fn(&SyntaxNode) -> K + Copy,
-) -> Vec<(usize, usize)> {
-    let before_buckets = buckets(before, before_ids, key);
-    let after_buckets = buckets(after, after_ids, key);
-    before_buckets
+    work: &mut WorkBudget,
+) -> Result<Vec<(usize, usize)>> {
+    let before_buckets = buckets(
+        before,
+        before_ids,
+        key,
+        work,
+        "building local before exact buckets",
+    )?;
+    let after_buckets = buckets(
+        after,
+        after_ids,
+        key,
+        work,
+        "building local after exact buckets",
+    )?;
+    work.charge_product(
+        before_buckets.len(),
+        map_lookup_levels(after_buckets.len()),
+        "joining local exact buckets",
+    )?;
+    Ok(before_buckets
         .into_iter()
         .filter_map(|(key, before_bucket)| {
             let after_bucket = after_buckets.get(&key)?;
             (before_bucket.len() == 1 && after_bucket.len() == 1)
                 .then_some((before_bucket[0], after_bucket[0]))
         })
-        .collect()
+        .collect())
 }
 
 fn buckets<K: Ord>(
     syntax: &ParsedSyntax,
     ids: &[usize],
     key: impl Fn(&SyntaxNode) -> K,
-) -> BTreeMap<K, Vec<usize>> {
+    work: &mut WorkBudget,
+    context: &str,
+) -> Result<BTreeMap<K, Vec<usize>>> {
     let mut result: BTreeMap<K, Vec<usize>> = BTreeMap::new();
+    work.charge_n_log_n(ids.len(), context)?;
     for id in ids {
         result.entry(key(&syntax.nodes[*id])).or_default().push(*id);
     }
-    result
+    Ok(result)
 }
 
 fn exact_key(node: &SyntaxNode) -> ExactKey {
@@ -1725,9 +2365,19 @@ fn digest(bytes: &[u8]) -> String {
 mod tests {
     use std::collections::HashMap;
 
-    use super::{
-        CandidateGroup, CandidateGroups, ordered_interaction_components, partition_index_bucket,
+    use stratadiff_core::{
+        Artifact, Correspondence, DiffReport, Language, LosslessPatch, PARSER_RUNTIME_VERSION,
+        ParseLimits, ParserManifest, Predicate, REPORT_ENGINE_VERSION, REPORT_SCHEMA, Relation,
+        ReplayCertificate, Summary, parse_with_limits,
     };
+
+    use super::{
+        CandidateGroup, CandidateGroups, alignment_score, budgeted_syntax_equal,
+        decode_report_bytes, digest, ordered_interaction_components, partition_index_bucket,
+        verify_and_replay_report_bytes, verify_report, verify_report_bytes,
+        verify_report_with_limits,
+    };
+    use crate::{VerificationLimits, limits::WorkBudget};
 
     #[test]
     fn raw_shape_hash_collision_is_partitioned_by_recursive_equality() {
@@ -1742,12 +2392,15 @@ mod tests {
             12 => 'x',
             _ => unreachable!(),
         };
+        let mut work = WorkBudget::new(usize::MAX);
         let classes = partition_index_bucket(
             &[0, 1, 2],
             &[10, 11, 12, 13],
-            |id, representative| before_shape(id) == before_shape(representative),
-            |representative, id| before_shape(representative) == after_shape(id),
-        );
+            &mut work,
+            |id, representative, _| Ok(before_shape(id) == before_shape(representative)),
+            |representative, id, _| Ok(before_shape(representative) == after_shape(id)),
+        )
+        .unwrap();
 
         assert_eq!(classes.len(), 2);
         assert_eq!(classes[0].before, [0, 2]);
@@ -1759,16 +2412,187 @@ mod tests {
     #[test]
     fn independent_component_partition_rejects_crossing_cuts() {
         let (monotone, before, after) = candidate_partition(&[0, 0, 1, 2], &[0, 0, 1, 2]);
-        let components = ordered_interaction_components(&monotone, &before, &after).unwrap();
+        let mut work = WorkBudget::new(usize::MAX);
+        let components =
+            ordered_interaction_components(&monotone, &before, &after, &mut work).unwrap();
         assert_eq!(components.len(), 3);
         assert_eq!(components[0].groups, [0]);
         assert_eq!(components[1].groups, [1]);
         assert_eq!(components[2].groups, [2]);
 
         let (crossing, before, after) = candidate_partition(&[0, 1], &[1, 0]);
-        let components = ordered_interaction_components(&crossing, &before, &after).unwrap();
+        let components =
+            ordered_interaction_components(&crossing, &before, &after, &mut work).unwrap();
         assert_eq!(components.len(), 1);
         assert_eq!(components[0].groups, [0, 1]);
+    }
+
+    #[test]
+    fn byte_entrypoint_enforces_the_report_limit_before_decoding() {
+        let report = empty_python_report();
+        let encoded = serde_json::to_vec(&report).unwrap();
+        let exact = VerificationLimits {
+            max_report_bytes: encoded.len(),
+            ..VerificationLimits::default()
+        };
+
+        let decoded = decode_report_bytes(&encoded, &exact).unwrap();
+        assert_eq!(decoded, report);
+        let stats = verify_report_bytes(&encoded, b"", b"", &exact).unwrap();
+        assert_eq!(stats.report_bytes, encoded.len());
+        let (rebuilt, replay_stats) =
+            verify_and_replay_report_bytes(&encoded, b"", &exact).unwrap();
+        assert!(rebuilt.is_empty());
+        assert_eq!(replay_stats, stats);
+
+        let too_small = VerificationLimits {
+            max_report_bytes: encoded.len() - 1,
+            ..exact
+        };
+        let error = decode_report_bytes(&encoded, &too_small).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "report bytes limit exceeded: observed {}, limit {}",
+                encoded.len(),
+                encoded.len() - 1
+            )
+        );
+    }
+
+    #[test]
+    fn compatibility_and_limited_verifiers_accept_the_same_report() {
+        let report = empty_python_report();
+        verify_report(&report, b"", b"").unwrap();
+
+        let limits = VerificationLimits {
+            max_source_bytes: 0,
+            max_relations: 1,
+            max_ambiguity_groups: 0,
+            max_ambiguity_endpoints: 0,
+            max_ambiguity_pairs: 0,
+            max_changes: 0,
+            max_patch_edits: 0,
+            max_decoded_replacement_bytes: 0,
+            max_syntax_nodes: 2,
+            ..VerificationLimits::default()
+        };
+        let stats = verify_report_with_limits(&report, b"", b"", &limits).unwrap();
+        assert_eq!(stats.syntax_nodes, 2);
+        assert!(stats.verification_work > 3);
+
+        let exact_work = VerificationLimits {
+            max_verification_work: stats.verification_work,
+            ..limits
+        };
+        let exact_stats = verify_report_with_limits(&report, b"", b"", &exact_work).unwrap();
+        assert_eq!(exact_stats.verification_work, stats.verification_work);
+
+        let too_little_work = VerificationLimits {
+            max_verification_work: stats.verification_work - 1,
+            ..limits
+        };
+        let error = verify_report_with_limits(&report, b"", b"", &too_little_work).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("verification work limit exceeded:")
+        );
+
+        let too_small = VerificationLimits {
+            max_syntax_nodes: 1,
+            ..limits
+        };
+        let error = verify_report_with_limits(&report, b"", b"", &too_small).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "syntax nodes limit exceeded: observed 2, limit 1"
+        );
+    }
+
+    #[test]
+    fn low_runtime_budget_interrupts_recursive_equality() {
+        let language = Language::Json;
+        let parsed = parse_with_limits(
+            br#"{"values":[1,2,3]}"#.to_vec(),
+            language,
+            &ParseLimits::default(),
+        )
+        .unwrap();
+        let mut measured = WorkBudget::new(usize::MAX);
+        assert!(
+            budgeted_syntax_equal(
+                &parsed,
+                parsed.root,
+                &parsed,
+                parsed.root,
+                &mut measured,
+                "measuring recursive syntax equality",
+            )
+            .unwrap()
+        );
+        let required = measured.used();
+
+        let mut exact = WorkBudget::new(required);
+        assert!(
+            budgeted_syntax_equal(
+                &parsed,
+                parsed.root,
+                &parsed,
+                parsed.root,
+                &mut exact,
+                "testing recursive syntax equality",
+            )
+            .unwrap()
+        );
+        assert_eq!(exact.used(), required);
+
+        let mut work = WorkBudget::new(required - 1);
+
+        let error = budgeted_syntax_equal(
+            &parsed,
+            parsed.root,
+            &parsed,
+            parsed.root,
+            &mut work,
+            "testing recursive syntax equality",
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "verification work limit exceeded: observed {required}, limit {}, while testing recursive syntax equality",
+                required - 1
+            )
+        );
+    }
+
+    #[test]
+    fn low_runtime_budget_interrupts_candidate_forcedness_dp() {
+        let candidates = vec![vec![true, false], vec![false, true]];
+        let mut exact = WorkBudget::new(4);
+        let score = alignment_score(
+            &candidates,
+            Some((0, 0)),
+            &mut exact,
+            "testing per-candidate forcedness DP",
+        )
+        .unwrap();
+        assert_eq!(score, 1);
+        assert_eq!(exact.used(), 4);
+
+        let mut work = WorkBudget::new(3);
+        let error = alignment_score(
+            &candidates,
+            Some((0, 0)),
+            &mut work,
+            "testing per-candidate forcedness DP",
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "verification work limit exceeded: observed 4, limit 3, while testing per-candidate forcedness DP"
+        );
     }
 
     fn candidate_partition(
@@ -1810,5 +2634,66 @@ mod tests {
             before,
             after,
         )
+    }
+
+    fn empty_python_report() -> DiffReport {
+        let language = Language::Python;
+        let parsed = parse_with_limits(Vec::new(), language, &ParseLimits::default()).unwrap();
+        let empty_hash = digest(b"");
+        DiffReport {
+            schema: REPORT_SCHEMA.to_owned(),
+            engine_version: REPORT_ENGINE_VERSION.to_owned(),
+            before: Artifact {
+                path: "before.py".to_owned(),
+                byte_len: 0,
+                blake3: empty_hash.clone(),
+            },
+            after: Artifact {
+                path: "after.py".to_owned(),
+                byte_len: 0,
+                blake3: empty_hash.clone(),
+            },
+            parser: ParserManifest {
+                engine: "tree-sitter".to_owned(),
+                runtime_version: PARSER_RUNTIME_VERSION.to_owned(),
+                language,
+                grammar_name: language.grammar_name().to_owned(),
+                grammar_version: language.grammar_version().to_owned(),
+                grammar_abi: language.parser_language().abi_version(),
+                node_types_blake3: digest(language.node_types().as_bytes()),
+                coordinate_unit: "zero_based_row_utf8_byte_column".to_owned(),
+                root_kind: parsed.root_kind.clone(),
+                before_nodes: parsed.nodes.len(),
+                after_nodes: parsed.nodes.len(),
+                error_free: true,
+            },
+            relations: vec![Relation {
+                before: parsed.nodes[parsed.root].as_ref(),
+                after: parsed.nodes[parsed.root].as_ref(),
+                predicate: Predicate::InputPair,
+                correspondence: Correspondence::InputPair,
+                evidence: vec!["caller_supplied_file_pair".to_owned()],
+            }],
+            ambiguities: Vec::new(),
+            changes: Vec::new(),
+            patch: LosslessPatch {
+                algorithm: "patience-lines+bounded-myers-bytes-v1".to_owned(),
+                edits: Vec::new(),
+            },
+            certificate: ReplayCertificate {
+                before_blake3: empty_hash.clone(),
+                after_blake3: empty_hash.clone(),
+                reconstructed_blake3: empty_hash,
+                before_len: 0,
+                after_len: 0,
+                patch_verified: true,
+            },
+            summary: Summary {
+                model_forced_relations: 0,
+                suggested_relations: 0,
+                ambiguity_groups: 0,
+                structural_changes: 0,
+            },
+        }
     }
 }

@@ -116,9 +116,36 @@ grammar.
   symmetry closure, and 64-node component abstention;
 - exact ambiguity constraints, no-pair symbolic scopes, derived changes, and summary counters.
 
-The verifier independently re-derives these rules without calling the producer matcher. A later
-milestone will move it into a dependency-minimal crate and replace recomputation with compact proof
-objects where practical.
+The verifier independently re-derives these rules without calling the producer matcher. It lives in
+the separately consumable `stratadiff-verifier` crate, whose dependency graph excludes the producer
+matcher, `similar`, CLI parsing, CSV tooling, and temporary-file support. Compact proof objects may
+replace more of the current recomputation in later versions.
+
+### Untrusted-input boundary
+
+The bytes entry points enforce the boundary in layers:
+
+1. Reject raw reports and source snapshots beyond their byte caps. A streaming JSON pass counts
+   relations, ambiguities, endpoints, possible pairs, changes, edits, and evidence items before the
+   typed report can allocate their vectors.
+2. Preflight the typed report with checked arithmetic, canonical RFC 4648 Base64 validation, patch
+   range checks, decoded-replacement limits, and replay-output limits.
+3. Reparse both snapshots with combined node, per-tree depth, and per-tree Tree-sitter progress
+   callback limits. Invalid-tree diagnosis runs inside the same node and depth bounds.
+4. Charge the independent semantic passes for relation scans, recursive equality, exact-anchor
+   traversal, candidate construction, component partitioning, sorting, dynamic-programming cells,
+   and per-candidate forcedness. A charge is checked before the corresponding expensive loop or
+   allocation.
+5. `apply` decodes replacement bytes once, reuses that replay for certificate and structural
+   verification, and opens the destination only after every check succeeds.
+
+The compatibility functions `verify_report` and `apply_patch` use `VerificationLimits::default()`.
+The bytes APIs should be preferred for untrusted JSON because a caller that constructs a
+`DiffReport` first has already paid its deserialization cost. Limits make adversarial work finite
+and diagnosable; they are not an OS sandbox, wall-clock deadline, or absolute process-memory cap.
+Tree-sitter and the selected grammar remain trusted, and its node limit applies to Rust-side syntax
+materialization after Tree-sitter has built its internal tree. Verification work units are a
+deterministic conservative accounting model rather than elapsed time or machine instructions.
 
 ## Complexity
 

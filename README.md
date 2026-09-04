@@ -13,9 +13,10 @@ The first question is answered losslessly. The second is independently rechecked
 `stratadiff verify`. The third never silently turns a heuristic score into a historical fact.
 
 > **Project status:** research alpha. The replay certificate, conservative syntax anchors, bounded
-> all-optima child alignment, duplicate ambiguity handling, deterministic JSON report, and seven
-> grammar adapters work now. A provenance-complete DiffBenchmark literature-subset evaluation is
-> published below. Binding-aware rename proofs remain on the roadmap.
+> all-optima child alignment, duplicate ambiguity handling, deterministic JSON report, independent
+> resource-bounded verifier crate, and seven grammar adapters work now. A provenance-complete
+> DiffBenchmark literature-subset evaluation is published below. Binding-aware rename proofs remain
+> on the roadmap.
 
 ## Why another code diff?
 
@@ -79,6 +80,9 @@ cmp rebuilt.py examples/demo/after.py
 
 Run the complete local CI gate with `scripts/ci.sh`.
 
+`diff --output` and `diff --json` emit compact JSON so reports produced within the default 64 MiB
+report boundary can be consumed by `verify` and `apply` without a formatting-size mismatch.
+
 Print the full machine-readable result with `--json`:
 
 ```console
@@ -88,6 +92,43 @@ stratadiff diff old.ts new.ts --json
 Supported grammars in the current build are Python, JavaScript, TypeScript, TSX, Rust, Java, and JSON.
 Unknown extensions and parser error nodes fail explicitly; StrataDiff does not disguise a text
 fallback as a successful structural analysis.
+
+## Resource-bounded verification
+
+The `stratadiff-verifier` crate has no dependency on the producer matcher, `similar`, CLI parsing,
+CSV tooling, or temporary-file support. For untrusted input, use `verify_report_bytes` or
+`verify_and_replay_report_bytes`; these scan collection lengths before constructing the typed
+report. The older `verify_report` and `apply_patch` entry points remain source-compatible and use
+the defaults below. Typed callers that need different bounds can use `verify_report_with_limits`
+and `replay_patch_with_limits`.
+
+| Limit | Default | Scope |
+|---|---:|---|
+| Raw or compact-serialized report | 64 MiB | One report |
+| Source or replayed output | 16 MiB | Each byte array |
+| Relations | 250,000 | Total |
+| Ambiguity groups | 50,000 | Total |
+| Ambiguity endpoints | 500,000 | Both sides combined |
+| Exact ambiguity pairs | 1,000,000 | Total |
+| Structural changes | 250,000 | Total |
+| Patch edits | 250,000 | Total |
+| Decoded replacement bytes | 32 MiB | All edits combined |
+| Syntax nodes | 1,000,000 | Both fresh parses combined |
+| Syntax depth | 512 | Each parse |
+| Tree-sitter progress callbacks | 4,000,000 | Each parse |
+| Verification work | 128 Mi units | Deterministic semantic-work budget |
+
+The CLI uses these defaults and does not currently expose limit flags. It reads files through a
+`limit + 1` bounded reader, validates canonical Base64 and checked size arithmetic, and never writes
+an `apply` output until replay and the full structural verification have succeeded. Each relation
+may carry at most four evidence items, matching the largest evidence recipe in report v2.
+
+These controls bound attacker-selected input, collection growth, parser progress, recursive
+comparison, candidate scanning, sorting, and alignment DP. They are not a process sandbox, a wall
+clock deadline, or an allocator-level limit; the selected Tree-sitter grammars and the local runtime
+remain part of the trusted computing base. Work units are conservative deterministic charges, not
+CPU instructions or milliseconds. Callers that deserialize an untrusted report themselves before
+using the typed API give up the decode-time collection protection.
 
 ## Current algorithm
 
@@ -168,7 +209,7 @@ reparses the snapshots and re-derives the report's claims.
 ## Near-term roadmap
 
 - Binding-aware alpha equivalence and no-capture rename certificates.
-- An independent, minimal verifier crate with correspondence-rule certificates.
+- More compact correspondence proof objects for cheaper independent verification.
 - Repository mode with conservative file pairing and parallel parsing.
 - Java and C/C++ semantic adapters using compiler-grade front ends.
 - IDE provenance mode, which can observe actual node lineage instead of inferring history.

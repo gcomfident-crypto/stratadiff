@@ -1,9 +1,15 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::{Read, Write},
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
+use serde::Deserialize;
 use stratadiff::{
-    AmbiguityConstraint, DiffReport, Language, analyze_files, apply_patch, verify_report,
+    AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_files,
+    verify_and_replay_report_bytes, verify_report_bytes,
 };
 
 const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
@@ -57,14 +63,23 @@ fn main() -> Result<()> {
             json,
         } => {
             let report = analyze_files(&before, &after, language)?;
-            let encoded = serde_json::to_string_pretty(&report)?;
+            let encoded = serde_json::to_vec(&report)?;
+            let report_limit = VerificationLimits::default().max_report_bytes;
+            if encoded.len() > report_limit {
+                bail!(
+                    "generated report bytes limit exceeded: observed {}, limit {report_limit}",
+                    encoded.len()
+                );
+            }
             if let Some(path) = output {
                 std::fs::write(&path, &encoded)
                     .with_context(|| format!("failed to write {}", path.display()))?;
                 eprintln!("wrote proof-carrying report to {}", path.display());
             }
             if json {
-                println!("{encoded}");
+                let mut stdout = std::io::stdout().lock();
+                stdout.write_all(&encoded)?;
+                stdout.write_all(b"\n")?;
             } else {
                 print_summary(&report);
             }
@@ -74,12 +89,13 @@ fn main() -> Result<()> {
             before,
             after,
         } => {
-            let report = read_report(&report)?;
-            let before = std::fs::read(&before)
-                .with_context(|| format!("failed to read {}", before.display()))?;
-            let after = std::fs::read(&after)
-                .with_context(|| format!("failed to read {}", after.display()))?;
-            verify_report(&report, &before, &after)?;
+            let limits = VerificationLimits::default();
+            let report_bytes = read_bounded(&report, limits.max_report_bytes, "report bytes")?;
+            reject_legacy_schema(&report, &report_bytes)?;
+            let before_bytes =
+                read_bounded(&before, limits.max_source_bytes, "before source bytes")?;
+            let after_bytes = read_bounded(&after, limits.max_source_bytes, "after source bytes")?;
+            verify_report_bytes(&report_bytes, &before_bytes, &after_bytes, &limits)?;
             println!(
                 "verified: replay, parser manifest, relations, ambiguities, changes, and summary"
             );
@@ -89,11 +105,16 @@ fn main() -> Result<()> {
             before,
             output,
         } => {
-            let report = read_report(&report)?;
-            let before = std::fs::read(&before)
-                .with_context(|| format!("failed to read {}", before.display()))?;
-            let rebuilt = apply_patch(&before, &report.patch)?;
-            verify_report(&report, &before, &rebuilt)?;
+            let limits = VerificationLimits::default();
+            let report_bytes = read_bounded(&report, limits.max_report_bytes, "report bytes")?;
+            reject_legacy_schema(&report, &report_bytes)?;
+            let before_bytes =
+                read_bounded(&before, limits.max_source_bytes, "before source bytes")?;
+            let (rebuilt, _) =
+                verify_and_replay_report_bytes(&report_bytes, &before_bytes, &limits)
+                    .with_context(|| {
+                        format!("failed to verify and apply report {}", report.display())
+                    })?;
             std::fs::write(&output, rebuilt)
                 .with_context(|| format!("failed to write {}", output.display()))?;
             println!("rebuilt certified target at {}", output.display());
@@ -102,18 +123,40 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn read_report(path: &Path) -> Result<DiffReport> {
-    let bytes =
-        std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
-    let value: serde_json::Value = serde_json::from_slice(&bytes)
+fn read_bounded(path: &Path, limit: usize, label: &str) -> Result<Vec<u8>> {
+    let read_limit = limit
+        .checked_add(1)
+        .with_context(|| format!("{label} limit cannot be incremented safely"))?;
+    let read_limit = u64::try_from(read_limit)
+        .with_context(|| format!("{label} limit cannot be represented by the file reader"))?;
+    let file = File::open(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let mut bytes = Vec::new();
+    file.take(read_limit)
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("failed to read {}", path.display()))?;
+    if bytes.len() > limit {
+        bail!(
+            "{label} limit exceeded: observed at least {}, limit {limit}",
+            bytes.len()
+        );
+    }
+    Ok(bytes)
+}
+
+#[derive(Deserialize)]
+struct ReportSchemaEnvelope {
+    schema: Option<String>,
+}
+
+fn reject_legacy_schema(path: &Path, bytes: &[u8]) -> Result<()> {
+    let envelope: ReportSchemaEnvelope = serde_json::from_slice(bytes)
         .with_context(|| format!("failed to parse {} as JSON", path.display()))?;
-    if value["schema"].as_str() == Some(LEGACY_REPORT_SCHEMA_V1) {
+    if envelope.schema.as_deref() == Some(LEGACY_REPORT_SCHEMA_V1) {
         bail!(
             "report schema v1 cannot represent coupled ambiguity constraints or be losslessly upgraded; rerun StrataDiff on the original snapshots to create a v2 report"
         );
     }
-    serde_json::from_value(value)
-        .with_context(|| format!("failed to decode {} as a StrataDiff report", path.display()))
+    Ok(())
 }
 
 fn print_summary(report: &DiffReport) {
@@ -180,4 +223,25 @@ fn print_summary(report: &DiffReport) {
             "invalid"
         }
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::read_bounded;
+
+    #[test]
+    fn bounded_reader_accepts_limit_and_rejects_one_more_byte() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("input.bin");
+        fs::write(&path, b"abc").unwrap();
+        assert_eq!(read_bounded(&path, 3, "test bytes").unwrap(), b"abc");
+
+        let error = read_bounded(&path, 2, "test bytes").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "test bytes limit exceeded: observed at least 3, limit 2"
+        );
+    }
 }

@@ -31,7 +31,7 @@ use stratadiff::diffbenchmark_prediction::{
     BridgeCoverage, EnumeratedJdtNode, PredictionAdapterDiagnostics, PredictionAdapterInput,
     adapt_predictions,
 };
-use stratadiff::{Language, analyze_bytes, verify_report};
+use stratadiff::{Language, VerificationLimits, analyze_bytes, verify_report_with_limits};
 
 const MANIFEST_NAME: &str = "manifest.json";
 const ORACLE_ROOT: &str = "hrd-oracle/adb-paper/literature-exp";
@@ -217,6 +217,14 @@ struct CaseReport {
     outcome: CaseOutcome,
 }
 
+#[derive(Clone, Copy)]
+struct CaseMeasurements {
+    analysis_latency_micros: u64,
+    combined_input_bytes: usize,
+    serialized_diff_report_bytes: usize,
+    verification_work: usize,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(
     tag = "status",
@@ -228,6 +236,7 @@ enum CaseOutcome {
         analysis_latency_micros: u64,
         combined_input_bytes: usize,
         serialized_diff_report_bytes: usize,
+        verification_work: usize,
         program_elements: Box<CaseCategorySummary>,
         mappings: Box<CaseCategorySummary>,
         pooled_category_observations: Box<CaseCategorySummary>,
@@ -847,6 +856,7 @@ struct AggregateAccumulator {
     ignored_suggested_relations: usize,
     latencies_micros: Vec<u64>,
     serialized_diff_report_bytes: Vec<usize>,
+    verification_work: Vec<usize>,
 }
 
 impl AggregateAccumulator {
@@ -854,6 +864,7 @@ impl AggregateAccumulator {
         let (
             analysis_latency_micros,
             serialized_diff_report_bytes,
+            verification_work,
             program_elements,
             mappings,
             pooled_category_observations,
@@ -862,6 +873,7 @@ impl AggregateAccumulator {
             CaseOutcome::Evaluated {
                 analysis_latency_micros,
                 serialized_diff_report_bytes,
+                verification_work,
                 program_elements,
                 mappings,
                 pooled_category_observations,
@@ -870,6 +882,7 @@ impl AggregateAccumulator {
             } => (
                 analysis_latency_micros,
                 serialized_diff_report_bytes,
+                verification_work,
                 program_elements,
                 mappings,
                 pooled_category_observations,
@@ -913,6 +926,7 @@ impl AggregateAccumulator {
         self.latencies_micros.push(*analysis_latency_micros);
         self.serialized_diff_report_bytes
             .push(*serialized_diff_report_bytes);
+        self.verification_work.push(*verification_work);
     }
 
     fn summary(&self) -> AggregateSummary {
@@ -929,6 +943,7 @@ impl AggregateAccumulator {
             },
             analysis_latency_micros: latency_summary(&self.latencies_micros),
             serialized_diff_report_bytes: size_summary(&self.serialized_diff_report_bytes),
+            verification_work: size_summary(&self.verification_work),
         }
     }
 }
@@ -970,6 +985,7 @@ struct AggregateSummary {
     prediction_diagnostics: AggregatePredictionDiagnostics,
     analysis_latency_micros: LatencySummary,
     serialized_diff_report_bytes: SizeSummary,
+    verification_work: SizeSummary,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -2440,9 +2456,17 @@ fn evaluate_ready_case(
             );
         }
     };
-    if let Err(error) = verify_report(&report, &case.before_source, &case.after_source) {
-        return case_error(case.identity, CaseStage::Verification, error, Some(latency));
-    }
+    let verification = match verify_report_with_limits(
+        &report,
+        &case.before_source,
+        &case.after_source,
+        &VerificationLimits::default(),
+    ) {
+        Ok(stats) => stats,
+        Err(error) => {
+            return case_error(case.identity, CaseStage::Verification, error, Some(latency));
+        }
+    };
 
     let predictions = match adapt_predictions(&PredictionAdapterInput {
         before_file: &case.identity.before_repository_path,
@@ -2478,9 +2502,12 @@ fn evaluate_ready_case(
     };
     evaluated_case(
         case.identity,
-        latency,
-        combined_input_bytes,
-        serialized_diff_report_bytes,
+        CaseMeasurements {
+            analysis_latency_micros: latency,
+            combined_input_bytes,
+            serialized_diff_report_bytes,
+            verification_work: verification.verification_work,
+        },
         evaluation,
         coverage,
         diagnostics,
@@ -2489,9 +2516,7 @@ fn evaluate_ready_case(
 
 fn evaluated_case(
     identity: CaseIdentity,
-    latency: u64,
-    combined_input_bytes: usize,
-    serialized_diff_report_bytes: usize,
+    measurements: CaseMeasurements,
     evaluation: stratadiff::diffbenchmark_eval::CaseEvaluation,
     coverage: CoverageLedger,
     diagnostics: PredictionAdapterDiagnostics,
@@ -2502,9 +2527,10 @@ fn evaluated_case(
     CaseReport::new(
         identity,
         CaseOutcome::Evaluated {
-            analysis_latency_micros: latency,
-            combined_input_bytes,
-            serialized_diff_report_bytes,
+            analysis_latency_micros: measurements.analysis_latency_micros,
+            combined_input_bytes: measurements.combined_input_bytes,
+            serialized_diff_report_bytes: measurements.serialized_diff_report_bytes,
+            verification_work: measurements.verification_work,
             program_elements: Box::new(program_elements),
             mappings: Box::new(mappings),
             pooled_category_observations: Box::new(program_elements.add(mappings)),

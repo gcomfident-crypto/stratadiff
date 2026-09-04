@@ -1,8 +1,33 @@
+use std::ops::ControlFlow;
+
 use anyhow::{Context, Result, bail};
-use tree_sitter::{Node, Parser};
+use tree_sitter::{Node, ParseOptions, ParseState, Parser};
 
 use crate::language::Language;
 use crate::model::{NodeRef, Position, Span};
+
+const MAX_SYNTAX_DEPTH: usize = 512;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ParseLimits {
+    pub max_nodes: usize,
+    pub max_depth: usize,
+    pub max_parse_callbacks: usize,
+}
+
+impl ParseLimits {
+    pub const COMPATIBILITY: Self = Self {
+        max_nodes: usize::MAX,
+        max_depth: MAX_SYNTAX_DEPTH,
+        max_parse_callbacks: usize::MAX,
+    };
+}
+
+impl Default for ParseLimits {
+    fn default() -> Self {
+        Self::COMPATIBILITY
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SyntaxNode {
@@ -47,38 +72,60 @@ pub struct ParsedSyntax {
 }
 
 pub fn parse(source: Vec<u8>, language: Language) -> Result<ParsedSyntax> {
+    parse_with_limits(source, language, &ParseLimits::COMPATIBILITY)
+}
+
+pub fn parse_with_limits(
+    source: Vec<u8>,
+    language: Language,
+    limits: &ParseLimits,
+) -> Result<ParsedSyntax> {
     let mut parser = Parser::new();
     parser
         .set_language(&language.parser_language())
         .context("failed to initialize the tree-sitter grammar")?;
-    let tree = parser
-        .parse(&source, None)
-        .context("tree-sitter returned no syntax tree")?;
-    let root = tree.root_node();
-    if root.has_error() {
-        let invalid = first_invalid_node(root)
-            .context("tree-sitter reported a syntax error without an invalid descendant")?;
-        let start = invalid.start_position();
-        let end = invalid.end_position();
-        bail!(
-            "{} parser produced {} bytes {}-{} at {}:{}-{}:{}; refusing to present a partial parse as an exact structural diff",
-            format!("{language:?}").to_ascii_lowercase(),
-            if invalid.is_missing() {
-                "a missing node"
-            } else {
-                "an ERROR node"
-            },
-            invalid.start_byte(),
-            invalid.end_byte(),
-            start.row,
-            start.column,
-            end.row,
-            end.column,
-        );
+    let tree = if limits.max_parse_callbacks == usize::MAX {
+        parser.parse(&source, None)
+    } else {
+        let mut callback_count = 0;
+        let mut callback_limit_exceeded = false;
+        let tree = {
+            let mut progress = |_state: &ParseState| {
+                if callback_count >= limits.max_parse_callbacks {
+                    callback_limit_exceeded = true;
+                    ControlFlow::Break(())
+                } else {
+                    callback_count += 1;
+                    ControlFlow::Continue(())
+                }
+            };
+            let options = ParseOptions::new().progress_callback(&mut progress);
+            let mut read = |offset, _position| source.get(offset..).unwrap_or_default();
+            parser.parse_with_options(&mut read, None, Some(options))
+        };
+        if callback_limit_exceeded {
+            bail!(
+                "tree-sitter parse exceeds the supported callback count of {}; refusing unbounded parsing",
+                limits.max_parse_callbacks
+            );
+        }
+        tree
     }
-
+    .context("tree-sitter returned no syntax tree")?;
+    let root = tree.root_node();
     let mut nodes = Vec::new();
-    let root_id = collect(root, None, None, 0, &source, &mut nodes)?;
+    let root_id = collect(
+        root,
+        None,
+        None,
+        0,
+        &mut CollectContext {
+            source: &source,
+            nodes: &mut nodes,
+            language,
+            limits,
+        },
+    )?;
     Ok(ParsedSyntax {
         source,
         root: root_id,
@@ -87,18 +134,11 @@ pub fn parse(source: Vec<u8>, language: Language) -> Result<ParsedSyntax> {
     })
 }
 
-fn first_invalid_node(root: Node<'_>) -> Option<Node<'_>> {
-    let mut pending = vec![root];
-    while let Some(node) = pending.pop() {
-        if node.is_error() || node.is_missing() {
-            return Some(node);
-        }
-        let mut cursor = node.walk();
-        let mut children: Vec<_> = node.children(&mut cursor).collect();
-        children.reverse();
-        pending.extend(children);
-    }
-    None
+struct CollectContext<'a> {
+    source: &'a [u8],
+    nodes: &'a mut Vec<SyntaxNode>,
+    language: Language,
+    limits: &'a ParseLimits,
 }
 
 fn collect(
@@ -106,17 +146,41 @@ fn collect(
     parent: Option<usize>,
     field: Option<String>,
     depth: usize,
-    source: &[u8],
-    nodes: &mut Vec<SyntaxNode>,
+    context: &mut CollectContext<'_>,
 ) -> Result<usize> {
-    const MAX_SYNTAX_DEPTH: usize = 512;
-    if depth > MAX_SYNTAX_DEPTH {
+    if depth > context.limits.max_depth {
         bail!(
-            "syntax tree exceeds the supported depth of {MAX_SYNTAX_DEPTH}; refusing recursive analysis"
+            "syntax tree exceeds the supported depth of {}; refusing recursive analysis",
+            context.limits.max_depth
         );
     }
-    let id = nodes.len();
-    nodes.push(SyntaxNode {
+    if context.nodes.len() >= context.limits.max_nodes {
+        bail!(
+            "syntax tree exceeds the supported node count of {}; refusing recursive analysis",
+            context.limits.max_nodes
+        );
+    }
+    if node.is_error() || node.is_missing() {
+        let start = node.start_position();
+        let end = node.end_position();
+        bail!(
+            "{} parser produced {} bytes {}-{} at {}:{}-{}:{}; refusing to present a partial parse as an exact structural diff",
+            format!("{:?}", context.language).to_ascii_lowercase(),
+            if node.is_missing() {
+                "a missing node"
+            } else {
+                "an ERROR node"
+            },
+            node.start_byte(),
+            node.end_byte(),
+            start.row,
+            start.column,
+            end.row,
+            end.column,
+        );
+    }
+    let id = context.nodes.len();
+    context.nodes.push(SyntaxNode {
         id,
         kind: node.kind().to_owned(),
         named: node.is_named(),
@@ -132,35 +196,39 @@ fn collect(
         shape_hash: [0; 32],
     });
 
-    let mut children = Vec::with_capacity(node.child_count() as usize);
+    let child_count = node.child_count() as usize;
+    let remaining_nodes = context.limits.max_nodes - context.nodes.len();
+    if child_count > remaining_nodes {
+        bail!(
+            "syntax tree exceeds the supported node count of {}; refusing recursive analysis",
+            context.limits.max_nodes
+        );
+    }
+    let mut children = Vec::new();
+    children
+        .try_reserve_exact(child_count)
+        .context("failed to reserve bounded syntax children")?;
     for index in 0..node.child_count() {
         let child = node
             .child(index)
             .expect("child index is bounded by child_count");
         let child_field = node.field_name_for_child(index).map(str::to_owned);
-        children.push(collect(
-            child,
-            Some(id),
-            child_field,
-            depth + 1,
-            source,
-            nodes,
-        )?);
+        children.push(collect(child, Some(id), child_field, depth + 1, context)?);
     }
 
     let subtree_size = 1 + children
         .iter()
-        .map(|child| nodes[*child].subtree_size)
+        .map(|child| context.nodes[*child].subtree_size)
         .sum::<usize>();
-    let byte_hash = blake3_hex(b"stratadiff.byte.v1", &source[node.byte_range()]);
-    let syntax_hash = syntax_hash(node, &children, source, nodes);
-    let shape_hash = shape_hash(node, &children, nodes);
+    let byte_hash = blake3_hex(b"stratadiff.byte.v1", &context.source[node.byte_range()]);
+    let syntax_hash = syntax_hash(node, &children, context.source, context.nodes);
+    let shape_hash = shape_hash(node, &children, context.nodes);
 
-    nodes[id].children = children;
-    nodes[id].subtree_size = subtree_size;
-    nodes[id].byte_hash = byte_hash;
-    nodes[id].syntax_hash = syntax_hash;
-    nodes[id].shape_hash = shape_hash;
+    context.nodes[id].children = children;
+    context.nodes[id].subtree_size = subtree_size;
+    context.nodes[id].byte_hash = byte_hash;
+    context.nodes[id].syntax_hash = syntax_hash;
+    context.nodes[id].shape_hash = shape_hash;
     Ok(id)
 }
 
@@ -318,4 +386,116 @@ pub fn shape_equal(
             left.nodes[*left_child].field == right.nodes[*right_child].field
                 && shape_equal(left, *left_child, right, *right_child)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ParseLimits, parse, parse_with_limits};
+    use crate::Language;
+
+    #[test]
+    fn bounded_parse_accepts_a_normal_input() {
+        let parsed = parse_with_limits(
+            br#"{"value": 1}"#.to_vec(),
+            Language::Json,
+            &ParseLimits {
+                max_nodes: 32,
+                max_depth: 16,
+                max_parse_callbacks: 1_000,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(parsed.root_kind, "document");
+        assert!(parsed.nodes.len() <= 32);
+    }
+
+    #[test]
+    fn node_limit_is_checked_before_inserting_the_next_node() {
+        let error = parse_with_limits(
+            br#"{"value": 1}"#.to_vec(),
+            Language::Json,
+            &ParseLimits {
+                max_nodes: 1,
+                max_depth: 16,
+                max_parse_callbacks: usize::MAX,
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("supported node count of 1"));
+    }
+
+    #[test]
+    fn depth_limit_is_checked_before_descending() {
+        let error = parse_with_limits(
+            b"[]".to_vec(),
+            Language::Json,
+            &ParseLimits {
+                max_nodes: 32,
+                max_depth: 0,
+                max_parse_callbacks: usize::MAX,
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("supported depth of 0"));
+    }
+
+    #[test]
+    fn parser_callback_limit_cancels_with_a_diagnostic() {
+        let source = "value = 1\n".repeat(10_000).into_bytes();
+        let error = parse_with_limits(
+            source,
+            Language::Python,
+            &ParseLimits {
+                max_nodes: usize::MAX,
+                max_depth: 512,
+                max_parse_callbacks: 0,
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("supported callback count of 0"));
+    }
+
+    #[test]
+    fn invalid_tree_diagnostics_remain_inside_the_node_budget() {
+        let source = b"[0,]".to_vec();
+        let bounded_error = parse_with_limits(
+            source.clone(),
+            Language::Json,
+            &ParseLimits {
+                max_nodes: 1,
+                max_depth: 16,
+                max_parse_callbacks: usize::MAX,
+            },
+        )
+        .unwrap_err();
+        assert!(
+            bounded_error
+                .to_string()
+                .contains("supported node count of 1")
+        );
+
+        let syntax_error = parse_with_limits(
+            source,
+            Language::Json,
+            &ParseLimits {
+                max_nodes: 32,
+                max_depth: 16,
+                max_parse_callbacks: usize::MAX,
+            },
+        )
+        .unwrap_err();
+        assert!(syntax_error.to_string().contains("parser produced"));
+    }
+
+    #[test]
+    fn compatibility_entry_point_keeps_the_existing_depth_policy() {
+        let deeply_nested = format!("{}0{}", "[".repeat(600), "]".repeat(600));
+        let error = parse(deeply_nested.into_bytes(), Language::Json).unwrap_err();
+
+        assert!(error.to_string().contains("supported depth of 512"));
+    }
 }

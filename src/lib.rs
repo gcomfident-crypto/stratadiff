@@ -19,7 +19,11 @@ pub use stratadiff_core::model::{
     ParserManifest, Position, Predicate, Relation, ReplayCertificate, Span, StructuralChange,
     Summary,
 };
-pub use stratadiff_verifier::{apply_patch, verify_report};
+pub use stratadiff_verifier::{
+    VerificationLimits, VerificationStats, apply_patch, decode_report_bytes,
+    replay_patch_with_limits, verify_and_replay_report_bytes, verify_and_replay_report_with_limits,
+    verify_report, verify_report_bytes, verify_report_with_limits,
+};
 
 use matcher::match_trees;
 use patch::{create_certificate, create_patch};
