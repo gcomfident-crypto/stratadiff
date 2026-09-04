@@ -1,10 +1,12 @@
 import { Check, Download, FileCode2, PanelRightOpen, ShieldCheck } from 'lucide-react'
+import type { Ref } from 'react'
 import type { LoadedSession } from '../types'
 import { visibleInlineText } from '../lib/visibleText'
 
 interface HeaderProps {
   session: LoadedSession
   onOpenInspector: () => void
+  inspectorButtonRef: Ref<HTMLButtonElement>
 }
 
 function fileName(path: string): string {
@@ -22,7 +24,7 @@ function exportReport(session: LoadedSession): void {
   URL.revokeObjectURL(url)
 }
 
-export function Header({ session, onOpenInspector }: HeaderProps) {
+export function Header({ session, onOpenInspector, inspectorButtonRef }: HeaderProps) {
   const { report } = session
   const beforePath = visibleInlineText(report.before.path)
   const afterPath = visibleInlineText(report.after.path)
@@ -58,7 +60,7 @@ export function Header({ session, onOpenInspector }: HeaderProps) {
       </div>
 
       <div className="header-actions">
-        <button className="icon-button inspector-toggle" type="button" onClick={onOpenInspector} aria-label="Open evidence inspector">
+        <button ref={inspectorButtonRef} className="icon-button inspector-toggle" type="button" onClick={onOpenInspector} aria-label="Open evidence inspector">
           <PanelRightOpen size={17} />
         </button>
         <button className="export-button" type="button" onClick={() => exportReport(session)}>

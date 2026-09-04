@@ -596,9 +596,14 @@ kbd {
 }
 
 .surface-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 14px;
+  background: rgba(12, 17, 16, .96);
+  backdrop-filter: blur(10px);
 }
 .surface-toolbar h2 { font-size: 19px; }
 
@@ -623,6 +628,31 @@ kbd {
   font-size: 10px;
 }
 .segmented-control button.active { color: #dce8e3; background: #1d2925; }
+
+.code-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.code-option-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 35px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--subtle);
+  background: #0a0f0e;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.code-option-button:hover { border-color: #435a51; color: #d2dfda; }
+.code-option-button.active { border-color: #38564b; color: var(--mint); background: #14221d; }
 
 .pierre-diff {
   overflow: hidden;
@@ -1170,6 +1200,9 @@ kbd {
   .help-trigger { flex: 0 0 28px; }
   .surface { padding: 12px 10px 28px; }
   .surface-toolbar { margin-bottom: 10px; }
+  .code-toolbar { align-items: flex-start; }
+  .code-toolbar-actions { gap: 5px; }
+  .code-option-button { height: 33px; padding: 0 8px; }
   .segmented-control button:first-child { display: none; }
   .segmented-control button { pointer-events: none; }
   .relation-columns { display: none; }
@@ -1200,6 +1233,8 @@ kbd {
   .view-tablist > button { gap: 4px; font-size: 10px; }
   .view-tablist > button svg { width: 13px; }
   .surface-toolbar h2 { font-size: 17px; }
+  .code-option-button span { display: none; }
+  .code-option-button { width: 33px; justify-content: center; padding: 0; }
   .structure-legend { display: none; }
   .structure-summary > div { padding: 7px 6px; }
   .structure-summary svg,

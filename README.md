@@ -228,8 +228,9 @@ Native-grammar source positions follow Tree-sitter: zero-based rows and UTF-8 by
 Universal positions use zero-based rows and raw-byte columns.
 
 See [DESIGN.md](DESIGN.md) for invariants, [docs/research.md](docs/research.md) for the tool and paper
-survey that motivated the design, and [docs/benchmarks.md](docs/benchmarks.md) for reproducible
-evaluation results and the local performance baseline.
+survey that motivated the engine, [docs/evidence-workbench.md](docs/evidence-workbench.md) for the
+review-UI survey and interaction decisions, and [docs/benchmarks.md](docs/benchmarks.md) for
+reproducible evaluation results and the local performance baseline.
 
 The JSON serialization and structural constraints are published as
 [schema/report-v3.schema.json](schema/report-v3.schema.json). Historical

@@ -1,4 +1,5 @@
 import { Binary, Braces, Code2, ListFilter } from 'lucide-react'
+import type { Ref } from 'react'
 import type { ViewMode } from '../types'
 
 interface ViewTabsProps {
@@ -6,6 +7,7 @@ interface ViewTabsProps {
   onChange: (view: ViewMode) => void
   onHelp: () => void
   onOpenEvidence: () => void
+  evidenceButtonRef: Ref<HTMLButtonElement>
 }
 
 const tabs = [
@@ -14,7 +16,7 @@ const tabs = [
   { id: 'bytes', label: 'Exact bytes', key: '3', icon: Binary },
 ] as const
 
-export function ViewTabs({ view, onChange, onHelp, onOpenEvidence }: ViewTabsProps) {
+export function ViewTabs({ view, onChange, onHelp, onOpenEvidence, evidenceButtonRef }: ViewTabsProps) {
   function handleTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number): void {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return
     event.preventDefault()
@@ -48,7 +50,7 @@ export function ViewTabs({ view, onChange, onHelp, onOpenEvidence }: ViewTabsPro
           </button>
         ))}
       </div>
-      <button className="evidence-trigger" type="button" onClick={onOpenEvidence} aria-label="Open evidence search and navigation" title="Evidence search and navigation"><ListFilter size={15} /></button>
+      <button ref={evidenceButtonRef} className="evidence-trigger" type="button" onClick={onOpenEvidence} aria-label="Open evidence search and navigation" title="Evidence search and navigation"><ListFilter size={15} /></button>
       <button className="help-trigger" type="button" onClick={onHelp} aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
     </div>
   )

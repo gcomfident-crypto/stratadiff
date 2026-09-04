@@ -32,7 +32,7 @@ function AmbiguityCard({ ambiguity, index, active, onSelect }: { ambiguity: Ambi
   const constraint = ambiguity.constraint
   const isAbstention = constraint.kind === 'symbolic_abstention'
   return (
-    <button className={`ambiguity-card ${isAbstention ? 'symbolic' : 'ordered'} ${active ? 'active' : ''}`} type="button" onClick={onSelect}>
+    <button className={`ambiguity-card ${isAbstention ? 'symbolic' : 'ordered'} ${active ? 'active' : ''}`} type="button" onClick={onSelect} aria-current={active}>
       <div className="ambiguity-card-header">
         <span className="ambiguity-symbol">{isAbstention ? <CircleDashed size={18} /> : <ShieldQuestion size={18} />}</span>
         <div>
@@ -249,6 +249,7 @@ export function StructureView({ report, selection, onSelect, searchIndex }: Stru
                 className={`change-card change-${change.kind} ${selection.type === 'change' && selection.index === index ? 'active' : ''}`}
                 key={`change-card-${index}`}
                 onClick={() => onSelect({ type: 'change', index })}
+                aria-current={selection.type === 'change' && selection.index === index}
               >
                 <span className="change-number">{String(index + 1).padStart(2, '0')}</span>
                 <div><strong>{titleCase(change.kind)}</strong><p>{change.detail}</p></div>

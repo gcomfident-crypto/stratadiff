@@ -9,17 +9,32 @@ structural relation and explicit uncertainty when snapshots do not determine one
 The interaction model was informed by the following public documentation, reviewed on
 2026-09-04:
 
-- [GitHub proposed-change review](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/reviewing-proposed-changes-in-a-pull-request): split/unified review and low-friction navigation.
+- [GitHub proposed-change review](https://docs.github.com/en/pull-requests/how-tos/review-pull-requests/reviewing-proposed-changes-in-a-pull-request) and [Files changed refresh](https://github.blog/changelog/2025-06-26-improved-pull-request-files-changed-experience-now-in-public-preview): split/unified review, a resizable file tree, and comment/error/warning indicators.
 - [GitLab merge-request changes](https://docs.gitlab.com/user/project/merge_requests/changes/): single-file focus, expandable context, and large-diff controls.
-- [VS Code diff editor](https://code.visualstudio.com/updates/v1_82#_diff-editor): adaptive inline layout, moved-code comparison, and accessible navigation.
-- [Difftastic](https://difftastic.wilfred.me.uk/introduction.html): syntax-aware emphasis with low visual noise.
-- [SemanticDiff middle bar](https://semanticdiff.com/docs/understand-diff/middle-bar/) and [minimap](https://semanticdiff.com/docs/understand-diff/minimap/): relationship navigation and paired locations.
-- [Reviewable reviews](https://docs.reviewable.io/reviews): evidence-oriented progress and next-change navigation.
-- [Graphite PR page](https://graphite.com/docs/pr-page-overview): focused review modes and version-aware navigation.
+- [VS Code diff editor](https://code.visualstudio.com/updates/v1_82#_diff-editor) and [accessible diff viewer](https://code.visualstudio.com/updates/v1_98#_accessibility): adaptive inline layout, moved-code comparison, collapsed-region breadcrumbs, and an `F7` accessible viewer for modified files.
+- [Difftastic](https://difftastic.wilfred.me.uk/introduction.html): syntax-aware diffs and formatting-change suppression.
+- [SemanticDiff middle bar](https://semanticdiff.com/docs/understand-diff/middle-bar/), [minimap](https://semanticdiff.com/docs/understand-diff/minimap/), and [moved code](https://semanticdiff.com/docs/understand-diff/moved-code/): correspondence geometry, a whole-file change overview, and paired-location navigation.
+- [Reviewable files](https://docs.reviewable.io/files): per-revision review state and next-unreviewed navigation.
+- [Graphite PR page](https://graphite.com/docs/pr-page-overview) and [pull-request versions](https://graphite.com/docs/pull-request-versions): file navigation, hiding reviewed changes, and explicit version bounds.
 
 The resulting layout uses a change outline on the left, a synchronized evidence canvas in the
 center, and a proof inspector on the right. Narrow viewports collapse the sidebars and switch the
 code layer to a unified presentation.
+
+The Code layer directly embeds the Apache-2.0 [`@pierre/diffs`](https://diffs.com/) 1.4.0 renderer
+rather than reimplementing syntax highlighting, character-level intra-line highlighting,
+synchronized split scrolling, or unchanged-context expansion. StrataDiff adds the report-specific
+evidence selection and verified claim boundaries around that renderer.
+
+| Reviewed pattern | Status | Decision in the workbench |
+|---|---|---|
+| Split and unified code layouts | Implemented | Both are available; narrow screens switch to unified without overwriting the desktop preference. |
+| Collapsed unchanged context | Implemented | The focused view is the default and has a one-click full-file mode. Relation and ambiguity selection expands the full file before an off-screen selected row is revealed. |
+| Long-line handling | Implemented | Reviewers can switch between horizontal scrolling and wrapped lines without recomputing the report. |
+| Persistent file/evidence navigation | Implemented | Search, filters, pagination, and `j`/`k` update the shared selection without forcing the reviewer out of Code. |
+| Relationship visualization | Implemented | The dedicated Structure layer uses a before/evidence/after middle column and exposes ambiguity instead of drawing speculative edges. |
+| Minimap and resizable docked panels | Deferred | These are useful for multi-file reports but omitted from the single-pair viewer until they can preserve exact evidence navigation and keyboard access. |
+| Inline editing, merge actions, AI summaries, and review approval | Excluded | This surface verifies evidence; it does not mutate code or infer claims. |
 
 ## Claim boundaries
 

@@ -99,7 +99,7 @@ function EditCard({ edit, index, afterRange, active, onSelect }: { edit: ByteEdi
   const replacementLength = base64DecodedLength(edit.replacement_base64)
   const [afterStart, afterEnd] = afterRange
   return (
-    <button className={`byte-edit-card ${active ? 'active' : ''}`} type="button" onClick={onSelect}>
+    <button className={`byte-edit-card ${active ? 'active' : ''}`} type="button" onClick={onSelect} aria-current={active}>
       <span className="edit-sequence">{String(index + 1).padStart(2, '0')}</span>
       <div className="edit-range old-range"><small>OLD RANGE</small><strong>{byteRange(edit.old_start, edit.old_end)}</strong></div>
       <span className="edit-operation"><Scissors size={14} /><i>{edit.old_end - edit.old_start} → {replacementLength}</i></span>

@@ -1,6 +1,6 @@
-import { AlertOctagon, Columns2, Rows3 } from 'lucide-react'
+import { AlertOctagon, Columns2, Rows3, UnfoldVertical, WrapText } from 'lucide-react'
 import { MultiFileDiff } from '@pierre/diffs/react'
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DecodedArtifact, DiffReport, DiffStyle, EvidenceSelection } from '../types'
 import { editAfterRanges, formatBytes } from '../lib/format'
 import { buildByteLineIndex, evidenceByteRanges, evidenceLineSelection } from '../lib/selection'
@@ -55,6 +55,11 @@ function exceedsLineLimit(bytes: Uint8Array): boolean {
 }
 
 export function CodeDiffView({ before, after, diffStyle, onDiffStyleChange, compact, report, selection }: CodeDiffViewProps) {
+  const [fullFile, setFullFile] = useState(false)
+  const [wrapLines, setWrapLines] = useState(false)
+  const diffContainerRef = useRef<HTMLDivElement>(null)
+  const lastRevealedSelection = useRef<string | null>(null)
+  const revealFrame = useRef<number | null>(null)
   const containsNonUtf8 = before.text === null || after.text === null
   const effectiveStyle: DiffStyle = compact ? 'unified' : diffStyle
   const sourceTooLarge = useMemo(
@@ -79,6 +84,42 @@ export function CodeDiffView({ before, after, diffStyle, onDiffStyleChange, comp
     const ranges = evidenceByteRanges(report, selection, afterRanges)
     return evidenceLineSelection(ranges, beforeLineIndex, afterLineIndex)
   }, [afterLineIndex, afterRanges, beforeLineIndex, report, selection])
+
+  useEffect(() => {
+    if (selection.type === 'relation' || selection.type === 'ambiguity') setFullFile(true)
+  }, [selection])
+
+  useEffect(() => () => {
+    if (revealFrame.current !== null) window.cancelAnimationFrame(revealFrame.current)
+  }, [])
+
+  const revealKey = `${selection.type}:${selection.index}:${effectiveStyle}:${fullFile}`
+  const revealSelectedLines = useCallback((node: HTMLElement, _instance: unknown, phase: 'mount' | 'update' | 'unmount'): void => {
+    if (phase === 'unmount') {
+      if (revealFrame.current !== null) window.cancelAnimationFrame(revealFrame.current)
+      revealFrame.current = null
+      return
+    }
+    if (selectedLines === null || lastRevealedSelection.current === revealKey) return
+    if (revealFrame.current !== null) window.cancelAnimationFrame(revealFrame.current)
+    revealFrame.current = window.requestAnimationFrame(() => {
+      revealFrame.current = null
+      if (lastRevealedSelection.current === revealKey) return
+      const selected = node.shadowRoot?.querySelector<HTMLElement>('[data-selected-line]')
+      if (selected === null || selected === undefined) return
+      const viewport = diffContainerRef.current?.closest<HTMLElement>('.view-stage')
+      if (viewport !== null && viewport !== undefined) {
+        const selectedRect = selected.getBoundingClientRect()
+        const viewportRect = viewport.getBoundingClientRect()
+        const toolbar = diffContainerRef.current?.closest<HTMLElement>('.code-surface')?.querySelector<HTMLElement>('.code-toolbar')
+        const visibleTop = Math.max(viewportRect.top, toolbar?.getBoundingClientRect().bottom ?? viewportRect.top)
+        if (selectedRect.top < visibleTop || selectedRect.bottom > viewportRect.bottom) {
+          selected.scrollIntoView({ block: 'center', inline: 'nearest' })
+        }
+      }
+      lastRevealedSelection.current = revealKey
+    })
+  }, [revealKey, selectedLines])
   const oldFile = useMemo(
     () => ({ name: visibleInlineText(before.path), contents: preparedBefore?.text ?? '' }),
     [before.path, preparedBefore?.text],
@@ -101,27 +142,53 @@ export function CodeDiffView({ before, after, diffStyle, onDiffStyleChange, comp
 
   return (
     <div className="surface code-surface">
-      <div className="surface-toolbar">
+      <div className="surface-toolbar code-toolbar">
         <div>
           <span className="surface-kicker">LINE-LEVEL TRANSFORMATION</span>
           <h2>Code</h2>
         </div>
-        <div className="segmented-control" aria-label="Diff layout">
+        <div className="code-toolbar-actions">
           <button
+            className={`code-option-button ${fullFile ? 'active' : ''}`}
             type="button"
-            className={effectiveStyle === 'split' ? 'active' : ''}
-            disabled={compact}
-            onClick={() => onDiffStyleChange('split')}
+            aria-pressed={fullFile}
+            aria-label={fullFile ? 'Collapse unchanged context' : 'Expand all unchanged context'}
+            title={fullFile ? 'Collapse unchanged context' : 'Expand all unchanged context'}
+            disabled={!renderInteractiveDiff}
+            onClick={() => setFullFile((value) => !value)}
           >
-            <Columns2 size={14} /> Split
+            <UnfoldVertical size={14} /><span>Full file</span>
           </button>
           <button
+            className={`code-option-button ${wrapLines ? 'active' : ''}`}
             type="button"
-            className={effectiveStyle === 'unified' ? 'active' : ''}
-            onClick={() => onDiffStyleChange('unified')}
+            aria-pressed={wrapLines}
+            aria-label={wrapLines ? 'Use horizontal scrolling' : 'Wrap long lines'}
+            title={wrapLines ? 'Use horizontal scrolling' : 'Wrap long lines'}
+            disabled={!renderInteractiveDiff}
+            onClick={() => setWrapLines((value) => !value)}
           >
-            <Rows3 size={14} /> Unified
+            <WrapText size={14} /><span>Wrap</span>
           </button>
+          <div className="segmented-control" aria-label="Diff layout">
+            <button
+              type="button"
+              className={effectiveStyle === 'split' ? 'active' : ''}
+              aria-pressed={effectiveStyle === 'split'}
+              disabled={compact}
+              onClick={() => onDiffStyleChange('split')}
+            >
+              <Columns2 size={14} /> Split
+            </button>
+            <button
+              type="button"
+              className={effectiveStyle === 'unified' ? 'active' : ''}
+              aria-pressed={effectiveStyle === 'unified'}
+              onClick={() => onDiffStyleChange('unified')}
+            >
+              <Rows3 size={14} /> Unified
+            </button>
+          </div>
         </div>
       </div>
 
@@ -140,7 +207,7 @@ export function CodeDiffView({ before, after, diffStyle, onDiffStyleChange, comp
           </div>
         </div>
       ) : (
-        <div className="pierre-diff" data-testid="code-diff">
+        <div ref={diffContainerRef} className="pierre-diff" data-testid="code-diff">
           <MultiFileDiff
             oldFile={oldFile}
             newFile={newFile}
@@ -149,10 +216,12 @@ export function CodeDiffView({ before, after, diffStyle, onDiffStyleChange, comp
               diffStyle: effectiveStyle,
               diffIndicators: 'bars',
               lineDiffType: 'char',
-              enableLineSelection: true,
-              expandUnchanged: true,
+              enableLineSelection: false,
+              expandUnchanged: fullFile,
               disableFileHeader: true,
-              overflow: 'scroll',
+              overflow: wrapLines ? 'wrap' : 'scroll',
+              lineHoverHighlight: 'line',
+              onPostRender: revealSelectedLines,
               themeType: 'dark',
               theme: 'github-dark-default',
             }}

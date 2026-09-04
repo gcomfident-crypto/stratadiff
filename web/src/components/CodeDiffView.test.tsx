@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { sessionFixture } from '../test/fixture'
-import type { DecodedArtifact } from '../types'
+import type { DecodedArtifact, EvidenceSelection } from '../types'
 import { CodeDiffView } from './CodeDiffView'
 
 const multiFileDiffSpy = vi.hoisted(() => vi.fn())
@@ -16,23 +16,32 @@ vi.mock('@pierre/diffs/react', () => ({
 interface MockDiffProps {
   oldFile: { name: string; contents: string }
   newFile: { name: string; contents: string }
+  options: {
+    enableLineSelection: boolean
+    expandUnchanged: boolean
+    overflow: 'scroll' | 'wrap'
+    lineHoverHighlight: 'disabled' | 'both' | 'number' | 'line'
+    onPostRender: (node: HTMLElement, instance: unknown, phase: 'mount' | 'update' | 'unmount') => void
+  }
 }
 
 function artifact(path: string, text: string): DecodedArtifact {
   return { path, text, bytes: new TextEncoder().encode(text) }
 }
 
-function renderCodeDiff(before: DecodedArtifact, after: DecodedArtifact) {
+function renderCodeDiff(before: DecodedArtifact, after: DecodedArtifact, selection: EvidenceSelection = { type: 'change', index: 0 }) {
   return render(
-    <CodeDiffView
-      before={before}
-      after={after}
-      diffStyle="split"
-      onDiffStyleChange={vi.fn()}
-      compact={false}
-      report={sessionFixture().report}
-      selection={{ type: 'change', index: 0 }}
-    />,
+    <div className="view-stage">
+      <CodeDiffView
+        before={before}
+        after={after}
+        diffStyle="split"
+        onDiffStyleChange={vi.fn()}
+        compact={false}
+        report={sessionFixture().report}
+        selection={selection}
+      />
+    </div>,
   )
 }
 
@@ -116,5 +125,74 @@ describe('CodeDiffView safety boundaries', () => {
 
     expect(previews).toEqual(['\\x00', '\\\\x00'])
     expect(new Set(previews).size).toBe(2)
+  })
+
+  it('exposes focused-context and line-wrapping controls through Pierre options', () => {
+    renderCodeDiff(artifact('before.ts', 'const before = 1\n'), artifact('after.ts', 'const after = 2\n'))
+
+    let props = multiFileDiffSpy.mock.calls.at(-1)?.[0] as MockDiffProps | undefined
+    if (props === undefined) throw new Error('MultiFileDiff props were not captured.')
+    expect(props.options).toMatchObject({
+      enableLineSelection: false,
+      expandUnchanged: false,
+      overflow: 'scroll',
+      lineHoverHighlight: 'line',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand all unchanged context' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Wrap long lines' }))
+
+    props = multiFileDiffSpy.mock.calls.at(-1)?.[0] as MockDiffProps | undefined
+    if (props === undefined) throw new Error('MultiFileDiff props were not captured after changing options.')
+    expect(props.options).toMatchObject({ expandUnchanged: true, overflow: 'wrap' })
+    expect(screen.getByRole('button', { name: 'Collapse unchanged context' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Use horizontal scrolling' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('waits for Pierre to apply controlled selection before revealing evidence', () => {
+    const { container } = renderCodeDiff(artifact('before.ts', 'const before = 1\n'), artifact('after.ts', 'const after = 2\n'))
+    const stage = container.querySelector<HTMLElement>('.view-stage')
+    if (stage === null) throw new Error('View stage was not rendered.')
+    vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: 100 } as DOMRect)
+
+    let props = multiFileDiffSpy.mock.calls.at(-1)?.[0] as MockDiffProps | undefined
+    if (props === undefined) throw new Error('MultiFileDiff props were not captured.')
+    const renderedDiff = document.createElement('div')
+    const shadowRoot = renderedDiff.attachShadow({ mode: 'open' })
+    const staleLine = document.createElement('div')
+    staleLine.dataset.selectedLine = 'stale'
+    staleLine.scrollIntoView = vi.fn()
+    const selectedLine = document.createElement('div')
+    vi.spyOn(selectedLine, 'getBoundingClientRect').mockReturnValue({ top: 250, bottom: 271 } as DOMRect)
+    selectedLine.scrollIntoView = vi.fn()
+    shadowRoot.append(staleLine, selectedLine)
+    const reveals: FrameRequestCallback[] = []
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      reveals.push(callback)
+      return reveals.length
+    })
+
+    props.options.onPostRender(renderedDiff, {}, 'mount')
+    delete staleLine.dataset.selectedLine
+    selectedLine.dataset.selectedLine = 'current'
+    const reveal = reveals[0]
+    if (reveal === undefined) throw new Error('Evidence reveal was not scheduled.')
+    reveal(0)
+
+    expect(staleLine.scrollIntoView).not.toHaveBeenCalled()
+    expect(selectedLine.scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' })
+    requestFrame.mockRestore()
+  })
+
+  it('reveals relation evidence that may be outside collapsed hunks', () => {
+    renderCodeDiff(
+      artifact('before.ts', 'const before = 1\n'),
+      artifact('after.ts', 'const after = 2\n'),
+      { type: 'relation', index: 0 },
+    )
+
+    const props = multiFileDiffSpy.mock.calls.at(-1)?.[0] as MockDiffProps | undefined
+    if (props === undefined) throw new Error('MultiFileDiff props were not captured.')
+    expect(props.options.expandUnchanged).toBe(true)
   })
 })

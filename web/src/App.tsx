@@ -59,6 +59,8 @@ function Workbench({ session }: { session: LoadedSession }) {
   const [helpOpen, setHelpOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const viewStageRef = useRef<HTMLDivElement>(null)
+  const evidenceButtonRef = useRef<HTMLButtonElement>(null)
+  const inspectorButtonRef = useRef<HTMLButtonElement>(null)
   const compact = useMediaQuery('(max-width: 899px)')
   const inspectorIsDrawer = useMediaQuery('(max-width: 1279px)')
   const sidebarIsDrawer = useMediaQuery('(max-width: 1279px)')
@@ -72,6 +74,16 @@ function Workbench({ session }: { session: LoadedSession }) {
     [filters, searchIndex, session.report],
   )
 
+  function closeSidebar(): void {
+    if (sidebarOpen) evidenceButtonRef.current?.focus()
+    setSidebarOpen(false)
+  }
+
+  function closeInspector(): void {
+    if (inspectorOpen) inspectorButtonRef.current?.focus()
+    setInspectorOpen(false)
+  }
+
   function changeView(next: ViewMode): void {
     if (viewStageRef.current !== null) viewStageRef.current.scrollTop = 0
     setView(next)
@@ -79,14 +91,16 @@ function Workbench({ session }: { session: LoadedSession }) {
 
   function selectEvidence(next: EvidenceSelection): void {
     setSelection(next)
-    setSidebarOpen(false)
-    if (next.type === 'edit') changeView('bytes')
-    else changeView('structure')
-    if (inspectorIsDrawer) setInspectorOpen(true)
+    closeSidebar()
+    if (view !== 'code') {
+      if (next.type === 'edit') changeView('bytes')
+      else changeView('structure')
+      if (inspectorIsDrawer) setInspectorOpen(true)
+    }
   }
 
   function openEvidenceNavigation(focusSearch: boolean): void {
-    setInspectorOpen(false)
+    closeInspector()
     setSidebarOpen(sidebarIsDrawer)
     if (focusSearch) window.requestAnimationFrame(() => searchRef.current?.focus())
   }
@@ -106,11 +120,11 @@ function Workbench({ session }: { session: LoadedSession }) {
         return
       }
       if (inspectorIsDrawer && inspectorOpen) {
-        if (event.key === 'Escape') setInspectorOpen(false)
+        if (event.key === 'Escape') closeInspector()
         return
       }
       if (sidebarIsDrawer && sidebarOpen) {
-        if (event.key === 'Escape') setSidebarOpen(false)
+        if (event.key === 'Escape') closeSidebar()
         else if (!typing && !modified && event.key.toLocaleLowerCase() === 'f') {
           event.preventDefault()
           setShowFilters((value) => !value)
@@ -121,8 +135,8 @@ function Workbench({ session }: { session: LoadedSession }) {
         return
       }
       if (event.key === 'Escape') {
-        if (inspectorOpen) setInspectorOpen(false)
-        else if (sidebarIsDrawer && sidebarOpen) setSidebarOpen(false)
+        if (inspectorOpen) closeInspector()
+        else if (sidebarIsDrawer && sidebarOpen) closeSidebar()
         else if (query.length > 0) setQuery('')
         return
       }
@@ -160,7 +174,7 @@ function Workbench({ session }: { session: LoadedSession }) {
   return (
     <div className="workbench-shell">
       <div className="workbench-content" aria-hidden={helpOpen} inert={helpOpen}>
-        <Header session={session} onOpenInspector={() => { setSidebarOpen(false); setInspectorOpen(true) }} />
+        <Header session={session} inspectorButtonRef={inspectorButtonRef} onOpenInspector={() => { closeSidebar(); setInspectorOpen(true) }} />
         <TrustStrip report={session.report} />
         <div className="workspace">
           <Sidebar
@@ -177,10 +191,10 @@ function Workbench({ session }: { session: LoadedSession }) {
             searchIndex={searchIndex}
             drawer={sidebarIsDrawer}
             open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
+            onClose={closeSidebar}
           />
           <main className="main-workspace">
-            <ViewTabs view={view} onChange={changeView} onHelp={() => setHelpOpen(true)} onOpenEvidence={() => openEvidenceNavigation(true)} />
+            <ViewTabs view={view} onChange={changeView} onHelp={() => setHelpOpen(true)} onOpenEvidence={() => openEvidenceNavigation(true)} evidenceButtonRef={evidenceButtonRef} />
             <div ref={viewStageRef} className="view-stage" id="evidence-view-panel" role="tabpanel" aria-label={`${view} evidence`}>
               {view === 'code' && (
                 <CodeDiffView
@@ -197,9 +211,9 @@ function Workbench({ session }: { session: LoadedSession }) {
               {view === 'bytes' && <ByteView report={session.report} before={session.decodedBefore} after={session.decodedAfter} selection={selection} onSelect={selectEvidence} />}
             </div>
           </main>
-          {sidebarIsDrawer && sidebarOpen && <button type="button" className="drawer-backdrop sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-label="Close evidence navigation" />}
-          {inspectorIsDrawer && inspectorOpen && <button type="button" className="drawer-backdrop" onClick={() => setInspectorOpen(false)} aria-label="Close evidence inspector" />}
-          <Inspector session={session} selection={selection} open={inspectorOpen} drawer={inspectorIsDrawer} onClose={() => setInspectorOpen(false)} />
+          {sidebarIsDrawer && sidebarOpen && <button type="button" className="drawer-backdrop sidebar-backdrop" onClick={closeSidebar} aria-label="Close evidence navigation" />}
+          {inspectorIsDrawer && inspectorOpen && <button type="button" className="drawer-backdrop" onClick={closeInspector} aria-label="Close evidence inspector" />}
+          <Inspector session={session} selection={selection} open={inspectorOpen} drawer={inspectorIsDrawer} onClose={closeInspector} />
         </div>
       </div>
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} />

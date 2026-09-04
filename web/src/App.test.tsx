@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { sessionFixture } from './test/fixture'
@@ -80,7 +80,7 @@ describe('Evidence Workbench', () => {
     await waitFor(() => expect(stage.scrollTop).toBe(500))
   })
 
-  it('includes relations in next and previous evidence navigation', async () => {
+  it('keeps Code visible while navigating every evidence type', async () => {
     render(<App />)
     await screen.findByText('Evidence Workbench')
 
@@ -88,11 +88,12 @@ describe('Evidence Workbench', () => {
     fireEvent.keyDown(window, { key: 'j' })
     fireEvent.keyDown(window, { key: 'j' })
 
-    expect(await screen.findByText('Relations')).toBeInTheDocument()
-    expect(screen.getByText('R1').closest('button')).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
+    expect(screen.getByText('Relation R1')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'k' })
-    expect(await screen.findByText('LOSSLESS REPLAY LAYER')).toBeInTheDocument()
+    expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
+    expect(screen.getByText('Byte edit 01')).toBeInTheDocument()
   })
 
   it('preserves modified browser shortcuts while the evidence drawer is open', async () => {
@@ -112,7 +113,25 @@ describe('Evidence Workbench', () => {
 
     filterButton.focus()
     expect(fireEvent.keyDown(window, { key: 'j' })).toBe(false)
-    expect(await screen.findByRole('dialog', { name: 'Evidence inspector' })).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Evidence inspector' })).not.toBeInTheDocument()
+    expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open evidence search and navigation' })).toHaveFocus()
+  })
+
+  it('moves focus out of a drawer before hiding it', async () => {
+    vi.mocked(window.matchMedia).mockImplementation((query: string) => mediaQueryResult(query, query === '(max-width: 1279px)'))
+    render(<App />)
+    await screen.findByText('Evidence Workbench')
+
+    const inspectorTrigger = screen.getByRole('button', { name: 'Open evidence inspector' })
+    fireEvent.click(inspectorTrigger)
+    const inspector = screen.getByRole('dialog', { name: 'Evidence inspector' })
+    const close = within(inspector).getByRole('button', { name: 'Close evidence inspector' })
+    close.focus()
+    fireEvent.click(close)
+
+    expect(inspectorTrigger).toHaveFocus()
+    expect(screen.queryByRole('dialog', { name: 'Evidence inspector' })).not.toBeInTheDocument()
   })
 
   it('clears a desktop search on the first Escape press', async () => {

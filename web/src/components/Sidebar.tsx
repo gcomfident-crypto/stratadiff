@@ -1,7 +1,7 @@
-import { AlertTriangle, ChevronLeft, ChevronRight, Filter, GitCommitHorizontal, Search, Split, X } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ChevronRight, Filter, GitCommitHorizontal, Link2, Search, Split, X } from 'lucide-react'
 import { forwardRef, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { matchCount, matchPosition, pageIndices, type EvidenceSearchIndex } from '../lib/evidenceNavigation'
-import { byteRange, compactNumber, titleCase } from '../lib/format'
+import { byteRange, compactNumber, nodeLabel, predicateLabel, titleCase } from '../lib/format'
 import type { DiffReport, EvidenceSelection } from '../types'
 
 export interface SidebarFilters {
@@ -53,6 +53,7 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
   const [changePage, setChangePage] = useState(0)
   const [ambiguityPage, setAmbiguityPage] = useState(0)
   const [editPage, setEditPage] = useState(0)
+  const [relationPage, setRelationPage] = useState(0)
 
   useLayoutEffect(() => {
     if (!drawer || !open) return
@@ -85,12 +86,16 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
   const changeCount = matchCount(searchIndex.changes, report.changes.length)
   const ambiguityCount = matchCount(searchIndex.ambiguities, report.ambiguities.length)
   const editCount = matchCount(searchIndex.edits, report.patch.edits.length)
+  const relationCount = matchCount(searchIndex.relations, report.relations.length)
+  const showRelationResults = query.trim().length > 0 && searchIndex.relations !== null && relationCount > 0
   const selectedChangePosition = selection.type === 'change' ? matchPosition(searchIndex.changes, report.changes.length, selection.index) : -1
   const selectedAmbiguityPosition = selection.type === 'ambiguity' ? matchPosition(searchIndex.ambiguities, report.ambiguities.length, selection.index) : -1
   const selectedEditPosition = selection.type === 'edit' ? matchPosition(searchIndex.edits, report.patch.edits.length, selection.index) : -1
+  const selectedRelationPosition = selection.type === 'relation' ? matchPosition(searchIndex.relations, report.relations.length, selection.index) : -1
   const changes = pageIndices(searchIndex.changes, report.changes.length, changePage * ITEMS_PER_PAGE, ITEMS_PER_PAGE)
   const ambiguities = pageIndices(searchIndex.ambiguities, report.ambiguities.length, ambiguityPage * ITEMS_PER_PAGE, ITEMS_PER_PAGE)
   const edits = pageIndices(searchIndex.edits, report.patch.edits.length, editPage * ITEMS_PER_PAGE, ITEMS_PER_PAGE)
+  const relations = pageIndices(searchIndex.relations, report.relations.length, relationPage * ITEMS_PER_PAGE, ITEMS_PER_PAGE)
 
   useEffect(() => {
     setChangePage((current) => selectedChangePosition >= 0
@@ -107,9 +112,14 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
       ? Math.floor(selectedEditPosition / ITEMS_PER_PAGE)
       : Math.min(current, Math.max(0, Math.ceil(editCount / ITEMS_PER_PAGE) - 1)))
   }, [editCount, selectedEditPosition])
+  useEffect(() => {
+    setRelationPage((current) => selectedRelationPosition >= 0
+      ? Math.floor(selectedRelationPosition / ITEMS_PER_PAGE)
+      : Math.min(current, Math.max(0, Math.ceil(relationCount / ITEMS_PER_PAGE) - 1)))
+  }, [relationCount, selectedRelationPosition])
 
   return (
-    <aside ref={asideRef} className={`sidebar ${open ? 'open' : ''}`} aria-label="Evidence navigation" aria-hidden={drawer && !open} inert={drawer && !open} onKeyDown={handleKeyDown}>
+    <aside ref={asideRef} className={`sidebar ${open ? 'open' : ''}`} aria-label="Evidence navigation" aria-hidden={drawer && !open} aria-modal={drawer && open ? true : undefined} inert={drawer && !open} role={drawer ? 'dialog' : undefined} onKeyDown={handleKeyDown}>
       <div className="sidebar-heading">
         <div>
           <span className="eyebrow">REPORT INDEX</span>
@@ -170,6 +180,39 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
       )}
 
       <nav className="evidence-sections">
+        {showRelationResults && (
+          <section className="nav-section">
+            <div className="section-label">
+              <Link2 size={15} aria-hidden="true" />
+              <span>Relations</span>
+              <span className="section-count">{compactNumber(relationCount)}</span>
+            </div>
+            <div className="nav-items">
+              {relations.map((index) => {
+                const relation = report.relations[index]
+                if (relation === undefined) throw new Error(`Relation ${index} is missing.`)
+                return (
+                <button
+                  className={`nav-item ${selected(selection, 'relation', index) ? 'selected' : ''}`}
+                  key={`relation-${index}`}
+                  type="button"
+                  onClick={() => onSelect({ type: 'relation', index })}
+                  aria-current={selected(selection, 'relation', index)}
+                >
+                  <span className="nav-marker" />
+                  <span className="nav-copy">
+                    <strong>{predicateLabel(relation.predicate)}</strong>
+                    <small>{nodeLabel(relation.before)} → {nodeLabel(relation.after)}</small>
+                  </span>
+                  <span className="nav-index">R{index + 1}</span>
+                </button>
+                )
+              })}
+              <PageControls label="relation" page={relationPage} total={relationCount} onPage={setRelationPage} />
+            </div>
+          </section>
+        )}
+
         {filters.changes && (
           <section className="nav-section">
             <div className="section-label">
@@ -269,8 +312,12 @@ export const Sidebar = forwardRef<HTMLInputElement, SidebarProps>(function Sideb
           </section>
         )}
 
-        {changeCount + ambiguityCount + editCount === 0 && (
-          <div className="empty-nav">No events, ambiguities, or byte edits match this filter. Relations remain available in Structure.</div>
+        {changeCount + ambiguityCount + editCount + (showRelationResults ? relationCount : 0) === 0 && (
+          <div className="empty-nav">
+            {query.trim().length > 0
+              ? 'No evidence matches this search and filter.'
+              : 'No events, ambiguities, or byte edits match this filter. Relations remain available in Structure.'}
+          </div>
         )}
       </nav>
       <div className="sidebar-footer">
