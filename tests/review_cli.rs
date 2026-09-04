@@ -3,10 +3,11 @@ use std::{fs, path::Path, process::Command};
 use stratadiff::{
     VerificationLimits,
     review::{
-        CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState, MAX_REVIEW_TOTAL_SOURCE_BYTES,
-        RepositoryReview, ReviewLane, ReviewPriority, load_review_file_sources, markdown_report,
-        regenerate_review_file_report, review_git_range_with_checkpoint, review_git_resume_delta,
-        review_git_snapshot_delta,
+        CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState,
+        MAX_GITHUB_WORKFLOW_ANNOTATIONS, MAX_REVIEW_TOTAL_SOURCE_BYTES, RepositoryReview,
+        ReviewLane, ReviewPriority, github_workflow_annotations, load_review_file_sources,
+        markdown_report, regenerate_review_file_report, review_git_range_with_checkpoint,
+        review_git_resume_delta, review_git_snapshot_delta,
     },
 };
 
@@ -356,6 +357,7 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
         .arg("json")
         .arg("--output")
         .arg(&residue_report)
+        .arg("--github-annotations")
         .arg("--fail-on-review-residue")
         .arg("--")
         .arg(&base)
@@ -363,6 +365,10 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
         .output()
         .unwrap();
     assert!(!residue.status.success());
+    let annotations = String::from_utf8(residue.stdout).unwrap();
+    assert_eq!(annotations.matches("::error file=").count(), 2);
+    assert!(annotations.contains("file=changing.py,title=Review required after checkpoint"));
+    assert!(annotations.contains("file=relocated.py,title=Review required after checkpoint"));
     assert!(
         String::from_utf8_lossy(&residue.stderr)
             .contains("review residue gate is open: 2 current PR files need review")
@@ -378,6 +384,7 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
         .arg("json")
         .arg("--output")
         .arg(&no_checkpoint_report)
+        .arg("--github-annotations")
         .arg("--fail-on-review-residue")
         .arg("--")
         .arg(&base)
@@ -385,6 +392,10 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
         .output()
         .unwrap();
     assert!(!no_checkpoint.status.success());
+    assert_eq!(
+        String::from_utf8(no_checkpoint.stdout).unwrap(),
+        "::error title=Review checkpoint required::No completed review checkpoint was resolved; the complete PR remains in review.\n"
+    );
     assert!(
         String::from_utf8_lossy(&no_checkpoint.stderr)
             .contains("review residue gate requires a resolved checkpoint")
@@ -402,6 +413,7 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
         .arg("json")
         .arg("--output")
         .arg(&clean_report)
+        .arg("--github-annotations")
         .arg("--fail-on-review-residue")
         .arg("--")
         .arg(&base)
@@ -413,6 +425,7 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
         "{}",
         String::from_utf8_lossy(&clean.stderr)
     );
+    assert!(clean.stdout.is_empty());
     let report: RepositoryReview =
         serde_json::from_slice(&fs::read(clean_report).unwrap()).unwrap();
     assert_eq!(
@@ -424,6 +437,31 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
             .needs_review_now_files,
         0
     );
+}
+
+#[test]
+fn github_annotations_escape_paths_and_bound_output() {
+    let (directory, base, checkpoint, head) = checkpoint_fixture();
+    let mut report =
+        review_git_range_with_checkpoint(directory.path(), &base, &head, Some(&checkpoint))
+            .unwrap();
+    let mut file = report
+        .files
+        .iter()
+        .find(|file| file.checkpoint_state == Some(CheckpointState::NeedsReviewNow))
+        .unwrap()
+        .clone();
+    file.after_path = Some("src/a%,:\ncommand.py".to_owned());
+    file.after_path_encoding = Some(stratadiff::review::PathEncoding::Utf8);
+    report.files = vec![file; MAX_GITHUB_WORKFLOW_ANNOTATIONS + 2];
+
+    let annotations = github_workflow_annotations(&report);
+    assert_eq!(annotations.matches("::error file=").count(), 20);
+    assert!(annotations.contains("file=src/a%25%2C%3A%0Acommand.py"));
+    assert!(annotations.contains(
+        "::notice title=Additional review residue::2 additional current PR files need review"
+    ));
+    assert!(!annotations.contains("\ncommand.py"));
 }
 
 #[test]
@@ -747,7 +785,7 @@ fn composite_action_separates_revision_inputs_and_rejects_an_empty_report() {
     assert!(script.contains("github-checkpoint \"${reviews_path}\" --reviewer"));
     assert!(script.contains("! \"${resolved_checkpoint}\" =~ ^[0-9a-f]{40}$"));
     assert!(script.contains("review_args+=(\"--checkpoint=${resolved_checkpoint}\")"));
-    assert!(script.contains("true) review_args+=(--fail-on-review-residue)"));
+    assert!(script.contains("true) review_args+=(--github-annotations --fail-on-review-residue)"));
     assert!(script.contains("review_args+=(-- \"${STRATADIFF_BASE}\" \"${STRATADIFF_HEAD}\")"));
     assert!(script.contains("[[ ! -s \"${report_path}\" ]]"));
     assert!(script.contains("review_status=$?"));

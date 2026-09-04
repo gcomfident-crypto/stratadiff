@@ -19,6 +19,7 @@ use crate::{
 pub const REVIEW_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-v1.schema.json";
 pub const MAX_REVIEW_FILES: usize = 1_000;
 pub const MAX_REVIEW_TOTAL_SOURCE_BYTES: usize = 128 * 1024 * 1024;
+pub const MAX_GITHUB_WORKFLOW_ANNOTATIONS: usize = 20;
 const MAX_REVIEW_TOTAL_LINE_STAT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_REVIEW_MARKDOWN_BYTES: usize = 900 * 1024;
 
@@ -1036,6 +1037,68 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
     }
     debug_assert!(output.len() <= MAX_REVIEW_MARKDOWN_BYTES);
     output
+}
+
+pub fn github_workflow_annotations(review: &RepositoryReview) -> String {
+    if review.checkpoint.is_none() {
+        return "::error title=Review checkpoint required::No completed review checkpoint was resolved; the complete PR remains in review.\n".to_owned();
+    }
+
+    let needs_review: Vec<_> = review
+        .files
+        .iter()
+        .filter(|file| file.checkpoint_state == Some(CheckpointState::NeedsReviewNow))
+        .collect();
+    let mut output = String::new();
+    for file in needs_review.iter().take(MAX_GITHUB_WORKFLOW_ANNOTATIONS) {
+        let message = "This current PR change has no exact-identity or non-interacting four-way carry from the reviewed checkpoint.";
+        if let Some(path) = github_annotation_path(file) {
+            output.push_str(&format!(
+                "::error file={},title=Review required after checkpoint::{}\n",
+                github_command_property(path),
+                github_command_data(message)
+            ));
+        } else {
+            output.push_str(&format!(
+                "::error title=Review required after checkpoint::{} needs review. {}\n",
+                github_command_data(&file.display_path()),
+                github_command_data(message)
+            ));
+        }
+    }
+    let omitted = needs_review
+        .len()
+        .saturating_sub(MAX_GITHUB_WORKFLOW_ANNOTATIONS);
+    if omitted > 0 {
+        output.push_str(&format!(
+            "::notice title=Additional review residue::{omitted} additional current PR {} need review; see the step summary and JSON report.\n",
+            file_word(omitted)
+        ));
+    }
+    output
+}
+
+fn github_annotation_path(file: &ReviewFile) -> Option<&str> {
+    match (&file.after_path, file.after_path_encoding) {
+        (Some(path), Some(PathEncoding::Utf8)) => Some(path),
+        _ => match (&file.before_path, file.before_path_encoding) {
+            (Some(path), Some(PathEncoding::Utf8)) => Some(path),
+            _ => None,
+        },
+    }
+}
+
+fn github_command_data(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+fn github_command_property(value: &str) -> String {
+    github_command_data(value)
+        .replace(':', "%3A")
+        .replace(',', "%2C")
 }
 
 fn append_markdown_file_table(

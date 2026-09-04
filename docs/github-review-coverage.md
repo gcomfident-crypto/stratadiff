@@ -73,6 +73,13 @@ The mutable action references in this example are readable previews, not supply-
 Pin `actions/checkout`, `actions/upload-artifact`, and StrataDiff to audited full commit IDs in a
 production workflow.
 
+With `fail-on-review-residue: true`, a failed gate creates file-scoped GitHub error annotations for
+the first 20 current PR files that need review. If the queue is larger, one notice reports the
+omitted count while the step summary and JSON artifact retain every file. A missing checkpoint
+produces one check-level error because the complete PR, rather than a bounded file subset, remains
+in review. Paths and workflow-command data are escaped before emission; non-UTF-8 paths remain in
+the report but are represented by a check-level annotation instead of an invalid file link.
+
 The resolver requests at most 100 reviews from GitHub. It fails closed if pagination indicates a
 larger history. It verifies the selected review SHA through GitHub's Git commit-object endpoint. If
 that commit is no longer in the checkout after a force-push, the Action requests that exact SHA,
@@ -100,7 +107,8 @@ The default output is only the selected commit ID, which can be passed directly 
 
 ```text
 checkpoint="$(stratadiff github-checkpoint reviews.json --reviewer alice)"
-stratadiff review BASE HEAD --checkpoint "$checkpoint" --fail-on-review-residue
+stratadiff review BASE HEAD --checkpoint "$checkpoint" --format json --output review.json \
+  --github-annotations --fail-on-review-residue
 ```
 
 An empty resolver result means no eligible checkpoint. In gate mode this must remain a failed
