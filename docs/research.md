@@ -75,10 +75,10 @@ shorter edit scripts are not evidence that every selected mapping reflects the t
 
 ## Measured StrataDiff result
 
-The provenance-complete v5 run on DiffBenchmark's fixed 285-case intra-file literature subset is
+The provenance-complete v6 run on DiffBenchmark's fixed 285-case intra-file literature subset is
 described in the [benchmark notes](benchmarks.md#diffbenchmark-literature-subset-result), with the
 complete case-level data in the
-[official evaluation report](../benchmarks/diffbenchmark-literature-evaluation-v5.json). Of the 285
+[official evaluation report](../benchmarks/diffbenchmark-literature-evaluation-v6.json). Of the 285
 selected cases, 283 were evaluated, independently verified, and replayed byte for byte. One
 digest-pinned malformed oracle and one digest-pinned malformed source were classified separately;
 there were no unexpected case errors, and `benchmarkComplete` is `true`.
@@ -92,9 +92,9 @@ universe as unscored rather than correct or incorrect. Multi-relation recall rem
 0/22 for program elements and 22/2,256 for fine mappings, with no ambiguity candidate covering a
 scorable gold relation.
 
-For scoring, v5 flattens only explicit `possible_pairs` into an edge-union coverage view; that union
-is not a jointly selectable mapping. Symbolic abstention scopes make no pair claims and contribute
-no candidates.
+For scoring in the v6 evaluation, the adapter flattens only explicit `possible_pairs` into an
+edge-union coverage view; that union is not a jointly selectable mapping. Symbolic abstention
+scopes make no pair claims and contribute no candidates.
 
 These measurements characterize this adapter and protocol on the fixed literature subset. They are
 not directly comparable with published full-corpus results or results produced under a different

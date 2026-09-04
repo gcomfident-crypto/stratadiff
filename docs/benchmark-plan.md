@@ -16,7 +16,7 @@
 ## Current status
 
 - [x] The pinned 285-case DiffBenchmark literature intra-file stage is complete. The
-  [official v5 report](../benchmarks/diffbenchmark-literature-evaluation-v5.json) records 283
+  [official v6 report](../benchmarks/diffbenchmark-literature-evaluation-v6.json) records 283
   evaluated cases, one known malformed oracle, one known malformed source, zero unexpected errors,
   and `benchmarkComplete: true`.
 - [ ] Ambiguity/abstention evaluation remains incomplete. The flattened ambiguity list is only the

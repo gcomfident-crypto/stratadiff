@@ -5,7 +5,7 @@
 The latest provenance-complete Java evaluation was run on 2026-09-04 against the 285-case
 DiffBenchmark literature subset at commit
 `870592abd559d0bd822a27eb5c8ea45aee47015b`. The raw report is
-[`diffbenchmark-literature-evaluation-v5.json`](../benchmarks/diffbenchmark-literature-evaluation-v5.json),
+[`diffbenchmark-literature-evaluation-v6.json`](../benchmarks/diffbenchmark-literature-evaluation-v6.json),
 its canonical source manifest is
 [`diffbenchmark-literature-manifest-v3.json`](../benchmarks/diffbenchmark-literature-manifest-v3.json),
 and [`SHA256SUMS`](../benchmarks/SHA256SUMS) authenticates the checked-in artifacts.
@@ -46,23 +46,25 @@ jointly selectable mapping. `symbolic_abstention` scopes make no pair claims and
 candidates. This run did not exercise a scorable exact ordered constraint, so it does not establish
 coverage for that representation.
 
-The measured `analyze_bytes` latency was 6.749 ms p50, 52.295 ms p95, and 203.982 ms maximum.
+The measured `analyze_bytes` latency was 7.486 ms p50, 59.408 ms p95, and 230.951 ms maximum.
 Serialized per-case diff reports were 1,900,674 bytes p50, 13,628,735 bytes p95, and 49,257,509
-bytes maximum. The evaluator process reached 350,608 KiB `VmHWM`. Latency excludes JDT enumeration,
-adaptation, verification, and scoring; `VmHWM` covers the Rust parent process, not the JDT JVM.
+bytes maximum. Independent verification consumed 291,198 deterministic work units p50, 2,586,914
+p95, and 104,372,509 maximum, below the default 134,217,728-unit budget in every case. The evaluator
+process reached 340,148 KiB `VmHWM`. Latency excludes JDT enumeration, adaptation, verification, and
+scoring; `VmHWM` covers the Rust parent process, not the JDT JVM.
 
-Compared with v4, the forced and scorable TP, FP, and FN counts and every reported precision,
-recall, and F1 value are unchanged. v5 upgrades single-file reports to the coupled report-v2
-ambiguity representation and projects only explicit `possible_pairs`; symbolic scopes no longer
-admit a Cartesian-product interpretation. The run produced no projected ambiguity candidate, so
-the benchmark does not yet measure exact-constraint coverage.
+Compared with v5, the forced and scorable TP, FP, and FN counts and every reported precision,
+recall, and F1 value are unchanged. v6 runs every generated report through the standalone
+resource-bounded verifier and records its actual charged work. The adapter continues to project
+only explicit `possible_pairs`; symbolic scopes make no pair claims. The run produced no projected
+ambiguity candidate, so the benchmark does not yet measure exact-constraint coverage.
 
 Provenance:
 
-- StrataDiff engine commit: `f1a818a890c9a3a4a474d00d05c01af54402e235`
+- StrataDiff engine commit: `a1dfe8317d742cc975064f62c23aa86ee0dacaeb`
 - clean release build: `true`
-- evaluator SHA-256: `008680d20ce19427ba5cd2681388536d8f81eab4999cfd2c04f27faf9ad64bbe`
-- `Cargo.lock` SHA-256: `2702a7853f01eac7b2c03259deefcc76e0915bb577004e9bb21a881a554d9cd1`
+- evaluator SHA-256: `0703c32e3f08b9a7e8f73e2db609aacb11b1efc9cec32e775703f1be5a20be90`
+- `Cargo.lock` SHA-256: `012fa40d4372edbcb8f1c9b3f393ea0307becc56d9b0a00a9b7bccabfed3e211`
 - canonical manifest BLAKE3: `0012eecb59360ef45e9ccc2ecaa9c11ca1387bfa6c391238d0301a84ee44d9d3`
 - JDT profile: `gumtree-3.0.0-jdt-core-3.35.0-ecj-3.35.0-helper-v3`
 - Java: Temurin 17.0.20.1+1 (caller-selected local trust boundary)

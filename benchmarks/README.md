@@ -15,16 +15,18 @@ Canonical manifest BLAKE3:
 
 ## Official literature result
 
-- [DiffBenchmark literature evaluation v5](diffbenchmark-literature-evaluation-v5.json)
+- [DiffBenchmark literature evaluation v6](diffbenchmark-literature-evaluation-v6.json)
+- [Prior v5 evaluation](diffbenchmark-literature-evaluation-v5.json)
 - [Prior v4 evaluation](diffbenchmark-literature-evaluation-v4.json)
 - [Prior v3 evaluation](diffbenchmark-literature-evaluation-v3.json)
 - [SHA-256 checksums](SHA256SUMS)
 
-The v5 artifact is the latest first-party StrataDiff result for the complete pinned literature
+The v6 artifact is the latest first-party StrataDiff result for the complete pinned literature
 subset. Its `benchmarkComplete: true` status records the expected 283 evaluated cases, one known
 malformed oracle, one known malformed source, and zero unexpected errors, together with complete
-engine provenance, a verified JDT cache, the canonical manifest, and the full 285-case selection.
-It is an evaluation artifact for this fixed corpus and engine, not a cross-tool comparison.
+engine provenance, a verified JDT cache, the canonical manifest, the full 285-case selection, and
+the standalone verifier's deterministic work usage. It is an evaluation artifact for this fixed
+corpus and engine, not a cross-tool comparison.
 
 Interpret the result within these limits:
 
