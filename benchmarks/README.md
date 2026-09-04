@@ -1,5 +1,14 @@
 # Benchmark artifacts
 
+## Rebase-aware real review oracle
+
+[`resumebench-real-v1/`](resumebench-real-v1/) freezes the previously rejected Gerrit base-drift
+history as a four-snapshot oracle for the current policy. Its independent verifier checks 4 exact
+identity carries, 1 non-interacting four-way byte replay, 2 needs-review files named by Gerrit's
+submission record, and 2 retired checkpoint changes. The checked-in clean-release evaluation has
+zero disagreement with that 5/2 partition. This is one selected correctness case, not evidence of
+prevalence, reviewer-time savings, defect recall, or semantic safety.
+
 ## Real review-history diagnostic
 
 [`resumebench-real-v0/`](resumebench-real-v0/) pins five public Gerrit review histories: four
@@ -8,11 +17,9 @@ independent Python/Git oracle records the complete checkpoint, head, and checkpo
 identity sets plus blob SHA-256 evidence. The checked-in evaluation passes all five cases with zero
 false carries and zero false invalidations under that historical policy.
 
-The evaluation predates non-interacting four-way byte replay. On 2026-09-05, the current engine was
-run separately against the pinned base-drift case and produced 5 carried files and 2 residue files,
-matching Gerrit's public submission record. That diagnostic is not part of v0. A new versioned
-oracle and clean provenance-bound evaluation are still required. Neither the frozen result nor the
-new diagnostic estimates reviewer-time savings or defect recall; see the
+The evaluation predates non-interacting four-way byte replay. The same base-drift case now has a
+separate v1 oracle and evaluation; v0 remains unchanged as historical policy evidence. Neither
+frozen result estimates reviewer-time savings or defect recall; see the
 [`ResumeBench-Real v0` dataset card](resumebench-real-v0/README.md).
 
 ## Exact-review-resume safety seed

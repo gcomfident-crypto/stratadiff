@@ -25,16 +25,20 @@ does not establish reviewer-time savings or defect recall. See the
 [`manifest`](../benchmarks/resumebench-real-v0/manifest.json), and
 [`evaluation`](../benchmarks/resumebench-real-v0/evaluation-v0.1.0.json).
 
-On 2026-09-05, the current engine was run separately against the pinned fifth history,
+## ResumeBench-Real v1
+
+The current policy was evaluated against the pinned fifth history,
 `gerrit-612221-ps8-ps10`. Exact identity carried four files. Four-way replay carried
 `Documentation/user-search.txt`, where the reviewed 13-line insertion did not interact with an
 upstream one-line deletion elsewhere in the file. The resulting current PR partition was 5 carried
 files and 2 residue files, matching Gerrit's public submission record. The residue excluded files
 changed only between the two base revisions.
 
-That run is a verified diagnostic, not a checked-in benchmark result. ResumeBench-Real v0 remains
-frozen. A new versioned manifest/oracle must define base-drift replay, and a clean provenance-bound
-evaluation must be checked in before the 5/2 result can support a benchmark claim.
+ResumeBench-Real v0 remains frozen. The separate
+[`ResumeBench-Real v1`](../benchmarks/resumebench-real-v1/README.md) artifact defines the
+four-snapshot replay rule, independently checks the 5/2 partition and per-file carry basis, and
+binds a clean release evaluation to the engine revision. It remains a single selected correctness
+case and cannot support claims about prevalence, reviewer time, or defect recall.
 
 ## DiffBenchmark literature-subset result
 
