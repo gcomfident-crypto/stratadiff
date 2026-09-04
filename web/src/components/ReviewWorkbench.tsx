@@ -290,7 +290,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
     setDetailsOpen(false)
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setPage(0)
     setSelectedIndex(entries[0]?.index ?? null)
     setDetailsOpen(false)
