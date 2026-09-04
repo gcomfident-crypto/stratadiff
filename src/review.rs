@@ -1428,11 +1428,13 @@ fn analyze_change(
 
     match file.status {
         FileStatus::Added => {
-            file.reason = "new file; all content belongs to the review residue".to_owned();
+            file.reason =
+                "new file; all content remains in the intrinsic review-first pass".to_owned();
             return Ok(file);
         }
         FileStatus::Deleted => {
-            file.reason = "deleted file; removal belongs to the review residue".to_owned();
+            file.reason =
+                "deleted file; the removal remains in the intrinsic review-first pass".to_owned();
             return Ok(file);
         }
         FileStatus::Modified

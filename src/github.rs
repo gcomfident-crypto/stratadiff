@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 pub const GITHUB_CHECKPOINT_SCHEMA: &str = "stratadiff-github-review-checkpoint-v1";
 pub const MAX_GITHUB_REVIEWS: usize = 100;
 pub const MAX_GITHUB_REVIEWS_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_GITHUB_COMMIT_OBJECT_BYTES: usize = 1024 * 1024;
 
 const SELECTION_POLICY: &str =
     "latest_nondismissed_human_approved_or_changes_requested_review_for_explicit_reviewer";
@@ -41,6 +42,11 @@ struct GithubReview {
     commit_id: String,
     submitted_at: NullableString,
     author_association: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubCommitObject {
+    sha: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +153,25 @@ pub fn resolve_github_review_checkpoint(
     })
 }
 
+pub fn verify_github_commit_object(commit_json: &[u8], expected_sha: &str) -> Result<()> {
+    ensure!(
+        is_sha1(expected_sha),
+        "expected GitHub commit ID must be a full lowercase SHA-1 object ID"
+    );
+    let commit: GithubCommitObject =
+        serde_json::from_slice(commit_json).context("failed to decode GitHub Git commit object")?;
+    ensure!(
+        is_sha1(&commit.sha),
+        "GitHub Git commit object has an invalid sha"
+    );
+    ensure!(
+        commit.sha == expected_sha,
+        "GitHub Git commit object resolved to {}, expected {expected_sha}",
+        commit.sha
+    );
+    Ok(())
+}
+
 fn is_sha1(value: &str) -> bool {
     value.len() == 40
         && value
@@ -221,6 +246,36 @@ mod tests {
         assert_eq!(checkpoint.review_id, 2);
         assert_eq!(checkpoint.review_state, "changes_requested");
         assert_eq!(checkpoint.commit_id, "b".repeat(40));
+    }
+
+    #[test]
+    fn verifies_provider_commit_object_against_the_review_sha() {
+        let sha = "a".repeat(40);
+        let object = format!(r#"{{"sha":"{sha}","message":"reviewed"}}"#);
+        verify_github_commit_object(object.as_bytes(), &sha).unwrap();
+
+        let error = verify_github_commit_object(object.as_bytes(), &"b".repeat(40)).unwrap_err();
+        assert!(error.to_string().contains("resolved to"));
+        assert!(error.to_string().contains("expected"));
+    }
+
+    #[test]
+    fn rejects_malformed_provider_commit_objects() {
+        let sha = "a".repeat(40);
+        for object in [
+            br#"{}"#.as_slice(),
+            br#"{"sha":null}"#.as_slice(),
+            br#"{"sha":"not-an-object-id"}"#.as_slice(),
+        ] {
+            assert!(verify_github_commit_object(object, &sha).is_err());
+        }
+        assert!(
+            verify_github_commit_object(
+                br#"{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+                "HEAD"
+            )
+            .is_err()
+        );
     }
 
     #[test]

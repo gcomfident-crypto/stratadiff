@@ -145,3 +145,41 @@ fn github_checkpoint_fails_closed_on_an_invalid_selected_commit() {
             .contains("GitHub review 1 has an invalid commit_id")
     );
 }
+
+#[test]
+fn github_commit_object_requires_the_provider_response_to_match_the_review_sha() {
+    let directory = tempfile::tempdir().unwrap();
+    let expected = "a".repeat(40);
+    let object = directory.path().join("commit.json");
+    fs::write(
+        &object,
+        format!(
+            r#"{{"sha":"{expected}","tree":{{"sha":"{}"}}}}"#,
+            "b".repeat(40)
+        ),
+    )
+    .unwrap();
+
+    let accepted = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("github-commit-object")
+        .arg(&object)
+        .arg("--expected")
+        .arg(&expected)
+        .output()
+        .unwrap();
+    assert!(accepted.status.success());
+    assert_eq!(accepted.stdout, format!("{expected}\n").as_bytes());
+    assert!(accepted.stderr.is_empty());
+
+    let rejected = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("github-commit-object")
+        .arg(&object)
+        .arg("--expected")
+        .arg("c".repeat(40))
+        .output()
+        .unwrap();
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr).contains("GitHub Git commit object resolved to")
+    );
+}

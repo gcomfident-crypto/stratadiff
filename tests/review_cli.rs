@@ -738,18 +738,135 @@ fn review_command_treats_hyphen_prefixed_inputs_as_revisions_after_the_option_se
 #[test]
 fn composite_action_separates_revision_inputs_and_rejects_an_empty_report() {
     let action = include_str!("../action.yml");
-    assert!(action.contains("cd -- \"${GITHUB_ACTION_PATH}\""));
-    assert!(action.contains("\"--repo=${STRATADIFF_REPOSITORY}\""));
-    assert!(action.contains("github-checkpoint \"${reviews_path}\" --reviewer"));
-    assert!(action.contains("! \"${resolved_checkpoint}\" =~ ^[0-9a-f]{40}$"));
-    assert!(action.contains("review_args+=(\"--checkpoint=${resolved_checkpoint}\")"));
-    assert!(action.contains("true) review_args+=(--fail-on-review-residue)"));
-    assert!(action.contains("review_args+=(-- \"${STRATADIFF_BASE}\" \"${STRATADIFF_HEAD}\")"));
-    assert!(action.contains("[[ ! -s \"${report_path}\" ]]"));
-    assert!(action.contains("review_status=$?"));
-    assert!(action.contains("exit \"${review_status}\""));
-    assert!(action.contains("grep -qi 'rel=\"next\"'"));
-    assert!(!action.contains("Authorization: Bearer ${STRATADIFF_GITHUB_TOKEN}"));
+    let script = include_str!("../scripts/github_action_review.sh");
+    assert!(action.contains(
+        "bash --noprofile --norc \"${GITHUB_ACTION_PATH}/scripts/github_action_review.sh\""
+    ));
+    assert!(script.contains("cd -- \"${GITHUB_ACTION_PATH}\""));
+    assert!(script.contains("\"--repo=${STRATADIFF_REPOSITORY}\""));
+    assert!(script.contains("github-checkpoint \"${reviews_path}\" --reviewer"));
+    assert!(script.contains("! \"${resolved_checkpoint}\" =~ ^[0-9a-f]{40}$"));
+    assert!(script.contains("review_args+=(\"--checkpoint=${resolved_checkpoint}\")"));
+    assert!(script.contains("true) review_args+=(--fail-on-review-residue)"));
+    assert!(script.contains("review_args+=(-- \"${STRATADIFF_BASE}\" \"${STRATADIFF_HEAD}\")"));
+    assert!(script.contains("[[ ! -s \"${report_path}\" ]]"));
+    assert!(script.contains("review_status=$?"));
+    assert!(script.contains("exit \"${review_status}\""));
+    assert!(script.contains("grep -qi 'rel=\"next\"'"));
+    assert_eq!(script.matches("curl --disable --config").count(), 2);
+    assert!(!script.contains("curl --config"));
+    assert!(!script.contains("Authorization: Bearer ${STRATADIFF_GITHUB_TOKEN}"));
+    assert!(script.contains("--max-filesize 8388608"));
+    assert!(script.contains("--max-filesize 1048576"));
+    assert!(script.contains("proto = \"=https\""));
+    assert!(script.contains("/git/commits/${resolved_checkpoint}"));
+    assert!(script.contains("github-commit-object \"${commit_object_path}\""));
+    assert!(script.contains("git clone --bare --shared --quiet"));
+    assert!(script.contains("git --git-dir=\"${provider_repository}\" fetch"));
+    assert!(script.contains("\"${resolved_checkpoint}:${provider_ref}\""));
+    assert!(script.contains("env -u STRATADIFF_GITHUB_TOKEN"));
+    assert!(script.contains("\"${provider_ref}:${checkpoint_ref}\""));
+    assert!(script.contains("rev-parse --verify \"${checkpoint_ref}^{commit}\""));
+    assert!(script.contains("update-ref -d \"${checkpoint_ref}\" \"${resolved_checkpoint}\""));
+}
+
+#[test]
+fn curl_disable_first_argument_ignores_a_malicious_user_curlrc() {
+    let directory = tempfile::tempdir().unwrap();
+    let home = directory.path().join("home");
+    fs::create_dir(&home).unwrap();
+    fs::write(
+        home.join(".curlrc"),
+        "write-out = \"malicious-curlrc-loaded\"\n",
+    )
+    .unwrap();
+    let source = directory.path().join("source.txt");
+    let destination = directory.path().join("destination.txt");
+    fs::write(&source, "provider response\n").unwrap();
+    let source_url = format!("file://{}", source.display());
+
+    let control = Command::new("curl")
+        .arg("--silent")
+        .arg("--show-error")
+        .arg("--output")
+        .arg(&destination)
+        .arg(&source_url)
+        .env("HOME", &home)
+        .env("CURL_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(control.status.success());
+    assert_eq!(control.stdout, b"malicious-curlrc-loaded");
+
+    let protected = Command::new("curl")
+        .arg("--disable")
+        .arg("--silent")
+        .arg("--show-error")
+        .arg("--output")
+        .arg(&destination)
+        .arg(&source_url)
+        .env("HOME", &home)
+        .env("CURL_HOME", &home)
+        .output()
+        .unwrap();
+    assert!(protected.status.success());
+    assert!(protected.stdout.is_empty());
+    assert_eq!(fs::read(&destination).unwrap(), b"provider response\n");
+}
+
+#[test]
+fn isolated_provider_git_ignores_a_malicious_user_gitconfig() {
+    let directory = tempfile::tempdir().unwrap();
+    let home = directory.path().join("home");
+    let repository = directory.path().join("provider.git");
+    fs::create_dir(&home).unwrap();
+    fs::write(
+        home.join(".gitconfig"),
+        "[url \"https://attacker.invalid/\"]\n\tinsteadOf = https://github.com/\n",
+    )
+    .unwrap();
+    let initialized = Command::new("git")
+        .arg("init")
+        .arg("--bare")
+        .arg("--quiet")
+        .arg(&repository)
+        .output()
+        .unwrap();
+    assert!(initialized.status.success());
+    let provider_url = "https://github.com/example/project.git";
+
+    let control = Command::new("git")
+        .arg(format!("--git-dir={}", repository.display()))
+        .arg("ls-remote")
+        .arg("--get-url")
+        .arg(provider_url)
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    assert!(control.status.success());
+    assert_eq!(
+        String::from_utf8(control.stdout).unwrap().trim(),
+        "https://attacker.invalid/example/project.git"
+    );
+
+    let isolated_home = directory.path().join("isolated-home");
+    fs::create_dir(&isolated_home).unwrap();
+    let protected = Command::new("git")
+        .arg(format!("--git-dir={}", repository.display()))
+        .arg("ls-remote")
+        .arg("--get-url")
+        .arg(provider_url)
+        .env("HOME", &isolated_home)
+        .env("XDG_CONFIG_HOME", &isolated_home)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    assert!(protected.status.success());
+    assert_eq!(
+        String::from_utf8(protected.stdout).unwrap().trim(),
+        provider_url
+    );
 }
 
 #[test]

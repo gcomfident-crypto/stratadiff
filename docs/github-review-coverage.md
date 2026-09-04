@@ -74,9 +74,18 @@ Pin `actions/checkout`, `actions/upload-artifact`, and StrataDiff to audited ful
 production workflow.
 
 The resolver requests at most 100 reviews from GitHub. It fails closed if pagination indicates a
-larger history. The caller-provided token is stored only in a mode-restricted temporary curl config
-and is removed before analysis. Review JSON is also deleted after checkpoint resolution. The
-resulting code analysis stays inside the runner.
+larger history. It verifies the selected review SHA through GitHub's Git commit-object endpoint. If
+that commit is no longer in the checkout after a force-push, the Action requests that exact SHA,
+and no branch or tag, from the HTTPS repository URL derived from `github.server_url` and
+`github.repository`. The
+authenticated fetch runs in an isolated temporary bare repository that ignores system and user Git
+configuration; the verified objects are then imported locally without the token. It never falls
+back to `origin`, the current PR head, or another commit. A provider that no longer serves the exact
+review commit therefore leaves the check red with an actionable error.
+
+All API calls disable user curl configuration before loading a mode-restricted temporary request
+configuration. Temporary API bodies, credentials, provider objects, and refs are removed by the
+Action's exit trap. The resulting code analysis stays inside the runner.
 
 ## Local inspection
 

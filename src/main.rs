@@ -9,7 +9,10 @@ use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use stratadiff::github::{MAX_GITHUB_REVIEWS_BYTES, resolve_github_review_checkpoint};
+use stratadiff::github::{
+    MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES, resolve_github_review_checkpoint,
+    verify_github_commit_object,
+};
 use stratadiff::review::{markdown_report, review_git_range_with_checkpoint};
 use stratadiff::{
     AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_bytes, apply_patch,
@@ -53,6 +56,14 @@ enum Command {
         /// Write the result to this path instead of stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+    /// Verify that GitHub's Git commit-object response is bound to an expected review commit.
+    GithubCommitObject {
+        /// JSON returned by GitHub's get-a-Git-commit endpoint.
+        object: PathBuf,
+        /// Full commit ID selected from the pull request's review records.
+        #[arg(long)]
+        expected: String,
     },
     /// Compare two source files and produce a structural report.
     Diff {
@@ -239,6 +250,17 @@ fn run(command: Command) -> Result<()> {
                 stdout.write_all(&encoded)?;
                 stdout.write_all(b"\n")?;
             }
+        }
+        Command::GithubCommitObject { object, expected } => {
+            let object_bytes = read_bounded(
+                &object,
+                MAX_GITHUB_COMMIT_OBJECT_BYTES,
+                "GitHub Git commit object bytes",
+            )?;
+            verify_github_commit_object(&object_bytes, &expected)?;
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(expected.as_bytes())?;
+            stdout.write_all(b"\n")?;
         }
         Command::Diff {
             before,

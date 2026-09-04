@@ -41,7 +41,9 @@ jobs:
         run: |
           python3 benchmarks/resumebench-real-v1/verify.py materialize \
             --output "$RUNNER_TEMP/resumebench-real-v1"
-      - name: Reproduce the review-coverage gate offline
+      - name: Remove the fixture remote
+        run: git -C "$RUNNER_TEMP/resumebench-real-v1/repository.git" remote remove origin
+      - name: Reproduce the review-coverage gate without a Git remote
         run: |
           python3 scripts/demo_review_coverage.py \
             --offline \

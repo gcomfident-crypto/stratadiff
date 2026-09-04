@@ -12,7 +12,7 @@ fi
 cargo package --list --locked --allow-dirty | grep -Fx 'web/dist/index.html'
 python3 tools/resumebench-real/resumebench_real.py self-test
 python3 benchmarks/resumebench-real-v1/verify.py self-test
-python3 scripts/demo_review_coverage.py --help >/dev/null
+python3 scripts/demo_review_coverage.py --self-test
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

@@ -120,21 +120,23 @@ cmp rebuilt.py examples/demo/after.py
 
 From a clean checkout, one command builds StrataDiff, materializes a pinned Gerrit review history,
 checks the independent oracle, and proves that the required check blocks on exactly the two files
-Gerrit recorded as changed after approval:
+Gerrit recorded as changed after approval. The first Cargo build may download Rust dependencies,
+and fixture materialization fetches the pinned Git objects:
 
 ```console
 python3 scripts/demo_review_coverage.py --open
 ```
 
-The first run uses the network to fetch the pinned Git objects and writes all artifacts under
-`target/review-coverage-demo/`. Later runs can be reproduced without network access:
+The first run writes all artifacts under `target/review-coverage-demo/`. Later runs can be
+reproduced without network access when that fixture and a clean release binary already exist:
 
 ```console
 python3 scripts/demo_review_coverage.py --offline --open
 ```
 
 The demo deliberately exits successfully after verifying that the inner required check exits 1;
-that red check is the expected product result, not a failed benchmark.
+that red check is the expected product result, not a failed benchmark. With `--open`, the local
+Workbench keeps running until you press Ctrl+C.
 
 ### Repository review focus
 
@@ -215,15 +217,18 @@ In GitHub Actions, check out enough history for the merge base and append the Ma
 The repository also ships an alpha composite action. Analysis runs inside the caller's GitHub
 runner and StrataDiff itself has no upload step. If `reviewer` is configured, the Action downloads
 up to 100 review records from GitHub's API using the caller-provided token; it fails closed above
-that bound. When consumed from a separately pinned remote ref,
-the Action builds from its own directory so a checkout-level `.cargo/config.toml` cannot redirect
-that build. A local `uses: ./` invocation has no such boundary because the Action and checkout are
-the same tree. The workflow still uses GitHub-hosted or self-hosted runner infrastructure plus
-third-party checkout, toolchain, cache, and optional artifact actions. `fail-on-review-residue`
-makes the Action suitable as an experimental required check, but it still does not grant or restore
-approval, prove semantic safety, or establish reviewer authorization. Audit and pin every action to
-an immutable full commit before using it in a protected production workflow; the mutable `main`
-reference below is only a preview:
+that bound. The selected review SHA is verified against GitHub's commit-object API. When a
+force-push has removed it from the checkout, the Action fetches that exact object through an
+isolated provider-bound repository and imports it locally without the token; it never substitutes
+`origin`, the current PR head, or another checkpoint. When consumed from a separately pinned remote
+ref, the Action builds from its own directory so a checkout-level `.cargo/config.toml` cannot
+redirect that build. A local `uses: ./` invocation has no such boundary because the Action and
+checkout are the same tree. The workflow still uses GitHub-hosted or self-hosted runner
+infrastructure plus third-party checkout, toolchain, cache, and optional artifact actions.
+`fail-on-review-residue` makes the Action suitable as an experimental required check, but it still
+does not grant or restore approval, prove semantic safety, or establish reviewer authorization.
+Audit and pin every action to an immutable full commit before using it in a protected production
+workflow; the mutable `main` reference below is only a preview:
 
 ```yaml
 permissions:
