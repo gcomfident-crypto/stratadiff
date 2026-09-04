@@ -343,7 +343,9 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
       <section className="resume-hero">
         <div className="resume-copy">
           <span className="eyebrow">WHAT CHANGED AFTER YOUR CHECKPOINT</span>
-          <h1>{session.resume_delta.files.length === 0 ? 'No changes between checkpoint and head' : `${session.resume_delta.files.length.toLocaleString('en')} files changed since checkpoint`}</h1>
+          <h1>{session.resume_delta.files.length === 0
+            ? 'No changes between checkpoint and head'
+            : `${session.resume_delta.files.length.toLocaleString('en')} ${session.resume_delta.files.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
           <p>Start with the checkpoint → head delta. Switch to full PR context whenever you need the original base → head story.</p>
         </div>
         <div className="resume-stats" aria-label="Review resume summary">

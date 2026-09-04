@@ -182,6 +182,20 @@ describe('Evidence Workbench', () => {
     expect(screen.getByRole('button', { name: /src\/carried\.ts.*Exactly carried/ })).toBeInTheDocument()
   })
 
+  it('uses singular copy for a one-file checkpoint delta', async () => {
+    const payload = repositorySessionFixture()
+    payload.resume_delta.files = payload.resume_delta.files.slice(0, 1)
+    payload.resume_delta.summary.changed_files = 1
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('1 file changed since checkpoint')).toBeInTheDocument()
+  })
+
   it('does not claim snapshots match when search or filters hide real changes', async () => {
     const payload = repositorySessionFixture()
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
