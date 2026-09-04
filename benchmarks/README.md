@@ -3,21 +3,26 @@
 ## Real review-history diagnostic
 
 [`resumebench-real-v0/`](resumebench-real-v0/) pins five public Gerrit review histories: four
-same-base checkpoint transitions and one rebase/base-drift case that must fail closed. Its
+same-base checkpoint transitions and one rebase/base-drift case that the v0 policy must reject. Its
 independent Python/Git oracle records the complete checkpoint, head, and checkpoint-to-head
-identity sets plus blob SHA-256 evidence. The first evaluation passes all five cases with zero
-false carries and zero false invalidations. This deliberately selected one-project sample does not
-estimate typical reviewer-time savings or defect recall; see the
+identity sets plus blob SHA-256 evidence. The checked-in evaluation passes all five cases with zero
+false carries and zero false invalidations under that historical policy.
+
+The evaluation predates non-interacting four-way byte replay. On 2026-09-05, the current engine was
+run separately against the pinned base-drift case and produced 5 carried files and 2 residue files,
+matching Gerrit's public submission record. That diagnostic is not part of v0. A new versioned
+oracle and clean provenance-bound evaluation are still required. Neither the frozen result nor the
+new diagnostic estimates reviewer-time savings or defect recall; see the
 [`ResumeBench-Real v0` dataset card](resumebench-real-v0/README.md).
 
 ## Exact-review-resume safety seed
 
 [`resumebench-seed-v1.json`](resumebench-seed-v1.json) describes controlled three-snapshot Git
-histories for the checkpoint policy: rewritten history, changed bytes, changed paths and modes,
-new and retired changes, exact deletions, and parser-unsupported content. The gate requires every
-current change to be accounted for exactly once and permits carry-forward only for a complete Git
-change-identity match. See the [`ResumeBench` dataset card](resumebench/README.md) and run
-`cargo test --test resumebench`.
+histories for the original checkpoint policy: rewritten history, changed bytes, changed paths and
+modes, new and retired changes, exact deletions, and parser-unsupported content. The gate requires
+every current change to be accounted for exactly once and covers complete Git change-identity
+matching. It does not yet serve as the oracle for base-drift replay. See the
+[`ResumeBench` dataset card](resumebench/README.md) and run `cargo test --test resumebench`.
 
 This seed tests a factual invalidation rule. It does not show that the checkpoint was actually
 reviewed, that unchanged files are semantically safe, or that developers save time in practice.

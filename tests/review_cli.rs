@@ -3,9 +3,10 @@ use std::{fs, path::Path, process::Command};
 use stratadiff::{
     VerificationLimits,
     review::{
-        CheckpointMatchBasis, CheckpointState, MAX_REVIEW_TOTAL_SOURCE_BYTES, RepositoryReview,
-        ReviewLane, ReviewPriority, load_review_file_sources, markdown_report,
-        regenerate_review_file_report, review_git_range_with_checkpoint, review_git_snapshot_delta,
+        CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState, MAX_REVIEW_TOTAL_SOURCE_BYTES,
+        RepositoryReview, ReviewLane, ReviewPriority, load_review_file_sources, markdown_report,
+        regenerate_review_file_report, review_git_range_with_checkpoint, review_git_resume_delta,
+        review_git_snapshot_delta,
     },
 };
 
@@ -115,6 +116,7 @@ fn checkpoint_delta_is_the_direct_reviewed_snapshot_to_current_head_diff() {
     let delta = review_git_snapshot_delta(directory.path(), &checkpoint, &head).unwrap();
 
     assert_eq!(delta.from_commit, checkpoint);
+    assert_eq!(delta.source_base_commit, checkpoint);
     assert_eq!(delta.to_commit, head);
     assert_eq!(delta.comparison, "snapshot_to_snapshot");
     assert_eq!(delta.summary.changed_files, 2);
@@ -289,7 +291,7 @@ fn checkpoint_resume_matches_only_complete_git_change_identities() {
     assert!(markdown.contains("Needs review now: **2** of 6 current files"));
     assert!(markdown.contains("<details>"));
     assert!(markdown.contains("Unchanged since checkpoint: <strong>4</strong>"));
-    assert!(markdown.contains("**2** checkpoint change identities retired"));
+    assert!(markdown.contains("**2** checkpoint changes retired"));
     assert!(markdown.contains("Cross-file effects were not checked"));
     assert!(markdown.contains(
         "Intrinsic priority before checkpoint carry-forward: **6** of 6 files are review first"
@@ -376,32 +378,173 @@ fn checkpoint_resume_accounts_for_new_and_retired_changes_separately() {
 }
 
 #[test]
-fn checkpoint_resume_rejects_a_different_merge_base() {
+fn checkpoint_resume_carries_noninteracting_rebase_changes_in_the_same_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(
+        root.join("shared.py"),
+        "title = 'old'\nstable = 0\nreviewed = 0\n",
+    )
+    .unwrap();
+    let original_base = commit(root, "original base");
+
+    fs::write(
+        root.join("shared.py"),
+        "title = 'old'\nstable = 0\nreviewed = 1\n",
+    )
+    .unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(
+        root.join("shared.py"),
+        "title = 'new'\nstable = 0\nreviewed = 0\n",
+    )
+    .unwrap();
+    let current_base = commit(root, "advanced base");
+    fs::write(
+        root.join("shared.py"),
+        "title = 'new'\nstable = 0\nreviewed = 1\n",
+    )
+    .unwrap();
+    let head = commit(root, "rebased current head");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    assert_eq!(
+        report.checkpoint.as_ref().unwrap().match_basis,
+        CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay
+    );
+    assert_eq!(report.files.len(), 1);
+    assert_eq!(
+        report.files[0].checkpoint_state,
+        Some(CheckpointState::UnchangedSinceCheckpoint)
+    );
+    assert_eq!(
+        report.files[0].checkpoint_match_basis,
+        Some(CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay)
+    );
+    assert!(report.files[0].reason.contains("four-way byte replay"));
+    let summary = report.summary.checkpoint.as_ref().unwrap();
+    assert_eq!(summary.needs_review_now_files, 0);
+    assert_eq!(summary.unchanged_since_checkpoint_files, 1);
+    assert_eq!(summary.retired_change_count, 0);
+
+    let residue = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(residue.summary.changed_files, 0);
+    let markdown = markdown_report(&report);
+    assert!(markdown.contains("non-interacting four-way byte replay"));
+}
+
+#[test]
+fn checkpoint_resume_rejects_overlapping_changes_during_base_drift() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("shared.py"), "value = 0000\n").unwrap();
+    let original_base = commit(root, "original base");
+
+    fs::write(root.join("shared.py"), "value = 1111\n").unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("shared.py"), "value = 2222\n").unwrap();
+    let current_base = commit(root, "overlapping base update");
+    fs::write(root.join("shared.py"), "value = 1111\n").unwrap();
+    let head = commit(root, "resolved current head");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    assert_eq!(report.files.len(), 1);
+    assert_eq!(
+        report.files[0].checkpoint_state,
+        Some(CheckpointState::NeedsReviewNow)
+    );
+    assert_eq!(report.files[0].checkpoint_match_basis, None);
+    let summary = report.summary.checkpoint.as_ref().unwrap();
+    assert_eq!(summary.needs_review_now_files, 1);
+    assert_eq!(summary.unchanged_since_checkpoint_files, 0);
+    assert_eq!(summary.retired_change_count, 1);
+}
+
+#[test]
+fn checkpoint_resume_uses_pr_relative_ranges_when_the_base_changes() {
     let directory = tempfile::tempdir().unwrap();
     let root = directory.path();
     git(root, &["init", "-q"]);
     git(root, &["config", "user.name", "StrataDiff Test"]);
     git(root, &["config", "user.email", "stratadiff@example.test"]);
     fs::write(root.join("seed.py"), "value = 1\n").unwrap();
+    fs::write(root.join("shared.py"), "value = 0\n").unwrap();
+    fs::write(root.join("divergent.py"), "value = 0\n").unwrap();
     let original_base = commit(root, "original base");
 
     fs::write(root.join("checkpoint.py"), "value = 1\n").unwrap();
+    fs::write(root.join("shared.py"), "value = 1\n").unwrap();
+    fs::write(root.join("divergent.py"), "value = 1\n").unwrap();
     let checkpoint = commit(root, "checkpoint branch");
 
     git(root, &["checkout", "-q", &original_base]);
     fs::write(root.join("base-update.py"), "value = 1\n").unwrap();
     let current_base = commit(root, "advanced base");
     fs::write(root.join("current.py"), "value = 1\n").unwrap();
+    fs::write(root.join("shared.py"), "value = 1\n").unwrap();
+    fs::write(root.join("divergent.py"), "value = 2\n").unwrap();
     let head = commit(root, "current head");
 
-    let error = review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint))
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("checkpoint and current review must have the same merge base"),
-        "{error:#}"
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    let checkpoint_metadata = report.checkpoint.as_ref().unwrap();
+    assert_eq!(checkpoint_metadata.base_commit, original_base);
+    assert_eq!(
+        checkpoint_metadata.match_basis,
+        CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay
     );
+    assert_eq!(report.base_commit, current_base);
+    assert_ne!(checkpoint_metadata.base_commit, report.base_commit);
+    assert_eq!(report.summary.changed_files, 3);
+    assert_eq!(report.files[0].display_path(), "current.py");
+    assert_eq!(
+        report.files[0].checkpoint_state,
+        Some(CheckpointState::NeedsReviewNow)
+    );
+    assert_eq!(report.files[1].display_path(), "divergent.py");
+    assert_eq!(
+        report.files[1].checkpoint_state,
+        Some(CheckpointState::NeedsReviewNow)
+    );
+    assert_eq!(report.files[2].display_path(), "shared.py");
+    assert_eq!(
+        report.files[2].checkpoint_state,
+        Some(CheckpointState::UnchangedSinceCheckpoint)
+    );
+    assert_eq!(
+        report.files[2].checkpoint_match_basis,
+        Some(CheckpointCarryBasis::ExactGitChangeIdentity)
+    );
+    let summary = report.summary.checkpoint.as_ref().unwrap();
+    assert_eq!(summary.needs_review_now_files, 2);
+    assert_eq!(summary.unchanged_since_checkpoint_files, 1);
+    assert_eq!(summary.retired_change_count, 2);
+
+    let residue = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(residue.comparison, "current_pr_unmatched_identities");
+    assert_eq!(residue.from_commit, checkpoint);
+    assert_eq!(residue.source_base_commit, current_base);
+    assert_eq!(residue.to_commit, head);
+    assert_eq!(residue.summary.changed_files, 2);
+    assert_eq!(residue.files[0].display_path(), "current.py");
+    assert_eq!(residue.files[1].display_path(), "divergent.py");
+
+    let markdown = markdown_report(&report);
+    assert!(markdown.contains("base changed"));
+    assert!(markdown.contains(&original_base));
+    assert!(markdown.contains(&current_base));
 }
 
 #[test]

@@ -108,12 +108,22 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
   ) {
     throw new Error('The viewer returned inconsistent repository review metadata.')
   }
-  if (!isRecord(review.checkpoint) || typeof review.checkpoint.commit !== 'string') {
+  if (
+    !isRecord(review.checkpoint) ||
+    typeof review.checkpoint.commit !== 'string' ||
+    typeof review.checkpoint.base_commit !== 'string' ||
+    typeof review.checkpoint.match_basis !== 'string'
+  ) {
     throw new Error('The repository workbench requires a resolved checkpoint.')
   }
+  const baseChanged = review.checkpoint.base_commit !== review.base_commit
+  const expectedBasis = baseChanged
+    ? 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+    : 'exact_git_change_identity'
   if (
-    resumeDelta.comparison !== 'snapshot_to_snapshot' ||
+    !['snapshot_to_snapshot', 'current_pr_unmatched_identities'].includes(String(resumeDelta.comparison)) ||
     typeof resumeDelta.from_commit !== 'string' ||
+    typeof resumeDelta.source_base_commit !== 'string' ||
     typeof resumeDelta.to_commit !== 'string' ||
     resumeDelta.from_commit !== review.checkpoint.commit ||
     resumeDelta.to_commit !== review.head_commit ||
@@ -121,6 +131,15 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
     resumeSummary.changed_files !== resumeFiles.length
   ) {
     throw new Error('The viewer returned inconsistent checkpoint delta metadata.')
+  }
+  if (
+    (resumeDelta.comparison === 'snapshot_to_snapshot' && resumeDelta.source_base_commit !== review.checkpoint.commit) ||
+    (resumeDelta.comparison === 'current_pr_unmatched_identities' && (
+      resumeDelta.source_base_commit !== review.base_commit ||
+      !baseChanged
+    ))
+  ) {
+    throw new Error('The viewer returned an invalid review-residue scope.')
   }
   for (const file of reviewFiles) {
     if (
@@ -131,6 +150,13 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
       typeof file.reason !== 'string'
     ) {
       throw new Error('The viewer returned an invalid repository review file.')
+    }
+    if (
+      (file.checkpoint_state === 'unchanged_since_checkpoint' &&
+        !['exact_git_change_identity', 'exact_noninteracting_four_way_byte_replay'].includes(String(file.checkpoint_match_basis))) ||
+      (file.checkpoint_state === 'needs_review_now' && file.checkpoint_match_basis !== undefined)
+    ) {
+      throw new Error('The viewer returned inconsistent checkpoint carry evidence.')
     }
   }
   for (const file of resumeFiles) {
@@ -147,7 +173,8 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
   if (
     !isRecord(value.assessment) ||
     value.assessment.status !== 'producer_attested' ||
-    value.assessment.basis !== 'exact_git_change_identity' ||
+    value.assessment.basis !== expectedBasis ||
+    review.checkpoint.match_basis !== expectedBasis ||
     typeof value.assessment.message !== 'string'
   ) {
     throw new Error('The repository review is missing its attestation boundary.')

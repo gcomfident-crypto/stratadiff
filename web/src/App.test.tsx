@@ -89,11 +89,11 @@ describe('Evidence Workbench', () => {
     fireEvent.keyDown(window, { key: 'j' })
 
     expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
-    expect(screen.getByText('Relation R1')).toBeInTheDocument()
+    expect(await screen.findByText('Relation R1')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'k' })
     expect(screen.getByTestId('rendered-diff')).toBeInTheDocument()
-    expect(screen.getByText('Byte edit 01')).toBeInTheDocument()
+    expect(await screen.findByText('Byte edit 01')).toBeInTheDocument()
   })
 
   it('preserves modified browser shortcuts while the evidence drawer is open', async () => {
@@ -194,6 +194,35 @@ describe('Evidence Workbench', () => {
     render(<App />)
 
     expect(await screen.findByText('1 file changed since checkpoint')).toBeInTheDocument()
+  })
+
+  it('explains the PR-relative fallback when the merge base changed', async () => {
+    const payload = repositorySessionFixture()
+    payload.review.checkpoint!.base_commit = '3'.repeat(40)
+    payload.review.checkpoint!.match_basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+    payload.assessment.basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+    const replayCarried = payload.review.files.find((file) => file.after_path === 'src/carried.ts')
+    if (replayCarried === undefined) throw new Error('Missing carried fixture file.')
+    replayCarried.checkpoint_match_basis = 'exact_noninteracting_four_way_byte_replay'
+    payload.resume_delta.comparison = 'current_pr_unmatched_identities'
+    payload.resume_delta.source_base_commit = payload.review.base_commit
+    payload.resume_delta.files = payload.review.files.slice(0, 1)
+    payload.resume_delta.summary.changed_files = 1
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('1 current PR file needs review')).toBeInTheDocument()
+    expect(screen.getByText(/This queue excludes upstream-only files/)).toBeInTheDocument()
+    expect(screen.getByText(/Base changed · exact identity or non-interacting four-way replay/)).toBeInTheDocument()
+    expect(screen.queryByText('src/retired.ts')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
+    expect(screen.getByRole('button', { name: /src\/carried\.ts.*Replay carried/ })).toBeInTheDocument()
   })
 
   it('does not claim snapshots match when search or filters hide real changes', async () => {

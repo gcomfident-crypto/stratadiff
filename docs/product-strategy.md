@@ -1,4 +1,4 @@
-# Product strategy: Review Residue and the Change Passport
+# Product strategy: proof-carrying review memory and the Change Passport
 
 Evidence captured: **2026-09-05**. This is a falsifiable product thesis, not a market-size report or
 a claim that the roadmap is already implemented. Prices, install counts, stars, and vendor claims
@@ -6,10 +6,10 @@ are point-in-time observations and must be refreshed before external use.
 
 ## Decision in one sentence
 
-**StrataDiff should become the vendor-neutral Exact Review Resume engine: given an explicitly
-reviewed checkpoint and a new Git head, it should prove which complete PR changes are byte-for-byte
-identical, invalidate everything else, and carry that evidence in an independently verifiable
-Change Passport.**
+**StrataDiff should become the vendor-neutral memory and gate for human review: given an explicitly
+reviewed checkpoint and a new Git head, it should prove which PR changes can be carried, put every
+unproven change back in review, and retain the evidence in an independently verifiable Change
+Passport.**
 
 This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff's
 wedge is to remove noise from the reviewer's first pass only when a narrower factual claim can be
@@ -22,18 +22,28 @@ finishes a large PR snapshot, the author or coding agent pushes again, and the r
 know which complete PR changes differ from the reviewed checkpoint. A caller-selected checkpoint
 turns that question into a narrow comparison that does not require guessing intent or behavior.
 
-A current file may be labeled `unchanged_since_checkpoint` only when its complete Git change
-identity matches the checkpoint range: status, similarity, before and after paths and encodings,
-modes, and object IDs. Any mismatch becomes `needs_review_now`. Checkpoint and current ranges must
-resolve to the same unique merge base; otherwise the comparison fails closed. This is a claim about
-two PR snapshots, not proof that a human actually reviewed the checkpoint, that cross-file effects
-are absent, or that unchanged code is safe to merge.
+A current file may be labeled `unchanged_since_checkpoint` through either of two proofs. The fast
+path requires the same complete Git change identity: status, similarity, before and after paths and
+encodings, modes, and object IDs. If the merge base changed, a unique same-path regular-file
+modification may also carry through non-interacting four-way byte replay. The engine constructs the
+reviewed and upstream patches from the old base, rejects touching or overlapping edits, translates
+the patches in both directions, and requires both replay orders to produce the current blob exactly.
+All conflicts, ambiguous candidates, unsupported file kinds, missing evidence, and replay failures
+remain `needs_review_now`. This proves a narrow byte relation between four file snapshots. It does
+not prove that a human reviewed the checkpoint, that cross-file effects are absent, or that the
+change is safe to merge.
 
-Native code hosts and Reviewable already support review state and comparisons across pushes, so
-“show changes since last time” is not a novel category. StrataDiff's testable boundary is an open,
-host-neutral, deterministic invalidation rule whose evidence can be downloaded and independently
-checked. If users do not value that portability or stronger claim boundary, this wedge should not
-be treated as differentiated.
+The report names the base-drift policy
+`exact_git_change_identity_or_noninteracting_four_way_byte_replay`. Each carried file records its
+actual `checkpoint_match_basis` as `exact_git_change_identity` or
+`exact_noninteracting_four_way_byte_replay`; a needs-review file has no carry basis. This distinction
+must survive into the Change Passport and any host check.
+
+Native code hosts, Graphite, and Reviewable already support review state and comparisons across
+pushes, so "show changes since last time" is not a novel category. StrataDiff's testable boundary is
+an open, host-neutral review-memory gate: every carry needs a named deterministic proof, every
+unproved change stays visible, and the evidence can be downloaded and checked independently. If
+users do not value that portability or stronger claim boundary, this wedge is not differentiated.
 
 ## The product primitives
 
@@ -98,9 +108,11 @@ does **not** yet prove that Review Residue is the winning solution.
 | Developers adopt better diff experiences | [Difftastic](https://github.com/Wilfred/difftastic) had 25,855 GitHub stars, and the [SemanticDiff VS Code extension](https://marketplace.visualstudio.com/items?itemName=semanticdiff.semanticdiff) displayed 49,020 installs. | There is demonstrated interest in code-aware diffing. | Public counters; neither equals active teams, revenue, or willingness to pay. |
 | Commercial review tooling has paid demand | [SemanticDiff pricing](https://semanticdiff.com/github/pricing/) displayed a $10/seat/month tier. [CodeRabbit pricing](https://www.coderabbit.ai/pricing) displayed $24/$48/$72 per developer/month annual-price points, and [Graphite pricing](https://graphite.com/pricing) displayed paid tiers around $20/$40 per user/month. CodeRabbit also reported roughly 17,000 customers and six million repositories on vendor-owned material captured during this research. | Teams pay for review workflow and automation; pricing is plausible if value is proved. | Pricing and adoption claims are vendor-reported and not independently verified. |
 | History rewrites destroy useful review context | GitHub's own `gh-stack` users report that sync force-pushes [erase “changes since last view”](https://github.com/github/gh-stack/issues/354), and that a byte-identical restack [dismissed three approvals and restarted CI](https://github.com/github/gh-stack/issues/446). | Exact state can survive rewritten commit identity and avoid demonstrably redundant work. | Concrete first-party issue reports; they establish failure modes, not prevalence. |
+| Approval invalidation is broader than the reviewed delta | GitHub Community requests ask for invalidation by the final diff or tree rather than commit ancestry ([#12876](https://github.com/orgs/community/discussions/12876), 98 votes at capture) and report stacked changes causing cascades of stale approvals ([#57513](https://github.com/orgs/community/discussions/57513), 126 votes at capture). Another report says a reviewer's own suggestion can trigger renewed approval across 12 organizations ([#78039](https://github.com/orgs/community/discussions/78039)). | The product should bind review state to exact evidence and invalidate only what it cannot carry. | Public requests and reported organization experience; vote counts are point-in-time signals, not prevalence. |
 | Large-MR reviewers explicitly ask for narrow invalidation | A GitLab request says rebase forces the reviewer to revisit every approved file and asks to retain identical file/block approval ([#594565](https://gitlab.com/gitlab-org/gitlab/-/issues/594565)). A separate GitLab analysis reports a 15% incidence of unwanted patch-ID changes in one 1,000+-developer, 50k-file project ([#439234](https://gitlab.com/gitlab-org/gitlab/-/issues/439234)). | Whole-review invalidation is a costly, measurable problem; exact file identity is a plausible narrower primitive. | One user request and one organization-specific analysis; external replication is required. |
 | AI re-review also forgets dispositions | GitHub's [Copilot code-review documentation](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review) says re-review may repeat dismissed or downvoted comments, while a [community request](https://github.com/orgs/community/discussions/190754) describes repeatedly re-explaining the same rejected suggestion. | A later ledger should bind findings and human dispositions to exact evidence identity instead of rerunning a stateless reviewer. | Official limitation plus user report; this is a follow-on job, not proof that the current checkpoint implementation solves it. |
 | Review state across pushes is an established job | [GitHub documents](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/reviewing-proposed-changes-in-a-pull-request#marking-a-file-as-viewed) that a viewed file is unmarked when it changes, while [GitLab exposes diff versions](https://docs.gitlab.com/user/project/merge_requests/versions/) specifically for merge requests with many or sequential changes. A [public editor request](https://github.com/wandersoncferreira/code-review/issues/146) describes large PR review spanning multiple sessions and asks to preserve file or hunk state. | Reviewers already expect incremental review and explicit invalidation. | Product documentation plus a user report; neither measures time saved. |
+| Naive last-review diffs absorb base noise | VS Code's GitHub extension has tracked incremental review since [#363](https://github.com/microsoft/vscode-pull-request-github/issues/363). Follow-up reports show merges from the base branch introducing unrelated files into the view ([#4510](https://github.com/microsoft/vscode-pull-request-github/issues/4510), [#5455](https://github.com/microsoft/vscode-pull-request-github/issues/5455), [#6281](https://github.com/microsoft/vscode-pull-request-github/issues/6281)). | A useful residue must compare PR-relative changes and exclude upstream-only files. | Public issue reports establish concrete failure modes, not their frequency. |
 | Rebase-aware review has capable incumbents | [Reviewable documents](https://docs.reviewable.io/files#file-review-state) matching a file against a prior rebased revision, and Git provides [`range-diff`](https://git-scm.com/docs/git-range-diff) for comparing two versions of a patch series. | Exact Review Resume must compete on portable evidence and deterministic invalidation, not claim invention of incremental review. | Capability documentation, not comparative accuracy or adoption evidence. |
 
 The strongest market inference is therefore limited: review attention is scarce, existing products
@@ -151,10 +163,10 @@ worked on semantic diffing, refactoring analysis, or review workflow.
 
 | Category | What it already does well | Boundary for StrataDiff |
 |---|---|---|
-| GitHub, GitLab, Reviewable | Canonical conversation, permissions, approvals, viewed state, file navigation, and revision workflow. | Integrate with these systems. Do not rebuild the code host. Add a portable evidence check and residue queue. |
+| GitHub, GitLab, Reviewable | Canonical conversation, permissions, approvals, viewed state, file navigation, and revision workflow. GitHub's [review API](https://docs.github.com/en/rest/pulls/reviews?apiVersion=2022-11-28#list-reviews-for-a-pull-request) exposes the commit attached to each review. | Integrate with these systems. Resolve reviewer checkpoints from host state, then add a portable evidence check and exact-head residue gate. |
 | Graphite and stacked-PR tools | Make changes reviewable by splitting, stacking, routing, and tracking PRs. | Stacking changes the presentation and dependency graph; StrataDiff analyzes an arbitrary existing range. The approaches are complementary. |
 | Copilot, CodeRabbit, Graphite AI, and other AI reviewers | Suggest likely bugs, summaries, and fixes across repository context. | Run these tools on the residue if useful. A suggestion is not a verified predicate, so it cannot enter the evidence-backed lane without deterministic support. |
-| SemanticDiff and Difftastic | Provide substantially better structural presentation and moved-code navigation than line diff. | The overlap is real. Differentiate on a portable Change Passport, independent replay, explicit ambiguity/abstention, and cross-push evidence lineage—not on visual syntax awareness alone. |
+| SemanticDiff and Difftastic | Provide substantially better structural presentation and moved-code navigation than line diff. | The overlap is real. Differentiate on a portable Change Passport, independent replay, explicit ambiguity/abstention, and cross-push evidence lineage, not on visual syntax awareness alone. |
 | RefactoringMiner / ASTDiff | Strong Java refactoring detection and mapping; its [PurityChecker](https://github.com/tsantalis/RefactoringMiner/blob/master/documentation/purity.md) evaluates nine documented refactoring kinds. | Reuse or ingest stronger language-specific evidence. Do not claim that the current multi-language CST matcher supersedes compiler-aware Java analysis. |
 | Moderne / OpenRewrite | Deterministic source recipes with [recipe tests](https://docs.openrewrite.org/authoring-recipes/recipe-testing) and knowledge of the transformation that was requested. | For recipe-produced changes, producer provenance can be stronger than post-hoc inference. Import the recipe attestation; focus StrataDiff on vendor-neutral verification of changes from any source. |
 | Static analysis and security scanners | Find known bug and vulnerability classes. | These tools answer “what may be wrong?” StrataDiff answers “what factual transformation can be replayed or checked?” Neither replaces the other. |
@@ -240,7 +252,7 @@ be reused for bug-finding context, but are not a substitute for this attention-t
 
 ## Roadmap
 
-### P0 — prove the wedge
+### P0: prove the wedge
 
 1. Ship a local `stratadiff review BASE [HEAD]` path that resolves one unambiguous merge base and
    handles multi-file Git identity, unique exact-object relocations, modes, unsupported files, and
@@ -249,9 +261,9 @@ be reused for bug-finding context, but are not a substitute for this attention-t
 2. Emit deterministic JSON and concise Markdown with structural-delta, parser-model-matched,
    same-Git-object, and unverified evidence classes plus a separate attention priority. Keep every
    class human-first until a narrower policy passes adversarial and reviewer-recall gates.
-3. Add Exact Review Resume from a caller-attested checkpoint. Carry a current change forward only
-   when its complete Git change identity matches and both ranges share one unique merge base;
-   expose changed, unchanged, and retired accounting without calling anything safe or approved.
+3. Harden Exact Review Resume from a caller-attested checkpoint. Preserve the exact-identity fast
+   path and the unique same-path, non-interacting four-way replay path across base drift. Expand the
+   adversarial corpus before supporting more file kinds or interaction patterns.
 4. Define and validate `review-v2` as the first self-contained Change Passport envelope, including
    commit/blob provenance, attached or content-addressed single-file reports, engine version,
    non-claims, and independent offline verification instructions. Keep `review-v1` labeled as a
@@ -269,7 +281,7 @@ P0 exits only when passport verification is stable, no known factual misstatemen
 blinded pilot shows useful reviewer-time reduction without lower issue recall. Passing unit tests or
 the existing AST benchmark alone is insufficient.
 
-### P1 — compound trust and distribution
+### P1: compound trust and distribution
 
 1. Persist per-reviewer checkpoints, partial-file state, and finding dispositions across pushes.
    Carry state only when exact Git identity or a separately verified relation permits it; invalidate
@@ -343,11 +355,12 @@ The next milestone is not “GitHub parity.” It is one end-to-end proof:
 
 ```text
 large PR at reviewed checkpoint R
-  -> rewritten or incrementally updated head H
-  -> exact current-change identity comparison
-  -> every mutation invalidated; unchanged changes accounted for
-  -> smaller needs-review-now queue
-  -> reviewer study with equal-or-better issue recall
+  -> rewritten, rebased, or incrementally updated head H
+  -> exact identity, then strict four-way replay where eligible
+  -> conflicts and ambiguities fail closed
+  -> upstream-only files excluded from the PR residue
+  -> exact-head gate publishes the remaining review queue
+  -> reviewer study measures time and issue recall
   -> portable evidence still verifies after download
 ```
 

@@ -49,6 +49,7 @@ function lineSummary(file: ReviewFile): string {
 
 function checkpointStateLabel(file: ReviewFile): string | null {
   if (file.checkpoint_state === 'needs_review_now') return 'Needs review now'
+  if (file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') return 'Replay carried'
   if (file.checkpoint_state === 'unchanged_since_checkpoint') return 'Exactly carried'
   return null
 }
@@ -123,9 +124,10 @@ function SourceOnlyDiff({ before, after }: { before: DecodedArtifact; after: Dec
   )
 }
 
-function ReviewFileDetail({ file, scope, index, sources, drawer, open, onClose }: {
+function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawer, open, onClose }: {
   file: ReviewFile
   scope: ReviewScope
+  resumeComparison: RepositorySessionPayload['resume_delta']['comparison']
   index: number
   sources: SourceState
   drawer: boolean
@@ -202,9 +204,13 @@ function ReviewFileDetail({ file, scope, index, sources, drawer, open, onClose }
         <p>{visibleInlineText(file.reason)}</p>
         <p className="review-scope-note">
           {scope === 'resume'
-            ? 'This row compares the declared checkpoint snapshot directly with the current head.'
+            ? resumeComparison === 'snapshot_to_snapshot'
+              ? 'This row compares the declared checkpoint snapshot directly with the current head.'
+              : 'This row is a current PR change that could not be carried exactly across the base update; upstream-only files are excluded.'
             : file.checkpoint_state === 'unchanged_since_checkpoint'
-              ? 'This complete PR change identity exactly matches the declared checkpoint.'
+              ? file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay'
+                ? 'The reviewed byte edits and upstream base edits were non-interacting, and both replay orders reproduced this exact current blob.'
+                : 'This complete PR change identity exactly matches the declared checkpoint.'
               : 'This current PR change identity was not carried from the checkpoint.'}
         </p>
       </section>
@@ -252,6 +258,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
   const searchRef = useRef<HTMLInputElement>(null)
   const detailsButtonRef = useRef<HTMLButtonElement>(null)
   const detailsAreDrawer = useMediaQuery('(max-width: 1279px)')
+  const baseChanged = session.resume_delta.comparison === 'current_pr_unmatched_identities'
   const files = scope === 'resume' ? session.resume_delta.files : session.review.files
   const entries = useMemo(() => files.map((file, index) => ({ file, index })).filter(({ file }) => {
     if (scope === 'full' && fullFilter !== 'all') {
@@ -335,21 +342,25 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           <span>{shortHash(checkpoint.commit)}</span><ArrowLeftRight size={14} /><span>{shortHash(session.review.head_commit)}</span>
         </div>
         <div className="review-header-actions">
-          <span className="attested-chip"><CircleDot size={13} /> Exact identity · caller-attested checkpoint</span>
+          <span className="attested-chip"><CircleDot size={13} /> {baseChanged ? 'Identity + four-way replay' : 'Exact identity'} · caller-attested checkpoint</span>
           <button className="export-button" type="button" onClick={() => exportSession(session)}><Download size={15} /> Export session</button>
         </div>
       </header>
 
       <section className="resume-hero">
         <div className="resume-copy">
-          <span className="eyebrow">WHAT CHANGED AFTER YOUR CHECKPOINT</span>
+          <span className="eyebrow">{baseChanged ? 'PR-RELATIVE RESIDUE AFTER BASE CHANGE' : 'WHAT CHANGED AFTER YOUR CHECKPOINT'}</span>
           <h1>{session.resume_delta.files.length === 0
-            ? 'No changes between checkpoint and head'
-            : `${session.resume_delta.files.length.toLocaleString('en')} ${session.resume_delta.files.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
-          <p>Start with the checkpoint → head delta. Switch to full PR context whenever you need the original base → head story.</p>
+            ? baseChanged ? 'No unmatched current PR changes' : 'No changes between checkpoint and head'
+            : baseChanged
+              ? `${session.resume_delta.files.length.toLocaleString('en')} current PR ${session.resume_delta.files.length === 1 ? 'file needs' : 'files need'} review`
+              : `${session.resume_delta.files.length.toLocaleString('en')} ${session.resume_delta.files.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
+          <p>{baseChanged
+            ? 'The merge base moved. This queue excludes upstream-only files and keeps changes that failed exact identity and non-interacting four-way replay.'
+            : 'Start with the checkpoint → head delta. Switch to full PR context whenever you need the original base → head story.'}</p>
         </div>
         <div className="resume-stats" aria-label="Review resume summary">
-          <div className="attention"><span>Changed since checkpoint</span><strong>{compactNumber(session.resume_delta.summary.changed_files)}</strong></div>
+          <div className="attention"><span>{baseChanged ? 'Review residue' : 'Changed since checkpoint'}</span><strong>{compactNumber(session.resume_delta.summary.changed_files)}</strong></div>
           <div><span>Need review now</span><strong>{compactNumber(checkpointSummary.needs_review_now_files)}</strong></div>
           <div className="carried"><span>Exactly carried</span><strong>{compactNumber(checkpointSummary.unchanged_since_checkpoint_files)}</strong></div>
           <div className="retired"><span>Retired identities</span><strong>{compactNumber(checkpointSummary.retired_change_count)}</strong></div>
@@ -358,12 +369,12 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
 
       <div className="review-scope-bar">
         <div className="review-scope-switch" aria-label="Diff scope">
-          <button type="button" className={scope === 'resume' ? 'active' : ''} onClick={() => setScope('resume')}>Since checkpoint <small>R → H</small></button>
+          <button type="button" className={scope === 'resume' ? 'active' : ''} onClick={() => setScope('resume')}>{baseChanged ? 'Review residue' : 'Since checkpoint'} <small>{baseChanged ? "B' → H" : 'R → H'}</small></button>
           <button type="button" className={scope === 'full' ? 'active' : ''} onClick={() => setScope('full')}>Full PR context <small>B → H</small></button>
         </div>
         <p><ShieldAlert size={14} /> {session.assessment.message}</p>
       </div>
-      <div className="review-trust-banner"><ShieldAlert size={13} /> Exact Git identity only · caller-attested checkpoint · not approval or semantic safety</div>
+      <div className="review-trust-banner"><ShieldAlert size={13} /> {baseChanged ? 'Base changed · exact identity or non-interacting four-way replay · unresolved changes need review' : 'Exact Git identity only · caller-attested checkpoint · not approval or semantic safety'}</div>
 
       <div className="review-workspace">
         <aside className="review-file-panel">
@@ -375,7 +386,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
               </div>
             )}
           </div>
-          <div className="review-list-heading"><span>{scope === 'resume' ? 'Incremental queue' : 'Current PR files'}</span><strong>{entries.length}</strong></div>
+          <div className="review-list-heading"><span>{scope === 'resume' ? baseChanged ? 'Review residue' : 'Incremental queue' : 'Current PR files'}</span><strong>{entries.length}</strong></div>
           <div className="review-file-list">
             {visibleEntries.map(({ file, index }) => (
               <button type="button" className={`review-file-row ${selectedIndex === index ? 'selected' : ''}`} key={`${scope}-${index}`} onClick={() => setSelectedIndex(index)}>
@@ -393,7 +404,9 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           {selectedFile === undefined ? (
             entries.length === 0 && files.length > 0 ? (
               <div className="review-empty large"><FileSearch size={28} /><strong>No files match this view</strong><span>Clear the search or choose another checkpoint-state filter.</span></div>
-            ) : scope === 'resume' ? (
+            ) : scope === 'resume' ? baseChanged ? (
+              <div className="review-empty large"><Check size={28} /><strong>No unmatched current PR changes</strong><span>Every current PR change identity exactly matches the checkpoint range.</span></div>
+            ) : (
               <div className="review-empty large"><Check size={28} /><strong>No changes between checkpoint and head</strong><span>There is no incremental file delta to inspect.</span></div>
             ) : (
               <div className="review-empty large"><Check size={28} /><strong>No current PR changes</strong><span>The merge-base and head snapshots have no file delta.</span></div>
@@ -401,7 +414,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           ) : (
             <>
               <div className="review-diff-heading">
-                <div><span className="surface-kicker">{scope === 'resume' ? 'CHECKPOINT → HEAD' : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
+                <div><span className="surface-kicker">{scope === 'resume' ? baseChanged ? 'CURRENT PR · UNMATCHED' : 'CHECKPOINT → HEAD' : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
                 <div className="review-diff-actions">
                   <span>{lineSummary(selectedFile)}</span>
                   <button ref={detailsButtonRef} type="button" className="review-detail-trigger" onClick={() => setDetailsOpen(true)} aria-label="Open details and evidence"><Eye size={14} /> Details &amp; evidence</button>
@@ -415,7 +428,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
         </main>
 
         {detailsAreDrawer && detailsOpen && <button type="button" className="drawer-backdrop review-details-backdrop" onClick={closeDetails} aria-label="Close details and evidence" />}
-        {selectedFile !== undefined && <ReviewFileDetail file={selectedFile} scope={scope} index={selectedIndex ?? 0} sources={sources} drawer={detailsAreDrawer} open={detailsOpen} onClose={closeDetails} />}
+        {selectedFile !== undefined && <ReviewFileDetail file={selectedFile} scope={scope} resumeComparison={session.resume_delta.comparison} index={selectedIndex ?? 0} sources={sources} drawer={detailsAreDrawer} open={detailsOpen} onClose={closeDetails} />}
       </div>
       <footer className="review-footer"><FileCode2 size={13} /> review-v1 is a producer-attested focus summary; only opened per-file reports receive independent structural verification.</footer>
     </div>

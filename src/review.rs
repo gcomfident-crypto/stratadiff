@@ -8,9 +8,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail, ensure};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
-use crate::{ChangeKind, DiffReport, Language, VerificationLimits, analyze_bytes_with_limits};
+use crate::{
+    ByteEdit, ChangeKind, DiffReport, Language, LosslessPatch, VerificationLimits,
+    analyze_bytes_with_limits, apply_patch, patch::create_patch,
+};
 
 pub const REVIEW_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-v1.schema.json";
 pub const MAX_REVIEW_FILES: usize = 1_000;
@@ -83,6 +87,14 @@ impl CheckpointState {
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointMatchBasis {
     ExactGitChangeIdentity,
+    ExactGitChangeIdentityOrNoninteractingFourWayByteReplay,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckpointCarryBasis {
+    ExactGitChangeIdentity,
+    ExactNoninteractingFourWayByteReplay,
 }
 
 impl ReviewPriority {
@@ -165,6 +177,8 @@ pub struct ReviewFile {
     pub lane: ReviewLane,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkpoint_state: Option<CheckpointState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint_match_basis: Option<CheckpointCarryBasis>,
     pub reason: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<FileEvidence>,
@@ -239,6 +253,7 @@ pub struct RepositoryReview {
 pub struct ReviewDelta {
     pub comparison: String,
     pub from_commit: String,
+    pub source_base_commit: String,
     pub to_commit: String,
     pub summary: ReviewSummary,
     pub files: Vec<ReviewFile>,
@@ -354,43 +369,76 @@ pub fn review_git_range_with_checkpoint(
                 &commit,
                 "checkpoint comparison",
             )?;
-            ensure!(
-                checkpoint_base == base_commit,
-                "checkpoint and current review must have the same merge base: checkpoint {checkpoint_base}, current {base_commit}"
-            );
+            let match_basis = if checkpoint_base == base_commit {
+                CheckpointMatchBasis::ExactGitChangeIdentity
+            } else {
+                CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay
+            };
             Ok(ReviewCheckpoint {
                 requested_revision: requested_revision.to_owned(),
                 commit,
                 base_commit: checkpoint_base,
-                match_basis: CheckpointMatchBasis::ExactGitChangeIdentity,
+                match_basis,
             })
         })
         .transpose()?;
-    let checkpoint_identities = checkpoint
+    let checkpoint_changes = checkpoint
         .as_ref()
         .map(|checkpoint| {
-            discover_git_changes(repository, &base_commit, &checkpoint.commit).map(|changes| {
-                changes
-                    .iter()
-                    .map(GitChangeIdentity::from)
-                    .collect::<HashSet<_>>()
-            })
+            discover_git_changes(repository, &checkpoint.base_commit, &checkpoint.commit)
         })
         .transpose()?;
     let changes = discover_git_changes(repository, &base_commit, &head_commit)?;
-    let retired_change_count = checkpoint_identities.as_ref().map(|checkpoint_identities| {
-        let current_identities: HashSet<_> = changes.iter().map(GitChangeIdentity::from).collect();
-        checkpoint_identities
-            .difference(&current_identities)
-            .count()
-    });
+    let base_changed = checkpoint
+        .as_ref()
+        .is_some_and(|checkpoint| checkpoint.base_commit != base_commit);
 
     let limits = VerificationLimits::default();
     let mut files = Vec::with_capacity(changes.len());
     let mut blob_loader = BlobLoader::default();
+    let mut matched_checkpoint_indices = HashSet::new();
     for change in changes {
-        let checkpoint_state = checkpoint_identities.as_ref().map(|identities| {
-            if identities.contains(&GitChangeIdentity::from(&change)) {
+        let mut carried_by_replay = false;
+        let mut checkpoint_match_basis = None;
+        let checkpoint_state = checkpoint_changes.as_ref().map(|checkpoint_changes| {
+            let identity = GitChangeIdentity::from(&change);
+            let mut exact_match = false;
+            for (index, checkpoint_change) in checkpoint_changes.iter().enumerate() {
+                if GitChangeIdentity::from(checkpoint_change) == identity {
+                    matched_checkpoint_indices.insert(index);
+                    exact_match = true;
+                }
+            }
+            if exact_match {
+                checkpoint_match_basis = Some(CheckpointCarryBasis::ExactGitChangeIdentity);
+                return CheckpointState::UnchangedSinceCheckpoint;
+            }
+
+            let replay_match = base_changed
+                && unique_replay_candidate(checkpoint_changes, &change).is_some_and(
+                    |(index, checkpoint_change)| {
+                        if matched_checkpoint_indices.contains(&index) {
+                            return false;
+                        }
+                        match independent_four_way_replay_matches(
+                            repository,
+                            checkpoint_change,
+                            &change,
+                            &limits,
+                            &mut blob_loader,
+                        ) {
+                            Ok(true) => {
+                                matched_checkpoint_indices.insert(index);
+                                true
+                            }
+                            Ok(false) | Err(_) => false,
+                        }
+                    },
+                );
+            if replay_match {
+                carried_by_replay = true;
+                checkpoint_match_basis =
+                    Some(CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay);
                 CheckpointState::UnchangedSinceCheckpoint
             } else {
                 CheckpointState::NeedsReviewNow
@@ -398,8 +446,17 @@ pub fn review_git_range_with_checkpoint(
         });
         let mut file = analyze_change(repository, change, &limits, &mut blob_loader)?;
         file.checkpoint_state = checkpoint_state;
+        file.checkpoint_match_basis = checkpoint_match_basis;
+        if carried_by_replay {
+            file.reason.push_str(
+                "; checkpoint carry-forward was proven by exact non-interacting four-way byte replay across the base change",
+            );
+        }
         files.push(file);
     }
+    let retired_change_count = checkpoint_changes
+        .as_ref()
+        .map(|changes| changes.len() - matched_checkpoint_indices.len());
     files.sort_by_key(|file| {
         (
             checkpoint_state_rank(file.checkpoint_state),
@@ -449,8 +506,38 @@ pub fn review_git_snapshot_delta(repository: &Path, from: &str, to: &str) -> Res
     let summary = summarize(&files, None);
     Ok(ReviewDelta {
         comparison: "snapshot_to_snapshot".to_owned(),
+        source_base_commit: from_commit.clone(),
         from_commit,
         to_commit,
+        summary,
+        files,
+    })
+}
+
+pub fn review_git_resume_delta(
+    repository: &Path,
+    review: &RepositoryReview,
+) -> Result<ReviewDelta> {
+    let checkpoint = review
+        .checkpoint
+        .as_ref()
+        .context("review residue requires a checkpoint")?;
+    if checkpoint.base_commit == review.base_commit {
+        return review_git_snapshot_delta(repository, &checkpoint.commit, &review.head_commit);
+    }
+
+    let files = review
+        .files
+        .iter()
+        .filter(|file| file.checkpoint_state == Some(CheckpointState::NeedsReviewNow))
+        .cloned()
+        .collect::<Vec<_>>();
+    let summary = summarize(&files, None);
+    Ok(ReviewDelta {
+        comparison: "current_pr_unmatched_identities".to_owned(),
+        from_commit: checkpoint.commit.clone(),
+        source_base_commit: review.base_commit.clone(),
+        to_commit: review.head_commit.clone(),
         summary,
         files,
     })
@@ -571,6 +658,198 @@ fn discover_git_changes(
     Ok(changes)
 }
 
+fn unique_replay_candidate<'a>(
+    checkpoint_changes: &'a [GitChange],
+    current: &GitChange,
+) -> Option<(usize, &'a GitChange)> {
+    let mut candidates = checkpoint_changes
+        .iter()
+        .enumerate()
+        .filter(|(_, checkpoint)| replay_candidate_metadata_matches(checkpoint, current));
+    let candidate = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    Some(candidate)
+}
+
+fn replay_candidate_metadata_matches(checkpoint: &GitChange, current: &GitChange) -> bool {
+    if checkpoint.status != FileStatus::Modified || current.status != FileStatus::Modified {
+        return false;
+    }
+    let Some(path) = checkpoint.before_path.as_ref() else {
+        return false;
+    };
+    if checkpoint.after_path.as_ref() != Some(path)
+        || current.before_path.as_ref() != Some(path)
+        || current.after_path.as_ref() != Some(path)
+    {
+        return false;
+    }
+    let Some(mode) = checkpoint.before_mode.as_deref() else {
+        return false;
+    };
+    matches!(mode, "100644" | "100755")
+        && checkpoint.after_mode.as_deref() == Some(mode)
+        && current.before_mode.as_deref() == Some(mode)
+        && current.after_mode.as_deref() == Some(mode)
+}
+
+fn independent_four_way_replay_matches(
+    repository: &Path,
+    checkpoint: &GitChange,
+    current: &GitChange,
+    limits: &VerificationLimits,
+    blob_loader: &mut BlobLoader,
+) -> Result<bool> {
+    let Some((checkpoint_before, checkpoint_after)) =
+        load_replay_blob_pair(repository, checkpoint, limits, blob_loader)?
+    else {
+        return Ok(false);
+    };
+    let Some((current_before, current_after)) =
+        load_replay_blob_pair(repository, current, limits, blob_loader)?
+    else {
+        return Ok(false);
+    };
+    if [
+        checkpoint_before.as_slice(),
+        checkpoint_after.as_slice(),
+        current_before.as_slice(),
+        current_after.as_slice(),
+    ]
+    .iter()
+    .any(|bytes| bytes.contains(&0))
+    {
+        return Ok(false);
+    }
+
+    let reviewed_patch = create_patch(&checkpoint_before, &checkpoint_after);
+    let upstream_patch = create_patch(&checkpoint_before, &current_before);
+    if patches_interact(&reviewed_patch, &upstream_patch) {
+        return Ok(false);
+    }
+    let Some(reviewed_on_current) = translate_patch(&reviewed_patch, &upstream_patch) else {
+        return Ok(false);
+    };
+    let Some(upstream_on_reviewed) = translate_patch(&upstream_patch, &reviewed_patch) else {
+        return Ok(false);
+    };
+
+    let reviewed_result = apply_patch(&current_before, &reviewed_on_current)?;
+    if reviewed_result != current_after {
+        return Ok(false);
+    }
+    let upstream_result = apply_patch(&checkpoint_after, &upstream_on_reviewed)?;
+    Ok(upstream_result == current_after)
+}
+
+fn load_replay_blob_pair(
+    repository: &Path,
+    change: &GitChange,
+    limits: &VerificationLimits,
+    blob_loader: &mut BlobLoader,
+) -> Result<Option<(Vec<u8>, Vec<u8>)>> {
+    let before_id = change
+        .before_blob
+        .as_deref()
+        .context("replay candidate is missing its before blob")?;
+    let after_id = change
+        .after_blob
+        .as_deref()
+        .context("replay candidate is missing its after blob")?;
+    let before = inspect_optional_blob(
+        repository,
+        Some(before_id),
+        change.before_mode.as_deref(),
+        limits,
+        blob_loader,
+    )?
+    .context("replay candidate is missing before blob metadata")?;
+    let after = inspect_optional_blob(
+        repository,
+        Some(after_id),
+        change.after_mode.as_deref(),
+        limits,
+        blob_loader,
+    )?
+    .context("replay candidate is missing after blob metadata")?;
+    if before.unavailable_reason.is_some() || after.unavailable_reason.is_some() {
+        return Ok(None);
+    }
+    let before_size = before
+        .size
+        .context("replay before blob size is unavailable")?;
+    let after_size = after
+        .size
+        .context("replay after blob size is unavailable")?;
+    match load_structural_blob_pair(
+        repository,
+        before_id,
+        before_size,
+        after_id,
+        after_size,
+        blob_loader,
+    )? {
+        StructuralBlobPair::Available { before, after } => Ok(Some((before, after))),
+        StructuralBlobPair::Unavailable(_) => Ok(None),
+    }
+}
+
+fn patches_interact(left: &LosslessPatch, right: &LosslessPatch) -> bool {
+    let mut left_index = 0;
+    let mut right_index = 0;
+    while left_index < left.edits.len() && right_index < right.edits.len() {
+        let left_edit = &left.edits[left_index];
+        let right_edit = &right.edits[right_index];
+        if left_edit.old_end < right_edit.old_start {
+            left_index += 1;
+        } else if right_edit.old_end < left_edit.old_start {
+            right_index += 1;
+        } else {
+            return true;
+        }
+    }
+    false
+}
+
+fn translate_patch(patch: &LosslessPatch, preceding: &LosslessPatch) -> Option<LosslessPatch> {
+    let mut preceding_index = 0;
+    let mut offset_delta = 0_i128;
+    let mut edits = Vec::with_capacity(patch.edits.len());
+    for edit in &patch.edits {
+        while preceding_index < preceding.edits.len()
+            && preceding.edits[preceding_index].old_end < edit.old_start
+        {
+            offset_delta =
+                offset_delta.checked_add(edit_byte_delta(&preceding.edits[preceding_index])?)?;
+            preceding_index += 1;
+        }
+        edits.push(ByteEdit {
+            old_start: translate_offset(edit.old_start, offset_delta)?,
+            old_end: translate_offset(edit.old_end, offset_delta)?,
+            replacement_base64: edit.replacement_base64.clone(),
+        });
+    }
+    Some(LosslessPatch {
+        algorithm: patch.algorithm.clone(),
+        edits,
+    })
+}
+
+fn edit_byte_delta(edit: &ByteEdit) -> Option<i128> {
+    let removed = edit.old_end.checked_sub(edit.old_start)?;
+    let replacement = STANDARD.decode(&edit.replacement_base64).ok()?;
+    i128::try_from(replacement.len())
+        .ok()?
+        .checked_sub(i128::try_from(removed).ok()?)
+}
+
+fn translate_offset(offset: usize, delta: i128) -> Option<usize> {
+    let offset = i128::try_from(offset).ok()?;
+    usize::try_from(offset.checked_add(delta)?).ok()
+}
+
 pub fn classify_report(report: &DiffReport) -> ReviewLane {
     let cst_preserved = report
         .changes
@@ -610,12 +889,21 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
             .checkpoint
             .as_ref()
             .expect("checkpoint metadata has a checkpoint summary");
+        if checkpoint.base_commit == review.base_commit {
+            output.push_str(&format!(
+                "- Checkpoint: {} (same merge base; exact Git change identity only)\n",
+                markdown_code(&checkpoint.commit)
+            ));
+        } else {
+            output.push_str(&format!(
+                "- Checkpoint: {} (base changed {} → {}; exact Git identities are compared first, then unique same-path modifications may carry only through exact non-interacting four-way byte replay)\n",
+                markdown_code(&checkpoint.commit),
+                markdown_code(&checkpoint.base_commit),
+                markdown_code(&review.base_commit)
+            ));
+        }
         output.push_str(&format!(
-            "- Checkpoint: {} (same merge base; exact Git change identity only)\n",
-            markdown_code(&checkpoint.commit)
-        ));
-        output.push_str(&format!(
-            "- Needs review now: **{}** of {} current {}; **{}** unchanged since checkpoint; **{}** checkpoint change identities retired\n",
+            "- Needs review now: **{}** of {} current {}; **{}** unchanged since checkpoint; **{}** checkpoint changes retired\n",
             checkpoint_summary.needs_review_now_files,
             review.summary.changed_files,
             file_word(review.summary.changed_files),
@@ -684,10 +972,21 @@ pub fn markdown_report(review: &RepositoryReview) -> String {
         let shown_needs = append_markdown_file_table(&mut output, &needs_review, true, 2_048);
         append_markdown_omission(&mut output, needs_review.len() - shown_needs);
 
-        let details = format!(
-            "\n<details>\n<summary>Unchanged since checkpoint: <strong>{}</strong> exact change identities</summary>\n\n> These entries have the same complete Git change identity as at the checkpoint. Cross-file effects were not checked.\n\n",
-            unchanged.len()
-        );
+        let details = if review
+            .checkpoint
+            .as_ref()
+            .is_some_and(|checkpoint| checkpoint.base_commit == review.base_commit)
+        {
+            format!(
+                "\n<details>\n<summary>Unchanged since checkpoint: <strong>{}</strong> exact change identities</summary>\n\n> These entries have the same complete Git change identity as at the checkpoint. Cross-file effects were not checked.\n\n",
+                unchanged.len()
+            )
+        } else {
+            format!(
+                "\n<details>\n<summary>Unchanged since checkpoint: <strong>{}</strong> exactly carried changes</summary>\n\n> Each entry either has the same complete Git change identity or passed exact non-interacting four-way byte replay against the changed base. Cross-file effects were not checked.\n\n",
+                unchanged.len()
+            )
+        };
         if output.len() + details.len() + 32 <= MAX_REVIEW_MARKDOWN_BYTES {
             output.push_str(&details);
             let shown_unchanged = append_markdown_file_table(&mut output, &unchanged, true, 256);
@@ -1057,6 +1356,7 @@ fn analyze_change(
         priority: ReviewPriority::ReviewFirst,
         lane: ReviewLane::ReviewFirst,
         checkpoint_state: None,
+        checkpoint_match_basis: None,
         reason: String::new(),
         evidence: None,
     };
@@ -2194,6 +2494,7 @@ mod tests {
             priority: ReviewPriority::ReviewFirst,
             lane: ReviewLane::ReviewFirst,
             checkpoint_state: None,
+            checkpoint_match_basis: None,
             reason: "new file".to_owned(),
             evidence: None,
         };

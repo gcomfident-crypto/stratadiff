@@ -107,6 +107,7 @@ function reviewFile(path: string, state?: ReviewFile['checkpoint_state']): Revie
     priority: 'review_first',
     lane: 'review_first',
     checkpoint_state: state,
+    checkpoint_match_basis: state === 'unchanged_since_checkpoint' ? 'exact_git_change_identity' : undefined,
     reason: 'the byte patch replayed exactly; a structural delta remains in the first pass',
     evidence: {
       report_blake3: 'c'.repeat(64),
@@ -180,6 +181,7 @@ export function repositorySessionFixture(): RepositorySessionPayload {
     resume_delta: {
       comparison: 'snapshot_to_snapshot',
       from_commit: checkpoint,
+      source_base_commit: checkpoint,
       to_commit: head,
       summary: {
         changed_files: 2,

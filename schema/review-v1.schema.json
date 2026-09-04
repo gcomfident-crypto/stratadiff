@@ -46,7 +46,16 @@
       "else": {
         "properties": {
           "summary": { "not": { "required": ["checkpoint"] } },
-          "files": { "items": { "not": { "required": ["checkpoint_state"] } } }
+          "files": {
+            "items": {
+              "not": {
+                "anyOf": [
+                  { "required": ["checkpoint_state"] },
+                  { "required": ["checkpoint_match_basis"] }
+                ]
+              }
+            }
+          }
         }
       }
     }
@@ -62,7 +71,11 @@
     },
     "checkpoint_state": {
       "enum": ["needs_review_now", "unchanged_since_checkpoint"],
-      "description": "Whether this complete current Git change identity matches one from the caller-selected checkpoint range."
+      "description": "Whether the current change was carried from the caller-selected checkpoint by the declared match basis."
+    },
+    "checkpoint_match_basis": {
+      "enum": ["exact_git_change_identity", "exact_noninteracting_four_way_byte_replay"],
+      "description": "The exact factual basis for carrying this current change from the checkpoint."
     },
     "review_checkpoint": {
       "type": "object",
@@ -72,7 +85,13 @@
         "requested_revision": { "type": "string", "minLength": 1 },
         "commit": { "$ref": "#/$defs/object_id" },
         "base_commit": { "$ref": "#/$defs/object_id" },
-        "match_basis": { "const": "exact_git_change_identity" }
+        "match_basis": {
+          "enum": [
+            "exact_git_change_identity",
+            "exact_git_change_identity_or_noninteracting_four_way_byte_replay"
+          ],
+          "description": "The fail-closed carry policy. Four-way replay is available only when the checkpoint and current merge bases differ."
+        }
       }
     },
     "checkpoint_summary": {
@@ -227,9 +246,26 @@
           "description": "Factual evidence class. Historical enum names do not imply semantic equivalence or permission to lower review priority."
         },
         "checkpoint_state": { "$ref": "#/$defs/checkpoint_state" },
+        "checkpoint_match_basis": { "$ref": "#/$defs/checkpoint_match_basis" },
         "reason": { "type": "string", "minLength": 1 },
         "evidence": { "$ref": "#/$defs/evidence" }
       },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "checkpoint_state": { "const": "unchanged_since_checkpoint" } },
+            "required": ["checkpoint_state"]
+          },
+          "then": { "required": ["checkpoint_match_basis"] }
+        },
+        {
+          "if": {
+            "properties": { "checkpoint_state": { "const": "needs_review_now" } },
+            "required": ["checkpoint_state"]
+          },
+          "then": { "not": { "required": ["checkpoint_match_basis"] } }
+        }
+      ],
       "dependentRequired": {
         "before_path": ["before_path_encoding"],
         "after_path": ["after_path_encoding"]

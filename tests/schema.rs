@@ -2,7 +2,7 @@ use serde::Serialize;
 use stratadiff::{
     AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
     Language, Predicate, analyze_bytes,
-    review::{CheckpointMatchBasis, CheckpointState},
+    review::{CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState},
 };
 
 #[test]
@@ -156,9 +156,19 @@ fn review_schema_tracks_checkpoint_variants() {
             CheckpointState::UnchangedSinceCheckpoint,
         ],
     );
-    assert_eq!(
-        schema["$defs"]["review_checkpoint"]["properties"]["match_basis"]["const"],
-        serde_json::to_value(CheckpointMatchBasis::ExactGitChangeIdentity).unwrap()
+    assert_enum(
+        &schema["$defs"]["checkpoint_match_basis"]["enum"],
+        &[
+            CheckpointCarryBasis::ExactGitChangeIdentity,
+            CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["review_checkpoint"]["properties"]["match_basis"]["enum"],
+        &[
+            CheckpointMatchBasis::ExactGitChangeIdentity,
+            CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay,
+        ],
     );
 }
 

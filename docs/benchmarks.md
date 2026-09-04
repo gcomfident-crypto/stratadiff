@@ -4,10 +4,10 @@
 
 The first real-history review-resume diagnostic pins five merged changes from the public Gerrit
 project. Each case has an earlier patch set with a public `Code-Review+2` event and a later submitted
-patch set. Four cases retain the same merge base; the fifth rebases between the reviewed and current
-snapshots and must be rejected.
+patch set. Four cases retain the same merge base. The fifth rebases between the reviewed and current
+snapshots and was expected to be rejected by the v0 policy.
 
-An independent Python/Git oracle—not the StrataDiff library—derives complete change identities for
+An independent Python/Git oracle, separate from the StrataDiff library, derives complete change identities for
 the base-to-checkpoint, base-to-head, and checkpoint-to-head ranges. It stores raw-diff digests,
 base64 paths, modes, Git object IDs, canonical identity SHA-256 values, and blob content SHA-256
 values. The checked-in StrataDiff 0.3.0 run reports:
@@ -16,12 +16,25 @@ values. The checked-in StrataDiff 0.3.0 run reports:
 |---:|---:|---:|---:|---:|---:|---:|
 | 5 (4 partitions + 1 refusal) | 24 | 20 | 4 | 3 | 0 | 0 |
 
-All five cases passed, including the expected base-drift refusal. The observed focus share is
+All five cases passed under that historical policy, including the expected base-drift refusal. The
+checked-in evaluation was produced before non-interacting four-way byte replay was implemented and
+must not be used as evidence for the current base-drift behavior. The observed focus share is
 4 / 24 = 16.7% in the deliberately selected comparable cases. It is not a population estimate and
 does not establish reviewer-time savings or defect recall. See the
 [`ResumeBench-Real v0` dataset card](../benchmarks/resumebench-real-v0/README.md),
 [`manifest`](../benchmarks/resumebench-real-v0/manifest.json), and
 [`evaluation`](../benchmarks/resumebench-real-v0/evaluation-v0.1.0.json).
+
+On 2026-09-05, the current engine was run separately against the pinned fifth history,
+`gerrit-612221-ps8-ps10`. Exact identity carried four files. Four-way replay carried
+`Documentation/user-search.txt`, where the reviewed 13-line insertion did not interact with an
+upstream one-line deletion elsewhere in the file. The resulting current PR partition was 5 carried
+files and 2 residue files, matching Gerrit's public submission record. The residue excluded files
+changed only between the two base revisions.
+
+That run is a verified diagnostic, not a checked-in benchmark result. ResumeBench-Real v0 remains
+frozen. A new versioned manifest/oracle must define base-drift replay, and a clean provenance-bound
+evaluation must be checked in before the 5/2 result can support a benchmark claim.
 
 ## DiffBenchmark literature-subset result
 

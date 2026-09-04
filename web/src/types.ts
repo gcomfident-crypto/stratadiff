@@ -179,6 +179,7 @@ export interface ReviewFile {
   priority: ReviewPriority
   lane: ReviewLane
   checkpoint_state?: CheckpointState
+  checkpoint_match_basis?: 'exact_git_change_identity' | 'exact_noninteracting_four_way_byte_replay'
   reason: string
   evidence?: {
     report_blake3: string
@@ -211,7 +212,7 @@ export interface RepositoryReview {
     requested_revision: string
     commit: string
     base_commit: string
-    match_basis: 'exact_git_change_identity'
+    match_basis: 'exact_git_change_identity' | 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
   }
   summary: {
     changed_files: number
@@ -235,8 +236,9 @@ export interface RepositoryReview {
 }
 
 export interface ReviewDelta {
-  comparison: 'snapshot_to_snapshot'
+  comparison: 'snapshot_to_snapshot' | 'current_pr_unmatched_identities'
   from_commit: string
+  source_base_commit: string
   to_commit: string
   summary: RepositoryReview['summary']
   files: ReviewFile[]
@@ -248,7 +250,7 @@ export interface RepositorySessionPayload {
   resume_delta: ReviewDelta
   assessment: {
     status: 'producer_attested'
-    basis: 'exact_git_change_identity'
+    basis: 'exact_git_change_identity' | 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
     message: string
   }
 }

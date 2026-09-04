@@ -1,6 +1,6 @@
 # Structured code differencing survey
 
-Survey date: 2026-09-04. This document distinguishes mapping accuracy, edit-script size,
+Survey date: 2026-09-05. This document distinguishes mapping accuracy, edit-script size,
 human-readable presentation, and replayability; they are different objectives.
 
 ## Executive finding
@@ -17,6 +17,47 @@ The strongest practical direction is therefore evidence-bearing and abstention-a
 - separate structural equivalence from historical identity;
 - preserve ties rather than select an arbitrary AST mapping;
 - add language semantic evidence incrementally.
+
+## Review memory and base drift
+
+Incremental review is established product territory. GitHub, Graphite, and Reviewable already show
+changes across revisions, and Git provides [`range-diff`](https://git-scm.com/docs/git-range-diff)
+for patch-series comparison. The open problem for StrataDiff is narrower: carry human review state
+only when a host-neutral proof survives push, force-push, rebase, or base drift, then fail closed on
+everything else.
+
+Public reports captured on 2026-09-05 show why a direct checkpoint-to-head diff is insufficient:
+
+- GitHub users ask for approval invalidation based on the final diff or tree rather than commit
+  ancestry ([discussion #12876](https://github.com/orgs/community/discussions/12876)) and report
+  cascades of stale approvals in stacked changes
+  ([discussion #57513](https://github.com/orgs/community/discussions/57513)).
+- A GitHub enterprise user reports that applying a reviewer's own suggestion can force another
+  approval across 12 organizations
+  ([discussion #78039](https://github.com/orgs/community/discussions/78039)).
+- The VS Code GitHub extension's incremental-review request dates to 2018
+  ([issue #363](https://github.com/microsoft/vscode-pull-request-github/issues/363)). Later reports
+  show base-branch merges adding unrelated files to the "changes since review" view
+  ([#4510](https://github.com/microsoft/vscode-pull-request-github/issues/4510),
+  [#5455](https://github.com/microsoft/vscode-pull-request-github/issues/5455), and
+  [#6281](https://github.com/microsoft/vscode-pull-request-github/issues/6281)).
+- GitLab [issue #439234](https://gitlab.com/gitlab-org/gitlab/-/issues/439234) reports unwanted
+  patch-ID invalidation for about 15% of merge-from-parent events in one organization with more
+  than 1,000 developers and 50,000 files.
+
+StrataDiff therefore treats the current PR range, not the raw checkpoint-to-head snapshot delta, as
+the source of the residue after a base change. It tries complete Git identity first. A unique
+same-path regular-file modification can then carry only if the reviewed patch and upstream patch
+have no touching or overlapping byte edits and both translated replay orders reproduce the current
+blob exactly. Unsupported modes, NUL-containing content, missing or oversized blobs, conflicts,
+and ambiguous candidates remain in review. Upstream-only files are excluded from the residue.
+
+This four-way check establishes a byte-level commuting relation among the old base, reviewed file,
+new base, and current file. It does not establish semantic equivalence, cross-file safety, or that
+the checkpoint was reviewed. Reviewable's documented
+[file review state](https://docs.reviewable.io/files#file-review-state) provides a capable product
+comparison; StrataDiff's distinct claim is portable proof and explicit fail-closed behavior, not
+the invention of incremental review.
 
 ## Leading systems
 
@@ -69,7 +110,7 @@ Sources:
   [DOI 10.1109/ICSE43902.2021.00108](https://doi.org/10.1109/ICSE43902.2021.00108),
   [preprint](https://arxiv.org/abs/2103.00141).
 
-GumTree Simple reports a 50–281x matching-stage speedup over the older `opt-1000` configuration in
+GumTree Simple reports a 50 to 281x matching-stage speedup over the older `opt-1000` configuration in
 its evaluated settings and substantially shorter scripts. That makes it the speed baseline, but
 shorter edit scripts are not evidence that every selected mapping reflects the true change.
 

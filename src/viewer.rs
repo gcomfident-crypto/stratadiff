@@ -27,7 +27,7 @@ use stratadiff::{
     DiffReport, VerificationLimits,
     review::{
         RepositoryReview, ReviewFile, ReviewFileSources, load_review_file_sources,
-        regenerate_review_file_report, review_git_snapshot_delta,
+        regenerate_review_file_report, review_git_resume_delta,
     },
 };
 use tokio::{net::TcpListener, runtime::Builder};
@@ -127,14 +127,12 @@ pub fn serve_review(
 ) -> Result<()> {
     let repository = std::fs::canonicalize(&repository)
         .with_context(|| format!("failed to resolve repository {}", repository.display()))?;
-    let checkpoint_commit = review
+    let checkpoint = review
         .checkpoint
         .as_ref()
-        .context("repository review workbench requires a checkpoint")?
-        .commit
-        .clone();
-    let resume_delta =
-        review_git_snapshot_delta(&repository, &checkpoint_commit, &review.head_commit)?;
+        .context("repository review workbench requires a checkpoint")?;
+    let base_changed = checkpoint.base_commit != review.base_commit;
+    let resume_delta = review_git_resume_delta(&repository, &review)?;
     let queue = resume_delta.files.clone();
     let mut session_json = Vec::new();
     session_json.extend_from_slice(br#"{"kind":"repository_review","review":"#);
@@ -146,8 +144,16 @@ pub fn serve_review(
         &mut session_json,
         &RepositoryAssessment {
             status: "producer_attested",
-            basis: "exact_git_change_identity",
-            message: "Checkpoint carry-forward is an exact Git identity comparison. It is not proof of review, semantic safety, or approval.",
+            basis: if base_changed {
+                "exact_git_change_identity_or_noninteracting_four_way_byte_replay"
+            } else {
+                "exact_git_change_identity"
+            },
+            message: if base_changed {
+                "The merge base changed. Upstream-only files are excluded; the queue contains current PR identities that were not carried exactly. This is not proof of review, semantic safety, or approval."
+            } else {
+                "Checkpoint carry-forward is an exact Git identity comparison. It is not proof of review, semantic safety, or approval."
+            },
         },
     )?;
     session_json.push(b'}');
