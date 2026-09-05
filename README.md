@@ -253,14 +253,18 @@ steps:
   - uses: actions/upload-artifact@v4
     with:
       name: stratadiff-review-focus
-      path: ${{ steps.review-focus.outputs.report }}
+      path: |
+        ${{ steps.review-focus.outputs.report }}
+        ${{ steps.review-focus.outputs.checkpoint_record }}
 ```
 
 An explicit `checkpoint` overrides API discovery. With `fail-on-review-residue: true`, the report is
 still written before the step exits unsuccessfully. A required-check workflow must run both when the
 PR head changes and when the configured reviewer submits a new review; otherwise a completed review
 cannot turn the check green. The current alpha resolves one explicitly configured reviewer and does
-not infer CODEOWNER or branch-protection authority. See the
+not infer CODEOWNER or branch-protection authority. When reviewer discovery is used, the
+`checkpoint_record` output preserves the deterministic review selection metadata; it is
+producer-attested workflow output rather than a provider signature. See the
 [review-coverage integration guide](docs/github-review-coverage.md) for the full event lifecycle and
 security boundary.
 

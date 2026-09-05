@@ -65,7 +65,9 @@ jobs:
         if: always()
         with:
           name: stratadiff-review-coverage
-          path: ${{ steps.coverage.outputs.report }}
+          path: |
+            ${{ steps.coverage.outputs.report }}
+            ${{ steps.coverage.outputs.checkpoint_record }}
           if-no-files-found: error
 ```
 
@@ -93,6 +95,13 @@ review commit therefore leaves the check red with an actionable error.
 All API calls disable user curl configuration before loading a mode-restricted temporary request
 configuration. Temporary API bodies, credentials, provider objects, and refs are removed by the
 Action's exit trap. The resulting code analysis stays inside the runner.
+
+When `reviewer` is configured, the Action also emits `checkpoint_record`: a deterministic JSON
+selection record containing the chosen review ID, reviewer, state, commit ID, submission time, URL,
+and author association. Upload it beside the review report if the workflow needs durable audit
+history. This matters because GitHub may later retain a dismissed review while returning no commit
+for it. The record is producer-attested workflow output, not a GitHub signature or a self-contained
+proof of the API response; retain the workflow provenance or an artifact attestation with it.
 
 ## Local inspection
 

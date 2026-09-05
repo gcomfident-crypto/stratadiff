@@ -12,6 +12,7 @@ provider_workspace=
 provider_home=
 checkpoint_ref=
 resolved_checkpoint=
+checkpoint_record_path=
 caller_fetch_head=
 caller_fetch_head_backup=
 caller_fetch_head_existed=false
@@ -153,6 +154,15 @@ elif [[ -n "${STRATADIFF_REVIEWER}" ]]; then
     exit 1
   fi
 
+  checkpoint_record_path="$(mktemp "${RUNNER_TEMP}/stratadiff-checkpoint-record-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-XXXXXX.json")"
+  "${stratadiff}" github-checkpoint "${reviews_path}" \
+    --reviewer "${STRATADIFF_REVIEWER}" \
+    --format json \
+    --output "${checkpoint_record_path}"
+  if [[ ! -s "${checkpoint_record_path}" ]]; then
+    echo "StrataDiff did not produce a non-empty GitHub checkpoint selection record" >&2
+    exit 1
+  fi
   resolved_checkpoint="$(
     "${stratadiff}" github-checkpoint "${reviews_path}" --reviewer "${STRATADIFF_REVIEWER}"
   )"
@@ -377,5 +387,6 @@ fi
   echo "report=${report_path}"
   echo "checkpoint=${resolved_checkpoint}"
   echo "checkpoint_source=${checkpoint_source}"
+  echo "checkpoint_record=${checkpoint_record_path}"
 } >> "${GITHUB_OUTPUT}"
 exit "${review_status}"

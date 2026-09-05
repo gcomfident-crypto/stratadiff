@@ -306,6 +306,19 @@ fi
     let action_outputs = fs::read_to_string(&output_file).unwrap();
     assert!(action_outputs.contains(&format!("checkpoint={checkpoint}\n")));
     assert!(action_outputs.contains("checkpoint_source=github_review\n"));
+    let checkpoint_record_path = action_outputs
+        .lines()
+        .find_map(|line| line.strip_prefix("checkpoint_record="))
+        .unwrap();
+    let checkpoint_record: Value =
+        serde_json::from_slice(&fs::read(checkpoint_record_path).unwrap()).unwrap();
+    assert_eq!(
+        checkpoint_record["schema"],
+        "stratadiff-github-review-checkpoint-v1"
+    );
+    assert_eq!(checkpoint_record["requested_reviewer"], "alice");
+    assert_eq!(checkpoint_record["checkpoint"]["review_id"], 17);
+    assert_eq!(checkpoint_record["checkpoint"]["commit_id"], checkpoint);
     let report_path = action_outputs
         .lines()
         .find_map(|line| line.strip_prefix("report="))
