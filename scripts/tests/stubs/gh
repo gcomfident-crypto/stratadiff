@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${1:-}" == api && "${3:-}" == --jq ]] || exit 2
+case "${2:-}" in
+  repos/acme/stratadiff/git/ref/tags/v0.3.0)
+    printf 'tag\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n'
+    ;;
+  repos/acme/stratadiff/git/tags/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb)
+    printf 'commit\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+    ;;
+  repos/acme/stratadiff/git/ref/tags/v0.3.1)
+    printf 'tree\tcccccccccccccccccccccccccccccccccccccccc\n'
+    ;;
+  *)
+    exit 2
+    ;;
+esac

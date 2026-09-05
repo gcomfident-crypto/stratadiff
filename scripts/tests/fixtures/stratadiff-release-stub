@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+  --version)
+    printf 'stratadiff %s\n' "${STRATADIFF_TEST_VERSION}"
+    ;;
+  build-info)
+    printf '{"schema":"stratadiff-build-info-v1","engine_version":"%s","git_revision":"%s","git_dirty":false,"cargo_lock_sha256":"%s","build_profile":"release","rustc_version":"rustc 1.90.0 (1159e78c4 2025-09-14)"}\n' \
+      "${STRATADIFF_TEST_VERSION}" \
+      "${STRATADIFF_TEST_COMMIT}" \
+      "${STRATADIFF_TEST_LOCK_SHA256}"
+    ;;
+  licenses)
+    exec cat "${STRATADIFF_TEST_REPOSITORY_ROOT}/THIRD_PARTY_NOTICES.txt"
+    ;;
+  *)
+    exit 2
+    ;;
+esac

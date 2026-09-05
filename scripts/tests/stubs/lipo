@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+[[ "${1:-}" == -archs ]] || exit 2
+case "${STRATADIFF_TEST_TARGET}" in
+  x86_64-apple-darwin)
+    printf 'x86_64\n'
+    ;;
+  aarch64-apple-darwin)
+    printf 'arm64\n'
+    ;;
+  *)
+    exit 2
+    ;;
+esac

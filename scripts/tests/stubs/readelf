@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${STRATADIFF_TEST_DYNAMIC:-false}" == true && "${1:-}" == -l ]]; then
+  printf '      [Requesting program interpreter: /lib/ld-musl-test.so.1]\n'
+  exit 0
+fi
+
+case "${1:-}:${STRATADIFF_TEST_TARGET}" in
+  -l:x86_64-unknown-linux-musl|-l:aarch64-unknown-linux-musl)
+    printf 'Program Headers:\n'
+    ;;
+  -d:x86_64-unknown-linux-musl|-d:aarch64-unknown-linux-musl)
+    printf 'Dynamic section has no shared-library dependencies.\n'
+    ;;
+  -h:x86_64-unknown-linux-musl)
+    printf '  Machine:                           Advanced Micro Devices X86-64\n'
+    ;;
+  -h:aarch64-unknown-linux-musl)
+    printf '  Machine:                           AArch64\n'
+    ;;
+  *)
+    exit 2
+    ;;
+esac
