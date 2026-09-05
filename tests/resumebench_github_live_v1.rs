@@ -430,7 +430,7 @@ fn github_live_v1_bundle_verifier_rejects_a_tampered_oracle() {
 }
 
 #[test]
-fn github_live_tool_self_test_covers_git_auth_isolation() {
+fn github_live_tool_self_test_covers_git_auth_isolation_and_review_delta_blob_closure() {
     let output = Command::new("python3")
         .arg(repository_root().join("tools/resumebench-github-live/resumebench_github_live.py"))
         .arg("self-test")
@@ -444,6 +444,6 @@ fn github_live_tool_self_test_covers_git_auth_isolation() {
     );
     assert!(output.stderr.is_empty());
     let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(summary["tests"], 13);
-    assert_eq!(summary["passed"], 13);
+    assert_eq!(summary["tests"], 14);
+    assert_eq!(summary["passed"], 14);
 }

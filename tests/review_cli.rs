@@ -4,10 +4,12 @@ use stratadiff::{
     VerificationLimits,
     review::{
         CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState,
-        MAX_GITHUB_WORKFLOW_ANNOTATIONS, MAX_REVIEW_TOTAL_SOURCE_BYTES, RepositoryReview,
-        ReviewLane, ReviewPriority, github_workflow_annotations, load_review_file_sources,
-        markdown_report, regenerate_review_file_report, review_git_range_with_checkpoint,
-        review_git_resume_delta, review_git_snapshot_delta,
+        MAX_GITHUB_WORKFLOW_ANNOTATIONS, MAX_REVIEW_TOTAL_SOURCE_BYTES, REVIEW_DELTA_SCHEMA,
+        RepositoryReview, ReviewDeltaBaselineBasis, ReviewDeltaComparison,
+        ReviewDeltaFallbackReason, ReviewDeltaSource, ReviewDeltaUnresolvedReason, ReviewLane,
+        ReviewPriority, github_review_delta_annotations, github_workflow_annotations,
+        load_review_delta_file_sources, markdown_report, regenerate_review_file_report,
+        review_git_range_with_checkpoint, review_git_resume_delta, review_git_snapshot_delta,
     },
 };
 
@@ -32,6 +34,18 @@ fn commit(repository: &Path, message: &str) -> String {
     git(repository, &["add", "--all"]);
     git(repository, &["commit", "-q", "-m", message]);
     git(repository, &["rev-parse", "HEAD"])
+}
+
+fn assert_review_delta_schema(delta: &stratadiff::review::ReviewDelta) {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-delta-v1.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let instance = serde_json::to_value(delta).unwrap();
+    let errors = validator
+        .iter_errors(&instance)
+        .map(|error| error.to_string())
+        .collect::<Vec<_>>();
+    assert!(errors.is_empty(), "schema errors: {errors:#?}");
 }
 
 fn review_fixture() -> (tempfile::TempDir, String, String) {
@@ -116,26 +130,97 @@ fn checkpoint_delta_is_the_direct_reviewed_snapshot_to_current_head_diff() {
     let (directory, _base, checkpoint, head) = checkpoint_fixture();
     let delta = review_git_snapshot_delta(directory.path(), &checkpoint, &head).unwrap();
 
-    assert_eq!(delta.from_commit, checkpoint);
-    assert_eq!(delta.source_base_commit, checkpoint);
-    assert_eq!(delta.to_commit, head);
-    assert_eq!(delta.comparison, "snapshot_to_snapshot");
-    assert_eq!(delta.summary.changed_files, 2);
+    assert_eq!(delta.schema, REVIEW_DELTA_SCHEMA);
+    assert_eq!(delta.engine_version, env!("CARGO_PKG_VERSION"));
+    assert_review_delta_schema(&delta);
+
+    assert_eq!(delta.old_base_commit, checkpoint);
+    assert_eq!(delta.checkpoint_commit, checkpoint);
+    assert_eq!(delta.current_base_commit, checkpoint);
+    assert_eq!(delta.head_commit, head);
+    assert_eq!(delta.comparison, ReviewDeltaComparison::CheckpointToHead);
+    assert_eq!(delta.summary.displayable_files, 2);
+    assert_eq!(delta.summary.needs_review_files, 2);
+    assert!(!delta.summary.gate_passed);
+    let mut inconsistent = delta.clone();
+    inconsistent.summary.needs_review_files = 1;
+    assert!(
+        inconsistent
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("queue total")
+    );
+    let mut invalid_source = delta.clone();
+    match &mut invalid_source.entries[0].before_source {
+        ReviewDeltaSource::GitObject { object_id, .. } => {
+            *object_id = "not-an-object-id".to_owned()
+        }
+        ReviewDeltaSource::ReconstructedBytes { .. } | ReviewDeltaSource::Empty => {
+            panic!("checkpoint snapshot should use a Git object")
+        }
+    }
+    assert!(
+        invalid_source
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("invalid object id")
+    );
     assert_eq!(
         delta
-            .files
+            .entries
             .iter()
-            .map(|file| file.display_path())
+            .map(|entry| entry.display_path())
             .collect::<Vec<_>>(),
         ["changing.py", "moved.py -> relocated.py"]
     );
 
-    let changed = &delta.files[0];
-    let sources = load_review_file_sources(directory.path(), changed).unwrap();
+    let changed = &delta.entries[0];
+    assert_eq!(
+        changed.baseline_basis,
+        ReviewDeltaBaselineBasis::CheckpointSnapshot
+    );
+    let sources = load_review_delta_file_sources(directory.path(), changed).unwrap();
     assert_eq!(sources.before, b"value = 2\n");
     assert_eq!(sources.after, b"value = 3\n");
-    let report = regenerate_review_file_report(changed, &sources).unwrap();
+    let report = regenerate_review_file_report(&changed.file, &sources).unwrap();
     assert!(report.certificate.patch_verified);
+}
+
+#[test]
+fn review_command_writes_the_versioned_review_delta_artifact() {
+    let (directory, base, checkpoint, head) = checkpoint_fixture();
+    let review_output = directory.path().join("review.json");
+    let delta_output = directory.path().join("review-delta.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg(&base)
+        .arg(&head)
+        .arg("--repo")
+        .arg(directory.path())
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--format")
+        .arg("json")
+        .arg("--output")
+        .arg(&review_output)
+        .arg("--review-delta-output")
+        .arg(&delta_output)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let delta: stratadiff::review::ReviewDelta =
+        serde_json::from_slice(&fs::read(delta_output).unwrap()).unwrap();
+    assert_eq!(delta.schema, REVIEW_DELTA_SCHEMA);
+    assert_eq!(delta.checkpoint_commit, checkpoint);
+    assert_eq!(delta.head_commit, head);
+    assert_review_delta_schema(&delta);
 }
 
 #[test]
@@ -371,7 +456,7 @@ fn review_residue_gate_requires_a_checkpoint_and_zero_unreviewed_files() {
     assert!(annotations.contains("file=relocated.py,title=Review required after checkpoint"));
     assert!(
         String::from_utf8_lossy(&residue.stderr)
-            .contains("review residue gate is open: 2 current PR files need review")
+            .contains("review delta gate is open: 2 files need review")
     );
     assert!(!fs::read(&residue_report).unwrap().is_empty());
 
@@ -559,11 +644,373 @@ fn checkpoint_resume_carries_noninteracting_rebase_changes_in_the_same_file() {
     assert_eq!(summary.retired_change_count, 0);
 
     let residue = review_git_resume_delta(root, &report).unwrap();
-    assert_eq!(residue.summary.changed_files, 0);
+    assert_eq!(residue.summary.displayable_files, 0);
+    assert_eq!(residue.summary.needs_review_files, 0);
+    assert!(residue.summary.gate_passed);
     let markdown = markdown_report(&report);
     assert!(markdown.contains("non-interacting four-way byte replay"));
     assert!(markdown.contains("**1** carried (**0** exact-identity, **1** four-way)"));
     assert!(markdown.contains("four-way carry"));
+}
+
+#[test]
+fn checkpoint_resume_shows_only_the_precise_post_review_delta_after_rebase() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(
+        root.join("shared.py"),
+        "title = 'old'\nreviewed = 0\nfollowup = 0\n",
+    )
+    .unwrap();
+    let original_base = commit(root, "original base");
+
+    fs::write(
+        root.join("shared.py"),
+        "title = 'old'\nreviewed = 1\nfollowup = 0\n",
+    )
+    .unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(
+        root.join("shared.py"),
+        "title = 'new'\nreviewed = 0\nfollowup = 0\n",
+    )
+    .unwrap();
+    let current_base = commit(root, "advanced base");
+    fs::write(
+        root.join("shared.py"),
+        "title = 'new'\nreviewed = 1\nfollowup = 1\n",
+    )
+    .unwrap();
+    let head = commit(root, "rebased head with follow-up");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    assert_eq!(
+        report.files[0].checkpoint_state,
+        Some(CheckpointState::NeedsReviewNow)
+    );
+    assert_eq!(
+        report.files[0]
+            .line_change_envelope
+            .as_ref()
+            .map(|lines| (lines.additions, lines.deletions)),
+        Some((2, 2))
+    );
+
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_review_delta_schema(&delta);
+    assert_eq!(
+        delta.comparison,
+        ReviewDeltaComparison::PerFileReviewBaselineToHead
+    );
+    assert_eq!(delta.entries.len(), 1);
+    let entry = &delta.entries[0];
+    assert_eq!(
+        entry.baseline_basis,
+        ReviewDeltaBaselineBasis::ReconstructedReviewBaseline
+    );
+    assert!(entry.file.before_blob.is_none());
+    assert_eq!(
+        entry
+            .file
+            .line_change_envelope
+            .as_ref()
+            .map(|lines| (lines.additions, lines.deletions)),
+        Some((1, 1))
+    );
+    let reconstruction = entry.baseline_reconstruction.as_ref().unwrap();
+    assert_eq!(
+        reconstruction.reviewed_on_current_base_blake3,
+        reconstruction.upstream_on_checkpoint_blake3
+    );
+    assert_eq!(
+        reconstruction.reconstructed_blake3,
+        reconstruction.reviewed_on_current_base_blake3
+    );
+    let mut inconsistent = delta.clone();
+    inconsistent.entries[0]
+        .baseline_reconstruction
+        .as_mut()
+        .unwrap()
+        .upstream_on_checkpoint_blake3 = "0".repeat(64);
+    assert!(
+        inconsistent
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("replay orders disagree")
+    );
+    let sources = load_review_delta_file_sources(root, entry).unwrap();
+    assert_eq!(
+        sources.before,
+        b"title = 'new'\nreviewed = 1\nfollowup = 0\n"
+    );
+    assert_eq!(
+        sources.after,
+        b"title = 'new'\nreviewed = 1\nfollowup = 1\n"
+    );
+    let evidence = regenerate_review_file_report(&entry.file, &sources).unwrap();
+    assert!(evidence.certificate.patch_verified);
+}
+
+#[test]
+fn checkpoint_resume_keeps_a_dropped_reviewed_change_in_the_queue() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("shared.py"), "title = 'old'\nreviewed = 0\n").unwrap();
+    let original_base = commit(root, "original base");
+    fs::write(root.join("shared.py"), "title = 'old'\nreviewed = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("shared.py"), "title = 'new'\nreviewed = 0\n").unwrap();
+    let current_base = commit(root, "advanced base without reviewed edit");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &current_base, Some(&checkpoint))
+            .unwrap();
+    assert!(report.files.is_empty());
+    assert_eq!(
+        report
+            .summary
+            .checkpoint
+            .as_ref()
+            .unwrap()
+            .retired_change_count,
+        1
+    );
+
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(delta.entries.len(), 1);
+    assert!(delta.unresolved_retired_changes.is_empty());
+    let entry = &delta.entries[0];
+    assert_eq!(entry.display_path(), "shared.py");
+    assert_eq!(
+        entry.baseline_basis,
+        ReviewDeltaBaselineBasis::ReconstructedReviewBaseline
+    );
+    let sources = load_review_delta_file_sources(root, entry).unwrap();
+    assert_eq!(sources.before, b"title = 'new'\nreviewed = 1\n");
+    assert_eq!(sources.after, b"title = 'new'\nreviewed = 0\n");
+
+    let gate = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(root)
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--fail-on-review-residue")
+        .arg("--")
+        .arg(&current_base)
+        .arg(&current_base)
+        .output()
+        .unwrap();
+    assert!(!gate.status.success());
+    assert!(
+        String::from_utf8_lossy(&gate.stderr)
+            .contains("review delta gate is open: 1 file needs review")
+    );
+}
+
+#[test]
+fn checkpoint_resume_accepts_a_retired_change_when_head_matches_the_reviewed_snapshot() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("seed.txt"), "base\n").unwrap();
+    let original_base = commit(root, "original base");
+    fs::write(root.join("absorbed.py"), "reviewed = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed addition");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("seed.txt"), "advanced\n").unwrap();
+    fs::write(root.join("absorbed.py"), "reviewed = 1\n").unwrap();
+    let current_base = commit(root, "upstream absorbed reviewed addition");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &current_base, Some(&checkpoint))
+            .unwrap();
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert!(delta.entries.is_empty());
+    assert!(delta.unresolved_retired_changes.is_empty());
+    assert_eq!(delta.summary.needs_review_files, 0);
+    assert!(delta.summary.gate_passed);
+    assert_review_delta_schema(&delta);
+}
+
+#[test]
+fn checkpoint_resume_displays_both_sides_of_a_dropped_rename() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("old.py"), "value = 1\n").unwrap();
+    fs::write(root.join("seed.txt"), "base\n").unwrap();
+    let original_base = commit(root, "original base");
+    git(root, &["mv", "old.py", "new.py"]);
+    let checkpoint = commit(root, "reviewed rename");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("seed.txt"), "advanced\n").unwrap();
+    let current_base = commit(root, "advanced base without rename");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &current_base, Some(&checkpoint))
+            .unwrap();
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(delta.summary.displayable_files, 2);
+    assert_eq!(delta.summary.needs_review_files, 2);
+    assert_eq!(
+        delta
+            .entries
+            .iter()
+            .map(|entry| (entry.display_path(), entry.file.status))
+            .collect::<Vec<_>>(),
+        [
+            ("new.py".to_owned(), stratadiff::review::FileStatus::Deleted),
+            ("old.py".to_owned(), stratadiff::review::FileStatus::Added),
+        ]
+    );
+    assert!(delta.entries.iter().all(|entry| {
+        entry.baseline_basis == ReviewDeltaBaselineBasis::CheckpointHeadFallback
+            && entry.fallback_reason == Some(ReviewDeltaFallbackReason::UnsupportedChange)
+    }));
+    assert_review_delta_schema(&delta);
+}
+
+#[test]
+fn checkpoint_resume_keeps_the_unmatched_side_of_a_partially_dropped_rename() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("old.py"), "value = 0\n").unwrap();
+    fs::write(root.join("seed.txt"), "base\n").unwrap();
+    let original_base = commit(root, "original base");
+    git(root, &["mv", "old.py", "new.py"]);
+    let checkpoint = commit(root, "reviewed rename");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("seed.txt"), "advanced\n").unwrap();
+    let current_base = commit(root, "advanced base without rename");
+    fs::write(root.join("old.py"), "value = 2\n").unwrap();
+    let head = commit(root, "modify the restored path");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(delta.summary.displayable_files, 2);
+    assert_eq!(delta.summary.needs_review_files, 2);
+    assert!(!delta.summary.gate_passed);
+
+    let restored = delta
+        .entries
+        .iter()
+        .find(|entry| entry.display_path() == "old.py")
+        .unwrap();
+    assert_eq!(
+        restored.file.status,
+        stratadiff::review::FileStatus::Modified
+    );
+    assert_eq!(
+        restored.baseline_basis,
+        ReviewDeltaBaselineBasis::CurrentBaseFallback
+    );
+    let restored_sources = load_review_delta_file_sources(root, restored).unwrap();
+    assert_eq!(restored_sources.before, b"value = 0\n");
+    assert_eq!(restored_sources.after, b"value = 2\n");
+
+    let removed_destination = delta
+        .entries
+        .iter()
+        .find(|entry| entry.display_path() == "new.py")
+        .unwrap();
+    assert_eq!(
+        removed_destination.file.status,
+        stratadiff::review::FileStatus::Deleted
+    );
+    assert_eq!(
+        removed_destination.baseline_basis,
+        ReviewDeltaBaselineBasis::CheckpointHeadFallback
+    );
+    let removed_sources = load_review_delta_file_sources(root, removed_destination).unwrap();
+    assert_eq!(removed_sources.before, b"value = 0\n");
+    assert!(removed_sources.after.is_empty());
+    assert_review_delta_schema(&delta);
+
+    let gate = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(root)
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--fail-on-review-residue")
+        .arg("--")
+        .arg(&current_base)
+        .arg(&head)
+        .output()
+        .unwrap();
+    assert!(!gate.status.success());
+    assert!(
+        String::from_utf8_lossy(&gate.stderr)
+            .contains("review delta gate is open: 2 files need review")
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn checkpoint_resume_structures_non_utf8_unresolved_changes_without_file_annotations() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("seed.txt"), "base\n").unwrap();
+    let original_base = commit(root, "original base");
+    let path = root.join(OsString::from_vec(b"reviewed-\xff.py".to_vec()));
+    fs::write(&path, "reviewed = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed non-UTF-8 addition");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("seed.txt"), "advanced\n").unwrap();
+    let current_base = commit(root, "advanced base");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &current_base, Some(&checkpoint))
+            .unwrap();
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert!(delta.entries.is_empty());
+    assert_eq!(delta.unresolved_retired_changes.len(), 1);
+    let unresolved = &delta.unresolved_retired_changes[0];
+    assert_eq!(
+        unresolved.path,
+        "git-bytes:%72%65%76%69%65%77%65%64%2D%FF%2E%70%79"
+    );
+    assert_eq!(
+        unresolved.reason,
+        ReviewDeltaUnresolvedReason::NonUtf8GitPath
+    );
+    assert_eq!(delta.summary.needs_review_files, 1);
+    assert!(!delta.summary.gate_passed);
+    assert_review_delta_schema(&delta);
+
+    let annotations = github_review_delta_annotations(&delta);
+    assert!(!annotations.contains("file="));
+    assert!(annotations.contains("git-bytes:%2572%2565"));
 }
 
 #[test]
@@ -597,6 +1044,106 @@ fn checkpoint_resume_rejects_overlapping_changes_during_base_drift() {
     assert_eq!(summary.needs_review_now_files, 1);
     assert_eq!(summary.unchanged_since_checkpoint_files, 0);
     assert_eq!(summary.retired_change_count, 1);
+
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(delta.entries.len(), 1);
+    assert_eq!(
+        delta.entries[0].baseline_basis,
+        ReviewDeltaBaselineBasis::CurrentBaseFallback
+    );
+    assert_eq!(
+        delta.entries[0].fallback_reason,
+        Some(ReviewDeltaFallbackReason::OverlapOrAdjacent)
+    );
+    let sources = load_review_delta_file_sources(root, &delta.entries[0]).unwrap();
+    assert_eq!(sources.before, b"value = 2222\n");
+    assert_eq!(sources.after, b"value = 1111\n");
+}
+
+#[test]
+fn checkpoint_resume_falls_back_for_binary_rebase_candidates() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(
+        root.join("asset.bin"),
+        b"upstream=0\0reviewed=0\nauthor=0\n",
+    )
+    .unwrap();
+    let original_base = commit(root, "original binary base");
+    fs::write(
+        root.join("asset.bin"),
+        b"upstream=0\0reviewed=1\nauthor=0\n",
+    )
+    .unwrap();
+    let checkpoint = commit(root, "reviewed binary checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(
+        root.join("asset.bin"),
+        b"upstream=1\0reviewed=0\nauthor=0\n",
+    )
+    .unwrap();
+    let current_base = commit(root, "advanced binary base");
+    fs::write(
+        root.join("asset.bin"),
+        b"upstream=1\0reviewed=1\nauthor=1\n",
+    )
+    .unwrap();
+    let head = commit(root, "binary follow-up");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(delta.entries.len(), 1);
+    assert_eq!(
+        delta.entries[0].baseline_basis,
+        ReviewDeltaBaselineBasis::CurrentBaseFallback
+    );
+    assert_eq!(
+        delta.entries[0].fallback_reason,
+        Some(ReviewDeltaFallbackReason::BinaryNul)
+    );
+    let sources = load_review_delta_file_sources(root, &delta.entries[0]).unwrap();
+    assert_eq!(sources.before, b"upstream=1\0reviewed=0\nauthor=0\n");
+    assert_eq!(sources.after, b"upstream=1\0reviewed=1\nauthor=1\n");
+}
+
+#[test]
+fn checkpoint_resume_falls_back_for_added_files_across_base_drift() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("seed.txt"), "base\n").unwrap();
+    let original_base = commit(root, "original base");
+    fs::write(root.join("added.py"), "reviewed = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed addition");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("seed.txt"), "advanced\n").unwrap();
+    let current_base = commit(root, "advanced base");
+    fs::write(root.join("added.py"), "reviewed = 2\n").unwrap();
+    let head = commit(root, "changed addition");
+
+    let report =
+        review_git_range_with_checkpoint(root, &current_base, &head, Some(&checkpoint)).unwrap();
+    let delta = review_git_resume_delta(root, &report).unwrap();
+    assert_eq!(delta.entries.len(), 1);
+    assert_eq!(
+        delta.entries[0].baseline_basis,
+        ReviewDeltaBaselineBasis::CurrentBaseFallback
+    );
+    assert_eq!(
+        delta.entries[0].fallback_reason,
+        Some(ReviewDeltaFallbackReason::UnsupportedChange)
+    );
+    let sources = load_review_delta_file_sources(root, &delta.entries[0]).unwrap();
+    assert!(sources.before.is_empty());
+    assert_eq!(sources.after, b"reviewed = 2\n");
 }
 
 #[test]
@@ -660,13 +1207,36 @@ fn checkpoint_resume_uses_pr_relative_ranges_when_the_base_changes() {
     assert_eq!(summary.retired_change_count, 2);
 
     let residue = review_git_resume_delta(root, &report).unwrap();
-    assert_eq!(residue.comparison, "current_pr_unmatched_identities");
-    assert_eq!(residue.from_commit, checkpoint);
-    assert_eq!(residue.source_base_commit, current_base);
-    assert_eq!(residue.to_commit, head);
-    assert_eq!(residue.summary.changed_files, 2);
-    assert_eq!(residue.files[0].display_path(), "current.py");
-    assert_eq!(residue.files[1].display_path(), "divergent.py");
+    assert_eq!(
+        residue.comparison,
+        ReviewDeltaComparison::PerFileReviewBaselineToHead
+    );
+    assert_eq!(residue.old_base_commit, original_base);
+    assert_eq!(residue.checkpoint_commit, checkpoint);
+    assert_eq!(residue.current_base_commit, current_base);
+    assert_eq!(residue.head_commit, head);
+    assert_eq!(residue.summary.displayable_files, 3);
+    assert_eq!(residue.summary.needs_review_files, 3);
+    assert_eq!(
+        residue
+            .entries
+            .iter()
+            .map(|entry| entry.display_path())
+            .collect::<Vec<_>>(),
+        ["checkpoint.py", "current.py", "divergent.py"]
+    );
+    assert_eq!(
+        residue.entries[0].baseline_basis,
+        ReviewDeltaBaselineBasis::CheckpointHeadFallback
+    );
+    assert_eq!(
+        residue.entries[1].baseline_basis,
+        ReviewDeltaBaselineBasis::CurrentBaseNoCheckpointChange
+    );
+    assert_eq!(
+        residue.entries[2].baseline_basis,
+        ReviewDeltaBaselineBasis::ReconstructedReviewBaseline
+    );
 
     let markdown = markdown_report(&report);
     assert!(markdown.contains("base changed"));

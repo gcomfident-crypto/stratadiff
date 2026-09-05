@@ -1,5 +1,5 @@
 name: StrataDiff Review Coverage (alpha)
-description: Rebase-safe review-residue check inside the caller's runner; StrataDiff has no upload step
+description: Rebase-safe review-residue check inside the caller's runner; checkpoint mode requires Python 3 and has no upload step
 author: StrataDiff contributors
 
 branding:
@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ''
   github-token:
-    description: GitHub token used only to list pull request reviews when reviewer is set
+    description: GitHub token used after the build to list reviews, verify the selected commit, and fetch that exact missing checkpoint
     required: false
     default: ''
   pull-request-number:
@@ -30,7 +30,7 @@ inputs:
     required: false
     default: ''
   fail-on-review-residue:
-    description: Fail the check unless every current PR change is carried from a resolved checkpoint
+    description: Fail unless the exact checkpoint-to-head review queue is empty, including dropped or unresolved checkpoint changes
     required: false
     default: 'false'
   repository:
@@ -42,6 +42,15 @@ outputs:
   report:
     description: Absolute path to the deterministic JSON review-focus report
     value: ${{ steps.review.outputs.report }}
+  review_delta:
+    description: Absolute path to the runner-local review-delta-v1 JSON artifact, or empty without a checkpoint; the action does not upload it
+    value: ${{ steps.review.outputs.review_delta }}
+  review_delta_schema:
+    description: Versioned JSON Schema URL from the review delta artifact, or empty without a checkpoint
+    value: ${{ steps.review.outputs.review_delta_schema }}
+  review_delta_engine_version:
+    description: StrataDiff engine version that produced the review delta artifact, or empty without a checkpoint
+    value: ${{ steps.review.outputs.review_delta_engine_version }}
   checkpoint:
     description: Resolved checkpoint commit, or empty when the full PR remains in review
     value: ${{ steps.review.outputs.checkpoint }}
@@ -61,10 +70,19 @@ runs:
       uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       with:
         workspaces: ${{ github.action_path }}
-    - name: Build and analyze the Git range
+    - name: Build StrataDiff without credentials
+      shell: bash
+      env:
+        BASH_ENV: ''
+        STRATADIFF_ACTION_PHASE: build
+      run: |
+        bash --noprofile --norc "${GITHUB_ACTION_PATH}/scripts/github_action_review.sh"
+    - name: Analyze the Git range
       id: review
       shell: bash
       env:
+        BASH_ENV: ''
+        STRATADIFF_ACTION_PHASE: review
         STRATADIFF_BASE: ${{ inputs.base }}
         STRATADIFF_HEAD: ${{ inputs.head }}
         STRATADIFF_CHECKPOINT: ${{ inputs.checkpoint }}

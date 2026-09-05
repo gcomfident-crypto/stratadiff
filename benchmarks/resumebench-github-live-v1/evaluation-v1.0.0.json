@@ -114,7 +114,7 @@
   ],
   "claim_boundary": "Five purposefully selected GitHub force-push histories; exact policy conformance only, with no human-priority, reviewer-time, defect-recall, semantic-safety, or prevalence ground truth.",
   "dataset_version": "1.0.0",
-  "evaluated_at": "2026-09-05T01:59:29.672963Z",
+  "evaluated_at": "2026-09-05T03:44:27.376564Z",
   "provenance": {
     "engine": {
       "build_profile": "release",
@@ -138,7 +138,7 @@
       "git_version": "git version 2.25.1",
       "python_version": "3.14.6"
     },
-    "verifier_sha256": "569c24a1eeace51962bb709b3eeab4f33b584601a4089850dda90fbae4ffa381"
+    "verifier_sha256": "11cf349f7ff3ef96ff1772cd20b5f4c59ff516079faa3dd7c2af23cdc44bfc98"
   },
   "schema": "stratadiff-resumebench-github-live-evaluation-v1",
   "summary": {

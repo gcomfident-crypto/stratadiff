@@ -1,5 +1,15 @@
 # Benchmark artifacts
 
+## Rebase-aware review-delta contract
+
+[`review-delta-v1/`](review-delta-v1/) is a deterministic, network-free suite of thirteen synthetic
+four-snapshot Git histories. It covers pure rebase carry, a precise post-review author edit,
+dropped/reverted reviewed work, upstream absorption, overlap and adjacency refusal, binary refusal,
+and conservative add/delete/rename/mode fallbacks. The machine runner verifies the CLI artifact and
+gate plus both Workbench scopes for regular Git blobs, including the invariant that Full PR context
+always uses the exact `C -> D` Git identities and source bytes. This is a controlled correctness
+suite, not a prevalence, semantic-safety, defect-recall, or reviewer-time claim.
+
 ## Rebase-aware real review oracle
 
 [`resumebench-real-v1/`](resumebench-real-v1/) freezes the previously rejected Gerrit base-drift

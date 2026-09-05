@@ -142,6 +142,16 @@ export function repositorySessionFixture(): RepositorySessionPayload {
     reviewFile('src/changed.ts'),
     { ...reviewFile('src/retired.ts'), status: 'deleted' as const, after_path: undefined, after_path_encoding: undefined, after_blob: undefined, after_mode: undefined, after_bytes: undefined, evidence: undefined },
   ]
+  const resumeEntries = resumeFiles.map((file) => ({
+    file,
+    baseline_basis: 'checkpoint_snapshot' as const,
+    before_source: file.before_blob === undefined
+      ? { kind: 'empty' as const }
+      : { kind: 'git_object' as const, commit: checkpoint, object_id: file.before_blob, byte_len: file.before_bytes },
+    after_source: file.after_blob === undefined
+      ? { kind: 'empty' as const }
+      : { kind: 'git_object' as const, commit: head, object_id: file.after_blob, byte_len: file.after_bytes },
+  }))
   return {
     kind: 'repository_review',
     review: {
@@ -179,24 +189,21 @@ export function repositorySessionFixture(): RepositorySessionPayload {
       files: currentFiles,
     },
     resume_delta: {
-      comparison: 'snapshot_to_snapshot',
-      from_commit: checkpoint,
-      source_base_commit: checkpoint,
-      to_commit: head,
+      schema: 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json',
+      engine_version: '0.3.0',
+      comparison: 'checkpoint_to_head',
+      old_base_commit: base,
+      checkpoint_commit: checkpoint,
+      current_base_commit: base,
+      head_commit: head,
       summary: {
-        changed_files: 2,
-        first_pass_files: 2,
-        review_first_files: 2,
-        syntax_preserved_files: 0,
-        content_preserved_files: 0,
-        unverified_files: 0,
-        replay_check_passed_files: 1,
-        replay_check_not_run_files: 1,
-        line_envelope_complete: true,
-        changed_line_envelope: 4,
-        first_pass_line_envelope: 4,
+        displayable_files: 2,
+        unresolved_retired_changes: 0,
+        needs_review_files: 2,
+        gate_passed: false,
       },
-      files: resumeFiles,
+      entries: resumeEntries,
+      unresolved_retired_changes: [],
     },
     assessment: {
       status: 'producer_attested',

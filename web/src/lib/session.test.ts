@@ -44,6 +44,31 @@ describe('session loading', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/session?token=repository-token', expect.objectContaining({ cache: 'no-store' }))
   })
 
+  it('rejects a repository delta with the wrong artifact contract', async () => {
+    const payload = repositorySessionFixture()
+    payload.resume_delta.schema = 'https://example.test/review-delta-v1.schema.json' as typeof payload.resume_delta.schema
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+    await expect(fetchSession('?token=repository-token')).rejects.toThrow('inconsistent checkpoint delta metadata')
+  })
+
+  it('requires fallback reasons exactly on conservative delta entries', async () => {
+    const exactPayload = repositorySessionFixture()
+    const exactEntry = exactPayload.resume_delta.entries[0]
+    if (exactEntry === undefined) throw new Error('Missing exact delta fixture entry.')
+    Object.assign(exactEntry, { fallback_reason: 'unsupported_change' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(exactPayload), { status: 200 })))
+    await expect(fetchSession('?token=repository-token')).rejects.toThrow('inconsistent checkpoint delta fallback evidence')
+
+    const fallbackPayload = repositorySessionFixture()
+    const fallbackEntry = fallbackPayload.resume_delta.entries[0]
+    if (fallbackEntry === undefined || fallbackEntry.before_source.kind !== 'git_object') throw new Error('Missing Git-backed delta fixture entry.')
+    Object.assign(fallbackEntry, { baseline_basis: 'current_base_fallback' })
+    fallbackEntry.before_source.commit = fallbackPayload.review.base_commit
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(fallbackPayload), { status: 200 })))
+    await expect(fetchSession('?token=repository-token')).rejects.toThrow('inconsistent checkpoint delta fallback evidence')
+  })
+
   it('detects invalid UTF-8 without replacement characters', () => {
     expect(decodeUtf8(Uint8Array.from([0xff, 0x00, 0xfe]))).toBeNull()
   })

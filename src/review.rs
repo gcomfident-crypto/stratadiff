@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub const REVIEW_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-v1.schema.json";
+pub const REVIEW_DELTA_SCHEMA: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json";
 pub const MAX_REVIEW_FILES: usize = 1_000;
 pub const MAX_REVIEW_TOTAL_SOURCE_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_GITHUB_WORKFLOW_ANNOTATIONS: usize = 20;
@@ -96,6 +97,40 @@ pub enum CheckpointMatchBasis {
 pub enum CheckpointCarryBasis {
     ExactGitChangeIdentity,
     ExactNoninteractingFourWayByteReplay,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewDeltaComparison {
+    CheckpointToHead,
+    PerFileReviewBaselineToHead,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewDeltaBaselineBasis {
+    CheckpointSnapshot,
+    CurrentBaseNoCheckpointChange,
+    ReconstructedReviewBaseline,
+    CurrentBaseFallback,
+    CheckpointHeadFallback,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewDeltaFallbackReason {
+    OverlapOrAdjacent,
+    BinaryNul,
+    SourceUnavailable,
+    UnsupportedChange,
+    TranslationFailed,
+    ReplayOrdersMismatch,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewDeltaUnresolvedReason {
+    NonUtf8GitPath,
 }
 
 impl CheckpointCarryBasis {
@@ -261,18 +296,292 @@ pub struct RepositoryReview {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReviewDelta {
-    pub comparison: String,
-    pub from_commit: String,
-    pub source_base_commit: String,
-    pub to_commit: String,
-    pub summary: ReviewSummary,
-    pub files: Vec<ReviewFile>,
+    pub schema: String,
+    pub engine_version: String,
+    pub comparison: ReviewDeltaComparison,
+    pub old_base_commit: String,
+    pub checkpoint_commit: String,
+    pub current_base_commit: String,
+    pub head_commit: String,
+    pub summary: ReviewDeltaSummary,
+    pub entries: Vec<ReviewDeltaFile>,
+    pub unresolved_retired_changes: Vec<ReviewDeltaUnresolvedChange>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewDeltaSummary {
+    pub displayable_files: usize,
+    pub unresolved_retired_changes: usize,
+    pub needs_review_files: usize,
+    pub gate_passed: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewDeltaUnresolvedChange {
+    pub path: String,
+    pub path_encoding: PathEncoding,
+    pub reason: ReviewDeltaUnresolvedReason,
+}
+
+impl ReviewDelta {
+    pub fn validate(&self) -> Result<()> {
+        ensure!(
+            self.schema == REVIEW_DELTA_SCHEMA,
+            "unsupported review delta schema"
+        );
+        ensure!(
+            !self.engine_version.is_empty(),
+            "review delta engine version is empty"
+        );
+        for commit in [
+            &self.old_base_commit,
+            &self.checkpoint_commit,
+            &self.current_base_commit,
+            &self.head_commit,
+        ] {
+            ensure!(
+                is_object_id(commit),
+                "review delta contains an invalid commit id"
+            );
+        }
+        ensure!(
+            self.summary.displayable_files == self.entries.len(),
+            "review delta displayable file count is inconsistent"
+        );
+        ensure!(
+            self.summary.unresolved_retired_changes == self.unresolved_retired_changes.len(),
+            "review delta unresolved retired change count is inconsistent"
+        );
+        let needs_review_files = self.entries.len() + self.unresolved_retired_changes.len();
+        ensure!(
+            self.summary.needs_review_files == needs_review_files,
+            "review delta queue total is inconsistent"
+        );
+        ensure!(
+            self.summary.gate_passed == (needs_review_files == 0),
+            "review delta gate state is inconsistent"
+        );
+        ensure!(
+            self.comparison != ReviewDeltaComparison::CheckpointToHead
+                || self.old_base_commit == self.current_base_commit,
+            "checkpoint-to-head delta has inconsistent merge bases"
+        );
+
+        for entry in &self.entries {
+            validate_review_delta_entry(entry, self)?;
+        }
+        let mut unresolved_paths = HashSet::new();
+        for change in &self.unresolved_retired_changes {
+            ensure!(
+                change.reason != ReviewDeltaUnresolvedReason::NonUtf8GitPath
+                    || change.path_encoding == PathEncoding::GitBytesPercentEncoded,
+                "non-UTF-8 unresolved change has the wrong path encoding"
+            );
+            ensure!(
+                !change.path.is_empty() && unresolved_paths.insert(&change.path),
+                "review delta contains an empty or duplicate unresolved path"
+            );
+        }
+        Ok(())
+    }
+}
+
+fn validate_review_delta_entry(entry: &ReviewDeltaFile, delta: &ReviewDelta) -> Result<()> {
+    let expected_before_commit = match entry.baseline_basis {
+        ReviewDeltaBaselineBasis::CheckpointSnapshot
+        | ReviewDeltaBaselineBasis::CheckpointHeadFallback => &delta.checkpoint_commit,
+        ReviewDeltaBaselineBasis::CurrentBaseNoCheckpointChange
+        | ReviewDeltaBaselineBasis::CurrentBaseFallback
+        | ReviewDeltaBaselineBasis::ReconstructedReviewBaseline => &delta.current_base_commit,
+    };
+    match entry.baseline_basis {
+        ReviewDeltaBaselineBasis::ReconstructedReviewBaseline => {
+            let reconstruction = entry
+                .baseline_reconstruction
+                .as_ref()
+                .context("reconstructed review delta has no reconstruction evidence")?;
+            ensure!(
+                entry.fallback_reason.is_none(),
+                "reconstructed review delta unexpectedly records a fallback"
+            );
+            ensure!(
+                reconstruction.algorithm == "bidirectional_noninteracting_byte_replay_v1",
+                "unsupported review baseline reconstruction algorithm"
+            );
+            ensure!(
+                reconstruction.reviewed_on_current_base_blake3
+                    == reconstruction.upstream_on_checkpoint_blake3
+                    && reconstruction.reconstructed_blake3
+                        == reconstruction.reviewed_on_current_base_blake3,
+                "review baseline replay orders disagree"
+            );
+            ensure!(
+                [
+                    &reconstruction.old_base_blob,
+                    &reconstruction.reviewed_blob,
+                    &reconstruction.current_base_blob,
+                ]
+                .into_iter()
+                .all(|object_id| is_object_id(object_id)),
+                "review baseline reconstruction contains an invalid object id"
+            );
+            ensure!(
+                [
+                    &reconstruction.reviewed_on_current_base_blake3,
+                    &reconstruction.upstream_on_checkpoint_blake3,
+                    &reconstruction.reconstructed_blake3,
+                ]
+                .into_iter()
+                .all(|digest| is_blake3(digest)),
+                "review baseline reconstruction contains an invalid digest"
+            );
+            match &entry.before_source {
+                ReviewDeltaSource::ReconstructedBytes { blake3, byte_len } => {
+                    ensure!(
+                        is_blake3(blake3)
+                            && blake3 == &reconstruction.reconstructed_blake3
+                            && *byte_len == reconstruction.byte_len
+                            && entry.file.before_bytes == Some(*byte_len)
+                            && entry.file.before_blob.is_none(),
+                        "reconstructed review baseline metadata is inconsistent"
+                    );
+                }
+                ReviewDeltaSource::GitObject { .. } | ReviewDeltaSource::Empty => {
+                    bail!("reconstructed review delta has the wrong before source")
+                }
+            }
+        }
+        ReviewDeltaBaselineBasis::CurrentBaseFallback
+        | ReviewDeltaBaselineBasis::CheckpointHeadFallback => {
+            ensure!(
+                entry.fallback_reason.is_some(),
+                "review delta fallback has no reason"
+            );
+            ensure!(
+                entry.baseline_reconstruction.is_none(),
+                "review delta fallback unexpectedly has reconstruction evidence"
+            );
+            validate_review_delta_git_source(
+                &entry.before_source,
+                expected_before_commit,
+                entry.file.before_blob.as_deref(),
+                entry.file.before_bytes,
+            )?;
+        }
+        ReviewDeltaBaselineBasis::CheckpointSnapshot
+        | ReviewDeltaBaselineBasis::CurrentBaseNoCheckpointChange => {
+            ensure!(
+                entry.fallback_reason.is_none() && entry.baseline_reconstruction.is_none(),
+                "exact review delta entry contains fallback evidence"
+            );
+            validate_review_delta_git_source(
+                &entry.before_source,
+                expected_before_commit,
+                entry.file.before_blob.as_deref(),
+                entry.file.before_bytes,
+            )?;
+        }
+    }
+    validate_review_delta_git_source(
+        &entry.after_source,
+        &delta.head_commit,
+        entry.file.after_blob.as_deref(),
+        entry.file.after_bytes,
+    )
+}
+
+fn validate_review_delta_git_source(
+    source: &ReviewDeltaSource,
+    expected_commit: &str,
+    expected_object_id: Option<&str>,
+    expected_byte_len: Option<usize>,
+) -> Result<()> {
+    match source {
+        ReviewDeltaSource::GitObject {
+            commit,
+            object_id,
+            byte_len,
+        } => {
+            ensure!(
+                is_object_id(object_id),
+                "review delta source has an invalid object id"
+            );
+            ensure!(
+                commit == expected_commit
+                    && Some(object_id.as_str()) == expected_object_id
+                    && *byte_len == expected_byte_len,
+                "review delta Git source metadata is inconsistent"
+            );
+        }
+        ReviewDeltaSource::Empty => {
+            ensure!(
+                expected_object_id.is_none() && expected_byte_len.is_none(),
+                "empty review delta source contradicts file metadata"
+            );
+        }
+        ReviewDeltaSource::ReconstructedBytes { .. } => {
+            bail!("unexpected reconstructed Git source")
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ReviewFileSources {
     pub before: Vec<u8>,
     pub after: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ReviewDeltaSource {
+    GitObject {
+        commit: String,
+        object_id: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        byte_len: Option<usize>,
+    },
+    ReconstructedBytes {
+        blake3: String,
+        byte_len: usize,
+    },
+    Empty,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewBaselineReconstruction {
+    pub algorithm: String,
+    pub old_base_blob: String,
+    pub reviewed_blob: String,
+    pub current_base_blob: String,
+    pub reviewed_on_current_base_blake3: String,
+    pub upstream_on_checkpoint_blake3: String,
+    pub reconstructed_blake3: String,
+    pub byte_len: usize,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewDeltaFile {
+    pub file: ReviewFile,
+    pub baseline_basis: ReviewDeltaBaselineBasis,
+    pub before_source: ReviewDeltaSource,
+    pub after_source: ReviewDeltaSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub baseline_reconstruction: Option<ReviewBaselineReconstruction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fallback_reason: Option<ReviewDeltaFallbackReason>,
+    #[serde(skip)]
+    source_override: Option<ReviewFileSources>,
+}
+
+impl ReviewDeltaFile {
+    pub fn display_path(&self) -> String {
+        self.file.display_path()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -513,15 +822,34 @@ pub fn review_git_snapshot_delta(repository: &Path, from: &str, to: &str) -> Res
             file.display_path(),
         )
     });
-    let summary = summarize(&files, None);
-    Ok(ReviewDelta {
-        comparison: "snapshot_to_snapshot".to_owned(),
-        source_base_commit: from_commit.clone(),
-        from_commit,
-        to_commit,
+    let entries = files
+        .into_iter()
+        .map(|file| {
+            review_delta_git_entry(
+                file,
+                ReviewDeltaBaselineBasis::CheckpointSnapshot,
+                &from_commit,
+                &to_commit,
+                None,
+            )
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let unresolved_retired_changes = Vec::new();
+    let summary = summarize_review_delta(&entries, &unresolved_retired_changes);
+    let delta = ReviewDelta {
+        schema: REVIEW_DELTA_SCHEMA.to_owned(),
+        engine_version: env!("CARGO_PKG_VERSION").to_owned(),
+        comparison: ReviewDeltaComparison::CheckpointToHead,
+        old_base_commit: from_commit.clone(),
+        checkpoint_commit: from_commit.clone(),
+        current_base_commit: from_commit,
+        head_commit: to_commit,
         summary,
-        files,
-    })
+        entries,
+        unresolved_retired_changes,
+    };
+    delta.validate()?;
+    Ok(delta)
 }
 
 pub fn review_git_resume_delta(
@@ -533,24 +861,716 @@ pub fn review_git_resume_delta(
         .as_ref()
         .context("review residue requires a checkpoint")?;
     if checkpoint.base_commit == review.base_commit {
-        return review_git_snapshot_delta(repository, &checkpoint.commit, &review.head_commit);
+        let mut delta =
+            review_git_snapshot_delta(repository, &checkpoint.commit, &review.head_commit)?;
+        delta.old_base_commit = checkpoint.base_commit.clone();
+        delta.current_base_commit = review.base_commit.clone();
+        delta.validate()?;
+        return Ok(delta);
     }
 
-    let files = review
+    let checkpoint_changes =
+        discover_git_changes(repository, &checkpoint.base_commit, &checkpoint.commit)?;
+    let current_changes =
+        discover_git_changes(repository, &review.base_commit, &review.head_commit)?;
+    let limits = VerificationLimits::default();
+    let mut blob_loader = BlobLoader::default();
+    // A multi-path checkpoint change is consumed only after every distinct path side has been
+    // accounted for. A current change touching one side of a rename must not hide the other side.
+    let mut associated_checkpoint_paths = HashSet::new();
+    let mut entries = Vec::new();
+
+    for current_change in &current_changes {
+        let file = review_file_for_change(review, current_change)?.clone();
+        let exact_indices = checkpoint_changes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, checkpoint_change)| {
+                (GitChangeIdentity::from(checkpoint_change)
+                    == GitChangeIdentity::from(current_change))
+                .then_some(index)
+            })
+            .collect::<Vec<_>>();
+        for index in exact_indices {
+            associate_all_checkpoint_paths(
+                &mut associated_checkpoint_paths,
+                index,
+                &checkpoint_changes[index],
+            );
+        }
+        if file.checkpoint_state == Some(CheckpointState::UnchangedSinceCheckpoint) {
+            if let Some((index, _)) = unique_replay_candidate(&checkpoint_changes, current_change) {
+                associate_all_checkpoint_paths(
+                    &mut associated_checkpoint_paths,
+                    index,
+                    &checkpoint_changes[index],
+                );
+            }
+            continue;
+        }
+
+        if let Some((index, checkpoint_change)) =
+            unique_replay_candidate(&checkpoint_changes, current_change)
+        {
+            associate_all_checkpoint_paths(
+                &mut associated_checkpoint_paths,
+                index,
+                checkpoint_change,
+            );
+            match reconstruct_review_baseline(
+                repository,
+                checkpoint_change,
+                current_change,
+                &limits,
+                &mut blob_loader,
+            )? {
+                BaselineReconstructionOutcome::Reconstructed(reconstruction) => {
+                    if reconstruction.baseline != reconstruction.current_after {
+                        entries.push(reconstructed_delta_entry(
+                            file,
+                            current_change,
+                            *reconstruction,
+                            &review.head_commit,
+                            &limits,
+                        )?);
+                    }
+                }
+                BaselineReconstructionOutcome::Unavailable(reason) => {
+                    entries.push(review_delta_git_entry(
+                        file,
+                        ReviewDeltaBaselineBasis::CurrentBaseFallback,
+                        &review.base_commit,
+                        &review.head_commit,
+                        Some(reason),
+                    )?);
+                }
+            }
+            continue;
+        }
+
+        let related_paths = related_checkpoint_paths(&checkpoint_changes, current_change);
+        if related_paths.is_empty() {
+            entries.push(review_delta_git_entry(
+                file,
+                ReviewDeltaBaselineBasis::CurrentBaseNoCheckpointChange,
+                &review.base_commit,
+                &review.head_commit,
+                None,
+            )?);
+        } else {
+            associated_checkpoint_paths.extend(related_paths);
+            entries.push(review_delta_git_entry(
+                file,
+                ReviewDeltaBaselineBasis::CurrentBaseFallback,
+                &review.base_commit,
+                &review.head_commit,
+                Some(ReviewDeltaFallbackReason::UnsupportedChange),
+            )?);
+        }
+    }
+
+    let mut unresolved_retired_changes = Vec::new();
+    for (index, checkpoint_change) in checkpoint_changes.iter().enumerate() {
+        let unassociated_paths = checkpoint_change_paths(checkpoint_change)
+            .into_iter()
+            .filter(|path| !associated_checkpoint_paths.contains(&(index, path.clone())))
+            .collect::<Vec<_>>();
+        if unassociated_paths.is_empty() {
+            continue;
+        }
+        let Some(current_snapshot) = same_path_snapshot_change(
+            repository,
+            &review.base_commit,
+            &review.head_commit,
+            checkpoint_change,
+        )?
+        else {
+            let fallback = checkpoint_head_fallback_entries(
+                repository,
+                &unassociated_paths,
+                &checkpoint.commit,
+                &review.head_commit,
+                &limits,
+                &mut blob_loader,
+            )?;
+            entries.extend(fallback.entries);
+            unresolved_retired_changes.extend(fallback.unresolved);
+            continue;
+        };
+
+        match reconstruct_review_baseline(
+            repository,
+            checkpoint_change,
+            &current_snapshot,
+            &limits,
+            &mut blob_loader,
+        )? {
+            BaselineReconstructionOutcome::Reconstructed(reconstruction) => {
+                if reconstruction.baseline != reconstruction.current_after {
+                    let fallback_file = analyze_change(
+                        repository,
+                        current_snapshot.clone(),
+                        &limits,
+                        &mut blob_loader,
+                    )?;
+                    entries.push(reconstructed_delta_entry(
+                        fallback_file,
+                        &current_snapshot,
+                        *reconstruction,
+                        &review.head_commit,
+                        &limits,
+                    )?);
+                }
+            }
+            BaselineReconstructionOutcome::Unavailable(_) => {
+                let fallback = checkpoint_head_fallback_entries(
+                    repository,
+                    &unassociated_paths,
+                    &checkpoint.commit,
+                    &review.head_commit,
+                    &limits,
+                    &mut blob_loader,
+                )?;
+                entries.extend(fallback.entries);
+                unresolved_retired_changes.extend(fallback.unresolved);
+            }
+        }
+    }
+
+    entries.sort_by_key(|entry| {
+        (
+            priority_rank(entry.file.priority),
+            lane_rank(entry.file.lane),
+            entry.display_path(),
+        )
+    });
+    unresolved_retired_changes.sort_by(|left, right| left.path.cmp(&right.path));
+    unresolved_retired_changes.dedup();
+    let summary = summarize_review_delta(&entries, &unresolved_retired_changes);
+    let delta = ReviewDelta {
+        schema: REVIEW_DELTA_SCHEMA.to_owned(),
+        engine_version: env!("CARGO_PKG_VERSION").to_owned(),
+        comparison: ReviewDeltaComparison::PerFileReviewBaselineToHead,
+        old_base_commit: checkpoint.base_commit.clone(),
+        checkpoint_commit: checkpoint.commit.clone(),
+        current_base_commit: review.base_commit.clone(),
+        head_commit: review.head_commit.clone(),
+        summary,
+        entries,
+        unresolved_retired_changes,
+    };
+    delta.validate()?;
+    Ok(delta)
+}
+
+pub fn load_review_delta_file_sources(
+    repository: &Path,
+    entry: &ReviewDeltaFile,
+) -> Result<ReviewFileSources> {
+    match &entry.source_override {
+        Some(sources) => Ok(sources.clone()),
+        None => load_review_file_sources(repository, &entry.file),
+    }
+}
+
+fn summarize_review_delta(
+    entries: &[ReviewDeltaFile],
+    unresolved: &[ReviewDeltaUnresolvedChange],
+) -> ReviewDeltaSummary {
+    let displayable_files = entries.len();
+    let unresolved_retired_changes = unresolved.len();
+    let needs_review_files = displayable_files + unresolved_retired_changes;
+    ReviewDeltaSummary {
+        displayable_files,
+        unresolved_retired_changes,
+        needs_review_files,
+        gate_passed: needs_review_files == 0,
+    }
+}
+
+fn review_delta_git_entry(
+    file: ReviewFile,
+    baseline_basis: ReviewDeltaBaselineBasis,
+    before_commit: &str,
+    after_commit: &str,
+    fallback_reason: Option<ReviewDeltaFallbackReason>,
+) -> Result<ReviewDeltaFile> {
+    let before_source = review_delta_git_source(
+        before_commit,
+        file.before_blob.as_deref(),
+        file.before_bytes,
+    )?;
+    let after_source =
+        review_delta_git_source(after_commit, file.after_blob.as_deref(), file.after_bytes)?;
+    Ok(ReviewDeltaFile {
+        file,
+        baseline_basis,
+        before_source,
+        after_source,
+        baseline_reconstruction: None,
+        fallback_reason,
+        source_override: None,
+    })
+}
+
+fn review_delta_git_source(
+    commit: &str,
+    object_id: Option<&str>,
+    byte_len: Option<usize>,
+) -> Result<ReviewDeltaSource> {
+    match object_id {
+        Some(object_id) => {
+            ensure!(
+                is_object_id(object_id),
+                "review delta source has an invalid object id"
+            );
+            Ok(ReviewDeltaSource::GitObject {
+                commit: commit.to_owned(),
+                object_id: object_id.to_owned(),
+                byte_len,
+            })
+        }
+        None => {
+            ensure!(
+                byte_len.is_none(),
+                "empty review delta source has an unexpected byte length"
+            );
+            Ok(ReviewDeltaSource::Empty)
+        }
+    }
+}
+
+fn review_file_for_change<'a>(
+    review: &'a RepositoryReview,
+    change: &GitChange,
+) -> Result<&'a ReviewFile> {
+    let mut candidates = review
         .files
         .iter()
-        .filter(|file| file.checkpoint_state == Some(CheckpointState::NeedsReviewNow))
+        .filter(|file| review_file_matches_change(file, change));
+    let file = candidates
+        .next()
+        .context("current Git change is missing from the repository review")?;
+    ensure!(
+        candidates.next().is_none(),
+        "current Git change matches multiple repository review files"
+    );
+    Ok(file)
+}
+
+fn review_file_matches_change(file: &ReviewFile, change: &GitChange) -> bool {
+    file.status == change.status
+        && file.similarity_percent == change.similarity_percent
+        && file.before_path.as_deref()
+            == change
+                .before_path
+                .as_ref()
+                .map(|path| path.display.as_str())
+        && file.before_path_encoding == change.before_path.as_ref().map(|path| path.encoding)
+        && file.after_path.as_deref()
+            == change.after_path.as_ref().map(|path| path.display.as_str())
+        && file.after_path_encoding == change.after_path.as_ref().map(|path| path.encoding)
+        && file.before_mode == change.before_mode
+        && file.after_mode == change.after_mode
+        && file.before_blob == change.before_blob
+        && file.after_blob == change.after_blob
+}
+
+fn checkpoint_change_paths(change: &GitChange) -> Vec<GitPath> {
+    let mut paths = change
+        .before_path
+        .iter()
+        .chain(change.after_path.iter())
         .cloned()
         .collect::<Vec<_>>();
-    let summary = summarize(&files, None);
-    Ok(ReviewDelta {
-        comparison: "current_pr_unmatched_identities".to_owned(),
-        from_commit: checkpoint.commit.clone(),
-        source_base_commit: review.base_commit.clone(),
-        to_commit: review.head_commit.clone(),
-        summary,
-        files,
+    paths.dedup();
+    paths
+}
+
+fn associate_all_checkpoint_paths(
+    associated: &mut HashSet<(usize, GitPath)>,
+    index: usize,
+    change: &GitChange,
+) {
+    associated.extend(
+        checkpoint_change_paths(change)
+            .into_iter()
+            .map(|path| (index, path)),
+    );
+}
+
+fn related_checkpoint_paths(
+    checkpoint_changes: &[GitChange],
+    current: &GitChange,
+) -> Vec<(usize, GitPath)> {
+    let current_paths = current
+        .before_path
+        .iter()
+        .chain(current.after_path.iter())
+        .collect::<HashSet<_>>();
+    checkpoint_changes
+        .iter()
+        .enumerate()
+        .flat_map(|(index, checkpoint)| {
+            checkpoint_change_paths(checkpoint)
+                .into_iter()
+                .filter(|path| current_paths.contains(path))
+                .map(move |path| (index, path))
+        })
+        .collect()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct GitTreeEntry {
+    mode: String,
+    object_id: String,
+}
+
+fn same_path_snapshot_change(
+    repository: &Path,
+    current_base_commit: &str,
+    head_commit: &str,
+    checkpoint: &GitChange,
+) -> Result<Option<GitChange>> {
+    if checkpoint.status != FileStatus::Modified {
+        return Ok(None);
+    }
+    let Some(path) = checkpoint.before_path.as_ref() else {
+        return Ok(None);
+    };
+    if checkpoint.after_path.as_ref() != Some(path) || path.encoding != PathEncoding::Utf8 {
+        return Ok(None);
+    }
+    let Some(before) = load_tree_entry(repository, current_base_commit, path)? else {
+        return Ok(None);
+    };
+    let Some(after) = load_tree_entry(repository, head_commit, path)? else {
+        return Ok(None);
+    };
+    Ok(Some(GitChange {
+        status: if before.mode == after.mode {
+            FileStatus::Modified
+        } else {
+            FileStatus::TypeChanged
+        },
+        similarity_percent: None,
+        before_path: Some(path.clone()),
+        after_path: Some(path.clone()),
+        before_mode: Some(before.mode),
+        after_mode: Some(after.mode),
+        before_blob: Some(before.object_id),
+        after_blob: Some(after.object_id),
+    }))
+}
+
+fn load_tree_entry(
+    repository: &Path,
+    commit: &str,
+    path: &GitPath,
+) -> Result<Option<GitTreeEntry>> {
+    if path.encoding != PathEncoding::Utf8 {
+        return Ok(None);
+    }
+    let output = git_output_bounded(
+        repository,
+        &["ls-tree", "-z", "--full-tree", commit, "--", &path.display],
+        path.display.len().saturating_add(512),
+    )?;
+    if output.stdout.is_empty() {
+        return Ok(None);
+    }
+    let record = output
+        .stdout
+        .strip_suffix(&[0])
+        .context("git ls-tree record is missing its NUL terminator")?;
+    ensure!(
+        !record.contains(&0),
+        "git ls-tree returned multiple entries for one file path"
+    );
+    let tab = record
+        .iter()
+        .position(|byte| *byte == b'\t')
+        .context("git ls-tree record is missing its path separator")?;
+    let metadata =
+        std::str::from_utf8(&record[..tab]).context("git ls-tree metadata is not valid UTF-8")?;
+    let columns = metadata.split_ascii_whitespace().collect::<Vec<_>>();
+    ensure!(columns.len() == 3, "unexpected git ls-tree metadata");
+    ensure!(
+        &record[tab + 1..] == path.display.as_bytes(),
+        "git ls-tree returned an unexpected path"
+    );
+    ensure!(
+        matches!(columns[1], "blob" | "commit"),
+        "git ls-tree returned an unsupported object type"
+    );
+    ensure!(
+        is_object_id(columns[2]),
+        "git ls-tree returned an invalid object id"
+    );
+    Ok(Some(GitTreeEntry {
+        mode: columns[0].to_owned(),
+        object_id: columns[2].to_owned(),
+    }))
+}
+
+struct CheckpointHeadFallback {
+    entries: Vec<ReviewDeltaFile>,
+    unresolved: Vec<ReviewDeltaUnresolvedChange>,
+}
+
+fn checkpoint_head_fallback_entries(
+    repository: &Path,
+    paths: &[GitPath],
+    checkpoint_commit: &str,
+    head_commit: &str,
+    limits: &VerificationLimits,
+    blob_loader: &mut BlobLoader,
+) -> Result<CheckpointHeadFallback> {
+    ensure!(
+        !paths.is_empty(),
+        "checkpoint fallback has no unassociated path"
+    );
+
+    let mut entries = Vec::new();
+    let mut unresolved = Vec::new();
+    for path in paths {
+        if path.encoding != PathEncoding::Utf8 {
+            unresolved.push(ReviewDeltaUnresolvedChange {
+                path: path.display.clone(),
+                path_encoding: path.encoding,
+                reason: ReviewDeltaUnresolvedReason::NonUtf8GitPath,
+            });
+            continue;
+        }
+
+        let checkpoint_entry = load_tree_entry(repository, checkpoint_commit, path)?;
+        let head_entry = load_tree_entry(repository, head_commit, path)?;
+        if checkpoint_entry == head_entry {
+            continue;
+        }
+        let (before_mode, before_blob) = match checkpoint_entry {
+            Some(entry) => (Some(entry.mode), Some(entry.object_id)),
+            None => (None, None),
+        };
+        let (after_mode, after_blob) = match head_entry {
+            Some(entry) => (Some(entry.mode), Some(entry.object_id)),
+            None => (None, None),
+        };
+        let status = match (&before_blob, &after_blob) {
+            (None, Some(_)) => FileStatus::Added,
+            (Some(_), None) => FileStatus::Deleted,
+            (Some(_), Some(_)) if before_mode == after_mode => FileStatus::Modified,
+            (Some(_), Some(_)) => FileStatus::TypeChanged,
+            (None, None) => bail!("checkpoint fallback unexpectedly has two empty snapshots"),
+        };
+        let change = GitChange {
+            status,
+            similarity_percent: None,
+            before_path: before_blob.as_ref().map(|_| path.clone()),
+            after_path: after_blob.as_ref().map(|_| path.clone()),
+            before_mode,
+            after_mode,
+            before_blob,
+            after_blob,
+        };
+        let mut file = analyze_change(repository, change, limits, blob_loader)?;
+        file.checkpoint_state = Some(CheckpointState::NeedsReviewNow);
+        file.reason.push_str(
+            "; the reviewed change no longer has a current PR identity and could not be rebased exactly, so this conservative checkpoint-to-head fallback may include upstream edits",
+        );
+        entries.push(review_delta_git_entry(
+            file,
+            ReviewDeltaBaselineBasis::CheckpointHeadFallback,
+            checkpoint_commit,
+            head_commit,
+            Some(ReviewDeltaFallbackReason::UnsupportedChange),
+        )?);
+    }
+    Ok(CheckpointHeadFallback {
+        entries,
+        unresolved,
     })
+}
+
+fn reconstructed_delta_entry(
+    current_file: ReviewFile,
+    current_change: &GitChange,
+    reconstruction: ReconstructedReviewBaseline,
+    head_commit: &str,
+    limits: &VerificationLimits,
+) -> Result<ReviewDeltaFile> {
+    let path = current_change
+        .after_path
+        .as_ref()
+        .context("reconstructed review delta is missing its current path")?;
+    let after_blob = current_change
+        .after_blob
+        .clone()
+        .context("reconstructed review delta is missing its head blob")?;
+    let after_mode = current_change
+        .after_mode
+        .clone()
+        .context("reconstructed review delta is missing its head mode")?;
+    let before_mode = current_change
+        .before_mode
+        .clone()
+        .context("reconstructed review delta is missing its baseline mode")?;
+    let before_bytes = reconstruction.baseline.len();
+    let after_bytes = reconstruction.current_after.len();
+    let mut file = ReviewFile {
+        status: FileStatus::Modified,
+        similarity_percent: None,
+        before_path: Some(path.display.clone()),
+        before_path_encoding: Some(path.encoding),
+        after_path: Some(path.display.clone()),
+        after_path_encoding: Some(path.encoding),
+        before_mode: Some(before_mode),
+        after_mode: Some(after_mode),
+        before_blob: None,
+        after_blob: Some(after_blob.clone()),
+        before_bytes: Some(before_bytes),
+        after_bytes: Some(after_bytes),
+        line_change_envelope: line_changes(&reconstruction.baseline, &reconstruction.current_after),
+        language: None,
+        priority: ReviewPriority::ReviewFirst,
+        lane: ReviewLane::ReviewFirst,
+        checkpoint_state: Some(CheckpointState::NeedsReviewNow),
+        checkpoint_match_basis: None,
+        reason: String::new(),
+        evidence: None,
+    };
+    analyze_materialized_review_delta(
+        &mut file,
+        &reconstruction.baseline,
+        &reconstruction.current_after,
+        limits,
+    )?;
+    if current_file.checkpoint_state == Some(CheckpointState::UnchangedSinceCheckpoint) {
+        bail!("reconstructed review delta was created for a carried current change");
+    }
+
+    let baseline_hash = blake3::hash(&reconstruction.baseline).to_hex().to_string();
+    ensure!(
+        baseline_hash == reconstruction.evidence.reconstructed_blake3,
+        "reconstructed review baseline digest changed"
+    );
+    let sources = ReviewFileSources {
+        before: reconstruction.baseline,
+        after: reconstruction.current_after,
+    };
+    Ok(ReviewDeltaFile {
+        file,
+        baseline_basis: ReviewDeltaBaselineBasis::ReconstructedReviewBaseline,
+        before_source: ReviewDeltaSource::ReconstructedBytes {
+            blake3: baseline_hash,
+            byte_len: before_bytes,
+        },
+        after_source: ReviewDeltaSource::GitObject {
+            commit: head_commit.to_owned(),
+            object_id: after_blob,
+            byte_len: Some(after_bytes),
+        },
+        baseline_reconstruction: Some(reconstruction.evidence),
+        fallback_reason: None,
+        source_override: Some(sources),
+    })
+}
+
+fn analyze_materialized_review_delta(
+    file: &mut ReviewFile,
+    before: &[u8],
+    after: &[u8],
+    limits: &VerificationLimits,
+) -> Result<()> {
+    ensure!(
+        before.len() <= limits.max_source_bytes && after.len() <= limits.max_source_bytes,
+        "reconstructed review delta exceeds the per-file source limit"
+    );
+    if file.before_path_encoding != Some(PathEncoding::Utf8)
+        || file.after_path_encoding != Some(PathEncoding::Utf8)
+    {
+        file.lane = ReviewLane::Unverified;
+        file.reason =
+            "review delta uses a reconstructed baseline, but the Git path is not UTF-8".to_owned();
+        return Ok(());
+    }
+    let before_path = Path::new(
+        file.before_path
+            .as_deref()
+            .context("reconstructed review delta is missing its before path")?,
+    );
+    let after_path = Path::new(
+        file.after_path
+            .as_deref()
+            .context("reconstructed review delta is missing its after path")?,
+    );
+    let before_language = match Language::detect(before_path) {
+        Ok(language) => language,
+        Err(error) => {
+            file.lane = ReviewLane::Unverified;
+            file.reason = format!(
+                "review delta uses a reconstructed baseline; before path has no supported parser: {error}"
+            );
+            return Ok(());
+        }
+    };
+    let after_language = match Language::detect(after_path) {
+        Ok(language) => language,
+        Err(error) => {
+            file.lane = ReviewLane::Unverified;
+            file.reason = format!(
+                "review delta uses a reconstructed baseline; after path has no supported parser: {error}"
+            );
+            return Ok(());
+        }
+    };
+    if before_language != after_language {
+        file.lane = ReviewLane::Unverified;
+        file.reason = format!(
+            "review delta uses a reconstructed baseline; file language changed from {before_language:?} to {after_language:?}"
+        );
+        return Ok(());
+    }
+    file.language = Some(before_language);
+
+    let report = match analyze_bytes_with_limits(
+        before.to_vec(),
+        after.to_vec(),
+        file.before_path.clone().context("missing before path")?,
+        file.after_path.clone().context("missing after path")?,
+        before_language,
+        limits,
+    ) {
+        Ok(report) => report,
+        Err(error) => {
+            file.lane = ReviewLane::Unverified;
+            file.reason = format!(
+                "review delta uses a reconstructed baseline; structural analysis did not complete: {error:#}"
+            );
+            return Ok(());
+        }
+    };
+    let encoded = serde_json::to_vec(&report).context("failed to encode per-file evidence")?;
+    if encoded.len() > limits.max_report_bytes {
+        file.lane = ReviewLane::Unverified;
+        file.reason = format!(
+            "review delta uses a reconstructed baseline; per-file evidence exceeds the {} byte report limit",
+            limits.max_report_bytes
+        );
+        return Ok(());
+    }
+    file.lane = classify_report(&report);
+    file.priority = classify_priority(&report);
+    file.reason = match file.lane {
+        ReviewLane::SyntaxPreserved => "review delta against a bidirectionally reconstructed baseline; the Tree-sitter representation matches under StrataDiff's syntax_equal predicate, while bytes differ and behavior was not checked".to_owned(),
+        ReviewLane::ReviewFirst if !report.ambiguities.is_empty() => "review delta against a bidirectionally reconstructed baseline; CST syntax is unchanged, but correspondence ambiguity remains in review first".to_owned(),
+        ReviewLane::ReviewFirst => "review delta against a bidirectionally reconstructed baseline; the single-file patch rebuilt the current head bytes exactly and the structural delta remains in review first".to_owned(),
+        ReviewLane::ContentPreserved | ReviewLane::Unverified => {
+            unreachable!("paired structural analysis produces only review or syntax lanes")
+        }
+    };
+    file.evidence = Some(evidence(&report, &encoded));
+    Ok(())
 }
 
 pub fn load_review_file_sources(repository: &Path, file: &ReviewFile) -> Result<ReviewFileSources> {
@@ -705,6 +1725,17 @@ fn replay_candidate_metadata_matches(checkpoint: &GitChange, current: &GitChange
         && current.after_mode.as_deref() == Some(mode)
 }
 
+struct ReconstructedReviewBaseline {
+    baseline: Vec<u8>,
+    current_after: Vec<u8>,
+    evidence: ReviewBaselineReconstruction,
+}
+
+enum BaselineReconstructionOutcome {
+    Reconstructed(Box<ReconstructedReviewBaseline>),
+    Unavailable(ReviewDeltaFallbackReason),
+}
+
 fn independent_four_way_replay_matches(
     repository: &Path,
     checkpoint: &GitChange,
@@ -712,15 +1743,41 @@ fn independent_four_way_replay_matches(
     limits: &VerificationLimits,
     blob_loader: &mut BlobLoader,
 ) -> Result<bool> {
+    Ok(
+        match reconstruct_review_baseline(repository, checkpoint, current, limits, blob_loader)? {
+            BaselineReconstructionOutcome::Reconstructed(reconstruction) => {
+                reconstruction.baseline == reconstruction.current_after
+            }
+            BaselineReconstructionOutcome::Unavailable(_) => false,
+        },
+    )
+}
+
+fn reconstruct_review_baseline(
+    repository: &Path,
+    checkpoint: &GitChange,
+    current: &GitChange,
+    limits: &VerificationLimits,
+    blob_loader: &mut BlobLoader,
+) -> Result<BaselineReconstructionOutcome> {
+    if !replay_candidate_metadata_matches(checkpoint, current) {
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::UnsupportedChange,
+        ));
+    }
     let Some((checkpoint_before, checkpoint_after)) =
         load_replay_blob_pair(repository, checkpoint, limits, blob_loader)?
     else {
-        return Ok(false);
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::SourceUnavailable,
+        ));
     };
     let Some((current_before, current_after)) =
         load_replay_blob_pair(repository, current, limits, blob_loader)?
     else {
-        return Ok(false);
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::SourceUnavailable,
+        ));
     };
     if [
         checkpoint_before.as_slice(),
@@ -731,27 +1788,70 @@ fn independent_four_way_replay_matches(
     .iter()
     .any(|bytes| bytes.contains(&0))
     {
-        return Ok(false);
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::BinaryNul,
+        ));
     }
 
     let reviewed_patch = create_patch(&checkpoint_before, &checkpoint_after);
     let upstream_patch = create_patch(&checkpoint_before, &current_before);
     if patches_interact(&reviewed_patch, &upstream_patch) {
-        return Ok(false);
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::OverlapOrAdjacent,
+        ));
     }
     let Some(reviewed_on_current) = translate_patch(&reviewed_patch, &upstream_patch) else {
-        return Ok(false);
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::TranslationFailed,
+        ));
     };
     let Some(upstream_on_reviewed) = translate_patch(&upstream_patch, &reviewed_patch) else {
-        return Ok(false);
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::TranslationFailed,
+        ));
     };
 
     let reviewed_result = apply_patch(&current_before, &reviewed_on_current)?;
-    if reviewed_result != current_after {
-        return Ok(false);
-    }
     let upstream_result = apply_patch(&checkpoint_after, &upstream_on_reviewed)?;
-    Ok(upstream_result == current_after)
+    if reviewed_result != upstream_result {
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::ReplayOrdersMismatch,
+        ));
+    }
+    if reviewed_result.len() > limits.max_source_bytes {
+        return Ok(BaselineReconstructionOutcome::Unavailable(
+            ReviewDeltaFallbackReason::SourceUnavailable,
+        ));
+    }
+
+    let reviewed_hash = blake3::hash(&reviewed_result).to_hex().to_string();
+    let upstream_hash = blake3::hash(&upstream_result).to_hex().to_string();
+    let evidence = ReviewBaselineReconstruction {
+        algorithm: "bidirectional_noninteracting_byte_replay_v1".to_owned(),
+        old_base_blob: checkpoint
+            .before_blob
+            .clone()
+            .context("replay candidate is missing its old-base blob")?,
+        reviewed_blob: checkpoint
+            .after_blob
+            .clone()
+            .context("replay candidate is missing its reviewed blob")?,
+        current_base_blob: current
+            .before_blob
+            .clone()
+            .context("replay candidate is missing its current-base blob")?,
+        reviewed_on_current_base_blake3: reviewed_hash.clone(),
+        upstream_on_checkpoint_blake3: upstream_hash,
+        reconstructed_blake3: reviewed_hash,
+        byte_len: reviewed_result.len(),
+    };
+    Ok(BaselineReconstructionOutcome::Reconstructed(Box::new(
+        ReconstructedReviewBaseline {
+            baseline: reviewed_result,
+            current_after,
+            evidence,
+        },
+    )))
 }
 
 fn load_replay_blob_pair(
@@ -1078,6 +2178,65 @@ pub fn github_workflow_annotations(review: &RepositoryReview) -> String {
     output
 }
 
+pub fn github_review_delta_annotations(delta: &ReviewDelta) -> String {
+    let mut output = String::new();
+    for entry in delta.entries.iter().take(MAX_GITHUB_WORKFLOW_ANNOTATIONS) {
+        let message = match entry.baseline_basis {
+            ReviewDeltaBaselineBasis::ReconstructedReviewBaseline => {
+                "This file differs from the exact review baseline reconstructed across the base change."
+            }
+            ReviewDeltaBaselineBasis::CurrentBaseFallback => {
+                "An exact review baseline could not be reconstructed; review the complete current-base-to-head file change."
+            }
+            ReviewDeltaBaselineBasis::CheckpointHeadFallback => {
+                "A retired checkpoint change could not be rebased exactly; review this conservative checkpoint-to-head file change."
+            }
+            ReviewDeltaBaselineBasis::CheckpointSnapshot => {
+                "This file changed after the reviewed checkpoint."
+            }
+            ReviewDeltaBaselineBasis::CurrentBaseNoCheckpointChange => {
+                "This current PR file has no corresponding change at the reviewed checkpoint."
+            }
+        };
+        if let Some(path) = github_annotation_path(&entry.file) {
+            output.push_str(&format!(
+                "::error file={},title=Review required after checkpoint::{}\n",
+                github_command_property(path),
+                github_command_data(message)
+            ));
+        } else {
+            output.push_str(&format!(
+                "::error title=Review required after checkpoint::{} needs review. {}\n",
+                github_command_data(&entry.display_path()),
+                github_command_data(message)
+            ));
+        }
+    }
+    let remaining_slots = MAX_GITHUB_WORKFLOW_ANNOTATIONS.saturating_sub(delta.entries.len());
+    for change in delta
+        .unresolved_retired_changes
+        .iter()
+        .take(remaining_slots)
+    {
+        output.push_str(&format!(
+            "::error title=Unresolved retired review change::{} could not be reconstructed or displayed ({}) and still requires review.\n",
+            github_command_data(&change.path),
+            github_command_data(match change.reason {
+                ReviewDeltaUnresolvedReason::NonUtf8GitPath => "non-UTF-8 Git path",
+            })
+        ));
+    }
+    let total = delta.summary.needs_review_files;
+    let omitted = total.saturating_sub(MAX_GITHUB_WORKFLOW_ANNOTATIONS);
+    if omitted > 0 {
+        output.push_str(&format!(
+            "::notice title=Additional review delta::{omitted} additional {} need review; open the Review Resume Workbench for the complete queue.\n",
+            file_word(omitted)
+        ));
+    }
+    output
+}
+
 fn github_annotation_path(file: &ReviewFile) -> Option<&str> {
     match (&file.after_path, file.after_path_encoding) {
         (Some(path), Some(PathEncoding::Utf8)) => Some(path),
@@ -1193,6 +2352,13 @@ fn resolve_commit(repository: &Path, revision: &str) -> Result<String> {
 
 fn is_object_id(value: &str) -> bool {
     matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn is_blake3(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
 }
 
 fn trim_line_ending(value: &str) -> &str {
@@ -2336,11 +3502,13 @@ fn null_device() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use crate::{ByteEdit, LosslessPatch};
+
     use super::{
         FileStatus, GitChange, GitChangeIdentity, GitPath, MAX_REVIEW_MARKDOWN_BYTES, PathEncoding,
         RepositoryReview, ReviewFile, ReviewLane, ReviewPriority, ReviewSummary,
         allowed_raw_diff_diagnostics, line_changes, markdown_cell, markdown_code, markdown_report,
-        pair_unique_exact_relocations, parse_raw_diff, read_bounded,
+        pair_unique_exact_relocations, parse_raw_diff, patches_interact, read_bounded,
     };
 
     #[test]
@@ -2578,6 +3746,20 @@ mod tests {
         .unwrap();
         assert_eq!(changes.additions, 3);
         assert_eq!(changes.deletions, 3);
+    }
+
+    #[test]
+    fn four_way_replay_treats_adjacent_edits_as_interacting() {
+        let patch = |start, end| LosslessPatch {
+            algorithm: "test".to_owned(),
+            edits: vec![ByteEdit {
+                old_start: start,
+                old_end: end,
+                replacement_base64: String::new(),
+            }],
+        };
+        assert!(patches_interact(&patch(1, 4), &patch(4, 7)));
+        assert!(!patches_interact(&patch(1, 3), &patch(4, 7)));
     }
 
     #[test]

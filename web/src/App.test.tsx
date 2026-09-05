@@ -210,8 +210,9 @@ describe('Evidence Workbench', () => {
 
   it('uses singular copy for a one-file checkpoint delta', async () => {
     const payload = repositorySessionFixture()
-    payload.resume_delta.files = payload.resume_delta.files.slice(0, 1)
-    payload.resume_delta.summary.changed_files = 1
+    payload.resume_delta.entries = payload.resume_delta.entries.slice(0, 1)
+    payload.resume_delta.summary.displayable_files = 1
+    payload.resume_delta.summary.needs_review_files = 1
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
       return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
@@ -230,10 +231,31 @@ describe('Evidence Workbench', () => {
     const replayCarried = payload.review.files.find((file) => file.after_path === 'src/carried.ts')
     if (replayCarried === undefined) throw new Error('Missing carried fixture file.')
     replayCarried.checkpoint_match_basis = 'exact_noninteracting_four_way_byte_replay'
-    payload.resume_delta.comparison = 'current_pr_unmatched_identities'
-    payload.resume_delta.source_base_commit = payload.review.base_commit
-    payload.resume_delta.files = payload.review.files.slice(0, 1)
-    payload.resume_delta.summary.changed_files = 1
+    payload.resume_delta.comparison = 'per_file_review_baseline_to_head'
+    payload.resume_delta.old_base_commit = payload.review.checkpoint!.base_commit
+    const residueFile = payload.review.files[0]
+    if (residueFile === undefined || residueFile.before_blob === undefined || residueFile.after_blob === undefined) throw new Error('Missing residue fixture file.')
+    const oldBaseBlob = residueFile.before_blob
+    const reconstructed = 'd'.repeat(64)
+    const reconstructedFile = { ...residueFile, before_blob: undefined }
+    payload.resume_delta.entries = [{
+      file: reconstructedFile,
+      baseline_basis: 'reconstructed_review_baseline',
+      before_source: { kind: 'reconstructed_bytes', blake3: reconstructed, byte_len: residueFile.before_bytes! },
+      after_source: { kind: 'git_object', commit: payload.review.head_commit, object_id: residueFile.after_blob, byte_len: residueFile.after_bytes },
+      baseline_reconstruction: {
+        algorithm: 'bidirectional_noninteracting_byte_replay_v1',
+        old_base_blob: oldBaseBlob,
+        reviewed_blob: 'e'.repeat(64),
+        current_base_blob: oldBaseBlob,
+        reviewed_on_current_base_blake3: reconstructed,
+        upstream_on_checkpoint_blake3: reconstructed,
+        reconstructed_blake3: reconstructed,
+        byte_len: residueFile.before_bytes!,
+      },
+    }]
+    payload.resume_delta.summary.displayable_files = 1
+    payload.resume_delta.summary.needs_review_files = 1
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
       return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
@@ -241,10 +263,13 @@ describe('Evidence Workbench', () => {
 
     render(<App />)
 
-    expect(await screen.findByText('1 current PR file needs review')).toBeInTheDocument()
-    expect(screen.getByText(/This queue excludes upstream-only files/)).toBeInTheDocument()
+    expect(await screen.findByText('1 file needs review')).toBeInTheDocument()
+    expect(screen.getByText(/Exact rows compare a reconstructed reviewed baseline/)).toBeInTheDocument()
     expect(screen.getByText(/Base changed · exact-identity or four-way carry/)).toBeInTheDocument()
+    expect(screen.getByText('RECONSTRUCTED REVIEW BASELINE → HEAD')).toBeInTheDocument()
+    expect(screen.getByText('Replay orders').nextElementSibling).toHaveTextContent('same bytes')
     expect(screen.getByText('Checkpoint carry').nextElementSibling).toHaveTextContent('not carried')
+    expect(within(screen.getByLabelText('Review resume summary')).getByText('Reconstructed deltas').nextElementSibling).toHaveTextContent('1')
     expect(screen.queryByText('src/retired.ts')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
@@ -270,8 +295,10 @@ describe('Evidence Workbench', () => {
 
   it('shows the true empty checkpoint state only when the raw resume delta is empty', async () => {
     const payload = repositorySessionFixture()
-    payload.resume_delta.files = []
-    payload.resume_delta.summary.changed_files = 0
+    payload.resume_delta.entries = []
+    payload.resume_delta.summary.displayable_files = 0
+    payload.resume_delta.summary.needs_review_files = 0
+    payload.resume_delta.summary.gate_passed = true
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
       return Promise.resolve(new Response(new TextEncoder().encode('source\n'), { status: 200 }))
@@ -280,6 +307,29 @@ describe('Evidence Workbench', () => {
 
     expect((await screen.findAllByText('No changes between checkpoint and head')).length).toBeGreaterThan(0)
     expect(screen.queryByText('No files match this view')).not.toBeInTheDocument()
+  })
+
+  it('keeps unresolved retired changes visible even without a displayable file delta', async () => {
+    const payload = repositorySessionFixture()
+    payload.resume_delta.entries = []
+    payload.resume_delta.unresolved_retired_changes = [{
+      path: 'git-bytes:%72%65%76%69%65%77%65%64%2D%FF%2E%70%79',
+      path_encoding: 'git_bytes_percent_encoded',
+      reason: 'non_utf8_git_path',
+    }]
+    payload.resume_delta.summary = {
+      displayable_files: 0,
+      unresolved_retired_changes: 1,
+      needs_review_files: 1,
+      gate_passed: false,
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+    render(<App />)
+
+    expect(await screen.findByText('1 review item remains')).toBeInTheDocument()
+    expect(screen.getByText(/git-bytes:%72%65%76%69%65%77%65%64%2D%FF%2E%70%79/)).toBeInTheDocument()
+    expect(screen.queryByText('No changes between checkpoint and head')).not.toBeInTheDocument()
   })
 
   it('keeps details, evidence, and claim limits available in the narrow drawer', async () => {
