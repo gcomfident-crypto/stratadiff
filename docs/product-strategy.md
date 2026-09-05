@@ -6,10 +6,10 @@ are point-in-time observations and must be refreshed before external use.
 
 ## Decision in one sentence
 
-**StrataDiff should become the rebase-safe approval-coverage gate: given a named human review and a
-new Git head, it should preserve only the review coverage backed by deterministic evidence, fail a
-required check on every unproven PR change, and retain the result in an independently verifiable
-Change Passport.**
+**StrataDiff should become GitHub-native Human Review Memory: after every push, it should preserve
+only the per-reviewer and per-ownership-domain coverage backed by deterministic evidence, route the
+unproved residue to the right people, fail a required check while required coverage is missing, and
+retain the result in an independently verifiable Change Passport.**
 
 This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff's
 wedge is to remove noise from the reviewer's first pass only when a narrower factual claim can be
@@ -17,9 +17,31 @@ checked again by an independent verifier. It does not restore or manufacture a c
 it supplies the missing evidence gate that a branch-protection policy can require.
 
 The user-visible outcome is not “a better diff.” It is: **after a rebase, restack, force-push, or
-agent update, show exactly which parts of Alice's prior review still have evidence and keep the
-merge check red until Alice's remaining residue has a newer completed review.** The product succeeds
-only if that loop reduces repeated reviewer work without lowering issue recall.
+agent update, show exactly which parts of Alice's and Security's prior reviews still have evidence,
+send each owner only their residue, and keep the merge check red until all required coverage is
+current.** The product succeeds only if that loop reduces repeated reviewer work without lowering
+issue recall.
+
+### Product boundary: coverage firewall, not stale-approval bot
+
+Rebase-safe approval is a real pain but too small a standalone category. Graphite's own
+[`dismiss-stale-approvals`](https://github.com/withgraphite/dismiss-stale-approvals) README says the
+request came from a relatively small number of customers and one enterprise trial. GitHub already
+offers the whole-PR compromise “require approval of the most recent reviewable push,” while GitLab
+can reset approvals only when a [`git patch-id`](https://git-scm.com/docs/git-patch-id) changes.
+Competing on that binary switch alone would make StrataDiff a feature, not a product.
+
+The broader, defensible job is a **review-coverage firewall**. It maintains a SHA-bound ledger for
+each required reviewer and CODEOWNERS domain, maps that coverage across ordinary pushes and history
+rewrites, and rejects every file or hunk whose carry cannot be proved. GitHub remains the canonical
+place for conversation and approval; StrataDiff supplies the missing reviewer × ownership × change
+coverage matrix. The long-term promise is:
+
+> Never re-review unchanged code. Never inherit an unproven approval.
+
+The current single-reviewer, file-level Action is only the first vertical slice of this contract.
+Hunk-level carry, CODEOWNERS resolution, team membership, and durable multi-reviewer receipts are
+not implemented yet and must not be implied by alpha results.
 
 ### The first job: resume, do not restart
 
@@ -118,6 +140,11 @@ does **not** yet prove that Review Residue is the winning solution.
 | Approval invalidation is broader than the reviewed delta | GitHub Community requests ask for invalidation by the final diff or tree rather than commit ancestry ([#12876](https://github.com/orgs/community/discussions/12876), 98 votes at capture) and report stacked changes causing cascades of stale approvals ([#57513](https://github.com/orgs/community/discussions/57513), 126 votes at capture). Another report says a reviewer's own suggestion can trigger renewed approval across 12 organizations ([#78039](https://github.com/orgs/community/discussions/78039)). | The product should bind review state to exact evidence and invalidate only what it cannot carry. | Public requests and reported organization experience; vote counts are point-in-time signals, not prevalence. |
 | Large-MR reviewers explicitly ask for narrow invalidation | A GitLab request says rebase forces the reviewer to revisit every approved file and asks to retain identical file/block approval ([#594565](https://gitlab.com/gitlab-org/gitlab/-/issues/594565)). A separate GitLab analysis reports a 15% incidence of unwanted patch-ID changes in one 1,000+-developer, 50k-file project ([#439234](https://gitlab.com/gitlab-org/gitlab/-/issues/439234)). | Whole-review invalidation is a costly, measurable problem; exact file identity is a plausible narrower primitive. | One user request and one organization-specific analysis; external replication is required. |
 | Whole-PR invalidation ignores ownership boundaries | A GitLab request reports that a new commit can invalidate every approval even when only one CODEOWNERS domain changed, forcing unrelated domain owners to review again ([#604779](https://gitlab.com/gitlab-org/gitlab/-/work_items/604779)). | Coverage must eventually be tracked per reviewer and ownership domain; a single global checkpoint is only an alpha integration. | One public feature request; it establishes the workflow failure, not its frequency. |
+| Force-push approval churn creates mechanical re-review | Zephyr's [stale-approval RFC](https://github.com/zephyrproject-rtos/zephyr/issues/43701) reports that re-approval after a force-push delayed merges while reviewers often responded with a mechanical `+1`; its public [PR #41626](https://github.com/zephyrproject-rtos/zephyr/pull/41626) contains 27 force-push events and 13 approval dismissals at capture. A later [review-workflow RFC](https://github.com/zephyrproject-rtos/zephyr/issues/53566) explicitly contrasts GitHub's large-PR experience with Gerrit. | Large, multi-reviewer OSS projects provide concrete design-partner cases and replayable event histories. | Purposefully selected public evidence; it proves the workflow can be painful, not population prevalence. |
+| Host history is not a durable review ledger | On 2026-09-05, both GitHub GraphQL and REST returned `null` for the commit bound to all 13 dismissed review records still visible on Zephyr [PR #41626](https://github.com/zephyrproject-rtos/zephyr/pull/41626); the two final, non-dismissed approvals still exposed their commit. | A post-hoc Action cannot always reconstruct old coverage. The GitHub App must capture a signed or content-addressed review receipt when the review event arrives and retain dismissal as a later state transition. | Point-in-time API observation on one old PR; retention behavior may vary and is not a platform guarantee. |
+| GitLab treats selective approval reset as a paid workflow primitive | GitLab documents an option to remove approvals only when a new commit changes the patch ID and a separate option to remove only approvals from Code Owners whose files changed ([approval settings](https://docs.gitlab.com/user/project/merge_requests/approvals/settings/)). | Patch-aware and owner-scoped invalidation are established buyer-facing capabilities; GitHub lacks the same reviewer × path coverage primitive. | Official product behavior. Git patch-id is only reasonably stable and ignores whitespace by default, so it is not equivalent to StrataDiff's evidence contract. |
+| Reviewable proves demand for persistent per-file review state | Reviewable records each reviewer's state per file and revision and carries state across rebases where it can map revisions ([file review state](https://docs.reviewable.io/files)). Its maintainer also warns that carrying line-level marks can hide unreviewed changes ([issue #414](https://github.com/Reviewable/Reviewable/issues/414#issuecomment-1611899307)). | Persistent human review memory is a real product, while conservative hunk carry remains technically differentiated and safety-sensitive. | Official documentation and maintainer statement; adoption and time-saving are not independently measured here. |
+| Ownership policy has stand-alone paid demand | PullApprove sells path- and line-based approval rules and publishes a DoorDash account of use across hundreds of repositories and thousands of users ([product documentation](https://www.pullapprove.com/docs/), [pricing](https://www.pullapprove.com/pricing/)). | The buyer is DevEx/platform/security, and ownership-aware coverage can be a paid control-plane feature. | Vendor claims and pricing, not independently audited usage. |
 | AI re-review also forgets dispositions | GitHub's [Copilot code-review documentation](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review) says re-review may repeat dismissed or downvoted comments, while a [community request](https://github.com/orgs/community/discussions/190754) describes repeatedly re-explaining the same rejected suggestion. | A later ledger should bind findings and human dispositions to exact evidence identity instead of rerunning a stateless reviewer. | Official limitation plus user report; this is a follow-on job, not proof that the current checkpoint implementation solves it. |
 | Review state across pushes is an established job | [GitHub documents](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/reviewing-proposed-changes-in-a-pull-request#marking-a-file-as-viewed) that a viewed file is unmarked when it changes, while [GitLab exposes diff versions](https://docs.gitlab.com/user/project/merge_requests/versions/) specifically for merge requests with many or sequential changes. A [public editor request](https://github.com/wandersoncferreira/code-review/issues/146) describes large PR review spanning multiple sessions and asks to preserve file or hunk state. | Reviewers already expect incremental review and explicit invalidation. | Product documentation plus a user report; neither measures time saved. |
 | Naive last-review diffs absorb base noise | VS Code's GitHub extension has tracked incremental review since [#363](https://github.com/microsoft/vscode-pull-request-github/issues/363). Follow-up reports show merges from the base branch introducing unrelated files into the view ([#4510](https://github.com/microsoft/vscode-pull-request-github/issues/4510), [#5455](https://github.com/microsoft/vscode-pull-request-github/issues/5455), [#6281](https://github.com/microsoft/vscode-pull-request-github/issues/6281)). | A useful residue must compare PR-relative changes and exclude upstream-only files. | Public issue reports establish concrete failure modes, not their frequency. |
@@ -134,17 +161,22 @@ teams will adopt a proof-carrying residue layer or that it saves time.
 
 ### Primary ICP hypothesis
 
-The first design partners should be teams that have all of these characteristics:
+The first design partners should be GitHub Cloud or GHES teams, typically 50–500+ engineers, that
+have all of these characteristics:
 
 - frequent large or noisy PRs caused by formatting, file moves, code generation, migrations,
   dependency updates, broad refactors, or coding agents;
-- multiple reviewers whose scarce resource is attention rather than access to another summary;
+- multiple required reviewers or CODEOWNERS whose scarce resource is attention rather than access
+  to another summary;
+- stacked PRs, rebases, linear-history enforcement, or frequent amended/agent-generated pushes;
 - Git-based CI and a willingness to retain a machine-readable review artifact;
 - a DevEx, platform, staff-engineering, or security champion who values auditable local execution;
 - enough risk that “the model says this is safe” is not an acceptable control.
 
-Likely early users are maintainers of active open-source projects and engineering teams with
-monorepos or agent-heavy workflows. This is a targeting hypothesis, not a claim about segment size.
+Likely buyers are DevEx, platform, and security-engineering leads; daily users are staff engineers,
+maintainers, and code owners. Early users should include active open-source maintainers and teams
+with monorepos or agent-heavy workflows. This is a targeting hypothesis, not a claim about segment
+size.
 
 ### Anti-ICP
 
@@ -294,15 +326,19 @@ The host-workflow acceptance matrix must include these end-to-end cases:
    producer-attested focus summary.
 5. Harden the minimal-permission GitHub Action into an approval-coverage check. The alpha now
    resolves one explicitly named reviewer's latest non-dismissed human decision and can fail on a
-   non-empty residue. Next add provider-bound checkpoint metadata, CODEOWNERS-aware multi-reviewer
-   policy, prebuilt releases, and a Check Run surface. Source remains inside the runner; PR comments
-   are opt-in to avoid bot noise.
+   non-empty residue. Next add provider-bound review receipts, a reviewer × CODEOWNERS × file matrix,
+   prebuilt releases, and a Check Run surface that routes each residue to its owner. Source remains
+   inside the runner; PR comments are opt-in to avoid bot noise. Hunk carry follows only after the
+   file-level policy has independent oracles and adversarial false-carry tests.
 6. Build and publish the three-track benchmark plus a multi-revision ResumeBench, including
    adversarial invalidation cases and dataset cards. Run them on every change to policy.
 7. Dogfood on public repositories and recruit design partners from the primary ICP. Record lane
    overrides and reasons before adding more classifiers.
 8. Make the public demo answer three questions in under a minute: what changed since my checkpoint,
    what was proved, and how can I reproduce it?
+9. Make installation a GitHub-native, zero-UI-migration path: a free open-source Action first, then
+   an optional Marketplace App for event ingestion, durable ledgers, policy, and audit. Do not make
+   reviewers adopt a separate conversation interface.
 
 P0 exits only when passport verification is stable, no known factual misstatement remains, and a
 blinded pilot shows useful reviewer-time reduction without lower issue recall. Passing unit tests or
@@ -341,6 +377,12 @@ The artifact itself should distribute the product:
 Initial channels should be open-source maintainers, DevEx/platform communities, migration tooling,
 and transparent engineering write-ups built around reproducible before/after passports. Avoid
 generic “AI reviews your PR” positioning, paid vanity benchmarks, and unsolicited PR-comment spam.
+
+The initial search and Marketplace language should name the pain rather than the mechanism:
+`GitHub smart stale approvals`, `review after rebase`, `CODEOWNERS approval after force push`, and
+`Graphite restack approvals`. Public case cards should show the complete accounting—for example,
+“13 approvals dismissed; N files retained evidence; M files and K hunks require re-review”—with a
+downloadable passport instead of an unsupported percentage claim.
 
 The memorable outcome message is:
 

@@ -1,0 +1,77 @@
+name: ResumeBench GitHub Live Canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 5 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: resumebench-github-live-canary
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    name: Materialize and replay frozen histories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@49fda20b3f489226feadfba7767be1db54e2cee1 # 1.90.0
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Validate the checked-in contract before network access
+        run: |
+          python3 tools/resumebench-github-live/resumebench_github_live.py self-test
+          python3 tools/resumebench-github-live/resumebench_github_live.py verify-bundle \
+            --manifest benchmarks/resumebench-github-live-v1/manifest.json
+      - run: cargo build --locked --release --bin stratadiff
+      - name: Verify live GitHub provenance
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/resumebench-github-live/resumebench_github_live.py verify-provenance \
+            --manifest benchmarks/resumebench-github-live-v1/manifest.json \
+            --github-token-env GITHUB_TOKEN \
+            --api-timeout-seconds 45
+      - name: Materialize exact public objects and disconnect every remote
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/resumebench-github-live/resumebench_github_live.py materialize \
+            --manifest benchmarks/resumebench-github-live-v1/manifest.json \
+            --output "$RUNNER_TEMP/resumebench-github-live-v1" \
+            --github-token-env GITHUB_TOKEN \
+            --fetch-timeout-seconds 240
+      - name: Assert that the materialization has no remotes
+        run: |
+          while IFS= read -r -d '' repository; do
+            if [[ -n "$(git -C "$repository" remote)" ]]; then
+              echo "materialized repository retained a remote: $repository" >&2
+              exit 1
+            fi
+          done < <(find "$RUNNER_TEMP/resumebench-github-live-v1/repositories" -type d -name '*.git' -print0)
+      - name: Recompute independent oracles offline
+        env:
+          GIT_NO_LAZY_FETCH: '1'
+        run: |
+          python3 tools/resumebench-github-live/resumebench_github_live.py verify \
+            --manifest benchmarks/resumebench-github-live-v1/manifest.json \
+            --materialization "$RUNNER_TEMP/resumebench-github-live-v1"
+      - name: Evaluate StrataDiff offline
+        env:
+          GIT_NO_LAZY_FETCH: '1'
+        run: |
+          python3 tools/resumebench-github-live/resumebench_github_live.py evaluate \
+            --manifest benchmarks/resumebench-github-live-v1/manifest.json \
+            --materialization "$RUNNER_TEMP/resumebench-github-live-v1" \
+            --stratadiff target/release/stratadiff \
+            --output "$RUNNER_TEMP/resumebench-github-live-evaluation.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: resumebench-github-live-canary
+          path: |
+            ${{ runner.temp }}/resumebench-github-live-v1/materialization.json
+            ${{ runner.temp }}/resumebench-github-live-evaluation.json
+          if-no-files-found: error

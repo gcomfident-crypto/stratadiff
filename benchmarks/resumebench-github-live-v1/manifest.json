@@ -1,0 +1,577 @@
+{
+  "schema": "stratadiff-resumebench-github-live-manifest-v1",
+  "dataset_version": "1.0.0",
+  "name": "ResumeBench-GitHub-Live v1",
+  "capture_date": "2026-09-05",
+  "captured_at": "2026-09-05T08:12:12+08:00",
+  "dataset_kind": "purposefully_selected_diagnostic_cases",
+  "claim_boundary": {
+    "diagnostic_sample": true,
+    "random_or_representative_sample": false,
+    "population_estimates_supported": false,
+    "human_priority_ground_truth": "absent",
+    "policy_ground_truth": "frozen_independent_oracles",
+    "observed_counts_mean": "Counts independently derived from Git objects and matched by the pinned StrataDiff build on five selected public GitHub histories.",
+    "needs_review_now_mean": "No strict carry evidence was established by the evaluated policy; this is not a human judgment that the file is important or semantically changed."
+  },
+  "selection": {
+    "method": "purposeful_diagnostic_selection",
+    "criteria": [
+      "public GitHub pull request",
+      "human APPROVED or CHANGES_REQUESTED review attached to checkpoint B",
+      "at least one GitHub HeadRefForcePushedEvent after that review",
+      "checkpoint B differs from and is not an ancestor of captured head D",
+      "checkpoint B was available from the GitHub commit API and by exact-SHA Git fetch at capture",
+      "checkpoint B was not advertised as a repository ref tip at capture"
+    ]
+  },
+  "snapshot_model": {
+    "Q": "requested base revision supplied to StrataDiff",
+    "A": "merge_base(Q, B), the checkpoint merge base",
+    "B": "commit attached to the selected historical human review",
+    "C": "merge_base(Q, D), the current PR merge base",
+    "D": "captured final PR head",
+    "checkpoint_delta": "A..B",
+    "current_pr_delta": "C..D"
+  },
+  "data_minimization": {
+    "contains_source_or_patch_text": false,
+    "contains_raw_api_responses": false,
+    "contains_review_body": false,
+    "contains_email": false,
+    "contains_avatar": false,
+    "retained_public_identity_fields": [
+      "review database ID",
+      "reviewer login",
+      "GitHub account type",
+      "GitHub author association",
+      "review state",
+      "review timestamp"
+    ]
+  },
+  "evaluation_producer": {
+    "schema": "stratadiff-build-info-v1",
+    "engine_version": "0.3.0",
+    "git_revision": "8ad7cb72660249fc75e944b75dfd0a7fd3c5760f",
+    "git_dirty": false,
+    "cargo_lock_sha256": "87c022712b959486fe4968eeb2171b41fe289f598403364fc819023ac30d4e9a",
+    "build_profile": "release",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "command_shape": "stratadiff review --repo <isolated-bare-repository> --format json --checkpoint B -- Q D"
+  },
+  "observed_totals": {
+    "case_count": 5,
+    "current_pr_files": 47,
+    "exact_carries": 23,
+    "four_way_carries": 6,
+    "carried_files": 29,
+    "needs_review_now": 18,
+    "retired_checkpoint_changes": 67,
+    "naive_snapshot_paths": 1838,
+    "naive_extra_paths": 1815,
+    "naive_missing_current_paths": 24
+  },
+  "cases": [
+    {
+      "id": "github-posthog-posthog-pr95077-review5117951817",
+      "repository": {
+        "owner": "PostHog",
+        "name": "posthog",
+        "git_url": "https://github.com/PostHog/posthog.git",
+        "object_format": "sha1",
+        "license_observation": {
+          "source": "GitHub repository license endpoint at capture",
+          "spdx_id": "NOASSERTION",
+          "path": "LICENSE",
+          "blob_oid": "847d9d3def03458035447bdae131e1981e2a63da",
+          "content_sha256": "6d82d67dba42eb94ba10f1e986d2eec338c22fb7c5216c2c0ebdecd83d53a029"
+        }
+      },
+      "pull_request": {
+        "number": 95077,
+        "url": "https://github.com/PostHog/posthog/pull/95077",
+        "captured_at": "2026-09-05T08:12:12+08:00",
+        "state_at_capture": "MERGED",
+        "title": "chore(signals): name the recovery and cap exceptions on edit_report",
+        "base_ref_name": "master",
+        "head_ref_name": "posthog-self-driving/featsignals-document-scout-evidence-f5f452",
+        "created_at": "2026-09-04T11:40:47Z",
+        "updated_at": "2026-09-04T23:09:00Z",
+        "closed_at": "2026-09-04T22:37:34Z",
+        "merged_at": "2026-09-04T22:37:34Z",
+        "requested_base": "9603b694f872fafd5ece99199d30673d1e313a3c",
+        "captured_head": "61d5f6a1e3f4cef4a65613166b6559ac17ef8da5"
+      },
+      "checkpoint_review": {
+        "id": 5117951817,
+        "url": "https://github.com/PostHog/posthog/pull/95077#pullrequestreview-5117951817",
+        "reviewer_login": "andrewm4894",
+        "state": "APPROVED",
+        "commit": "cfc5275c309573674754c7631445cc9f24296d85",
+        "submitted_at": "2026-09-04T21:21:40Z",
+        "author_association": "MEMBER",
+        "account_type": "User"
+      },
+      "force_push_chain": [
+        {
+          "node_id": "HRFPE_lADODg-Tdc8AAAABPr5XP88AAAAHHunrpQ",
+          "created_at": "2026-09-04T21:39:11Z",
+          "before_commit": "cfc5275c309573674754c7631445cc9f24296d85",
+          "after_commit": "61d5f6a1e3f4cef4a65613166b6559ac17ef8da5"
+        }
+      ],
+      "snapshots": {
+        "Q": {
+          "role": "requested_base",
+          "commit": "9603b694f872fafd5ece99199d30673d1e313a3c"
+        },
+        "A": {
+          "role": "checkpoint_merge_base",
+          "commit": "576275bc2eac831db00ef6c5dc69e4be88fbde26"
+        },
+        "B": {
+          "role": "reviewed_checkpoint",
+          "commit": "cfc5275c309573674754c7631445cc9f24296d85"
+        },
+        "C": {
+          "role": "current_merge_base",
+          "commit": "9603b694f872fafd5ece99199d30673d1e313a3c"
+        },
+        "D": {
+          "role": "captured_final_head",
+          "commit": "61d5f6a1e3f4cef4a65613166b6559ac17ef8da5"
+        }
+      },
+      "capture_observation": {
+        "commit_api_available": true,
+        "exact_sha_fetch_available": true,
+        "checkpoint_ancestor_of_captured_head": false,
+        "checkpoint_advertised_as_ref_tip": false,
+        "latest_eligible_review_at_capture": true,
+        "captured_head_relation_to_last_force_after": "same_commit"
+      },
+      "observed": {
+        "current_pr_files": 9,
+        "exact_carries": 0,
+        "four_way_carries": 0,
+        "needs_review_now": 9,
+        "retired_checkpoint_changes": 52,
+        "naive_snapshot_paths": 1658,
+        "naive_extra_paths": 1650,
+        "naive_missing_current_paths": 1
+      },
+      "expectation": {
+        "oracle": "oracles/github-posthog-posthog-pr95077-review5117951817.json",
+        "oracle_kind": "exact_policy_conformance",
+        "human_priority_ground_truth": "absent"
+      }
+    },
+    {
+      "id": "github-opensearch-project-agent-health-pr481-review5118041097",
+      "repository": {
+        "owner": "opensearch-project",
+        "name": "agent-health",
+        "git_url": "https://github.com/opensearch-project/agent-health.git",
+        "object_format": "sha1",
+        "license_observation": {
+          "source": "GitHub repository license endpoint at capture",
+          "spdx_id": "Apache-2.0",
+          "path": "LICENSE.txt",
+          "blob_oid": "261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64",
+          "content_sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      },
+      "pull_request": {
+        "number": 481,
+        "url": "https://github.com/opensearch-project/agent-health/pull/481",
+        "captured_at": "2026-09-05T08:12:12+08:00",
+        "state_at_capture": "MERGED",
+        "title": "fix(judge): trace judge degrades to trajectory-only for non-instrumented agents; surface run-level judge failures",
+        "base_ref_name": "main",
+        "head_ref_name": "goyamegh/trace-judge-degrade",
+        "created_at": "2026-09-04T17:02:52Z",
+        "updated_at": "2026-09-04T23:42:34Z",
+        "closed_at": "2026-09-04T23:14:57Z",
+        "merged_at": "2026-09-04T23:14:57Z",
+        "requested_base": "7f68fc84f691dd001b49def73b50d715dff85c5c",
+        "captured_head": "f19c63c07ad5503f9c8563bf1e9904e7c4e77306"
+      },
+      "checkpoint_review": {
+        "id": 5118041097,
+        "url": "https://github.com/opensearch-project/agent-health/pull/481#pullrequestreview-5118041097",
+        "reviewer_login": "TackAdam",
+        "state": "APPROVED",
+        "commit": "55c030d0c6b9d57abb9eb65bf66213875ff75b16",
+        "submitted_at": "2026-09-04T21:37:35Z",
+        "author_association": "COLLABORATOR",
+        "account_type": "User"
+      },
+      "force_push_chain": [
+        {
+          "node_id": "HRFPE_lADOP9_DQc8AAAABPvB6R88AAAAHHyAWDg",
+          "created_at": "2026-09-04T23:10:26Z",
+          "before_commit": "55c030d0c6b9d57abb9eb65bf66213875ff75b16",
+          "after_commit": "f19c63c07ad5503f9c8563bf1e9904e7c4e77306"
+        }
+      ],
+      "snapshots": {
+        "Q": {
+          "role": "requested_base",
+          "commit": "7f68fc84f691dd001b49def73b50d715dff85c5c"
+        },
+        "A": {
+          "role": "checkpoint_merge_base",
+          "commit": "48a463af8b14a7fff322eeff64d73677db31711c"
+        },
+        "B": {
+          "role": "reviewed_checkpoint",
+          "commit": "55c030d0c6b9d57abb9eb65bf66213875ff75b16"
+        },
+        "C": {
+          "role": "current_merge_base",
+          "commit": "7f68fc84f691dd001b49def73b50d715dff85c5c"
+        },
+        "D": {
+          "role": "captured_final_head",
+          "commit": "f19c63c07ad5503f9c8563bf1e9904e7c4e77306"
+        }
+      },
+      "capture_observation": {
+        "commit_api_available": true,
+        "exact_sha_fetch_available": true,
+        "checkpoint_ancestor_of_captured_head": false,
+        "checkpoint_advertised_as_ref_tip": false,
+        "latest_eligible_review_at_capture": true,
+        "captured_head_relation_to_last_force_after": "same_commit"
+      },
+      "observed": {
+        "current_pr_files": 26,
+        "exact_carries": 21,
+        "four_way_carries": 4,
+        "needs_review_now": 1,
+        "retired_checkpoint_changes": 2,
+        "naive_snapshot_paths": 84,
+        "naive_extra_paths": 79,
+        "naive_missing_current_paths": 21
+      },
+      "expectation": {
+        "oracle": "oracles/github-opensearch-project-agent-health-pr481-review5118041097.json",
+        "oracle_kind": "exact_policy_conformance",
+        "human_priority_ground_truth": "absent"
+      }
+    },
+    {
+      "id": "github-jellyfin-jellyfin-kodi-pr1178-review5118549415",
+      "repository": {
+        "owner": "jellyfin",
+        "name": "jellyfin-kodi",
+        "git_url": "https://github.com/jellyfin/jellyfin-kodi.git",
+        "object_format": "sha1",
+        "license_observation": {
+          "source": "GitHub repository license endpoint at capture",
+          "spdx_id": "GPL-3.0",
+          "path": "LICENSE.txt",
+          "blob_oid": "e72bfddabc15be5718a7cc061ac10e47741d8219",
+          "content_sha256": "8b1ba204bb69a0ade2bfcf65ef294a920f6bb361b317dba43c7ef29d96332b9b"
+        }
+      },
+      "pull_request": {
+        "number": 1178,
+        "url": "https://github.com/jellyfin/jellyfin-kodi/pull/1178",
+        "captured_at": "2026-09-05T08:12:12+08:00",
+        "state_at_capture": "MERGED",
+        "title": "Make UpNext integration optional",
+        "base_ref_name": "master",
+        "head_ref_name": "feat/upnext-optional",
+        "created_at": "2026-08-18T11:38:06Z",
+        "updated_at": "2026-09-04T23:26:40Z",
+        "closed_at": "2026-09-04T23:24:49Z",
+        "merged_at": "2026-09-04T23:24:49Z",
+        "requested_base": "3b66ca0509dedb42c32417cffc1d9f5c65a93c67",
+        "captured_head": "b9b1c7dae02ba74da238a25f8a78b1e983e7182a"
+      },
+      "checkpoint_review": {
+        "id": 5118549415,
+        "url": "https://github.com/jellyfin/jellyfin-kodi/pull/1178#pullrequestreview-5118549415",
+        "reviewer_login": "oddstr13",
+        "state": "APPROVED",
+        "commit": "dbf9db31751756bd5a075d2ce9ddd5618d5cbd15",
+        "submitted_at": "2026-09-04T23:15:52Z",
+        "author_association": "MEMBER",
+        "account_type": "User"
+      },
+      "force_push_chain": [
+        {
+          "node_id": "HRFPE_lADOCZ87W88AAAABNNTaPM8AAAAHHyUFSw",
+          "created_at": "2026-09-04T23:20:32Z",
+          "before_commit": "dbf9db31751756bd5a075d2ce9ddd5618d5cbd15",
+          "after_commit": "b9b1c7dae02ba74da238a25f8a78b1e983e7182a"
+        }
+      ],
+      "snapshots": {
+        "Q": {
+          "role": "requested_base",
+          "commit": "3b66ca0509dedb42c32417cffc1d9f5c65a93c67"
+        },
+        "A": {
+          "role": "checkpoint_merge_base",
+          "commit": "6124a6525d03c306a53c61fc1a5bb35fb3c8ac4b"
+        },
+        "B": {
+          "role": "reviewed_checkpoint",
+          "commit": "dbf9db31751756bd5a075d2ce9ddd5618d5cbd15"
+        },
+        "C": {
+          "role": "current_merge_base",
+          "commit": "3b66ca0509dedb42c32417cffc1d9f5c65a93c67"
+        },
+        "D": {
+          "role": "captured_final_head",
+          "commit": "b9b1c7dae02ba74da238a25f8a78b1e983e7182a"
+        }
+      },
+      "capture_observation": {
+        "commit_api_available": true,
+        "exact_sha_fetch_available": true,
+        "checkpoint_ancestor_of_captured_head": false,
+        "checkpoint_advertised_as_ref_tip": false,
+        "latest_eligible_review_at_capture": true,
+        "captured_head_relation_to_last_force_after": "same_commit"
+      },
+      "observed": {
+        "current_pr_files": 3,
+        "exact_carries": 0,
+        "four_way_carries": 1,
+        "needs_review_now": 2,
+        "retired_checkpoint_changes": 2,
+        "naive_snapshot_paths": 75,
+        "naive_extra_paths": 72,
+        "naive_missing_current_paths": 0
+      },
+      "expectation": {
+        "oracle": "oracles/github-jellyfin-jellyfin-kodi-pr1178-review5118549415.json",
+        "oracle_kind": "exact_policy_conformance",
+        "human_priority_ground_truth": "absent"
+      }
+    },
+    {
+      "id": "github-beetbox-beets-pr6990-review5111747101",
+      "repository": {
+        "owner": "beetbox",
+        "name": "beets",
+        "git_url": "https://github.com/beetbox/beets.git",
+        "object_format": "sha1",
+        "license_observation": {
+          "source": "GitHub repository license endpoint at capture",
+          "spdx_id": "MIT",
+          "path": "LICENSE",
+          "blob_oid": "b45de0fcf3d18460b0d84bd721578279728cb092",
+          "content_sha256": "69b9fa8fe9700714fc1f002aa6bfef097e5422372979195ab48956cd48e20aaf"
+        }
+      },
+      "pull_request": {
+        "number": 6990,
+        "url": "https://github.com/beetbox/beets/pull/6990",
+        "captured_at": "2026-09-05T08:12:12+08:00",
+        "state_at_capture": "MERGED",
+        "title": "fix(tidal): adapt to current search API",
+        "base_ref_name": "master",
+        "head_ref_name": "fix/tidal-search-api",
+        "created_at": "2026-09-04T08:04:50Z",
+        "updated_at": "2026-09-04T23:26:39Z",
+        "closed_at": "2026-09-04T23:25:36Z",
+        "merged_at": "2026-09-04T23:25:36Z",
+        "requested_base": "f36d365a049a57893722d1aabc710e46b9fee41a",
+        "captured_head": "5002bb862426a14c3619d0bd46438409b4758537"
+      },
+      "checkpoint_review": {
+        "id": 5111747101,
+        "url": "https://github.com/beetbox/beets/pull/6990#pullrequestreview-5111747101",
+        "reviewer_login": "semohr",
+        "state": "CHANGES_REQUESTED",
+        "commit": "78cb7479ef017e67f5bc7a5d469ca76bf312ca65",
+        "submitted_at": "2026-09-04T10:19:00Z",
+        "author_association": "CONTRIBUTOR",
+        "account_type": "User"
+      },
+      "later_eligible_review_at_capture": {
+        "id": 5117976571,
+        "url": "https://github.com/beetbox/beets/pull/6990#pullrequestreview-5117976571",
+        "reviewer_login": "semohr",
+        "state": "APPROVED",
+        "commit": "5002bb862426a14c3619d0bd46438409b4758537",
+        "submitted_at": "2026-09-04T21:26:01Z",
+        "account_type": "User"
+      },
+      "force_push_chain": [
+        {
+          "node_id": "HRFPE_lADOAAygxs8AAAABPqIbr88AAAAHHmYWPw",
+          "created_at": "2026-09-04T18:43:04Z",
+          "before_commit": "78cb7479ef017e67f5bc7a5d469ca76bf312ca65",
+          "after_commit": "bed8682c0b4630ccb0054865f42144d54b57b421"
+        },
+        {
+          "node_id": "HRFPE_lADOAAygxs8AAAABPqIbr88AAAAHHpvqTw",
+          "created_at": "2026-09-04T19:54:07Z",
+          "before_commit": "bed8682c0b4630ccb0054865f42144d54b57b421",
+          "after_commit": "31b0a226f83558de9197e6b07af9d457fdbc64c4"
+        }
+      ],
+      "snapshots": {
+        "Q": {
+          "role": "requested_base",
+          "commit": "f36d365a049a57893722d1aabc710e46b9fee41a"
+        },
+        "A": {
+          "role": "checkpoint_merge_base",
+          "commit": "63b69fa90656279bd3d41fa87ab68be1f98fdaae"
+        },
+        "B": {
+          "role": "reviewed_checkpoint",
+          "commit": "78cb7479ef017e67f5bc7a5d469ca76bf312ca65"
+        },
+        "C": {
+          "role": "current_merge_base",
+          "commit": "f36d365a049a57893722d1aabc710e46b9fee41a"
+        },
+        "D": {
+          "role": "captured_final_head",
+          "commit": "5002bb862426a14c3619d0bd46438409b4758537"
+        }
+      },
+      "capture_observation": {
+        "commit_api_available": true,
+        "exact_sha_fetch_available": true,
+        "checkpoint_ancestor_of_captured_head": false,
+        "checkpoint_advertised_as_ref_tip": false,
+        "latest_eligible_review_at_capture": false,
+        "captured_head_relation_to_last_force_after": "descendant",
+        "commits_ahead_of_last_force_after": 12
+      },
+      "observed": {
+        "current_pr_files": 5,
+        "exact_carries": 2,
+        "four_way_carries": 1,
+        "needs_review_now": 2,
+        "retired_checkpoint_changes": 2,
+        "naive_snapshot_paths": 10,
+        "naive_extra_paths": 7,
+        "naive_missing_current_paths": 2
+      },
+      "expectation": {
+        "oracle": "oracles/github-beetbox-beets-pr6990-review5111747101.json",
+        "oracle_kind": "exact_policy_conformance",
+        "human_priority_ground_truth": "absent"
+      }
+    },
+    {
+      "id": "github-astral-sh-ruff-pr28311-review5116550397",
+      "repository": {
+        "owner": "astral-sh",
+        "name": "ruff",
+        "git_url": "https://github.com/astral-sh/ruff.git",
+        "object_format": "sha1",
+        "license_observation": {
+          "source": "GitHub repository license endpoint at capture",
+          "spdx_id": "MIT",
+          "path": "LICENSE",
+          "blob_oid": "655a0c76fc5539b2f8e63b673741a5fd0e0c5799",
+          "content_sha256": "2597d854122b77ddc71971564ca2350a37608575ce324adc5650a2b2051c8f18"
+        }
+      },
+      "pull_request": {
+        "number": 28311,
+        "url": "https://github.com/astral-sh/ruff/pull/28311",
+        "captured_at": "2026-09-05T08:12:12+08:00",
+        "state_at_capture": "MERGED",
+        "title": "[`ruff`] Recognize `re.prefixmatch` (`RUF039`, `RUF055`)",
+        "base_ref_name": "main",
+        "head_ref_name": "ruf039-ruf055-prefixmatch",
+        "created_at": "2026-09-04T12:04:40Z",
+        "updated_at": "2026-09-04T19:53:08Z",
+        "closed_at": "2026-09-04T19:53:08Z",
+        "merged_at": "2026-09-04T19:53:08Z",
+        "requested_base": "8c07af3d46e0fd548e146bd7b9e7c075c55bf7bb",
+        "captured_head": "04a904a450d9b13a925bc9204d64c315f7c90313"
+      },
+      "checkpoint_review": {
+        "id": 5116550397,
+        "url": "https://github.com/astral-sh/ruff/pull/28311#pullrequestreview-5116550397",
+        "reviewer_login": "ntBre",
+        "state": "CHANGES_REQUESTED",
+        "commit": "7926d73446a7f8837d80b22f5c1943fcaa3517cb",
+        "submitted_at": "2026-09-04T18:23:54Z",
+        "author_association": "CONTRIBUTOR",
+        "account_type": "User"
+      },
+      "later_eligible_review_at_capture": {
+        "id": 5117243212,
+        "url": "https://github.com/astral-sh/ruff/pull/28311#pullrequestreview-5117243212",
+        "reviewer_login": "ntBre",
+        "state": "APPROVED",
+        "commit": "04a904a450d9b13a925bc9204d64c315f7c90313",
+        "submitted_at": "2026-09-04T19:51:03Z",
+        "account_type": "User"
+      },
+      "force_push_chain": [
+        {
+          "node_id": "HRFPE_lADOHy0Bzc8AAAABPsG2pc8AAAAHHoQzOw",
+          "created_at": "2026-09-04T19:23:20Z",
+          "before_commit": "7926d73446a7f8837d80b22f5c1943fcaa3517cb",
+          "after_commit": "18c73f7c7790639c89082f36e1c7cf6003296c8a"
+        },
+        {
+          "node_id": "HRFPE_lADOHy0Bzc8AAAABPsG2pc8AAAAHHpVgtA",
+          "created_at": "2026-09-04T19:45:49Z",
+          "before_commit": "18c73f7c7790639c89082f36e1c7cf6003296c8a",
+          "after_commit": "04a904a450d9b13a925bc9204d64c315f7c90313"
+        }
+      ],
+      "snapshots": {
+        "Q": {
+          "role": "requested_base",
+          "commit": "8c07af3d46e0fd548e146bd7b9e7c075c55bf7bb"
+        },
+        "A": {
+          "role": "checkpoint_merge_base",
+          "commit": "ddd97b3cef4a186a934e97a5f74808056d124553"
+        },
+        "B": {
+          "role": "reviewed_checkpoint",
+          "commit": "7926d73446a7f8837d80b22f5c1943fcaa3517cb"
+        },
+        "C": {
+          "role": "current_merge_base",
+          "commit": "ddd97b3cef4a186a934e97a5f74808056d124553"
+        },
+        "D": {
+          "role": "captured_final_head",
+          "commit": "04a904a450d9b13a925bc9204d64c315f7c90313"
+        }
+      },
+      "capture_observation": {
+        "commit_api_available": true,
+        "exact_sha_fetch_available": true,
+        "checkpoint_ancestor_of_captured_head": false,
+        "checkpoint_advertised_as_ref_tip": false,
+        "latest_eligible_review_at_capture": false,
+        "captured_head_relation_to_last_force_after": "same_commit"
+      },
+      "observed": {
+        "current_pr_files": 4,
+        "exact_carries": 0,
+        "four_way_carries": 0,
+        "needs_review_now": 4,
+        "retired_checkpoint_changes": 9,
+        "naive_snapshot_paths": 11,
+        "naive_extra_paths": 7,
+        "naive_missing_current_paths": 0
+      },
+      "expectation": {
+        "oracle": "oracles/github-astral-sh-ruff-pr28311-review5116550397.json",
+        "oracle_kind": "exact_policy_conformance",
+        "human_priority_ground_truth": "absent"
+      }
+    }
+  ]
+}

@@ -1,0 +1,159 @@
+{
+  "benchmark_complete": true,
+  "cases": [
+    {
+      "basis_mismatches": [],
+      "duplicate_product_identities": [],
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "github-posthog-posthog-pr95077-review5117951817",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "summary": {
+        "carried": 0,
+        "current_pr_files": 9,
+        "exactly_carried": 0,
+        "naive_extra_paths": 1650,
+        "naive_missing_current_paths": 1,
+        "naive_snapshot_paths": 1658,
+        "needs_review_now": 9,
+        "replay_carried": 0,
+        "retired_checkpoint_changes": 52
+      },
+      "summary_mismatch": false
+    },
+    {
+      "basis_mismatches": [],
+      "duplicate_product_identities": [],
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "github-opensearch-project-agent-health-pr481-review5118041097",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "summary": {
+        "carried": 25,
+        "current_pr_files": 26,
+        "exactly_carried": 21,
+        "naive_extra_paths": 79,
+        "naive_missing_current_paths": 21,
+        "naive_snapshot_paths": 84,
+        "needs_review_now": 1,
+        "replay_carried": 4,
+        "retired_checkpoint_changes": 2
+      },
+      "summary_mismatch": false
+    },
+    {
+      "basis_mismatches": [],
+      "duplicate_product_identities": [],
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "github-jellyfin-jellyfin-kodi-pr1178-review5118549415",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "summary": {
+        "carried": 1,
+        "current_pr_files": 3,
+        "exactly_carried": 0,
+        "naive_extra_paths": 72,
+        "naive_missing_current_paths": 0,
+        "naive_snapshot_paths": 75,
+        "needs_review_now": 2,
+        "replay_carried": 1,
+        "retired_checkpoint_changes": 2
+      },
+      "summary_mismatch": false
+    },
+    {
+      "basis_mismatches": [],
+      "duplicate_product_identities": [],
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "github-beetbox-beets-pr6990-review5111747101",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "summary": {
+        "carried": 3,
+        "current_pr_files": 5,
+        "exactly_carried": 2,
+        "naive_extra_paths": 7,
+        "naive_missing_current_paths": 2,
+        "naive_snapshot_paths": 10,
+        "needs_review_now": 2,
+        "replay_carried": 1,
+        "retired_checkpoint_changes": 2
+      },
+      "summary_mismatch": false
+    },
+    {
+      "basis_mismatches": [],
+      "duplicate_product_identities": [],
+      "false_carry": [],
+      "false_invalidation": [],
+      "id": "github-astral-sh-ruff-pr28311-review5116550397",
+      "identity_extras": [],
+      "identity_omissions": [],
+      "passed": true,
+      "summary": {
+        "carried": 0,
+        "current_pr_files": 4,
+        "exactly_carried": 0,
+        "naive_extra_paths": 7,
+        "naive_missing_current_paths": 0,
+        "naive_snapshot_paths": 11,
+        "needs_review_now": 4,
+        "replay_carried": 0,
+        "retired_checkpoint_changes": 9
+      },
+      "summary_mismatch": false
+    }
+  ],
+  "claim_boundary": "Five purposefully selected GitHub force-push histories; exact policy conformance only, with no human-priority, reviewer-time, defect-recall, semantic-safety, or prevalence ground truth.",
+  "dataset_version": "1.0.0",
+  "evaluated_at": "2026-09-05T01:19:29.620824Z",
+  "provenance": {
+    "engine": {
+      "build_profile": "release",
+      "cargo_lock_sha256": "87c022712b959486fe4968eeb2171b41fe289f598403364fc819023ac30d4e9a",
+      "engine_version": "0.3.0",
+      "git_dirty": false,
+      "git_revision": "8ad7cb72660249fc75e944b75dfd0a7fd3c5760f",
+      "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)",
+      "schema": "stratadiff-build-info-v1"
+    },
+    "manifest_sha256": "26d9d703b87e2f608b2bcd9e23163673c4b6dd99d6fdb0b05714431e511f51aa",
+    "oracle_sha256": {
+      "github-astral-sh-ruff-pr28311-review5116550397": "3f54b20f5ceceb1736dd3ec043fa1a34b3d5848d68543a78e0354aff536bdba9",
+      "github-beetbox-beets-pr6990-review5111747101": "b1ab8ff1c4dc397d6437c1f0e2c8c5e8ebb49c260ae25172c68098715e395845",
+      "github-jellyfin-jellyfin-kodi-pr1178-review5118549415": "a6df54b615f23ae308be8198b30e7ab522b44703c1608d66d77b53f3233d333e",
+      "github-opensearch-project-agent-health-pr481-review5118041097": "334e9f4118861d85b839e03155b3d1222776322dc2f78eeebf54007b01a296c6",
+      "github-posthog-posthog-pr95077-review5117951817": "62747b16e468ed0dfbb9a0a82dae84ca3c8a64d4dd1165283177a9006c473eb9"
+    },
+    "stratadiff_binary_sha256": "40b055832bb844ad82b98134e043823477c8e70670962914fcba127eba125872",
+    "verifier_runtime": {
+      "git_version": "git version 2.25.1",
+      "python_version": "3.14.6"
+    },
+    "verifier_sha256": "2cdc8a5736fcc71ee4eea9dc55626f99b4aec8c03634f4cb778caba26650549f"
+  },
+  "schema": "stratadiff-resumebench-github-live-evaluation-v1",
+  "summary": {
+    "basis_mismatches": 0,
+    "carried": 29,
+    "cases": 5,
+    "current_pr_files": 47,
+    "exactly_carried": 23,
+    "false_carry": 0,
+    "false_invalidation": 0,
+    "identity_extras": 0,
+    "identity_omissions": 0,
+    "needs_review_now": 18,
+    "passed_cases": 5,
+    "replay_carried": 6,
+    "retired_checkpoint_changes": 67
+  }
+}
