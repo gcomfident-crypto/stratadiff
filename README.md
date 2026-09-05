@@ -93,6 +93,14 @@ needs-review files named by Gerrit's public submission record, and 2 retired che
 This is one deliberately selected correctness case; neither v0 nor v1 estimates reviewer time or
 defect recall.
 
+The checked-in [ResumeBench-GitHub-Live v1](benchmarks/resumebench-github-live-v1/README.md) extends
+that diagnostic to five public GitHub PR histories whose reviewed commits were later force-pushed
+away. Across 47 current PR files, the pinned policy carries 23 by exact Git identity and 6 by strict
+four-way replay, leaving 18 in the review residue. A naive obsolete-checkpoint-to-head path diff
+contains 1,838 paths—1,815 outside the current PR—and still omits 24 current paths. These are
+purposefully selected correctness cases with no human-priority ground truth, not prevalence,
+time-saving, or safety evidence.
+
 ## Quick start
 
 Rust 1.90 or newer is required. The repository includes the compiled Evidence Workbench in

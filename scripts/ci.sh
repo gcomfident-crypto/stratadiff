@@ -12,6 +12,9 @@ fi
 cargo package --list --locked --allow-dirty | grep -Fx 'web/dist/index.html'
 python3 tools/resumebench-real/resumebench_real.py self-test
 python3 benchmarks/resumebench-real-v1/verify.py self-test
+python3 tools/resumebench-github-live/resumebench_github_live.py self-test
+python3 tools/resumebench-github-live/resumebench_github_live.py verify-bundle \
+  --manifest benchmarks/resumebench-github-live-v1/manifest.json
 python3 scripts/demo_review_coverage.py --self-test
 
 cargo fmt --all -- --check

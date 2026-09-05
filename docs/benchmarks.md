@@ -40,6 +40,26 @@ four-snapshot replay rule, independently checks the 5/2 partition and per-file c
 binds a clean release evaluation to the engine revision. It remains a single selected correctness
 case and cannot support claims about prevalence, reviewer time, or defect recall.
 
+## ResumeBench-GitHub-Live v1
+
+The GitHub-live diagnostic freezes five public pull-request histories with a human `APPROVED` or
+`CHANGES_REQUESTED` review followed by a force-push. Each case records the requested base, reviewed
+checkpoint, both derived merge bases, captured final head, exact review ID, force-push events,
+source-license observation, and the complete current file partition. Its independent Python/Git
+oracle recomputes raw identities and four-way byte replay without importing the StrataDiff library;
+the product evaluation is a separate comparison against that oracle.
+
+| Cases | Current files | Exact carry | Four-way carry | Need review | Retired |
+|---:|---:|---:|---:|---:|---:|
+| 5 | 47 | 23 | 6 | 18 | 67 |
+
+A naive direct path diff from the obsolete reviewed commit to the captured head contains 1,838
+paths. Of those, 1,815 are not current PR paths, while 24 current PR paths are absent. This is a
+path-set diagnostic of base noise, not a reviewer-value metric. The five cases were selected to
+exercise policy behavior; they are neither random nor representative and contain no human-priority
+ground truth. See the
+[`ResumeBench-GitHub-Live v1` dataset card](../benchmarks/resumebench-github-live-v1/README.md).
+
 ## DiffBenchmark literature-subset result
 
 The latest provenance-complete Java evaluation was run on 2026-09-04 against the 285-case
