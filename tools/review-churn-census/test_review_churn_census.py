@@ -498,6 +498,7 @@ class AuditTest(unittest.TestCase):
             },
         )
         self.assertEqual(report["schema"], "stratadiff-review-memory-audit-v1")
+        self.assertEqual(report["tool_version"], census.AUDIT_TOOL_VERSION)
         self.assertEqual(
             report["scope"]["selection"],
             {
@@ -576,6 +577,34 @@ class AuditTest(unittest.TestCase):
         self.assertEqual(ninety_percent["summary"]["status"], "no_observed_drift")
         self.assertEqual(ninety_percent["summary"]["unobservable_reviewer_pairs"], 1)
 
+        known_drift_with_unknowns = self.build_report(
+            [
+                census.classify_case(
+                    capture_case(
+                        [
+                            review(
+                                f"mixed-review-{index}",
+                                index,
+                                "APPROVED",
+                                "2026-08-01T01:00:00Z",
+                                actor("User", f"mixed-reviewer-{index}"),
+                                OID_A if index == 1 else None,
+                            )
+                            for index in range(1, 11)
+                        ],
+                        [],
+                    )
+                )
+            ]
+        )
+        self.assertEqual(known_drift_with_unknowns["summary"]["status"], "affected")
+        self.assertEqual(
+            known_drift_with_unknowns["summary"]["drifted_reviewer_pairs"], 1
+        )
+        self.assertEqual(
+            known_drift_with_unknowns["summary"]["unobservable_reviewer_pairs"], 9
+        )
+
     def test_markdown_is_derived_from_report_and_calls_unknown_out(self):
         report = self.build_report([self.classified(None)])
         rendered = census.render_review_memory_audit_markdown(report)
@@ -602,6 +631,7 @@ class AuditTest(unittest.TestCase):
             ["--repository", "three/part/name"],
             ["--hostname", "https://github.com"],
             ["--end-exclusive", "2026-09-01"],
+            ["--days", "365", "--end-exclusive", "0001-01-01T00:00:00Z"],
             ["--format", "yaml"],
         )
         for extra in invalid:

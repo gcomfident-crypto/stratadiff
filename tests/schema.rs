@@ -144,7 +144,7 @@ fn review_memory_audit_schema_accepts_the_v1_contract() {
     };
     let instance = serde_json::json!({
         "schema": "stratadiff-review-memory-audit-v1",
-        "tool_version": "0.2.0",
+        "tool_version": "1.0.0",
         "generated_at": "2026-09-05T13:00:00Z",
         "scope": {
             "provider_url": "https://github.com",

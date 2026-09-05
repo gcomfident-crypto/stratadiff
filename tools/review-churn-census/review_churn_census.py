@@ -32,6 +32,7 @@ AGGREGATE_SCHEMA = "stratadiff-review-churn-census-aggregate-v1"
 AUDIT_SCHEMA = "stratadiff-review-memory-audit-v1"
 DATASET_VERSION = "1.0.0"
 TOOL_VERSION = "0.2.0"
+AUDIT_TOOL_VERSION = "1.0.0"
 
 SELECTION_ALGORITHM = "sha256_v1"
 SELECTION_ALGORITHM_VERSION = "1"
@@ -276,6 +277,15 @@ def audit_end_exclusive_argument(value: str) -> str:
     except (CensusError, ValueError) as error:
         raise argparse.ArgumentTypeError(str(error)) from error
     return value
+
+
+def audit_window(end_exclusive_text: str, days: int) -> tuple[datetime, datetime]:
+    end_exclusive = parse_utc_timestamp(end_exclusive_text, "end-exclusive")
+    try:
+        start = end_exclusive - timedelta(days=days)
+    except OverflowError as error:
+        raise CensusError("end-exclusive is too early for the requested day window") from error
+    return start, end_exclusive
 
 
 def validate_plan(plan: object) -> dict[str, object]:
@@ -2330,18 +2340,18 @@ def build_review_memory_audit(
 
     if completed_pair_count == 0:
         status = "no_eligible_reviews"
+    elif drifted_pair_count > 0:
+        status = "affected"
     elif comparable_pair_count * 10_000 < (
         completed_pair_count * AUDIT_MINIMUM_OID_COVERAGE_BASIS_POINTS
     ):
         status = "insufficient_evidence"
-    elif drifted_pair_count == 0:
-        status = "no_observed_drift"
     else:
-        status = "affected"
+        status = "no_observed_drift"
 
     return {
         "schema": AUDIT_SCHEMA,
-        "tool_version": TOOL_VERSION,
+        "tool_version": AUDIT_TOOL_VERSION,
         "generated_at": generated_at,
         "scope": {
             "provider_url": f"https://{hostname}",
@@ -2796,8 +2806,7 @@ def command_audit(arguments: argparse.Namespace) -> None:
         if arguments.end_exclusive is None
         else arguments.end_exclusive
     )
-    end_exclusive = parse_utc_timestamp(end_exclusive_text, "end-exclusive")
-    start = end_exclusive - timedelta(days=arguments.days)
+    start, end_exclusive = audit_window(end_exclusive_text, arguments.days)
     api = GithubGraphQL(arguments.gh, arguments.hostname)
     report = collect_review_memory_audit(
         api,
@@ -2991,7 +3000,13 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     verify.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     verify.add_argument("--aggregate", type=Path, default=DEFAULT_AGGREGATE)
     verify.set_defaults(function=command_verify)
-    return parser.parse_args(argv)
+    arguments = parser.parse_args(argv)
+    if arguments.command == "audit" and arguments.end_exclusive is not None:
+        try:
+            audit_window(arguments.end_exclusive, arguments.days)
+        except CensusError as error:
+            parser.error(str(error))
+    return arguments
 
 
 def main() -> None:
