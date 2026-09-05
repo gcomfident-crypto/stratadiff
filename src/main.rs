@@ -2,13 +2,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::{Command as ProcessCommand, ExitCode, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicU8, Ordering},
-        mpsc,
-    },
-    thread,
+    process::{Command as ProcessCommand, ExitCode},
     time::{Duration, Instant},
 };
 
@@ -52,7 +46,11 @@ use stratadiff::{
 };
 
 mod demo;
+mod process;
+mod resume;
 mod viewer;
+
+use process::run_bounded_process;
 
 const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
 const LEGACY_REPORT_SCHEMA_V2: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v2.schema.json";
@@ -66,7 +64,6 @@ const THIRD_PARTY_NOTICES: &str = include_str!("../THIRD_PARTY_NOTICES.txt");
 const GITHUB_API_HEADER_BYTES: usize = 64 * 1024;
 const GITHUB_API_TIMEOUT: Duration = Duration::from_secs(30);
 const GITHUB_OWNERSHIP_TOTAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
-const PROCESS_PIPE_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff")]
@@ -79,6 +76,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Resume one reviewer's latest completed GitHub review from exact Git evidence.
+    Resume(resume::ResumeArgs),
+    /// Internal isolated workbench entry point used by `resume`.
+    #[command(name = "__resume-workbench", hide = true)]
+    ResumeWorkbench(resume::ResumeWorkbenchArgs),
     /// Open a deterministic offline Review Resume scenario.
     Demo {
         /// Loopback port to listen on. Zero asks the operating system to choose one.
@@ -389,6 +391,13 @@ fn main() -> ExitCode {
     match run(cli.command) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
+            if let Some(interrupted) = error.downcast_ref::<process::Interrupted>()
+                && let Some(code) = 128_i32
+                    .checked_add(interrupted.signal())
+                    .and_then(|code| u8::try_from(code).ok())
+            {
+                return ExitCode::from(code);
+            }
             eprintln!(
                 "Error: {}",
                 escape_terminal_unsafe_text(&format!("{error:#}"))
@@ -400,6 +409,8 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::Resume(args) => resume::run(args)?,
+        Command::ResumeWorkbench(args) => resume::run_workbench(args)?,
         Command::Demo { port, no_open } => demo::run(port, no_open)?,
         Command::Licenses => print!("{THIRD_PARTY_NOTICES}"),
         Command::BuildInfo => {
@@ -941,6 +952,7 @@ impl GithubOwnershipApi for GhCliOwnershipApi {
             64 * 1024,
             remaining.min(GITHUB_API_TIMEOUT),
             "gh api",
+            None,
         )?;
         ensure!(
             output.status.success(),
@@ -1040,182 +1052,6 @@ fn find_header_boundary(included: &[u8]) -> Option<(usize, usize)> {
         (None, Some(lf)) => Some((lf, 2)),
         (None, None) => None,
     }
-}
-
-#[derive(Debug)]
-struct BoundedProcessOutput {
-    status: std::process::ExitStatus,
-    stdout: Vec<u8>,
-    stderr: Vec<u8>,
-}
-
-fn run_bounded_process(
-    command: &mut ProcessCommand,
-    stdout_limit: usize,
-    stderr_limit: usize,
-    timeout: Duration,
-    label: &str,
-) -> Result<BoundedProcessOutput> {
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut child = command
-        .spawn()
-        .with_context(|| format!("failed to start {label}"))?;
-    let stdout = child
-        .stdout
-        .take()
-        .with_context(|| format!("failed to capture {label} stdout"))?;
-    let stderr = child
-        .stderr
-        .take()
-        .with_context(|| format!("failed to capture {label} stderr"))?;
-    let overflow = Arc::new(AtomicU8::new(0));
-    let stdout_overflow = Arc::clone(&overflow);
-    let stderr_overflow = Arc::clone(&overflow);
-    let (stdout_sender, stdout_receiver) = mpsc::sync_channel(1);
-    let (stderr_sender, stderr_receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let _ = stdout_sender.send(read_capped_stream(
-            stdout,
-            stdout_limit,
-            &stdout_overflow,
-            1,
-        ));
-    });
-    thread::spawn(move || {
-        let _ = stderr_sender.send(read_capped_stream(
-            stderr,
-            stderr_limit,
-            &stderr_overflow,
-            2,
-        ));
-    });
-    let started = Instant::now();
-    let mut timed_out = false;
-    let status = loop {
-        if overflow.load(Ordering::Acquire) != 0 {
-            break terminate_child(&mut child, label)?;
-        }
-        if let Some(status) = child
-            .try_wait()
-            .with_context(|| format!("failed to wait for {label}"))?
-        {
-            terminate_remaining_process_group(&child, label)?;
-            break status;
-        }
-        if started.elapsed() >= timeout {
-            timed_out = true;
-            break terminate_child(&mut child, label)?;
-        }
-        thread::sleep(Duration::from_millis(10));
-    };
-    let pipe_deadline = Instant::now() + PROCESS_PIPE_CLOSE_TIMEOUT;
-    let (stdout, stdout_exceeded) =
-        receive_bounded_stream(&stdout_receiver, pipe_deadline, &format!("{label} stdout"))?;
-    let (stderr, stderr_exceeded) =
-        receive_bounded_stream(&stderr_receiver, pipe_deadline, &format!("{label} stderr"))?;
-    ensure!(
-        !stdout_exceeded,
-        "{label} stdout bytes limit exceeded: limit {stdout_limit}"
-    );
-    ensure!(
-        !stderr_exceeded,
-        "{label} stderr bytes limit exceeded: limit {stderr_limit}"
-    );
-    ensure!(
-        !timed_out,
-        "{label} timed out after {} milliseconds",
-        timeout.as_millis()
-    );
-    Ok(BoundedProcessOutput {
-        status,
-        stdout,
-        stderr,
-    })
-}
-
-fn receive_bounded_stream(
-    receiver: &mpsc::Receiver<std::io::Result<(Vec<u8>, bool)>>,
-    deadline: Instant,
-    label: &str,
-) -> Result<(Vec<u8>, bool)> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    receiver
-        .recv_timeout(remaining)
-        .with_context(|| format!("{label} pipe did not close after the child exited"))?
-        .with_context(|| format!("failed to read {label}"))
-}
-
-fn terminate_child(
-    child: &mut std::process::Child,
-    label: &str,
-) -> Result<std::process::ExitStatus> {
-    terminate_remaining_process_group(child, label)?;
-    match child.kill() {
-        Ok(()) => child
-            .wait()
-            .with_context(|| format!("failed to reap {label} after killing it")),
-        Err(kill_error) => match child
-            .try_wait()
-            .with_context(|| format!("failed to inspect {label} after kill failed"))?
-        {
-            Some(status) => Ok(status),
-            None => Err(kill_error).with_context(|| format!("failed to kill {label}")),
-        },
-    }
-}
-
-#[cfg(unix)]
-fn terminate_remaining_process_group(child: &std::process::Child, label: &str) -> Result<()> {
-    let process_group = i32::try_from(child.id()).context("child process ID exceeds i32")?;
-    // The command is spawned as its own process-group leader immediately above.
-    let result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
-    if result == 0 {
-        return Ok(());
-    }
-    let error = std::io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(())
-    } else {
-        Err(error).with_context(|| format!("failed to terminate remaining {label} processes"))
-    }
-}
-
-#[cfg(not(unix))]
-fn terminate_remaining_process_group(_child: &std::process::Child, _label: &str) -> Result<()> {
-    Ok(())
-}
-
-fn read_capped_stream(
-    mut reader: impl Read,
-    limit: usize,
-    overflow: &AtomicU8,
-    overflow_bit: u8,
-) -> std::io::Result<(Vec<u8>, bool)> {
-    let mut retained = Vec::new();
-    let mut exceeded = false;
-    let mut buffer = [0_u8; 8 * 1024];
-    loop {
-        let read = reader.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        let available = limit.saturating_sub(retained.len());
-        let keep = available.min(read);
-        retained.extend_from_slice(&buffer[..keep]);
-        exceeded |= keep < read;
-        if exceeded {
-            overflow.fetch_or(overflow_bit, Ordering::Release);
-        }
-    }
-    Ok((retained, exceeded))
 }
 
 fn select_language(before: &Path, after: &Path, requested: Option<Language>) -> Result<Language> {
@@ -1474,11 +1310,7 @@ fn push_json_unicode_escape(output: &mut String, character: char) {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        fs,
-        process::Command,
-        time::{Duration, Instant},
-    };
+    use std::fs;
 
     use base64::{Engine, engine::general_purpose::STANDARD};
     use proptest::prelude::*;
@@ -1486,7 +1318,7 @@ mod tests {
 
     use super::{
         display_bytes, display_text, escape_terminal_unsafe_json, is_terminal_unsafe,
-        parse_gh_included_response, read_bounded, run_bounded_process, write_exact_byte_edits,
+        parse_gh_included_response, read_bounded, write_exact_byte_edits,
     };
 
     #[test]
@@ -1543,105 +1375,6 @@ mod tests {
                 .to_string()
                 .contains("missing X-GitHub-Api-Version-Selected")
         );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bounded_process_terminates_after_its_deadline() {
-        let mut command = Command::new("sh");
-        command.args(["-c", "while :; do :; done"]);
-        let started = Instant::now();
-
-        let error = run_bounded_process(
-            &mut command,
-            1024,
-            1024,
-            Duration::from_millis(100),
-            "timeout fixture",
-        )
-        .unwrap_err();
-
-        assert!(
-            error
-                .to_string()
-                .contains("timed out after 100 milliseconds")
-        );
-        assert!(started.elapsed() < Duration::from_secs(5));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bounded_process_closes_pipes_held_by_descendants() {
-        let mut command = Command::new("sh");
-        command.args(["-c", "sleep 30 & exit 0"]);
-        let started = Instant::now();
-
-        let output = run_bounded_process(
-            &mut command,
-            1024,
-            1024,
-            Duration::from_secs(5),
-            "descendant fixture",
-        )
-        .unwrap();
-
-        assert!(output.status.success());
-        assert!(started.elapsed() < Duration::from_secs(2));
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn bounded_process_does_not_wait_forever_for_an_escaped_descendant_pipe() {
-        let directory = tempfile::tempdir().unwrap();
-        let pid_path = directory.path().join("escaped.pid");
-        let mut command = Command::new("sh");
-        command
-            .args([
-                "-c",
-                "setsid sh -c 'printf \"%s\" \"$$\" > \"$ESCAPED_PID_PATH\"; sleep 30' & while [ ! -s \"$ESCAPED_PID_PATH\" ]; do :; done",
-            ])
-            .env("ESCAPED_PID_PATH", &pid_path);
-        let started = Instant::now();
-
-        let error = run_bounded_process(
-            &mut command,
-            1024,
-            1024,
-            Duration::from_secs(5),
-            "escaped descendant fixture",
-        )
-        .unwrap_err();
-        let escaped_pid = fs::read_to_string(pid_path)
-            .unwrap()
-            .parse::<i32>()
-            .unwrap();
-        // The fixture deliberately escapes the managed process group; clean it up explicitly.
-        unsafe {
-            libc::kill(-escaped_pid, libc::SIGKILL);
-        }
-
-        assert!(error.to_string().contains("pipe did not close"));
-        assert!(started.elapsed() < Duration::from_secs(3));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn bounded_process_stops_when_output_exceeds_its_limit() {
-        let mut command = Command::new("sh");
-        command.args(["-c", "while :; do printf 0123456789; done"]);
-        let started = Instant::now();
-
-        let error = run_bounded_process(
-            &mut command,
-            1024,
-            1024,
-            Duration::from_secs(5),
-            "output fixture",
-        )
-        .unwrap_err();
-
-        assert!(error.to_string().contains("stdout bytes limit exceeded"));
-        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

@@ -5,6 +5,7 @@ set -euo pipefail
 [[ -z "${GH_TOKEN+x}" ]]
 [[ -z "${GITHUB_TOKEN+x}" ]]
 [[ -z "${GH_ENTERPRISE_TOKEN+x}" ]]
+[[ -z "${GITHUB_ENTERPRISE_TOKEN+x}" ]]
 [[ -z "${STRATADIFF_GITHUB_TOKEN+x}" ]]
 [[ -z "${github_token+x}" ]]
 [[ -z "${git_authorization+x}" ]]

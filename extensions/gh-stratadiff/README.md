@@ -1,7 +1,8 @@
 # `gh stratadiff`
 
-This directory contains the first personal, repository-admin-free entry point for StrataDiff.
-It is a GitHub CLI script extension with five commands:
+This directory contains the personal, repository-admin-free GitHub CLI entry point for StrataDiff.
+The launcher exposes five commands; `resume` is implemented by the native Rust binary and the
+extension passes its arguments and exit status through unchanged:
 
 ```console
 gh stratadiff audit -R OWNER/REPOSITORY
@@ -37,10 +38,10 @@ changes to otherwise ineligible PRs during the recorded observation window may a
 run. The unfiltered PR review count is checked separately, so Inbox never emits a command that
 would exceed Resume's shared 10,000-review limit.
 
-`resume` finds the authenticated user's latest eligible completed review, binds it to the pull
-request's exact base and head commits, and opens the existing local Review Resume Workbench. If an
-exact commit is absent locally, the extension verifies it through GitHub and imports only that SHA
-as an exact ref over authenticated HTTPS. Git transfers the reachable object closure needed to
+Native Rust `resume` finds the authenticated user's latest eligible completed review, binds it to
+the pull request's exact base and head commits, and opens the local Review Resume Workbench. If an
+exact commit is absent locally, it verifies the commit through GitHub and imports only that SHA as
+an exact ref over authenticated HTTPS. Git transfers the reachable object closure needed to
 materialize that commit; source analysis remains local. With `-R` and no `--repo-dir`, the target
 object store is an isolated temporary bare repository, so the first run needs no checkout.
 
@@ -115,18 +116,20 @@ Resume selects its repository mode only from the presence of `-R` and `--repo-di
 
 | `-R` | `--repo-dir` | Repository behavior |
 | --- | --- | --- |
-| omitted | omitted | Use the current Git worktree and let `gh repo view` infer GitHub coordinates. |
-| omitted | set | Use that local Git worktree and infer GitHub coordinates from it. |
+| omitted | omitted | Use the current Git worktree or bare repository and let `gh repo view` infer GitHub coordinates. |
+| omitted | set | Use that local Git worktree or bare repository and infer GitHub coordinates from it. |
 | set | omitted | Create an isolated temporary bare repository and use the explicit GitHub coordinates. |
-| set | set | Use that local Git worktree and the explicit GitHub coordinates. |
+| set | set | Use that local Git worktree or bare repository and the explicit GitHub coordinates. |
 
 There is no fallback between modes: an invalid explicit `--repo-dir` fails, and a non-Git current
-directory fails unless `-R` is supplied. The local modes do not need to be on the pull request
-branch. Missing PR base, current head, and review checkpoint commits are fetched by exact object ID
-without switching branches or changing worktree files. `--reviewer LOGIN` selects another reviewer
-when policy permits access to that review history. Subsequent pull-request requests use the
-host-qualified repository identity, so GitHub Enterprise hosts do not silently fall back to
-`github.com`.
+directory fails unless `-R` is supplied. `--repo-dir` accepts either a worktree or a bare Git
+repository. The local modes do not need to be on the pull request branch. Missing PR base, current
+head, and review checkpoint commits are fetched by exact object ID without switching branches or
+changing worktree files. `--reviewer LOGIN` selects another reviewer when policy permits access to
+that review history. Resume currently selects review history by GitHub login; unlike Inbox's
+discovery record, it does not bind that selection to a stored immutable user node ID. Subsequent
+pull-request requests use the host-qualified repository identity, so GitHub Enterprise hosts do not
+silently fall back to `github.com`.
 
 For a terminal-only session:
 
@@ -136,31 +139,35 @@ gh stratadiff resume 123 --no-open
 
 ## Resume trust and failure boundary
 
-The extension deliberately performs the following sequence:
+The native Rust command deliberately performs the following sequence:
 
 1. Read the PR's exact base and head SHAs. For either missing object, verify the exact SHA through
    GitHub's commit API before fetching it from that repository's canonical HTTPS URL.
 2. Fetch every review page with `gh api --paginate --slurp`. The resolver accepts at most 10,000
    reviews and 32 MiB of page JSON; either limit fails closed before checkpoint selection.
-3. Resolve one checkpoint with `stratadiff github-checkpoint`.
-4. Ask GitHub for that exact checkpoint object and validate it with
-   `stratadiff github-commit-object`; fetch the same exact SHA when it is absent locally.
+3. Resolve one checkpoint with the same bounded policy exposed by `stratadiff github-checkpoint`.
+4. Ask GitHub for that exact checkpoint object and validate the response against the selected SHA;
+   fetch the same exact SHA when it is absent locally.
 5. Verify every imported ref resolves to the requested commit, reread the PR base and head to detect
-   a concurrent push, then open `review --checkpoint --workbench`.
+   a concurrent push, then launch an isolated native Workbench child.
 
 Provider fetches run in an isolated bare repository with inherited Git credentials, URL rewrites,
 proxies, and trace settings removed. The credential header is scoped to the canonical HTTPS fetch;
 the tokenless local import uses `git fetch-pack`, then atomically creates a temporary
 `refs/stratadiff/resume/...` ref. It never reads or writes the caller's `FETCH_HEAD` and removes its
-temporary refs and any fetch-pack keep file on exit. In a local mode, imported objects may remain in
-the selected object database, but no branch or worktree file is changed. In the `-R`-only mode, the
-target object database is also temporary and is removed in full when the command exits.
+temporary refs and every fetch-pack keep file that still carries this process's ownership marker.
+If another process rewrites or takes ownership of a keep file, Resume preserves it instead of
+risking deletion of foreign Git state. In a local mode, imported objects may remain in the selected
+object database, but no branch or worktree file is changed. In the `-R`-only mode, the target object
+database is also temporary and is removed in full when the command exits.
 
 If GitHub's API or HTTPS transport no longer serves an exact object, the command stops with that
 SHA. It never substitutes the current head, a moving branch, or another review checkpoint.
-The preliminary provider-commit checks and exact Git fetches currently rely on the configured `gh`
-and Git transport timeouts; the ownership collector's per-call, response-size, and total-window
-limits begin after that materialization step.
+Native Resume bounds captured child-process output and applies explicit command timeouts: local
+metadata and verification commands use a 30-second limit, while review retrieval and exact Git
+transport use a two-minute limit. These are per-process bounds rather than one end-to-end deadline.
+Because exact Git fetches deliberately ignore inherited proxy and custom-CA configuration, a GHES
+host must currently be reachable directly and trusted by the operating system certificate store.
 
 The chosen checkpoint is the latest eligible review in the complete bounded, paginated GitHub
 response (up to 10,000 reviews and 32 MiB). A review submitted or dismissed after that response can
@@ -175,6 +182,11 @@ state, arbitrary caller secrets, inherited Git configuration, credential helpers
 trace settings do not reach the server or browser process. The allowlist retains only `PATH`,
 `HOME`, display/session variables needed to open a browser, locale variables, and fixed defensive
 Git settings.
+
+On Unix, native Resume listens for SIGINT, SIGTERM, and SIGHUP, forwards the signal to the active
+child process group, waits for bounded graceful shutdown, and then cleans temporary refs, pack keep
+files, credentials, and scratch state. It exits with `128 + signal`; a child that does not stop in
+the grace period is killed and reaped.
 
 ## Options
 
@@ -209,34 +221,39 @@ Resume:
 ```text
 --reviewer LOGIN   Reviewer login; defaults to the authenticated gh user
 -R, --repo REPO    GitHub repository in [HOST/]OWNER/REPO form
---repo-dir PATH    Use an existing local Git worktree or repository
+--repo-dir PATH    Use an existing local Git worktree or bare repository
 --port PORT        Loopback viewer port; 0 chooses an available port
 --no-open          Print the viewer URL without opening a browser
 ```
 
 `demo` requires Bash, Git, `env`, and a built `stratadiff` executable, but it does not require a
-checkout, GitHub authentication, or network access. `resume` and `ownership-snapshot` additionally
-require GitHub CLI and `base64`. GitHub Enterprise hosts without a port in their HTTPS origin are supported
-through the repository URL returned by `gh`; the current prototype does not accept origins with
-embedded credentials or explicit ports.
+checkout, GitHub authentication, or network access. Native `resume` additionally requires Git and
+GitHub CLI; credential encoding is built into the binary. The Bash `ownership-snapshot` path also
+requires the external `base64` utility. GitHub Enterprise hosts without a port in their HTTPS origin
+are supported through the repository URL returned by `gh`; origins with embedded credentials or
+explicit ports are not accepted.
 
 ## Test
 
-The test suite uses only stubbed GitHub, Git, StrataDiff, and Python backend executables; it needs no
-token and makes no network request. It covers all five commands, including Demo and audit/inbox from a
-non-Git directory, Resume's four explicit repository modes, host-qualified GHES operation, provider
-verification of a locally present base, exact-object recovery, output mode, and cleanup on failure:
+The shell contract suite uses stubbed GitHub, Git, StrataDiff, and Python executables; it needs no
+token and makes no network request. Resume's shell coverage is intentionally limited to proving
+that the extension delegates argv and the native exit status unchanged. The native Rust integration
+suite owns Resume behavior:
 
 ```console
 bash tests/resume_test.sh
+cargo test --test resume_cli
+cargo test --test gh_extension
 ```
 
-It covers successful command binding, exact-object recovery for missing current base/head and a
-historical checkpoint, provider/API disappearance, temporary-ref cleanup, `FETCH_HEAD` immutability,
-fetch-pack keep-record handling, malformed or extra output, ref-collision failures, a PR head
-changing during resolution, absence of an eligible review, bounded single-response review
-retrieval, and the final Workbench environment allowlist. Audit-specific cases verify option
-forwarding, repository inference, backend status propagation, input validation, and the absence of
-Git or temporary-ref activity.
+`resume_cli` uses real local Git object stores and a stubbed GitHub CLI without network access. It
+covers all four option-selected repository modes (including an existing bare repository),
+host-qualified GHES operation, default and explicit reviewers, exact-object recovery, canonical PR
+URL binding, double-snapshot drift rejection, `FETCH_HEAD` immutability, temporary ref and pack-keep
+cleanup, Workbench environment isolation, and signals delivered both during Git mutations and after
+the Workbench is ready.
+`gh_extension` retains an independent real-Git check of fetch-pack keep records, compare-and-swap
+refs, and `FETCH_HEAD`. Audit-specific shell cases verify option forwarding, repository inference,
+backend status propagation, input validation, and the absence of Git or temporary-ref activity.
 Inbox-specific cases verify explicit and inferred repositories, backend output and status
 propagation, strict argument validation, and the same no-Git/no-StrataDiff boundary.

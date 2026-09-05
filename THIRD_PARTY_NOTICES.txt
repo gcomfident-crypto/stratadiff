@@ -1337,6 +1337,7 @@ MIT License
 
 Used by:
 - signal-hook-registry 1.4.8 (https://github.com/vorner/signal-hook)
+- signal-hook 0.3.18 (https://github.com/vorner/signal-hook)
 
 Copyright (c) 2017 tokio-jsonrpc developers
 

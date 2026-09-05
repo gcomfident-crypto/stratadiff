@@ -53,6 +53,7 @@ tree-sitter-java = "=0.23.5"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+signal-hook = "0.3"
 
 [[bench]]
 name = "structural"
