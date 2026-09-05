@@ -879,6 +879,7 @@ def search_repository_candidates(
 ) -> list[dict[str, object]]:
     name_with_owner = f"{owner}/{name}"
     candidates: dict[int, dict[str, object]] = {}
+    seen_numbers: set[int] = set()
     first_day = start.date()
     last_day = (end - timedelta(microseconds=1)).date()
     shards = [(first_day, last_day)]
@@ -914,11 +915,13 @@ def search_repository_candidates(
             observed_for_shard += len(nodes)
             for raw in nodes:
                 candidate = normalize_candidate(raw, name_with_owner)
+                # Boundary-day results count toward completeness even outside the exact window.
+                number = int(candidate["number"])
+                require(number not in seen_numbers, f"duplicate candidate PR #{number} in paginated search")
+                seen_numbers.add(number)
                 merged = parse_utc_timestamp(candidate["merged_at"], f"PR #{candidate['number']} merged_at")
                 if not start <= merged < end:
                     continue
-                number = int(candidate["number"])
-                require(number not in candidates, f"duplicate candidate PR #{number} in paginated search")
                 candidates[number] = candidate
             page_info = require_object(connection["pageInfo"], "search.pageInfo")
             has_next = require_bool(page_info["hasNextPage"], "search.pageInfo.hasNextPage")
