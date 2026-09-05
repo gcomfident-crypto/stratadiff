@@ -428,3 +428,22 @@ fn github_live_v1_bundle_verifier_rejects_a_tampered_oracle() {
             .contains("checksum mismatch")
     );
 }
+
+#[test]
+fn github_live_tool_self_test_covers_git_auth_isolation() {
+    let output = Command::new("python3")
+        .arg(repository_root().join("tools/resumebench-github-live/resumebench_github_live.py"))
+        .arg("self-test")
+        .current_dir(repository_root())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    let summary: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(summary["tests"], 13);
+    assert_eq!(summary["passed"], 13);
+}

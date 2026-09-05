@@ -42,6 +42,14 @@ STATUS_NAMES = {
 STATUS_RANK = {"A": 0, "C": 1, "D": 2, "M": 3, "R": 4, "T": 5}
 
 
+class RejectRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, new_url):
+        return None
+
+
+GITHUB_API_OPENER = urllib.request.build_opener(RejectRedirectHandler())
+
+
 def require(condition, message):
     if not condition:
         raise ValueError(message)
@@ -84,6 +92,24 @@ def parse_time(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def validate_github_token(token):
+    require(
+        isinstance(token, str)
+        and token
+        and token.isascii()
+        and "\n" not in token
+        and "\r" not in token,
+        "invalid GitHub token",
+    )
+
+
+def github_git_authorization(token):
+    validate_github_token(token)
+    credential = f"x-access-token:{token}".encode("ascii")
+    encoded = base64.b64encode(credential).decode("ascii")
+    return f"Authorization: Basic {encoded}"
+
+
 def isolated_environment(*, allow_lazy_fetch=False, token=None):
     environment = {
         name: value
@@ -98,10 +124,11 @@ def isolated_environment(*, allow_lazy_fetch=False, token=None):
     if not allow_lazy_fetch:
         environment["GIT_NO_LAZY_FETCH"] = "1"
     if token is not None:
-        require(token and "\n" not in token and "\r" not in token, "invalid GitHub token")
-        environment["GIT_CONFIG_COUNT"] = "1"
+        environment["GIT_CONFIG_COUNT"] = "2"
         environment["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraHeader"
-        environment["GIT_CONFIG_VALUE_0"] = f"Authorization: Bearer {token}"
+        environment["GIT_CONFIG_VALUE_0"] = github_git_authorization(token)
+        environment["GIT_CONFIG_KEY_1"] = "http.followRedirects"
+        environment["GIT_CONFIG_VALUE_1"] = "false"
     return environment
 
 
@@ -334,6 +361,10 @@ def expected_summary(case):
 
 
 def github_json(url, token, timeout, *, payload=None):
+    require(
+        url == "https://api.github.com/graphql" or url.startswith("https://api.github.com/repos/"),
+        f"GitHub API URL is outside the fixed origin: {url}",
+    )
     body = None if payload is None else canonical_json_bytes(payload)
     request = urllib.request.Request(
         url,
@@ -347,7 +378,7 @@ def github_json(url, token, timeout, *, payload=None):
             "X-GitHub-Api-Version": "2022-11-28",
         },
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
+    with GITHUB_API_OPENER.open(request, timeout=timeout) as response:
         require(response.status == 200, f"GitHub API returned HTTP {response.status}")
         raw = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
         require(len(raw) <= MAX_GITHUB_RESPONSE_BYTES, "GitHub API response exceeds size limit")
@@ -421,7 +452,7 @@ def verify_provenance_case(case, token, timeout):
 
 def verify_provenance(manifest_path, token, timeout):
     manifest = load_manifest(manifest_path)
-    require(token and "\n" not in token and "\r" not in token, "invalid GitHub token")
+    validate_github_token(token)
     require(timeout > 0, "GitHub API timeout must be positive")
     cases = [verify_provenance_case(case, token, timeout) for case in manifest["cases"]]
     event_ids = [event["node_id"] for case in manifest["cases"] for event in case["force_push_chain"]]
@@ -1781,7 +1812,22 @@ def self_test():
     adjacent_right = [make_edit(b"abc", 1, 2, b"B")]
     require(patches_interact(adjacent_left, adjacent_right), "self-test accepted adjacent edits")
     require(path_set_sha256({b"b", b"a"}) == path_set_sha256({b"a", b"b"}), "self-test path digest is unstable")
-    return {"tests": 5, "passed": 5}
+    test_token = "self-test-token"
+    expected_header = "Authorization: Basic eC1hY2Nlc3MtdG9rZW46c2VsZi10ZXN0LXRva2Vu"
+    require(github_git_authorization(test_token) == expected_header, "self-test GitHub Git authorization differs")
+    environment = isolated_environment(token=test_token)
+    require(environment["GIT_CONFIG_COUNT"] == "2", "self-test GitHub Git config count differs")
+    require(environment["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraHeader", "self-test GitHub Git authorization is not URL-scoped")
+    require(environment["GIT_CONFIG_VALUE_0"] == expected_header, "self-test GitHub Git header environment differs")
+    require(environment["GIT_CONFIG_KEY_1"] == "http.followRedirects", "self-test GitHub Git redirect policy is absent")
+    require(environment["GIT_CONFIG_VALUE_1"] == "false", "self-test GitHub Git redirects are not disabled")
+    require(test_token not in environment["GIT_CONFIG_VALUE_0"], "self-test exposed the raw GitHub token")
+    require("GH_TOKEN" not in environment and "GITHUB_TOKEN" not in environment, "self-test inherited a GitHub token variable")
+    require(
+        RejectRedirectHandler().redirect_request(None, None, 302, "Found", {}, "https://example.com/") is None,
+        "self-test GitHub API redirects are not rejected",
+    )
+    return {"tests": 13, "passed": 13}
 
 
 def add_manifest_argument(parser):
