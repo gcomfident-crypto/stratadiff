@@ -1,4 +1,4 @@
-use std::{env, ffi::OsStr, fs, path::Path, process::Command};
+use std::{env, fs, path::Path, process::Command};
 
 use anyhow::{Context, Result, ensure};
 use stratadiff::review::{
@@ -157,11 +157,7 @@ fn git(repository: &Path, home: &Path, hooks: &Path, arguments: &[&str]) -> Resu
 }
 
 fn display_arguments(arguments: &[&str]) -> String {
-    arguments
-        .iter()
-        .map(|argument| OsStr::new(argument).to_string_lossy())
-        .collect::<Vec<_>>()
-        .join(" ")
+    arguments.join(" ")
 }
 
 fn validate_demo(
