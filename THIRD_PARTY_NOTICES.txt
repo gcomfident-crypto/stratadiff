@@ -2157,6 +2157,35 @@ SOFTWARE.
 MIT License
 
 Used by:
+- tree-sitter-java 0.23.5 (https://github.com/tree-sitter/tree-sitter-java)
+
+MIT License
+
+Copyright (c) 2017 Ayman Nadeem
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+MIT License
+
+Used by:
 - tokio-macros 2.7.2 (https://github.com/tokio-rs/tokio)
 
 MIT License
@@ -2226,6 +2255,35 @@ Used by:
 MIT License
 
 Copyright (c) 2020 Max Brunsfeld and Pieter Goetschalckx
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+MIT License
+
+Used by:
+- tree-sitter-md 0.5.3 (https://github.com/tree-sitter-grammars/tree-sitter-markdown)
+
+MIT License
+
+Copyright (c) 2021 Matthias Deiml
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -2355,6 +2413,8 @@ MIT License
 
 Used by:
 - stratadiff 0.3.0 (https://github.com/gcomfident-crypto/stratadiff)
+- stratadiff-core 0.3.0 (https://github.com/gcomfident-crypto/stratadiff)
+- stratadiff-verifier 0.3.0 (https://github.com/gcomfident-crypto/stratadiff)
 
 MIT License
 
@@ -2377,45 +2437,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-
--------------------------------------------------------------------------------
-MIT License
-
-Used by:
-- stratadiff-core 0.3.0 (https://github.com/gcomfident-crypto/stratadiff)
-- stratadiff-verifier 0.3.0 (https://github.com/gcomfident-crypto/stratadiff)
-- tree-sitter-cpp 0.23.4 (https://github.com/tree-sitter/tree-sitter-cpp)
-- tree-sitter-haskell 0.23.1 (https://github.com/tree-sitter/tree-sitter-haskell)
-- tree-sitter-html 0.23.2 (https://github.com/tree-sitter/tree-sitter-html)
-- tree-sitter-java 0.23.5 (https://github.com/tree-sitter/tree-sitter-java)
-- tree-sitter-json 0.24.8 (https://github.com/tree-sitter/tree-sitter-json)
-- tree-sitter-kotlin-ng 1.1.0 (https://github.com/tree-sitter-grammars/tree-sitter-kotlin)
-- tree-sitter-lua 0.5.0 (https://github.com/tree-sitter-grammars/tree-sitter-lua)
-- tree-sitter-md 0.5.3 (https://github.com/tree-sitter-grammars/tree-sitter-markdown)
-- tree-sitter-ruby 0.23.1 (https://github.com/tree-sitter/tree-sitter-ruby)
-- tree-sitter-toml-ng 0.7.0 (https://github.com/tree-sitter-grammars/tree-sitter-toml)
-- tree-sitter-typescript 0.23.2 (https://github.com/tree-sitter/tree-sitter-typescript)
-- tree-sitter-zig 1.1.2 (https://github.com/tree-sitter-grammars/tree-sitter-zig)
-
-MIT License
-
-Copyright (c) <year> <copyright holders>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the
-following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial
-portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
-LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO
-EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 -------------------------------------------------------------------------------
@@ -2563,8 +2584,12 @@ MIT License
 
 Used by:
 - tree-sitter-c 0.24.2 (https://github.com/tree-sitter/tree-sitter-c)
+- tree-sitter-cpp 0.23.4 (https://github.com/tree-sitter/tree-sitter-cpp)
 - tree-sitter-go 0.25.0 (https://github.com/tree-sitter/tree-sitter-go)
+- tree-sitter-haskell 0.23.1 (https://github.com/tree-sitter/tree-sitter-haskell)
+- tree-sitter-html 0.23.2 (https://github.com/tree-sitter/tree-sitter-html)
 - tree-sitter-javascript 0.25.0 (https://github.com/tree-sitter/tree-sitter-javascript)
+- tree-sitter-json 0.24.8 (https://github.com/tree-sitter/tree-sitter-json)
 
 The MIT License (MIT)
 
@@ -2830,6 +2855,36 @@ SOFTWARE.
 MIT License
 
 Used by:
+- tree-sitter-ruby 0.23.1 (https://github.com/tree-sitter/tree-sitter-ruby)
+
+The MIT License (MIT)
+
+Copyright (c) 2016 Rob Rix
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+
+-------------------------------------------------------------------------------
+MIT License
+
+Used by:
 - same-file 1.0.6 (https://github.com/BurntSushi/same-file)
 
 The MIT License (MIT)
@@ -2921,6 +2976,7 @@ MIT License
 
 Used by:
 - tree-sitter-bash 0.25.1 (https://github.com/tree-sitter/tree-sitter-bash)
+- tree-sitter-typescript 0.23.2 (https://github.com/tree-sitter/tree-sitter-typescript)
 
 The MIT License (MIT)
 
@@ -3159,6 +3215,65 @@ THE SOFTWARE.
 MIT License
 
 Used by:
+- tree-sitter-lua 0.5.0 (https://github.com/tree-sitter-grammars/tree-sitter-lua)
+
+The MIT License (MIT)
+
+Copyright (c) 2021 Munif Tanjim
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+MIT License
+
+Used by:
+- tree-sitter-kotlin-ng 1.1.0 (https://github.com/tree-sitter-grammars/tree-sitter-kotlin)
+- tree-sitter-zig 1.1.2 (https://github.com/tree-sitter-grammars/tree-sitter-zig)
+
+The MIT License (MIT)
+
+Copyright (c) 2024 Amaan Qureshi <amaanq12@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+MIT License
+
+Used by:
 - tree-sitter-scala 0.26.2 (https://github.com/tree-sitter/tree-sitter-scala)
 
 The MIT License (MIT)
@@ -3211,6 +3326,35 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
+
+
+-------------------------------------------------------------------------------
+MIT License
+
+Used by:
+- tree-sitter-toml-ng 0.7.0 (https://github.com/tree-sitter-grammars/tree-sitter-toml)
+
+The MIT License (MIT)
+
+Copyright (c) Ika <ikatyang@gmail.com> (https://github.com/ikatyang)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 
 -------------------------------------------------------------------------------

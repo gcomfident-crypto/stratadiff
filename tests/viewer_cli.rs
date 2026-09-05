@@ -549,6 +549,64 @@ fn offline_demo_runs_outside_a_checkout_and_cleans_up_after_ctrl_c() {
     assert_eq!(fs::read_dir(&runtime).unwrap().count(), 0);
 }
 
+#[cfg(unix)]
+#[test]
+fn offline_demo_bounds_shutdown_with_a_stalled_connection_and_cleans_up_after_signals() {
+    for signal in [libc::SIGTERM, libc::SIGHUP] {
+        assert_stalled_demo_shutdown_cleans_up(signal);
+    }
+}
+
+#[cfg(unix)]
+fn assert_stalled_demo_shutdown_cleans_up(signal: i32) {
+    let sandbox = tempfile::tempdir().unwrap();
+    let runtime = sandbox.path().join("runtime");
+    let non_git = sandbox.path().join("non-git");
+    fs::create_dir(&runtime).unwrap();
+    fs::create_dir(&non_git).unwrap();
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("demo")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .current_dir(&non_git)
+        .env("TMPDIR", &runtime)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let mut stderr = BufReader::new(child.0.stderr.take().unwrap());
+    let mut first_line = String::new();
+    stderr.read_line(&mut first_line).unwrap();
+    let url = first_line
+        .trim_end()
+        .strip_prefix("StrataDiff Review Resume Workbench: http://")
+        .unwrap();
+    let (address, _) = url.split_once("/?token=").unwrap();
+
+    let address: SocketAddr = address.parse().unwrap();
+    let mut stalled = TcpStream::connect_timeout(&address, Duration::from_secs(5)).unwrap();
+    stalled.write_all(b"GET / HTTP/1.1\r\nHost:").unwrap();
+
+    let signal_result = unsafe { libc::kill(child.0.id() as i32, signal) };
+    assert_eq!(signal_result, 0);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "offline demo did not bound graceful shutdown"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "offline demo exited with {status}");
+    assert_eq!(fs::read_dir(&runtime).unwrap().count(), 0);
+}
+
 fn get(address: &str, path: &str) -> String {
     get_with_host(address, path, address)
 }

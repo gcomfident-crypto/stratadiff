@@ -700,6 +700,7 @@ if [[ "${subcommand}" == demo ]]; then
   demo_temporary_parent="$(cd -P -- "${TMPDIR:-/tmp}" && pwd -P)" || die \
     "temporary directory parent is unavailable: ${TMPDIR:-/tmp}"
   demo_temporary_directory="$(mktemp -d "${demo_temporary_parent}/gh-stratadiff-demo-XXXXXX")"
+  demo_child_pid=
   cleanup_demo() {
     local cleanup_status=$?
     local expected_prefix=${demo_temporary_parent}/gh-stratadiff-demo-
@@ -715,17 +716,33 @@ if [[ "${subcommand}" == demo ]]; then
     fi
     exit "${cleanup_status}"
   }
+  stop_demo() {
+    local signal=$1
+    local exit_status=$2
+    trap - HUP INT TERM
+    if [[ -n "${demo_child_pid}" ]] && kill -0 "${demo_child_pid}" 2>/dev/null; then
+      kill -s "${signal}" "${demo_child_pid}" 2>/dev/null || true
+      wait "${demo_child_pid}" || true
+    fi
+    exit "${exit_status}"
+  }
   trap cleanup_demo EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
+  trap 'stop_demo HUP 129' HUP
+  trap 'stop_demo INT 130' INT
+  trap 'stop_demo TERM 143' TERM
   demo_arguments=(demo --port "${port}")
   if [[ "${no_open}" == true ]]; then
     demo_arguments+=(--no-open)
   fi
   "${viewer_environment[@]}" TMPDIR="${demo_temporary_directory}" \
-    "${stratadiff}" "${demo_arguments[@]}"
-  exit 0
+    "${stratadiff}" "${demo_arguments[@]}" &
+  demo_child_pid=$!
+  set +e
+  wait "${demo_child_pid}"
+  demo_status=$?
+  set -e
+  demo_child_pid=
+  exit "${demo_status}"
 fi
 
 require_command gh

@@ -14,6 +14,11 @@ command -v cargo-about >/dev/null 2>&1 || {
 }
 
 cd -- "${stratadiff_repository_root}"
-exec cargo about generate --locked --fail \
+cargo about generate --locked --fail \
   --output-file THIRD_PARTY_NOTICES.txt \
   about.hbs
+
+if grep -Fq '<copyright holders>' THIRD_PARTY_NOTICES.txt; then
+  echo "THIRD_PARTY_NOTICES.txt contains an unresolved copyright placeholder" >&2
+  exit 1
+fi

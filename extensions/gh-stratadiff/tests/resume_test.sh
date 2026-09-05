@@ -348,6 +348,40 @@ assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'CALLER_SECRET='
 assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'STRATADIFF_EXTENSION_TEST_LOG='
 assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GH_STUB_STATE='
 
+demo_signal_case=${temporary_directory}/demo-signal
+mkdir -p "${demo_signal_case}/home" "${demo_signal_case}/non-git" "${demo_signal_case}/tmp"
+: > "${demo_signal_case}/home/demo-wait"
+(
+  cd -- "${demo_signal_case}/non-git"
+  exec env \
+    PATH="${stubs}:${PATH}" \
+    HOME="${demo_signal_case}/home" \
+    TMPDIR="${demo_signal_case}/tmp" \
+    STRATADIFF_BIN=stratadiff \
+    bash "${extension_directory}/gh-stratadiff" demo --port 0 --no-open
+) > "${demo_signal_case}/output.txt" 2>&1 &
+demo_wrapper_pid=$!
+demo_ready_deadline=$((SECONDS + 10))
+while [[ ! -f "${demo_signal_case}/home/demo-ready" ]]; do
+  [[ "${SECONDS}" -lt "${demo_ready_deadline}" ]] || {
+    printf 'demo wrapper child did not become ready\n' >&2
+    kill -KILL "${demo_wrapper_pid}" 2>/dev/null || true
+    exit 1
+  }
+  sleep 1
+done
+kill -TERM "${demo_wrapper_pid}"
+set +e
+wait "${demo_wrapper_pid}"
+demo_signal_status=$?
+set -e
+[[ "${demo_signal_status}" -eq 143 ]]
+[[ "$(< "${demo_signal_case}/home/demo-signal.txt")" == TERM ]]
+if compgen -G "${demo_signal_case}/tmp/gh-stratadiff-demo-*" >/dev/null; then
+  printf 'temporary demo directory remained after signaling the wrapper\n' >&2
+  exit 1
+fi
+
 run_audit audit-default
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_OUTPUT}" '# Review Memory Audit'

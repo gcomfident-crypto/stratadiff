@@ -19,3 +19,89 @@ targets = [
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
 ]
+
+# These packages declare MIT but omit the license file from their crate archive.
+# Pin each clarification to the exact upstream revision recorded by Cargo.
+[tree-sitter-cpp.clarify]
+license = "MIT"
+[[tree-sitter-cpp.clarify.git]]
+path = "LICENSE"
+checksum = "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1"
+
+[tree-sitter-haskell.clarify]
+license = "MIT"
+[[tree-sitter-haskell.clarify.git]]
+path = "LICENSE"
+checksum = "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1"
+
+[tree-sitter-html.clarify]
+license = "MIT"
+[[tree-sitter-html.clarify.git]]
+path = "LICENSE"
+checksum = "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1"
+
+[tree-sitter-java.clarify]
+license = "MIT"
+[[tree-sitter-java.clarify.git]]
+path = "LICENSE"
+checksum = "52ed137b039cd9c46409bc22e89938af911c95b157feae2d040b51e6084369a7"
+
+[tree-sitter-json.clarify]
+license = "MIT"
+[[tree-sitter-json.clarify.git]]
+path = "LICENSE"
+checksum = "2e0110e07abef7c2548b26ec9d6969775617ca539a0dc8dbeeb14d6452c711d1"
+
+[tree-sitter-kotlin-ng.clarify]
+license = "MIT"
+[[tree-sitter-kotlin-ng.clarify.git]]
+path = "LICENSE"
+checksum = "0eea8dc45e89deeb03c7799bbbc7b4688f365fb274562f4540ecfebdea82e727"
+
+[tree-sitter-lua.clarify]
+license = "MIT"
+[[tree-sitter-lua.clarify.git]]
+path = "LICENSE.md"
+checksum = "9a32b02e4c917b1ce6b5e79d8ea81e25cefd7f27d89c7235f2afb262c06cf32e"
+
+[tree-sitter-md.clarify]
+license = "MIT"
+[[tree-sitter-md.clarify.git]]
+path = "LICENSE"
+checksum = "52ec8a1bf8256511e2a92613e0bb41ffefba3897f16fa958d7bb28c466dd4804"
+
+[tree-sitter-ruby.clarify]
+license = "MIT"
+[[tree-sitter-ruby.clarify.git]]
+path = "LICENSE"
+checksum = "ee006f02a3d856df282e409be2a86e24a65bb573a98b9c28343771141351bb6b"
+
+[tree-sitter-toml-ng.clarify]
+license = "MIT"
+[[tree-sitter-toml-ng.clarify.git]]
+path = "LICENSE"
+checksum = "b727eee929bee836e8102cecf749a795b199f291b58c885bcd81cae727ac5a46"
+
+[tree-sitter-typescript.clarify]
+license = "MIT"
+[[tree-sitter-typescript.clarify.git]]
+path = "LICENSE"
+checksum = "49bf33cf78ef5897e4e161ce1517df7de1ae5042a65b6bcfd44401e0fc606559"
+
+[tree-sitter-zig.clarify]
+license = "MIT"
+[[tree-sitter-zig.clarify.git]]
+path = "LICENSE"
+checksum = "0eea8dc45e89deeb03c7799bbbc7b4688f365fb274562f4540ecfebdea82e727"
+
+[stratadiff-core.clarify]
+license = "MIT"
+[[stratadiff-core.clarify.files]]
+path = "../../LICENSE"
+checksum = "7cc488d1457fc214890b3f556e26c137c05def786c4762176247b44c530cfda0"
+
+[stratadiff-verifier.clarify]
+license = "MIT"
+[[stratadiff-verifier.clarify.files]]
+path = "../../LICENSE"
+checksum = "7cc488d1457fc214890b3f556e26c137c05def786c4762176247b44c530cfda0"

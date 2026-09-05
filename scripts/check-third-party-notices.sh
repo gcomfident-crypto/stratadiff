@@ -20,3 +20,8 @@ cargo about generate --locked --fail \
   --output-file "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.txt" \
   about.hbs
 cmp THIRD_PARTY_NOTICES.txt "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.txt"
+
+if grep -Fq '<copyright holders>' THIRD_PARTY_NOTICES.txt; then
+  echo "THIRD_PARTY_NOTICES.txt contains an unresolved copyright placeholder" >&2
+  exit 1
+fi
