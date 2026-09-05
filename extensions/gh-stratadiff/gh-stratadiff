@@ -574,7 +574,7 @@ for environment_name in \
   LC_MEASUREMENT LC_MESSAGES LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER \
   LC_TELEPHONE LC_TIME
 do
-  if [[ -v "${environment_name}" ]]; then
+  if [[ -n "${!environment_name+x}" ]]; then
     viewer_environment+=("${environment_name}=${!environment_name}")
   fi
 done
