@@ -309,21 +309,22 @@ fn serve_content(
             .with_state(state)
             .layer(middleware::from_fn(security_headers));
 
+        let shutdown_signal = wait_for_shutdown_signal()?;
+        let (shutdown_started, mut shutdown_received) = tokio::sync::oneshot::channel();
+        let shutdown = async move {
+            let _ = shutdown_started.send(shutdown_signal.await);
+        };
+        let server = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .into_future();
+        tokio::pin!(server);
+
         eprintln!("{label}: {url}");
         eprintln!("Press Ctrl+C to stop the local server.");
         if open_browser && let Err(error) = launch_browser(&url) {
             eprintln!("Could not open the browser automatically: {error:#}");
             eprintln!("Open this URL manually: {url}");
         }
-
-        let (shutdown_started, mut shutdown_received) = tokio::sync::oneshot::channel();
-        let shutdown = async move {
-            let _ = shutdown_started.send(wait_for_shutdown_signal().await);
-        };
-        let server = axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown)
-            .into_future();
-        tokio::pin!(server);
 
         tokio::select! {
             result = &mut server => result.context("local viewer server failed"),
@@ -342,29 +343,49 @@ fn serve_content(
 }
 
 #[cfg(unix)]
-async fn wait_for_shutdown_signal() -> Result<()> {
+fn wait_for_shutdown_signal() -> Result<impl std::future::Future<Output = Result<()>>> {
     use tokio::signal::unix::{SignalKind, signal};
 
+    let mut interrupt = signal(SignalKind::interrupt()).context("failed to listen for SIGINT")?;
     let mut terminate = signal(SignalKind::terminate()).context("failed to listen for SIGTERM")?;
     let mut hangup = signal(SignalKind::hangup()).context("failed to listen for SIGHUP")?;
-    tokio::select! {
-        result = tokio::signal::ctrl_c() => result.context("failed to listen for Ctrl+C"),
-        received = terminate.recv() => {
-            ensure!(received.is_some(), "SIGTERM listener closed unexpectedly");
-            Ok(())
+    Ok(async move {
+        tokio::select! {
+            received = interrupt.recv() => {
+                ensure!(received.is_some(), "SIGINT listener closed unexpectedly");
+                Ok(())
+            }
+            received = terminate.recv() => {
+                ensure!(received.is_some(), "SIGTERM listener closed unexpectedly");
+                Ok(())
+            }
+            received = hangup.recv() => {
+                ensure!(received.is_some(), "SIGHUP listener closed unexpectedly");
+                Ok(())
+            }
         }
-        received = hangup.recv() => {
-            ensure!(received.is_some(), "SIGHUP listener closed unexpectedly");
-            Ok(())
-        }
-    }
+    })
 }
 
-#[cfg(not(unix))]
-async fn wait_for_shutdown_signal() -> Result<()> {
-    tokio::signal::ctrl_c()
-        .await
-        .context("failed to listen for Ctrl+C")
+#[cfg(windows)]
+fn wait_for_shutdown_signal() -> Result<impl std::future::Future<Output = Result<()>>> {
+    let mut interrupt = tokio::signal::windows::ctrl_c().context("failed to listen for Ctrl+C")?;
+    Ok(async move {
+        ensure!(
+            interrupt.recv().await.is_some(),
+            "Ctrl+C listener closed unexpectedly"
+        );
+        Ok(())
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn wait_for_shutdown_signal() -> Result<impl std::future::Future<Output = Result<()>>> {
+    Ok(async {
+        tokio::signal::ctrl_c()
+            .await
+            .context("failed to listen for Ctrl+C")
+    })
 }
 
 async fn session(
