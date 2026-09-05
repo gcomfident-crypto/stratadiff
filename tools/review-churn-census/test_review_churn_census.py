@@ -1559,6 +1559,12 @@ class InboxTest(unittest.TestCase):
         )
         self.assertNotIn("No exact review resume is currently required", rendered)
 
+    def test_empty_markdown_inbox_offers_the_offline_demo(self):
+        report = self.build_report([])
+        rendered = census.render_review_inbox_markdown(report)
+        self.assertIn("No eligible review currently needs Resume.", rendered)
+        self.assertIn("Try: gh stratadiff demo", rendered)
+
     def test_public_metadata_seed_matches_product_classification(self):
         oracle_path = (
             Path(__file__).resolve().parents[2]

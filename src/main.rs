@@ -51,6 +51,7 @@ use stratadiff::{
     verify_and_replay_report_bytes, verify_report_bytes,
 };
 
+mod demo;
 mod viewer;
 
 const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
@@ -77,6 +78,15 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Open a deterministic offline Review Resume scenario.
+    Demo {
+        /// Loopback port to listen on. Zero asks the operating system to choose one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the workbench URL without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
     /// Print machine-readable provenance for this exact executable.
     BuildInfo,
     /// Resolve one reviewer's latest completed GitHub review to a commit checkpoint.
@@ -387,6 +397,7 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::Demo { port, no_open } => demo::run(port, no_open)?,
         Command::BuildInfo => {
             let mut stdout = std::io::stdout().lock();
             serde_json::to_writer(&mut stdout, &embedded_build_info())?;

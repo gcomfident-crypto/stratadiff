@@ -2021,7 +2021,13 @@ def render_review_inbox_markdown(report: dict[str, object]) -> str:
                 "The available evidence cannot establish that every review is current; no verified Resume action can be generated."
             )
         else:
-            lines.append("No exact review resume is currently required.")
+            lines.extend(
+                [
+                    "No eligible review currently needs Resume.",
+                    "",
+                    "Try: gh stratadiff demo",
+                ]
+            )
     else:
         lines.extend(
             [

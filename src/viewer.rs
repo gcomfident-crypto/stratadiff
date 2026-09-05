@@ -312,7 +312,13 @@ fn serve_content(
             eprintln!("Open this URL manually: {url}");
         }
 
+        let shutdown = async {
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                eprintln!("Could not listen for Ctrl+C; stopping the local server: {error}");
+            }
+        };
         axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
             .await
             .context("local viewer server failed")
     })
