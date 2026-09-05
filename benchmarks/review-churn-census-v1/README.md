@@ -10,12 +10,53 @@ question:
 This is not an outcome-naive preregistration or an independent confirmatory study. Two convenience
 probes and four semantic cases informed the metrics and thresholds before this plan was frozen.
 The complete disclosure is machine-readable in [`sampling-plan.json`](sampling-plan.json) and
-summarized below. The full v1 PR sample is still prospectively selected by a frozen hash rank; its
-selection may nevertheless overlap previously inspected public PRs.
+summarized below. The v1 PR sample was prospectively selected by the frozen hash rank; its selection
+may nevertheless overlap previously inspected public PRs.
 
 The census can screen which product hypothesis deserves a human experiment. It cannot demonstrate
 reviewer time saved, issue recall, safe carry, willingness to pay, market size, or product-market
-fit.
+fit. The frozen v1 collection completed on **2026-09-05** with all 500 selected PRs and zero
+capture failures. The result artifacts are checked in beside this card.
+
+## Observed result and product decision
+
+All global gates passed: 500/500 selected PRs were captured across all ten repositories, 403 had a
+completed external-peer review, and 488/490 completed PR-by-reviewer pairs exposed both checkpoint
+and final-head OIDs. The primary pooled descriptive results are:
+
+| Metric | Observation | Wilson 95% interval |
+|---|---:|---:|
+| Formally peer-reviewed PRs | 426/500 (85.20%) | 81.81–88.05% |
+| PRs with a completed peer review | 403/500 (80.60%) | 76.90–83.83% |
+| Comparable reviewer checkpoints that differ from final head | 88/488 (18.03%) | 14.87–21.69% |
+| Completed pairs with an observed later force-push | 43/490 (8.78%) | 6.58–11.62% |
+| Drift without an observed force-push after the latest checkpoint | 59/488 (12.09%) | 9.48–15.29% |
+| Fully comparable reviewed PRs stranding at least one reviewer | 74/401 (18.45%) | 14.96–22.55% |
+| Completed PRs with reviews on multiple commit OIDs | 55/403 (13.65%) | 10.63–17.35% |
+| Same-reviewer completed re-review after an observed force-push | 8/43 (18.60%) | 9.74–32.62% |
+| Bot review sessions among external-peer User plus Bot sessions | 533/1,455 (36.63%) | 34.19–39.15% |
+
+The three frozen screening decisions did not validate the original broad acquisition thesis:
+
+| Signal | Frozen threshold | Result |
+|---|---:|---|
+| `force_push_wedge` | 10% | **Inconclusive**: 8.78%, interval 6.58–11.62% |
+| `all_round_review_continuity` | 20% | **Fail**: 12.09%, upper bound 15.29% |
+| `commented_partial_attention` | 15% | **Fail**: 1.43%, upper bound 2.94% |
+
+The decision is therefore not to market Review Resume as a universal, high-frequency GitHub pain
+or to add implicit checkpoint semantics for `COMMENTED`. The evidence supports a narrower next
+step: a zero-admin resume workflow for reviewers already encountering checkpoint drift, initially
+recruited from rewrite-heavy repositories, followed by the preregistered human experiment on time
+and issue recall. Per-repository post-force-push estimates exceed 20% in four panel repositories,
+but those are small, purposefully selected strata and are a design-partner hypothesis rather than
+a post-hoc validated segment. Team policy and hosted infrastructure remain expansion work only if
+the human experiment demonstrates value.
+
+These conclusions describe this fixed panel and period. In particular, the 36.63% Bot-session
+share does not identify AI reviews, review quality, duplicated findings, or displaced human work.
+The complete 13-metric result and every repository breakdown are in
+[`aggregate.json`](aggregate.json).
 
 ## Evidence seen before the freeze
 
@@ -228,6 +269,17 @@ python3 tools/review-churn-census/review_churn_census.py verify \
   --capture /tmp/review-churn-capture.json \
   --manifest /tmp/review-churn-manifest.json \
   --aggregate /tmp/review-churn-aggregate.json
+```
+
+The checked-in result can be verified without network access:
+
+```console
+python3 -B tools/review-churn-census/review_churn_census.py verify \
+  --sample benchmarks/review-churn-census-v1/sample.json \
+  --capture benchmarks/review-churn-census-v1/capture.json \
+  --manifest benchmarks/review-churn-census-v1/manifest.json \
+  --aggregate benchmarks/review-churn-census-v1/aggregate.json
+(cd benchmarks/review-churn-census-v1 && sha256sum -c SHA256SUMS)
 ```
 
 Do not publish a partial capture as an observed result. A post-freeze change requires a versioned

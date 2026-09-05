@@ -36,6 +36,10 @@ only a validated prefix for the exact sample and continues with the first missin
 logins are used only in memory and are replaced before persistence with PR-local opaque keys;
 titles, review bodies, source code, and credentials are never collected.
 
+The completed public v1 artifacts, observed metrics, signal decisions, and claim boundary are in
+[`../../benchmarks/review-churn-census-v1/`](../../benchmarks/review-churn-census-v1/). They can be
+verified offline with the same `verify` command by passing the four checked-in artifact paths.
+
 ## Frozen protocol
 
 - Half-open merge window: `2026-06-03T00:00:00Z` to `2026-09-01T00:00:00Z`.

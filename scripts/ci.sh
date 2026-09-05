@@ -23,6 +23,12 @@ python3 -B tools/reviewer-value-v1/reviewer_value_v1.py verify
 bash extensions/gh-stratadiff/tests/resume_test.sh
 python3 -B tools/reviewer-study-v1/reviewer_study_v1.py self-test
 python3 -B -m unittest discover -s tools/review-churn-census -p 'test_*.py' -q
+python3 -B tools/review-churn-census/review_churn_census.py verify \
+  --sample benchmarks/review-churn-census-v1/sample.json \
+  --capture benchmarks/review-churn-census-v1/capture.json \
+  --manifest benchmarks/review-churn-census-v1/manifest.json \
+  --aggregate benchmarks/review-churn-census-v1/aggregate.json
+(cd benchmarks/review-churn-census-v1 && sha256sum -c SHA256SUMS)
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

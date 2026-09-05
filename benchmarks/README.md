@@ -8,10 +8,18 @@ PR-by-reviewer metrics separate completed review checkpoints, observed post-revi
 latest-checkpoint head drift, dismissed reviews, COMMENTED-only attention, and same-reviewer
 re-review. The companion collector persists no GitHub login and can resume an interrupted capture.
 
-This panel can screen which Review Resume hypothesis deserves a human experiment. It is not a
-GitHub-wide prevalence estimate and cannot establish time savings, defect recall, semantic safety,
-willingness to pay, or product-market fit. See the dataset card for the disclosed pilot evidence,
-frozen thresholds, missing-data policy, and exact reproduction commands.
+The completed capture contains all 500 selected PRs with zero failures. Among 488 comparable
+completed PR-by-reviewer checkpoints, 88 (18.03%) differed from the final head; 74/401 fully
+comparable reviewed PRs (18.45%) stranded at least one reviewer. The frozen force-push signal was
+inconclusive at 43/490 pairs (8.78%, Wilson 95% interval 6.58–11.62%), while the broader
+no-observed-force-push and COMMENTED-candidate thresholds failed. The result narrows the next step
+to an opt-in experiment with rewrite-heavy reviewers rather than supporting a universal product
+claim.
+
+This panel is not a GitHub-wide prevalence estimate and cannot establish time savings, defect
+recall, semantic safety, willingness to pay, or product-market fit. See the dataset card for the
+complete 13-metric result, per-repository estimates, disclosed pilot evidence, frozen thresholds,
+missing-data policy, and exact offline verification commands.
 
 ## Rebase-aware review-delta contract
 

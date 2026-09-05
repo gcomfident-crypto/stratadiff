@@ -1,0 +1,1453 @@
+{
+  "claim_boundary": {
+    "causal_product_effects_supported": false,
+    "github_population_estimates_supported": false,
+    "independent_confirmatory_test_supported": false,
+    "interpretation": "Results describe only the fixed, pilot-informed repository panel, 90-day period, provider-visible formal review objects, and frozen definitions. A missing force-push event means only not observed in the captured timeline; it does not prove an ordinary append-only push.",
+    "issue_recall_or_semantic_safety_supported": false,
+    "market_size_estimates_supported": false,
+    "ordinary_push_identification_supported": false,
+    "panel_period_descriptive_estimates_supported": true,
+    "reviewer_time_savings_supported": false,
+    "willingness_to_pay_supported": false
+  },
+  "collection": {
+    "capture_failures": 0,
+    "captured_at": "2026-09-05T12:22:50Z",
+    "classified_pull_requests": 500,
+    "selected_pull_requests": 500,
+    "status": "complete"
+  },
+  "dataset_version": "1.0.0",
+  "gates": {
+    "all_global_gates_passed": true,
+    "capture_failures_within_limit": true,
+    "checkpoint_oid_observability_basis_points": 9959,
+    "collection_complete": true,
+    "maximum_capture_failures": 0,
+    "minimum_checkpoint_oid_observability_met": true,
+    "minimum_completed_reviewed_pull_requests_met": true,
+    "minimum_repositories_at_target_met": true,
+    "minimum_sampled_pull_requests_met": true,
+    "repositories_at_target": 10,
+    "required_checkpoint_oid_observability_basis_points": 9000,
+    "required_completed_reviewed_pull_requests": 200,
+    "required_repositories_at_target": 8,
+    "required_sampled_pull_requests": 400
+  },
+  "generated_at": "2026-09-05T12:34:00Z",
+  "manifest_sha256": "d3cd40040523d5f8ee024efc6f4318937f056665ac714010188e29be76f536c6",
+  "metrics": [
+    {
+      "basis_points": 8520,
+      "by_repository": [
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 7400,
+          "denominator": 50,
+          "numerator": 37,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 6044,
+          "wilson_95_upper_basis_points": 8413
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 7400,
+          "denominator": 50,
+          "numerator": 37,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 6044,
+          "wilson_95_upper_basis_points": 8413
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 5000,
+          "denominator": 50,
+          "numerator": 25,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3664,
+          "wilson_95_upper_basis_points": 6336
+        },
+        {
+          "basis_points": 5400,
+          "denominator": 50,
+          "numerator": 27,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 4039,
+          "wilson_95_upper_basis_points": 6704
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        }
+      ],
+      "denominator": 500,
+      "id": "formal_peer_reviewed_pr_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 426,
+      "repository_median_basis_points": 10000,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 8181,
+      "wilson_95_upper_basis_points": 8805
+    },
+    {
+      "basis_points": 8060,
+      "by_repository": [
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 7400,
+          "denominator": 50,
+          "numerator": 37,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 6044,
+          "wilson_95_upper_basis_points": 8413
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 4400,
+          "denominator": 50,
+          "numerator": 22,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3116,
+          "wilson_95_upper_basis_points": 5770
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 5000,
+          "denominator": 50,
+          "numerator": 25,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3664,
+          "wilson_95_upper_basis_points": 6336
+        },
+        {
+          "basis_points": 3800,
+          "denominator": 50,
+          "numerator": 19,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2586,
+          "wilson_95_upper_basis_points": 5185
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 50,
+          "numerator": 50,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9286,
+          "wilson_95_upper_basis_points": 10000
+        }
+      ],
+      "denominator": 500,
+      "id": "completed_review_pr_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 403,
+      "repository_median_basis_points": 10000,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 7690,
+      "wilson_95_upper_basis_points": 8383
+    },
+    {
+      "basis_points": 9959,
+      "by_repository": [
+        {
+          "basis_points": 10000,
+          "denominator": 71,
+          "numerator": 71,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9486,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 44,
+          "numerator": 44,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9197,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 58,
+          "numerator": 58,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9378,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 61,
+          "numerator": 61,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9407,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 58,
+          "numerator": 58,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9378,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 22,
+          "numerator": 22,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 8513,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 76,
+          "numerator": 76,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9518,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 9643,
+          "denominator": 28,
+          "numerator": 27,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 8228,
+          "wilson_95_upper_basis_points": 9937
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 19,
+          "numerator": 19,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 8318,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 9811,
+          "denominator": 53,
+          "numerator": 52,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9005,
+          "wilson_95_upper_basis_points": 9967
+        }
+      ],
+      "denominator": 490,
+      "id": "checkpoint_oid_observability_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 488,
+      "repository_median_basis_points": 10000,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 9852,
+      "wilson_95_upper_basis_points": 9989
+    },
+    {
+      "basis_points": 1803,
+      "by_repository": [
+        {
+          "basis_points": 1127,
+          "denominator": 71,
+          "numerator": 8,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 582,
+          "wilson_95_upper_basis_points": 2070
+        },
+        {
+          "basis_points": 4091,
+          "denominator": 44,
+          "numerator": 18,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2768,
+          "wilson_95_upper_basis_points": 5560
+        },
+        {
+          "basis_points": 1207,
+          "denominator": 58,
+          "numerator": 7,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 597,
+          "wilson_95_upper_basis_points": 2288
+        },
+        {
+          "basis_points": 820,
+          "denominator": 61,
+          "numerator": 5,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 355,
+          "wilson_95_upper_basis_points": 1780
+        },
+        {
+          "basis_points": 690,
+          "denominator": 58,
+          "numerator": 4,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 271,
+          "wilson_95_upper_basis_points": 1644
+        },
+        {
+          "basis_points": 1818,
+          "denominator": 22,
+          "numerator": 4,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 730,
+          "wilson_95_upper_basis_points": 3852
+        },
+        {
+          "basis_points": 1579,
+          "denominator": 76,
+          "numerator": 12,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 926,
+          "wilson_95_upper_basis_points": 2561
+        },
+        {
+          "basis_points": 3704,
+          "denominator": 27,
+          "numerator": 10,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2153,
+          "wilson_95_upper_basis_points": 5578
+        },
+        {
+          "basis_points": 3158,
+          "denominator": 19,
+          "numerator": 6,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1536,
+          "wilson_95_upper_basis_points": 5399
+        },
+        {
+          "basis_points": 2692,
+          "denominator": 52,
+          "numerator": 14,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1676,
+          "wilson_95_upper_basis_points": 4026
+        }
+      ],
+      "denominator": 488,
+      "id": "checkpoint_pair_head_drift_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 88,
+      "repository_median_basis_points": 1699,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 1487,
+      "wilson_95_upper_basis_points": 2169
+    },
+    {
+      "basis_points": 878,
+      "by_repository": [
+        {
+          "basis_points": 0,
+          "denominator": 71,
+          "numerator": 0,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 514
+        },
+        {
+          "basis_points": 455,
+          "denominator": 44,
+          "numerator": 2,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 125,
+          "wilson_95_upper_basis_points": 1514
+        },
+        {
+          "basis_points": 517,
+          "denominator": 58,
+          "numerator": 3,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 177,
+          "wilson_95_upper_basis_points": 1414
+        },
+        {
+          "basis_points": 164,
+          "denominator": 61,
+          "numerator": 1,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 28,
+          "wilson_95_upper_basis_points": 872
+        },
+        {
+          "basis_points": 517,
+          "denominator": 58,
+          "numerator": 3,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 177,
+          "wilson_95_upper_basis_points": 1414
+        },
+        {
+          "basis_points": 2273,
+          "denominator": 22,
+          "numerator": 5,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1012,
+          "wilson_95_upper_basis_points": 4344
+        },
+        {
+          "basis_points": 263,
+          "denominator": 76,
+          "numerator": 2,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 72,
+          "wilson_95_upper_basis_points": 910
+        },
+        {
+          "basis_points": 2143,
+          "denominator": 28,
+          "numerator": 6,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1021,
+          "wilson_95_upper_basis_points": 3954
+        },
+        {
+          "basis_points": 5263,
+          "denominator": 19,
+          "numerator": 10,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3170,
+          "wilson_95_upper_basis_points": 7268
+        },
+        {
+          "basis_points": 2075,
+          "denominator": 53,
+          "numerator": 11,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1200,
+          "wilson_95_upper_basis_points": 3346
+        }
+      ],
+      "denominator": 490,
+      "id": "completed_review_pair_post_force_push_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 43,
+      "repository_median_basis_points": 517,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 658,
+      "wilson_95_upper_basis_points": 1162
+    },
+    {
+      "basis_points": 1209,
+      "by_repository": [
+        {
+          "basis_points": 1127,
+          "denominator": 71,
+          "numerator": 8,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 582,
+          "wilson_95_upper_basis_points": 2070
+        },
+        {
+          "basis_points": 3636,
+          "denominator": 44,
+          "numerator": 16,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2378,
+          "wilson_95_upper_basis_points": 5114
+        },
+        {
+          "basis_points": 690,
+          "denominator": 58,
+          "numerator": 4,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 271,
+          "wilson_95_upper_basis_points": 1644
+        },
+        {
+          "basis_points": 820,
+          "denominator": 61,
+          "numerator": 5,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 355,
+          "wilson_95_upper_basis_points": 1780
+        },
+        {
+          "basis_points": 517,
+          "denominator": 58,
+          "numerator": 3,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 177,
+          "wilson_95_upper_basis_points": 1414
+        },
+        {
+          "basis_points": 0,
+          "denominator": 22,
+          "numerator": 0,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1487
+        },
+        {
+          "basis_points": 1447,
+          "denominator": 76,
+          "numerator": 11,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 827,
+          "wilson_95_upper_basis_points": 2409
+        },
+        {
+          "basis_points": 2222,
+          "denominator": 27,
+          "numerator": 6,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1060,
+          "wilson_95_upper_basis_points": 4076
+        },
+        {
+          "basis_points": 0,
+          "denominator": 19,
+          "numerator": 0,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1682
+        },
+        {
+          "basis_points": 1154,
+          "denominator": 52,
+          "numerator": 6,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 539,
+          "wilson_95_upper_basis_points": 2298
+        }
+      ],
+      "denominator": 488,
+      "id": "checkpoint_pair_drift_without_observed_force_push_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 59,
+      "repository_median_basis_points": 974,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 948,
+      "wilson_95_upper_basis_points": 1529
+    },
+    {
+      "basis_points": 1845,
+      "by_repository": [
+        {
+          "basis_points": 1400,
+          "denominator": 50,
+          "numerator": 7,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 695,
+          "wilson_95_upper_basis_points": 2619
+        },
+        {
+          "basis_points": 4054,
+          "denominator": 37,
+          "numerator": 15,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2634,
+          "wilson_95_upper_basis_points": 5652
+        },
+        {
+          "basis_points": 1200,
+          "denominator": 50,
+          "numerator": 6,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 561,
+          "wilson_95_upper_basis_points": 2381
+        },
+        {
+          "basis_points": 800,
+          "denominator": 50,
+          "numerator": 4,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 315,
+          "wilson_95_upper_basis_points": 1884
+        },
+        {
+          "basis_points": 800,
+          "denominator": 50,
+          "numerator": 4,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 315,
+          "wilson_95_upper_basis_points": 1884
+        },
+        {
+          "basis_points": 1818,
+          "denominator": 22,
+          "numerator": 4,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 730,
+          "wilson_95_upper_basis_points": 3852
+        },
+        {
+          "basis_points": 1600,
+          "denominator": 50,
+          "numerator": 8,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 833,
+          "wilson_95_upper_basis_points": 2852
+        },
+        {
+          "basis_points": 3333,
+          "denominator": 24,
+          "numerator": 8,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1797,
+          "wilson_95_upper_basis_points": 5330
+        },
+        {
+          "basis_points": 3158,
+          "denominator": 19,
+          "numerator": 6,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1536,
+          "wilson_95_upper_basis_points": 5399
+        },
+        {
+          "basis_points": 2449,
+          "denominator": 49,
+          "numerator": 12,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1460,
+          "wilson_95_upper_basis_points": 3809
+        }
+      ],
+      "denominator": 401,
+      "id": "stranded_reviewer_pr_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 74,
+      "repository_median_basis_points": 1709,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 1496,
+      "wilson_95_upper_basis_points": 2255
+    },
+    {
+      "basis_points": 1365,
+      "by_repository": [
+        {
+          "basis_points": 2800,
+          "denominator": 50,
+          "numerator": 14,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1747,
+          "wilson_95_upper_basis_points": 4167
+        },
+        {
+          "basis_points": 1351,
+          "denominator": 37,
+          "numerator": 5,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 591,
+          "wilson_95_upper_basis_points": 2798
+        },
+        {
+          "basis_points": 200,
+          "denominator": 50,
+          "numerator": 1,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 35,
+          "wilson_95_upper_basis_points": 1050
+        },
+        {
+          "basis_points": 1800,
+          "denominator": 50,
+          "numerator": 9,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 977,
+          "wilson_95_upper_basis_points": 3080
+        },
+        {
+          "basis_points": 2200,
+          "denominator": 50,
+          "numerator": 11,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1275,
+          "wilson_95_upper_basis_points": 3525
+        },
+        {
+          "basis_points": 455,
+          "denominator": 22,
+          "numerator": 1,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 80,
+          "wilson_95_upper_basis_points": 2180
+        },
+        {
+          "basis_points": 1600,
+          "denominator": 50,
+          "numerator": 8,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 833,
+          "wilson_95_upper_basis_points": 2852
+        },
+        {
+          "basis_points": 400,
+          "denominator": 25,
+          "numerator": 1,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 70,
+          "wilson_95_upper_basis_points": 1955
+        },
+        {
+          "basis_points": 1579,
+          "denominator": 19,
+          "numerator": 3,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 552,
+          "wilson_95_upper_basis_points": 3757
+        },
+        {
+          "basis_points": 400,
+          "denominator": 50,
+          "numerator": 2,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 110,
+          "wilson_95_upper_basis_points": 1347
+        }
+      ],
+      "denominator": 403,
+      "id": "multi_round_completed_review_pr_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 55,
+      "repository_median_basis_points": 1465,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 1063,
+      "wilson_95_upper_basis_points": 1735
+    },
+    {
+      "basis_points": 347,
+      "by_repository": [
+        {
+          "basis_points": 0,
+          "denominator": 50,
+          "numerator": 0,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 714
+        },
+        {
+          "basis_points": 0,
+          "denominator": 37,
+          "numerator": 0,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 941
+        },
+        {
+          "basis_points": 0,
+          "denominator": 50,
+          "numerator": 0,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 714
+        },
+        {
+          "basis_points": 800,
+          "denominator": 50,
+          "numerator": 4,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 315,
+          "wilson_95_upper_basis_points": 1884
+        },
+        {
+          "basis_points": 600,
+          "denominator": 50,
+          "numerator": 3,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 206,
+          "wilson_95_upper_basis_points": 1622
+        },
+        {
+          "basis_points": 0,
+          "denominator": 22,
+          "numerator": 0,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1487
+        },
+        {
+          "basis_points": 1400,
+          "denominator": 50,
+          "numerator": 7,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 695,
+          "wilson_95_upper_basis_points": 2619
+        },
+        {
+          "basis_points": 0,
+          "denominator": 25,
+          "numerator": 0,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1332
+        },
+        {
+          "basis_points": 0,
+          "denominator": 19,
+          "numerator": 0,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1682
+        },
+        {
+          "basis_points": 0,
+          "denominator": 50,
+          "numerator": 0,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 714
+        }
+      ],
+      "denominator": 403,
+      "id": "completed_review_dismissal_pr_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 14,
+      "repository_median_basis_points": 0,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 208,
+      "wilson_95_upper_basis_points": 575
+    },
+    {
+      "basis_points": 1681,
+      "by_repository": [
+        {
+          "basis_points": 1744,
+          "denominator": 86,
+          "numerator": 15,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1086,
+          "wilson_95_upper_basis_points": 2681
+        },
+        {
+          "basis_points": 1373,
+          "denominator": 51,
+          "numerator": 7,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 681,
+          "wilson_95_upper_basis_points": 2573
+        },
+        {
+          "basis_points": 0,
+          "denominator": 58,
+          "numerator": 0,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 622
+        },
+        {
+          "basis_points": 1029,
+          "denominator": 68,
+          "numerator": 7,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 507,
+          "wilson_95_upper_basis_points": 1976
+        },
+        {
+          "basis_points": 0,
+          "denominator": 58,
+          "numerator": 0,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 622
+        },
+        {
+          "basis_points": 6615,
+          "denominator": 65,
+          "numerator": 43,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 5403,
+          "wilson_95_upper_basis_points": 7647
+        },
+        {
+          "basis_points": 380,
+          "denominator": 79,
+          "numerator": 3,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 129,
+          "wilson_95_upper_basis_points": 1059
+        },
+        {
+          "basis_points": 0,
+          "denominator": 28,
+          "numerator": 0,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1207
+        },
+        {
+          "basis_points": 4865,
+          "denominator": 37,
+          "numerator": 18,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3344,
+          "wilson_95_upper_basis_points": 6411
+        },
+        {
+          "basis_points": 1017,
+          "denominator": 59,
+          "numerator": 6,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 474,
+          "wilson_95_upper_basis_points": 2047
+        }
+      ],
+      "denominator": 589,
+      "id": "commented_only_pair_share",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 99,
+      "repository_median_basis_points": 1023,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 1400,
+      "wilson_95_upper_basis_points": 2005
+    },
+    {
+      "basis_points": 143,
+      "by_repository": [
+        {
+          "basis_points": 0,
+          "denominator": 71,
+          "numerator": 0,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 514
+        },
+        {
+          "basis_points": 227,
+          "denominator": 44,
+          "numerator": 1,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 40,
+          "wilson_95_upper_basis_points": 1181
+        },
+        {
+          "basis_points": 0,
+          "denominator": 58,
+          "numerator": 0,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 622
+        },
+        {
+          "basis_points": 0,
+          "denominator": 61,
+          "numerator": 0,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 593
+        },
+        {
+          "basis_points": 0,
+          "denominator": 58,
+          "numerator": 0,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 622
+        },
+        {
+          "basis_points": 1364,
+          "denominator": 22,
+          "numerator": 3,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 474,
+          "wilson_95_upper_basis_points": 3334
+        },
+        {
+          "basis_points": 0,
+          "denominator": 76,
+          "numerator": 0,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 482
+        },
+        {
+          "basis_points": 0,
+          "denominator": 27,
+          "numerator": 0,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 1246
+        },
+        {
+          "basis_points": 1053,
+          "denominator": 19,
+          "numerator": 2,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 293,
+          "wilson_95_upper_basis_points": 3140
+        },
+        {
+          "basis_points": 192,
+          "denominator": 52,
+          "numerator": 1,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 34,
+          "wilson_95_upper_basis_points": 1013
+        }
+      ],
+      "denominator": 488,
+      "id": "commented_newer_commit_candidate_pair_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 7,
+      "repository_median_basis_points": 0,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 69,
+      "wilson_95_upper_basis_points": 294
+    },
+    {
+      "basis_points": 1860,
+      "by_repository": [
+        {
+          "basis_points": null,
+          "denominator": 0,
+          "numerator": 0,
+          "repository": "dotnet/runtime",
+          "status": "undefined",
+          "wilson_95_lower_basis_points": null,
+          "wilson_95_upper_basis_points": null
+        },
+        {
+          "basis_points": 0,
+          "denominator": 2,
+          "numerator": 0,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 6577
+        },
+        {
+          "basis_points": 0,
+          "denominator": 3,
+          "numerator": 0,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 5615
+        },
+        {
+          "basis_points": 0,
+          "denominator": 1,
+          "numerator": 0,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 7935
+        },
+        {
+          "basis_points": 6667,
+          "denominator": 3,
+          "numerator": 2,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2076,
+          "wilson_95_upper_basis_points": 9386
+        },
+        {
+          "basis_points": 0,
+          "denominator": 5,
+          "numerator": 0,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 4345
+        },
+        {
+          "basis_points": 10000,
+          "denominator": 2,
+          "numerator": 2,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3423,
+          "wilson_95_upper_basis_points": 10000
+        },
+        {
+          "basis_points": 0,
+          "denominator": 6,
+          "numerator": 0,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 3904
+        },
+        {
+          "basis_points": 3000,
+          "denominator": 10,
+          "numerator": 3,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1077,
+          "wilson_95_upper_basis_points": 6033
+        },
+        {
+          "basis_points": 909,
+          "denominator": 11,
+          "numerator": 1,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 162,
+          "wilson_95_upper_basis_points": 3774
+        }
+      ],
+      "denominator": 43,
+      "id": "completed_review_pair_force_push_rereview_rate",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": false,
+      "numerator": 8,
+      "repository_median_basis_points": 0,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 974,
+      "wilson_95_upper_basis_points": 3262
+    },
+    {
+      "basis_points": 3663,
+      "by_repository": [
+        {
+          "basis_points": 4967,
+          "denominator": 300,
+          "numerator": 149,
+          "repository": "dotnet/runtime",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 4404,
+          "wilson_95_upper_basis_points": 5530
+        },
+        {
+          "basis_points": 494,
+          "denominator": 81,
+          "numerator": 4,
+          "repository": "elastic/elasticsearch",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 193,
+          "wilson_95_upper_basis_points": 1203
+        },
+        {
+          "basis_points": 3874,
+          "denominator": 111,
+          "numerator": 43,
+          "repository": "github/gh-stack",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3019,
+          "wilson_95_upper_basis_points": 4804
+        },
+        {
+          "basis_points": 2400,
+          "denominator": 125,
+          "numerator": 30,
+          "repository": "grafana/grafana",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 1736,
+          "wilson_95_upper_basis_points": 3220
+        },
+        {
+          "basis_points": 5930,
+          "denominator": 199,
+          "numerator": 118,
+          "repository": "home-assistant/core",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 5235,
+          "wilson_95_upper_basis_points": 6589
+        },
+        {
+          "basis_points": 56,
+          "denominator": 177,
+          "numerator": 1,
+          "repository": "kubernetes/kubernetes",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 9,
+          "wilson_95_upper_basis_points": 314
+        },
+        {
+          "basis_points": 3987,
+          "denominator": 153,
+          "numerator": 61,
+          "repository": "microsoft/vscode",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 3245,
+          "wilson_95_upper_basis_points": 4779
+        },
+        {
+          "basis_points": 7436,
+          "denominator": 117,
+          "numerator": 87,
+          "repository": "PostHog/posthog",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 6576,
+          "wilson_95_upper_basis_points": 8141
+        },
+        {
+          "basis_points": 0,
+          "denominator": 79,
+          "numerator": 0,
+          "repository": "rust-lang/rust",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 0,
+          "wilson_95_upper_basis_points": 464
+        },
+        {
+          "basis_points": 3540,
+          "denominator": 113,
+          "numerator": 40,
+          "repository": "vercel/next.js",
+          "status": "defined",
+          "wilson_95_lower_basis_points": 2719,
+          "wilson_95_upper_basis_points": 4457
+        }
+      ],
+      "denominator": 1455,
+      "id": "bot_review_session_share",
+      "minimum_denominator": 100,
+      "minimum_denominator_met": true,
+      "numerator": 533,
+      "repository_median_basis_points": 3707,
+      "status": "defined",
+      "wilson_95_lower_basis_points": 3419,
+      "wilson_95_upper_basis_points": 3915
+    }
+  ],
+  "sampling_plan_sha256": "cc7daf7e74590aa4b1c7afb67dfa241244fe0aa917d6812028785eb5d29d8e1e",
+  "schema": "stratadiff-review-churn-census-aggregate-v1",
+  "signals": {
+    "all_round_review_continuity": {
+      "evaluable": true,
+      "metric_id": "checkpoint_pair_drift_without_observed_force_push_rate",
+      "minimum_denominator": 100,
+      "observed_basis_points": 1209,
+      "observed_denominator": 488,
+      "prerequisites": {
+        "global_gates_passed": true,
+        "minimum_denominator_met": true,
+        "oid_observability_basis_points": 9959,
+        "oid_observability_met": true,
+        "oid_observability_required": true
+      },
+      "status": "fail",
+      "threshold_basis_points": 2000,
+      "wilson_95_lower_basis_points": 948,
+      "wilson_95_upper_basis_points": 1529
+    },
+    "commented_partial_attention": {
+      "evaluable": true,
+      "metric_id": "commented_newer_commit_candidate_pair_rate",
+      "minimum_denominator": 100,
+      "observed_basis_points": 143,
+      "observed_denominator": 488,
+      "prerequisites": {
+        "global_gates_passed": true,
+        "minimum_denominator_met": true,
+        "oid_observability_basis_points": 9959,
+        "oid_observability_met": true,
+        "oid_observability_required": false
+      },
+      "status": "fail",
+      "threshold_basis_points": 1500,
+      "wilson_95_lower_basis_points": 69,
+      "wilson_95_upper_basis_points": 294
+    },
+    "force_push_wedge": {
+      "evaluable": true,
+      "metric_id": "completed_review_pair_post_force_push_rate",
+      "minimum_denominator": 100,
+      "observed_basis_points": 878,
+      "observed_denominator": 490,
+      "prerequisites": {
+        "global_gates_passed": true,
+        "minimum_denominator_met": true,
+        "oid_observability_basis_points": 9959,
+        "oid_observability_met": true,
+        "oid_observability_required": false
+      },
+      "status": "inconclusive",
+      "threshold_basis_points": 1000,
+      "wilson_95_lower_basis_points": 658,
+      "wilson_95_upper_basis_points": 1162
+    }
+  },
+  "tool_version": "0.2.0"
+}
