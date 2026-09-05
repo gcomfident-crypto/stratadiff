@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/review-churn-census-v1/sample.schema.json",
+  "title": "StrataDiff Review Churn Census randomized sample v1",
+  "description": "Complete outcome-independent candidate inventories and deterministic within-repository selections for the fixed v1 panel.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "dataset_version",
+    "tool_version",
+    "generated_at",
+    "source_plan",
+    "selection",
+    "merged_at_window",
+    "repositories",
+    "summary",
+    "acquisition"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-churn-census-sample-v1" },
+    "dataset_version": { "const": "1.0.0" },
+    "tool_version": { "const": "0.2.0" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "source_plan": { "$ref": "#/$defs/source_plan" },
+    "selection": { "$ref": "#/$defs/selection" },
+    "merged_at_window": { "$ref": "#/$defs/window" },
+    "repositories": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/repository_sample" }
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "acquisition": { "$ref": "#/$defs/acquisition" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "node_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "repository_component": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "maxLength": 100
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 202
+    },
+    "count": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+    "source_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "dataset_version", "sha256"],
+      "properties": {
+        "schema": { "const": "stratadiff-review-churn-census-sampling-plan-v1" },
+        "dataset_version": { "const": "1.0.0" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "algorithm_version", "seed_hex"],
+      "properties": {
+        "algorithm": { "const": "sha256_v1" },
+        "algorithm_version": { "const": "1" },
+        "seed_hex": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end_exclusive", "field", "timezone"],
+      "properties": {
+        "start": { "const": "2026-06-03T00:00:00Z" },
+        "end_exclusive": { "const": "2026-09-01T00:00:00Z" },
+        "field": { "const": "PullRequest.mergedAt" },
+        "timezone": { "const": "UTC" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "number", "merged_at", "selection_digest"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "number": { "type": "integer", "minimum": 1 },
+        "merged_at": { "$ref": "#/$defs/timestamp" },
+        "selection_digest": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "repository_sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "name",
+        "name_with_owner",
+        "candidate_count",
+        "requested_count",
+        "selected_count",
+        "shortfall",
+        "candidates",
+        "selected_pull_request_numbers"
+      ],
+      "properties": {
+        "owner": { "$ref": "#/$defs/repository_component" },
+        "name": { "$ref": "#/$defs/repository_component" },
+        "name_with_owner": { "$ref": "#/$defs/repository" },
+        "candidate_count": { "$ref": "#/$defs/count" },
+        "requested_count": { "const": 50 },
+        "selected_count": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "shortfall": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "candidates": {
+          "type": "array",
+          "maxItems": 1000000,
+          "items": { "$ref": "#/$defs/candidate" }
+        },
+        "selected_pull_request_numbers": {
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repositories",
+        "candidate_pull_requests",
+        "requested_pull_requests",
+        "selected_pull_requests",
+        "sampling_shortfall"
+      ],
+      "properties": {
+        "repositories": { "const": 10 },
+        "candidate_pull_requests": { "$ref": "#/$defs/count" },
+        "requested_pull_requests": { "const": 500 },
+        "selected_pull_requests": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "sampling_shortfall": { "type": "integer", "minimum": 0, "maximum": 500 }
+      }
+    },
+    "acquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graphql_calls", "minimum_rate_limit_remaining", "last_rate_limit_reset_at"],
+      "properties": {
+        "graphql_calls": { "$ref": "#/$defs/count" },
+        "minimum_rate_limit_remaining": {
+          "oneOf": [
+            { "$ref": "#/$defs/count" },
+            { "type": "null" }
+          ]
+        },
+        "last_rate_limit_reset_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}

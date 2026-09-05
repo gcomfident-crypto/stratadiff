@@ -86,6 +86,15 @@ In the v6 evaluation, the adapter flattens only explicit `possible_pairs` into a
 coverage view. That union is not a jointly selectable mapping, and symbolic abstentions contribute
 no pair candidates.
 
+The completed [Review Churn Census v1](benchmarks/review-churn-census-v1/README.md) separately
+measures the product workflow on a frozen equal-quota panel of 500 merged PRs from ten review-heavy
+GitHub repositories. Among 488 comparable completed PR-by-reviewer checkpoints, 88 (18.03%) differed
+from the final head; 74/401 fully comparable reviewed PRs (18.45%) stranded at least one reviewer.
+The precommitted force-push acquisition signal was inconclusive at 43/490 pairs (8.78%, Wilson 95%
+interval 6.58–11.62%), and the broader no-observed-force-push and COMMENTED-candidate thresholds
+failed. These results justify testing an opt-in Resume workflow in rewrite-heavy segments; they do
+not validate a universal pain, time savings, safety, willingness to pay, or product-market fit.
+
 See the [complete results and limitations](docs/benchmarks.md), the
 [raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v6.json), and the
 [artifact checksums](benchmarks/SHA256SUMS).

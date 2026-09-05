@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/review-churn-census-v1/aggregate.schema.json",
+  "title": "StrataDiff Review Churn Census aggregate v1",
+  "description": "Pilot-informed descriptive rates, Wilson intervals, completeness gates, and pass, fail, or inconclusive evidence decisions for the fixed v1 panel.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "dataset_version",
+    "tool_version",
+    "generated_at",
+    "sampling_plan_sha256",
+    "manifest_sha256",
+    "collection",
+    "claim_boundary",
+    "metrics",
+    "gates",
+    "signals"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-churn-census-aggregate-v1" },
+    "dataset_version": { "const": "1.0.0" },
+    "tool_version": { "const": "0.2.0" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "sampling_plan_sha256": { "$ref": "#/$defs/sha256" },
+    "manifest_sha256": { "$ref": "#/$defs/sha256" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "claim_boundary": { "$ref": "#/$defs/claim_boundary" },
+    "metrics": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "formal_peer_reviewed_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "completed_review_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "checkpoint_oid_observability_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "checkpoint_pair_head_drift_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "completed_review_pair_post_force_push_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "checkpoint_pair_drift_without_observed_force_push_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "stranded_reviewer_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "multi_round_completed_review_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "completed_review_dismissal_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "commented_only_pair_share" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "commented_newer_commit_candidate_pair_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "completed_review_pair_force_push_rereview_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "bot_review_session_share" } } }] }
+      ],
+      "items": false
+    },
+    "gates": { "$ref": "#/$defs/gates" },
+    "signals": { "$ref": "#/$defs/signals" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 202
+    },
+    "count": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+    "basis_points": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "nullable_basis_points": {
+      "oneOf": [
+        { "$ref": "#/$defs/basis_points" },
+        { "type": "null" }
+      ]
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "captured_at", "selected_pull_requests", "classified_pull_requests", "capture_failures"],
+      "properties": {
+        "status": { "const": "complete" },
+        "captured_at": { "$ref": "#/$defs/timestamp" },
+        "selected_pull_requests": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "classified_pull_requests": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "capture_failures": { "const": 0 }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "panel_period_descriptive_estimates_supported",
+        "github_population_estimates_supported",
+        "independent_confirmatory_test_supported",
+        "market_size_estimates_supported",
+        "causal_product_effects_supported",
+        "reviewer_time_savings_supported",
+        "issue_recall_or_semantic_safety_supported",
+        "willingness_to_pay_supported",
+        "ordinary_push_identification_supported",
+        "interpretation"
+      ],
+      "properties": {
+        "panel_period_descriptive_estimates_supported": { "const": true },
+        "github_population_estimates_supported": { "const": false },
+        "independent_confirmatory_test_supported": { "const": false },
+        "market_size_estimates_supported": { "const": false },
+        "causal_product_effects_supported": { "const": false },
+        "reviewer_time_savings_supported": { "const": false },
+        "issue_recall_or_semantic_safety_supported": { "const": false },
+        "willingness_to_pay_supported": { "const": false },
+        "ordinary_push_identification_supported": { "const": false },
+        "interpretation": { "type": "string", "minLength": 1, "maxLength": 3000 }
+      }
+    },
+    "rate_properties": {
+      "type": "object",
+      "required": [
+        "numerator",
+        "denominator",
+        "status",
+        "basis_points",
+        "wilson_95_lower_basis_points",
+        "wilson_95_upper_basis_points"
+      ],
+      "properties": {
+        "numerator": { "$ref": "#/$defs/count" },
+        "denominator": { "$ref": "#/$defs/count" },
+        "status": { "enum": ["defined", "undefined"] },
+        "basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_lower_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_upper_basis_points": { "$ref": "#/$defs/nullable_basis_points" }
+      }
+    },
+    "repository_rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "numerator",
+        "denominator",
+        "status",
+        "basis_points",
+        "wilson_95_lower_basis_points",
+        "wilson_95_upper_basis_points"
+      ],
+      "properties": {
+        "repository": { "$ref": "#/$defs/repository" },
+        "numerator": { "$ref": "#/$defs/count" },
+        "denominator": { "$ref": "#/$defs/count" },
+        "status": { "enum": ["defined", "undefined"] },
+        "basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_lower_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_upper_basis_points": { "$ref": "#/$defs/nullable_basis_points" }
+      },
+      "allOf": [{ "$ref": "#/$defs/rate_consistency" }]
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "numerator",
+        "denominator",
+        "status",
+        "basis_points",
+        "wilson_95_lower_basis_points",
+        "wilson_95_upper_basis_points",
+        "minimum_denominator",
+        "minimum_denominator_met",
+        "repository_median_basis_points",
+        "by_repository"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "formal_peer_reviewed_pr_rate",
+            "completed_review_pr_rate",
+            "checkpoint_oid_observability_rate",
+            "checkpoint_pair_head_drift_rate",
+            "completed_review_pair_post_force_push_rate",
+            "checkpoint_pair_drift_without_observed_force_push_rate",
+            "stranded_reviewer_pr_rate",
+            "multi_round_completed_review_pr_rate",
+            "completed_review_dismissal_pr_rate",
+            "commented_only_pair_share",
+            "commented_newer_commit_candidate_pair_rate",
+            "completed_review_pair_force_push_rereview_rate",
+            "bot_review_session_share"
+          ]
+        },
+        "numerator": { "$ref": "#/$defs/count" },
+        "denominator": { "$ref": "#/$defs/count" },
+        "status": { "enum": ["defined", "undefined"] },
+        "basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_lower_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_upper_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "minimum_denominator": { "const": 100 },
+        "minimum_denominator_met": { "type": "boolean" },
+        "repository_median_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "by_repository": {
+          "type": "array",
+          "minItems": 10,
+          "maxItems": 10,
+          "items": { "$ref": "#/$defs/repository_rate" }
+        }
+      },
+      "allOf": [{ "$ref": "#/$defs/rate_consistency" }]
+    },
+    "rate_consistency": {
+      "if": {
+        "properties": { "denominator": { "const": 0 } },
+        "required": ["denominator"]
+      },
+      "then": {
+        "properties": {
+          "numerator": { "const": 0 },
+          "status": { "const": "undefined" },
+          "basis_points": { "type": "null" },
+          "wilson_95_lower_basis_points": { "type": "null" },
+          "wilson_95_upper_basis_points": { "type": "null" }
+        }
+      },
+      "else": {
+        "properties": {
+          "denominator": { "minimum": 1 },
+          "status": { "const": "defined" },
+          "basis_points": { "$ref": "#/$defs/basis_points" },
+          "wilson_95_lower_basis_points": { "$ref": "#/$defs/basis_points" },
+          "wilson_95_upper_basis_points": { "$ref": "#/$defs/basis_points" }
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "collection_complete",
+        "capture_failures_within_limit",
+        "minimum_sampled_pull_requests_met",
+        "minimum_repositories_at_target_met",
+        "minimum_completed_reviewed_pull_requests_met",
+        "all_global_gates_passed",
+        "checkpoint_oid_observability_basis_points",
+        "minimum_checkpoint_oid_observability_met",
+        "repositories_at_target",
+        "required_repositories_at_target",
+        "required_sampled_pull_requests",
+        "required_completed_reviewed_pull_requests",
+        "maximum_capture_failures",
+        "required_checkpoint_oid_observability_basis_points"
+      ],
+      "properties": {
+        "collection_complete": { "type": "boolean" },
+        "capture_failures_within_limit": { "type": "boolean" },
+        "minimum_sampled_pull_requests_met": { "type": "boolean" },
+        "minimum_repositories_at_target_met": { "type": "boolean" },
+        "minimum_completed_reviewed_pull_requests_met": { "type": "boolean" },
+        "all_global_gates_passed": { "type": "boolean" },
+        "checkpoint_oid_observability_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "minimum_checkpoint_oid_observability_met": { "type": "boolean" },
+        "repositories_at_target": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "required_repositories_at_target": { "const": 8 },
+        "required_sampled_pull_requests": { "const": 400 },
+        "required_completed_reviewed_pull_requests": { "const": 200 },
+        "maximum_capture_failures": { "const": 0 },
+        "required_checkpoint_oid_observability_basis_points": { "const": 9000 }
+      }
+    },
+    "prerequisites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "global_gates_passed",
+        "minimum_denominator_met",
+        "oid_observability_required",
+        "oid_observability_basis_points",
+        "oid_observability_met"
+      ],
+      "properties": {
+        "global_gates_passed": { "type": "boolean" },
+        "minimum_denominator_met": { "type": "boolean" },
+        "oid_observability_required": { "type": "boolean" },
+        "oid_observability_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "oid_observability_met": { "type": "boolean" }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "metric_id",
+        "threshold_basis_points",
+        "minimum_denominator",
+        "observed_denominator",
+        "observed_basis_points",
+        "wilson_95_lower_basis_points",
+        "wilson_95_upper_basis_points",
+        "prerequisites",
+        "evaluable",
+        "status"
+      ],
+      "properties": {
+        "metric_id": { "type": "string" },
+        "threshold_basis_points": { "$ref": "#/$defs/basis_points" },
+        "minimum_denominator": { "const": 100 },
+        "observed_denominator": { "$ref": "#/$defs/count" },
+        "observed_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_lower_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "wilson_95_upper_basis_points": { "$ref": "#/$defs/nullable_basis_points" },
+        "prerequisites": { "$ref": "#/$defs/prerequisites" },
+        "evaluable": { "type": "boolean" },
+        "status": { "enum": ["pass", "fail", "inconclusive"] }
+      }
+    },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["force_push_wedge", "all_round_review_continuity", "commented_partial_attention"],
+      "properties": {
+        "force_push_wedge": {
+          "allOf": [
+            { "$ref": "#/$defs/signal" },
+            {
+              "properties": {
+                "metric_id": { "const": "completed_review_pair_post_force_push_rate" },
+                "threshold_basis_points": { "const": 1000 }
+              }
+            }
+          ]
+        },
+        "all_round_review_continuity": {
+          "allOf": [
+            { "$ref": "#/$defs/signal" },
+            {
+              "properties": {
+                "metric_id": { "const": "checkpoint_pair_drift_without_observed_force_push_rate" },
+                "threshold_basis_points": { "const": 2000 }
+              }
+            }
+          ]
+        },
+        "commented_partial_attention": {
+          "allOf": [
+            { "$ref": "#/$defs/signal" },
+            {
+              "properties": {
+                "metric_id": { "const": "commented_newer_commit_candidate_pair_rate" },
+                "threshold_basis_points": { "const": 1500 }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
