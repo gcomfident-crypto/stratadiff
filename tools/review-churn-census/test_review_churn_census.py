@@ -215,6 +215,70 @@ class SelectionTest(unittest.TestCase):
                 datetime(2026, 8, 2, tzinfo=timezone.utc),
             )
 
+    def test_duplicate_candidates_outside_partial_day_window_are_rejected(self):
+        for merged_at in ("2026-08-01T01:00:00Z", "2026-08-02T12:00:00Z"):
+            with self.subTest(merged_at=merged_at):
+                raw = {
+                    "id": "PR_1",
+                    "number": 1,
+                    "state": "MERGED",
+                    "mergedAt": merged_at,
+                    "repository": {"nameWithOwner": "acme/widgets"},
+                }
+                api = mock.Mock()
+                api.call.side_effect = [
+                    {"search": {
+                        "issueCount": 2,
+                        "nodes": [raw],
+                        "pageInfo": {"hasNextPage": True, "endCursor": "page-1"},
+                    }},
+                    {"search": {
+                        "issueCount": 2,
+                        "nodes": [raw],
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    }},
+                ]
+                with self.assertRaisesRegex(census.CensusError, "duplicate candidate"):
+                    census.search_repository_candidates(
+                        api, "acme", "widgets",
+                        datetime(2026, 8, 1, 12, tzinfo=timezone.utc),
+                        datetime(2026, 8, 2, 12, tzinfo=timezone.utc),
+                    )
+
+    def test_distinct_boundary_day_candidates_preserve_half_open_window(self):
+        timestamps = [
+            "2026-08-01T01:00:00Z",
+            "2026-08-01T12:00:00Z",
+            "2026-08-02T11:59:59Z",
+            "2026-08-02T12:00:00Z",
+        ]
+        nodes = [
+            {
+                "id": f"PR_{number}", "number": number, "state": "MERGED",
+                "mergedAt": timestamp,
+                "repository": {"nameWithOwner": "acme/widgets"},
+            }
+            for number, timestamp in enumerate(timestamps, 1)
+        ]
+        api = mock.Mock()
+        api.call.side_effect = [
+            {"search": {
+                "issueCount": 4, "nodes": nodes[:2],
+                "pageInfo": {"hasNextPage": True, "endCursor": "page-1"},
+            }},
+            {"search": {
+                "issueCount": 4, "nodes": nodes[2:],
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+            }},
+        ]
+        candidates = census.search_repository_candidates(
+            api, "acme", "widgets",
+            datetime(2026, 8, 1, 12, tzinfo=timezone.utc),
+            datetime(2026, 8, 2, 12, tzinfo=timezone.utc),
+        )
+        self.assertEqual([candidate["number"] for candidate in candidates], [2, 3])
+        self.assertEqual(api.call.call_count, 2)
+
     def test_sample_requested_count_and_window_are_strict(self):
         plan_bytes, plan = census.read_json(census.DEFAULT_PLAN)
         sample = valid_one_sample(plan_bytes, plan)
