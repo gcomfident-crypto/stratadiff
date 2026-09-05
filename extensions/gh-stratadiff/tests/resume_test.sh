@@ -32,59 +32,118 @@ run_case() {
   local case_directory=${temporary_directory}/${name}
   local fetch_head_existed=true
   local github_repository=github.com/acme/widget
+  local audit_case=default
   local setting
   for setting in "$@"; do
     case "${setting}" in
       GH_TEST_FETCH_HEAD_ABSENT=true) fetch_head_existed=false ;;
       GH_STUB_ENTERPRISE=true) github_repository=ghe.example/acme/widget ;;
+      GH_TEST_AUDIT_INFER=true) audit_case=infer ;;
+      GH_TEST_AUDIT_ALL_OPTIONS=true) audit_case=all-options ;;
+      GH_TEST_AUDIT_BAD_FORMAT=true) audit_case=bad-format ;;
+      GH_TEST_AUDIT_ZERO_LIMIT=true) audit_case=zero-limit ;;
+      GH_TEST_AUDIT_HIGH_LIMIT=true) audit_case=high-limit ;;
+      GH_TEST_AUDIT_ZERO_DAYS=true) audit_case=zero-days ;;
+      GH_TEST_AUDIT_HIGH_DAYS=true) audit_case=high-days ;;
     esac
   done
   mkdir -p "${case_directory}"
   mkdir -p "${case_directory}/state"
   mkdir -p "${case_directory}/home"
   mkdir -p "${case_directory}/repository"
+  mkdir -p "${case_directory}/non-git"
   mkdir -p "${case_directory}/tmp"
   : > "${case_directory}/calls.txt"
   if [[ "${fetch_head_existed}" == true ]]; then
     printf 'original fetch head\n' > "${case_directory}/FETCH_HEAD"
   fi
   local -a command_arguments
-  if [[ "${command}" == resume ]]; then
-    command_arguments=(resume 17 --repo-dir "${case_directory}/repository" --no-open)
-  else
-    command_arguments=(
-      ownership-snapshot
-      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-      --repo-dir "${case_directory}/repository"
-      -R "${github_repository}"
-      --output "${case_directory}/ownership.json"
-    )
-  fi
+  local command_directory=${case_directory}
+  case "${command}" in
+    resume)
+      command_arguments=(resume 17 --repo-dir "${case_directory}/repository" --no-open)
+      ;;
+    ownership-snapshot)
+      command_arguments=(
+        ownership-snapshot
+        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        --repo-dir "${case_directory}/repository"
+        -R "${github_repository}"
+        --output "${case_directory}/ownership.json"
+      )
+      ;;
+    audit)
+      command_directory=${case_directory}/non-git
+      case "${audit_case}" in
+        default)
+          command_arguments=(audit -R "${github_repository}")
+          ;;
+        infer)
+          command_directory=${case_directory}/repository
+          command_arguments=(audit)
+          ;;
+        all-options)
+          command_arguments=(
+            audit
+            -R "${github_repository}"
+            --limit 7
+            --days 14
+            --format json
+            --output "${case_directory}/audit.json"
+            --end-exclusive 2026-09-01T00:00:00Z
+          )
+          ;;
+        bad-format)
+          command_arguments=(audit -R "${github_repository}" --format yaml)
+          ;;
+        zero-limit)
+          command_arguments=(audit -R "${github_repository}" --limit 0)
+          ;;
+        high-limit)
+          command_arguments=(audit -R "${github_repository}" --limit 101)
+          ;;
+        zero-days)
+          command_arguments=(audit -R "${github_repository}" --days 0)
+          ;;
+        high-days)
+          command_arguments=(audit -R "${github_repository}" --days 366)
+          ;;
+      esac
+      ;;
+    *)
+      printf 'unknown test command: %s\n' "${command}" >&2
+      exit 1
+      ;;
+  esac
 
   set +e
   CASE_OUTPUT="$(
+    cd -- "${command_directory}"
     env \
-      PATH="${stubs}:${PATH}" \
-      HOME="${case_directory}/home" \
-      TMPDIR="${case_directory}/tmp" \
-      DISPLAY=:99 \
-      WAYLAND_DISPLAY=wayland-stratadiff-test \
-      XDG_RUNTIME_DIR="${case_directory}/runtime" \
-      DBUS_SESSION_BUS_ADDRESS=unix:path=/stratadiff-test-bus \
-      XAUTHORITY="${case_directory}/Xauthority" \
-      LANG=C.UTF-8 \
-      GH_TOKEN=must-not-reach-git \
-      GITHUB_TOKEN=must-not-reach-viewer \
-      CALLER_SECRET=must-not-reach-viewer \
-      github_token=must-not-reach-git \
-      git_authorization=must-not-reach-git \
-      STRATADIFF_BIN=stratadiff \
-      STRATADIFF_EXTENSION_TEST_LOG="${case_directory}/calls.txt" \
-      GH_STUB_STATE="${case_directory}/state" \
-      GH_STUB_FETCH_HEAD="${case_directory}/FETCH_HEAD" \
-      GH_STUB_REPOSITORY_DIRECTORY="${case_directory}/repository" \
-      "$@" \
-      bash "${extension_directory}/gh-stratadiff" "${command_arguments[@]}" 2>&1
+        PATH="${stubs}:${PATH}" \
+        HOME="${case_directory}/home" \
+        TMPDIR="${case_directory}/tmp" \
+        DISPLAY=:99 \
+        WAYLAND_DISPLAY=wayland-stratadiff-test \
+        XDG_RUNTIME_DIR="${case_directory}/runtime" \
+        DBUS_SESSION_BUS_ADDRESS=unix:path=/stratadiff-test-bus \
+        XAUTHORITY="${case_directory}/Xauthority" \
+        LANG=C.UTF-8 \
+        GH_TOKEN=must-not-reach-git \
+        GITHUB_TOKEN=must-not-reach-viewer \
+        CALLER_SECRET=must-not-reach-viewer \
+        github_token=must-not-reach-git \
+        git_authorization=must-not-reach-git \
+        STRATADIFF_BIN=stratadiff \
+        STRATADIFF_AUDIT_TOOL="${stubs}/audit_tool.py" \
+        STRATADIFF_EXTENSION_TEST_LOG="${case_directory}/calls.txt" \
+        GH_STUB_COMMAND="${command}" \
+        GH_STUB_AUDIT_CWD="${command_directory}" \
+        GH_STUB_STATE="${case_directory}/state" \
+        GH_STUB_FETCH_HEAD="${case_directory}/FETCH_HEAD" \
+        GH_STUB_REPOSITORY_DIRECTORY="${case_directory}/repository" \
+        "$@" \
+        bash "${extension_directory}/gh-stratadiff" "${command_arguments[@]}" 2>&1
   )"
   CASE_STATUS=$?
   set -e
@@ -92,6 +151,7 @@ run_case() {
   CASE_STATE=${case_directory}/state
   CASE_REPOSITORY=${case_directory}/repository
   CASE_OUTPUT_PATH=${case_directory}/ownership.json
+  CASE_AUDIT_OUTPUT_PATH=${case_directory}/audit.json
   CASE_VIEWER_ENVIRONMENT=
   if [[ -f "${case_directory}/home/review-environment.txt" ]]; then
     CASE_LOG+=$'\n'"$(< "${case_directory}/home/review-call.txt")"
@@ -127,6 +187,70 @@ run_ownership_snapshot() {
   shift
   run_case "${name}" ownership-snapshot "$@"
 }
+
+run_audit() {
+  local name=$1
+  shift
+  run_case "${name}" audit "$@"
+}
+
+assert_audit_did_not_touch_git_state() {
+  assert_not_contains "${CASE_LOG}" 'git '
+  assert_not_contains "${CASE_LOG}" 'stratadiff '
+  assert_not_contains "${CASE_LOG}" 'gh auth token'
+  assert_not_contains "${CASE_LOG}" 'refs/stratadiff'
+}
+
+run_audit audit-default
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_OUTPUT}" '# Review Memory Audit'
+assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'audit-tool audit --repository acme/widget --hostname github.com --limit 50 --days 90 --format markdown'
+assert_audit_did_not_touch_git_state
+
+run_audit audit-enterprise-all-options GH_STUB_ENTERPRISE=true GH_TEST_AUDIT_ALL_OPTIONS=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'gh repo view ghe.example/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" "audit-tool audit --repository acme/widget --hostname ghe.example --limit 7 --days 14 --format json --output ${CASE_AUDIT_OUTPUT_PATH} --end-exclusive 2026-09-01T00:00:00Z"
+[[ -f "${CASE_AUDIT_OUTPUT_PATH}" ]]
+assert_contains "$(< "${CASE_AUDIT_OUTPUT_PATH}")" '"status":"affected"'
+assert_audit_did_not_touch_git_state
+
+run_audit audit-infer GH_TEST_AUDIT_INFER=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'gh repo view --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'audit-tool audit --repository acme/widget --hostname github.com --limit 50 --days 90 --format markdown'
+assert_audit_did_not_touch_git_state
+
+run_audit audit-backend-failure AUDIT_STUB_EXIT_STATUS=23
+[[ "${CASE_STATUS}" -eq 23 ]]
+assert_contains "${CASE_LOG}" 'audit-tool audit --repository acme/widget --hostname github.com'
+assert_audit_did_not_touch_git_state
+
+run_audit audit-invalid-format GH_TEST_AUDIT_BAD_FORMAT=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--format must be markdown or json'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+
+run_audit audit-zero-limit GH_TEST_AUDIT_ZERO_LIMIT=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--limit must be an integer from 1 through 100'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+
+run_audit audit-high-limit GH_TEST_AUDIT_HIGH_LIMIT=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--limit must be an integer from 1 through 100'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+
+run_audit audit-zero-days GH_TEST_AUDIT_ZERO_DAYS=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--days must be an integer from 1 through 365'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+
+run_audit audit-high-days GH_TEST_AUDIT_HIGH_DAYS=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--days must be an integer from 1 through 365'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
 
 run_extension happy
 [[ "${CASE_STATUS}" -eq 0 ]]
@@ -275,4 +399,4 @@ assert_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/ownership-s
 assert_contains "${CASE_LOG}" 'update-ref --no-deref -d refs/stratadiff/ownership-snapshot/'
 [[ ! -e "${CASE_OUTPUT_PATH}" ]]
 
-printf 'gh-stratadiff resume tests passed\n'
+printf 'gh-stratadiff tests passed\n'

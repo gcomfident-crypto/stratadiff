@@ -1,12 +1,19 @@
 # `gh stratadiff`
 
 This directory contains the first personal, repository-admin-free entry point for StrataDiff.
-It is a GitHub CLI script extension with two commands:
+It is a GitHub CLI script extension with three commands:
 
 ```console
+gh stratadiff audit -R OWNER/REPOSITORY
 gh stratadiff resume <PR>
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
 ```
+
+`audit` examines a repository's recent merged pull requests and reports whether completed reviewer
+checkpoints drifted from the final head. It is the no-checkout discovery path: with `-R`, it runs
+from any directory and does not invoke Git, materialize commits, or create temporary refs. The
+report distinguishes `no_eligible_reviews`, `insufficient_evidence`, `no_observed_drift`, and
+`affected` instead of treating incomplete review data as a clean result.
 
 `resume` finds the authenticated user's latest eligible completed review, binds it to the pull
 request's exact base and head commits, and opens the existing local Review Resume Workbench. If an
@@ -34,6 +41,18 @@ Point the extension at the binary from this checkout:
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
 gh stratadiff resume 123
 ```
+
+To audit the most recent 50 merged pull requests in a 90-day window:
+
+```console
+gh stratadiff audit -R OWNER/REPOSITORY
+gh stratadiff audit -R HOST/OWNER/REPOSITORY \
+  --limit 100 --days 180 --format json --output review-memory-audit.json
+```
+
+Omit `-R` to let `gh repo view` infer the repository from the current directory. Use
+`--end-exclusive RFC3339` to make the half-open audit window reproducible. Audit requires only
+Bash, Python 3, GitHub CLI, and authenticated read access to the selected repository.
 
 To collect the ownership input for a coverage Passport:
 
@@ -115,25 +134,38 @@ Git settings.
 
 ## Options
 
+Audit:
+
+```text
+-R, --repo REPO          GitHub repository in [HOST/]OWNER/REPO form
+--limit N                Maximum merged pull requests to inspect; defaults to 50
+--days D                 Lookback window in days; defaults to 90
+--format markdown|json   Report format; defaults to markdown
+--output PATH            Write the report to PATH instead of stdout
+--end-exclusive RFC3339  Fixed UTC end of the half-open audit window
+```
+
+Resume:
+
 ```text
 --reviewer LOGIN   Reviewer login; defaults to the authenticated gh user
--R, --repo REPO    GitHub repository in OWNER/REPO form
+-R, --repo REPO    GitHub repository in [HOST/]OWNER/REPO form
 --repo-dir PATH    Local Git repository; defaults to the current repository
 --port PORT        Loopback viewer port; 0 chooses an available port
 --no-open          Print the viewer URL without opening a browser
 ```
 
-Requirements are Bash, GitHub CLI, Git, `env`, `base64`, and a built `stratadiff` executable. GitHub
-Enterprise hosts without a port in their HTTPS origin are supported through the repository URL
-returned by `gh`; the current prototype does not accept origins with embedded credentials or
-explicit ports.
+`resume` and `ownership-snapshot` require Bash, GitHub CLI, Git, `env`, `base64`, and a built
+`stratadiff` executable. GitHub Enterprise hosts without a port in their HTTPS origin are supported
+through the repository URL returned by `gh`; the current prototype does not accept origins with
+embedded credentials or explicit ports.
 
 ## Test
 
-The test suite uses only stubbed `gh`, `git`, and `stratadiff` executables; it needs no token and
-makes no network request. It covers both commands, including host-qualified GHES ownership
-collection, provider verification of a locally present base, exact-object recovery, output mode,
-and cleanup on failure:
+The test suite uses only stubbed GitHub, Git, StrataDiff, and audit executables; it needs no token
+and makes no network request. It covers all three commands, including audit from a non-Git
+directory, host-qualified GHES operation, provider verification of a locally present base,
+exact-object recovery, output mode, and cleanup on failure:
 
 ```console
 bash tests/resume_test.sh
@@ -143,4 +175,5 @@ It covers successful command binding, exact-object recovery for missing current 
 historical checkpoint, provider/API disappearance, temporary-ref cleanup, `FETCH_HEAD` immutability,
 fetch-pack output and ref-collision failures, a PR head changing during resolution, absence of an
 eligible review, bounded single-response review retrieval, and the final Workbench environment
-allowlist.
+allowlist. Audit-specific cases verify option forwarding, repository inference, backend status
+propagation, input validation, and the absence of Git or temporary-ref activity.

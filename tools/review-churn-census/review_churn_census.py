@@ -29,6 +29,7 @@ SAMPLE_SCHEMA = "stratadiff-review-churn-census-sample-v1"
 CAPTURE_SCHEMA = "stratadiff-review-churn-census-capture-v1"
 MANIFEST_SCHEMA = "stratadiff-review-churn-census-manifest-v1"
 AGGREGATE_SCHEMA = "stratadiff-review-churn-census-aggregate-v1"
+AUDIT_SCHEMA = "stratadiff-review-memory-audit-v1"
 DATASET_VERSION = "1.0.0"
 TOOL_VERSION = "0.2.0"
 
@@ -74,6 +75,9 @@ METRIC_IDS = (
     "completed_review_pair_force_push_rereview_rate",
     "bot_review_session_share",
 )
+AUDIT_METRIC_IDS = METRIC_IDS[:7]
+AUDIT_SELECTION_METHOD = "latest_merged_at_desc_v1"
+AUDIT_MINIMUM_OID_COVERAGE_BASIS_POINTS = 9_000
 
 FORMAL_STATES = ("APPROVED", "CHANGES_REQUESTED")
 REVIEW_STATES = ("APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING")
@@ -145,6 +149,7 @@ def atomic_write(path: Path, payload: bytes) -> None:
     )
     temporary = Path(temporary_name)
     try:
+        os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as output:
             output.write(payload)
             output.flush()
@@ -201,6 +206,11 @@ def now_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def format_utc_timestamp(value: datetime) -> str:
+    require(value.tzinfo == timezone.utc, "timestamp must use UTC")
+    return value.isoformat().replace("+00:00", "Z")
+
+
 def validate_oid(value: object, label: str, *, nullable: bool = False) -> str | None:
     if nullable and value is None:
         return None
@@ -213,6 +223,59 @@ def validate_repository_component(value: object, label: str) -> str:
     component = require_string(value, label)
     require(REPOSITORY_COMPONENT_PATTERN.fullmatch(component) is not None, f"invalid {label}: {component}")
     return component
+
+
+def audit_repository_argument(value: str) -> str:
+    components = value.split("/")
+    if len(value) > 202 or len(components) != 2 or any(
+        REPOSITORY_COMPONENT_PATTERN.fullmatch(component) is None
+        for component in components
+    ):
+        raise argparse.ArgumentTypeError("repository must be in OWNER/REPO form")
+    return value
+
+
+def audit_hostname_argument(value: str) -> str:
+    if (
+        len(value) > 253
+        or not value
+        or value.endswith(".")
+        or any(
+            not label
+            or len(label) > 63
+            or re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?", label)
+            is None
+            for label in value.split(".")
+        )
+    ):
+        raise argparse.ArgumentTypeError("hostname must be a DNS hostname without a scheme or port")
+    return value.lower()
+
+
+def audit_bounded_integer(value: str, label: str, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{label} must be an integer") from error
+    if not 1 <= parsed <= maximum:
+        raise argparse.ArgumentTypeError(f"{label} must be between 1 and {maximum}")
+    return parsed
+
+
+def audit_limit_argument(value: str) -> int:
+    return audit_bounded_integer(value, "limit", 100)
+
+
+def audit_days_argument(value: str) -> int:
+    return audit_bounded_integer(value, "days", 365)
+
+
+def audit_end_exclusive_argument(value: str) -> str:
+    try:
+        parse_utc_timestamp(value, "end-exclusive")
+    except (CensusError, ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+    return value
 
 
 def validate_plan(plan: object) -> dict[str, object]:
@@ -522,6 +585,20 @@ def select_candidates(
     return inventory, selected_numbers
 
 
+def select_latest_candidates(
+    candidates: list[dict[str, object]], limit: int
+) -> list[dict[str, object]]:
+    require(1 <= limit <= 100, "audit limit must be between 1 and 100")
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            parse_utc_timestamp(candidate["merged_at"], "candidate.merged_at"),
+            require_int(candidate["number"], "candidate.number", 1),
+        ),
+        reverse=True,
+    )[:limit]
+
+
 SEARCH_QUERY = """
 query ReviewChurnSearch($query: String!, $cursor: String) {
   search(query: $query, type: ISSUE, first: 100, after: $cursor) {
@@ -632,8 +709,9 @@ query ReviewChurnTimeline($owner: String!, $name: String!, $number: Int!, $curso
 
 
 class GithubGraphQL:
-    def __init__(self, executable: str = "gh") -> None:
+    def __init__(self, executable: str = "gh", hostname: str = "github.com") -> None:
         self.executable = executable
+        self.hostname = hostname
         self.calls = 0
         self.minimum_remaining: int | None = None
         self.last_reset_at: str | None = None
@@ -641,11 +719,23 @@ class GithubGraphQL:
     def call(self, query: str, variables: dict[str, object]) -> dict[str, object]:
         request = canonical_json({"query": query, "variables": variables})
         environment = os.environ.copy()
+        environment.pop("GH_DEBUG", None)
+        environment.pop("GH_TRACE", None)
         environment["GH_PROMPT_DISABLED"] = "1"
+        environment["GH_PAGER"] = "cat"
         environment["PAGER"] = "cat"
+        environment["NO_COLOR"] = "1"
         environment["LC_ALL"] = "C"
         result = subprocess.run(
-            [self.executable, "api", "graphql", "--input", "-"],
+            [
+                self.executable,
+                "api",
+                "--hostname",
+                self.hostname,
+                "graphql",
+                "--input",
+                "-",
+            ],
             input=request,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -2132,6 +2222,318 @@ def metric_counts(cases: list[dict[str, object]], metric_id: str) -> tuple[int, 
     return bot, bot + human
 
 
+def audit_metric(cases: list[dict[str, object]], metric_id: str) -> dict[str, object]:
+    numerator, denominator = metric_counts(cases, metric_id)
+    require(0 <= numerator <= denominator, "rate numerator must be between zero and denominator")
+    return {
+        "id": metric_id,
+        "numerator": numerator,
+        "denominator": denominator,
+        "status": "undefined" if denominator == 0 else "defined",
+        "basis_points": None
+        if denominator == 0
+        else (numerator * 10_000 + denominator // 2) // denominator,
+    }
+
+
+def audit_finding(
+    case: dict[str, object], hostname: str, repository: str
+) -> dict[str, object] | None:
+    pairs = completed_pairs(case)
+    comparable = [
+        pair
+        for pair in pairs
+        if pair["latest_completed_checkpoint"]["differs_from_final_head"] is not None
+    ]
+    drifted = [
+        pair
+        for pair in comparable
+        if pair["latest_completed_checkpoint"]["differs_from_final_head"] is True
+    ]
+    unobservable = len(pairs) - len(comparable)
+    if not drifted and unobservable == 0:
+        return None
+    reviewers = []
+    for pair in drifted:
+        checkpoint = pair["latest_completed_checkpoint"]
+        reviewers.append(
+            {
+                "reviewer_key": pair["reviewer_key"],
+                "checkpoint_oid": checkpoint["commit_oid"],
+                "checkpoint_submitted_at": checkpoint["submitted_at"],
+                "checkpoint_state": checkpoint["completed_state"],
+                "dismissed": checkpoint["dismissed"],
+                "post_completed_review_force_push": checkpoint[
+                    "post_completed_review_force_push"
+                ],
+                "post_latest_checkpoint_force_push": checkpoint[
+                    "post_latest_checkpoint_force_push"
+                ],
+            }
+        )
+    number = require_int(case["number"], "audit finding pull request number", 1)
+    return {
+        "number": number,
+        "url": f"https://{hostname}/{repository}/pull/{number}",
+        "merged_at": case["merged_at"],
+        "final_head_oid": case["final_head_oid"],
+        "completed_pair_count": len(pairs),
+        "comparable_pair_count": len(comparable),
+        "unobservable_pair_count": unobservable,
+        "drifted_reviewers": reviewers,
+    }
+
+
+def build_review_memory_audit(
+    repository: str,
+    hostname: str,
+    start: datetime,
+    end_exclusive: datetime,
+    requested_limit: int,
+    candidate_count: int,
+    cases: list[dict[str, object]],
+    acquisition_value: object,
+    generated_at: str,
+) -> dict[str, object]:
+    require(start < end_exclusive, "audit window must be non-empty")
+    require(1 <= requested_limit <= 100, "audit limit must be between 1 and 100")
+    require(candidate_count >= len(cases), "audit candidate count is smaller than selected count")
+    require(len(cases) <= requested_limit, "audit selected count exceeds requested limit")
+    parse_utc_timestamp(generated_at, "audit.generated_at")
+    acquisition = validate_acquisition(acquisition_value, "audit acquisition")
+    metrics = [audit_metric(cases, metric_id) for metric_id in AUDIT_METRIC_IDS]
+    metrics_by_id = {str(metric["id"]): metric for metric in metrics}
+    completed_pair_count = int(
+        metrics_by_id["checkpoint_oid_observability_rate"]["denominator"]
+    )
+    comparable_pair_count = int(
+        metrics_by_id["checkpoint_oid_observability_rate"]["numerator"]
+    )
+    drifted_pair_count = int(
+        metrics_by_id["checkpoint_pair_head_drift_rate"]["numerator"]
+    )
+    findings = []
+    affected_pull_requests = 0
+    for case in cases:
+        require(
+            str(case["repository"]).casefold() == repository.casefold(),
+            "classified audit case belongs to another repository",
+        )
+        finding = audit_finding(case, hostname, repository)
+        if finding is not None:
+            findings.append(finding)
+        if any(
+            pair["latest_completed_checkpoint"]["differs_from_final_head"] is True
+            for pair in completed_pairs(case)
+        ):
+            affected_pull_requests += 1
+
+    if completed_pair_count == 0:
+        status = "no_eligible_reviews"
+    elif comparable_pair_count * 10_000 < (
+        completed_pair_count * AUDIT_MINIMUM_OID_COVERAGE_BASIS_POINTS
+    ):
+        status = "insufficient_evidence"
+    elif drifted_pair_count == 0:
+        status = "no_observed_drift"
+    else:
+        status = "affected"
+
+    return {
+        "schema": AUDIT_SCHEMA,
+        "tool_version": TOOL_VERSION,
+        "generated_at": generated_at,
+        "scope": {
+            "provider_url": f"https://{hostname}",
+            "repository": repository,
+            "window": {
+                "start": format_utc_timestamp(start),
+                "end_exclusive": format_utc_timestamp(end_exclusive),
+            },
+            "selection": {
+                "method": AUDIT_SELECTION_METHOD,
+                "requested_limit": requested_limit,
+                "candidate_count": candidate_count,
+                "selected_count": len(cases),
+                "shortfall": requested_limit - len(cases),
+            },
+        },
+        "collection": {
+            "status": "complete",
+            "graphql_calls": acquisition["graphql_calls"],
+            "minimum_rate_limit_remaining": acquisition[
+                "minimum_rate_limit_remaining"
+            ],
+            "last_rate_limit_reset_at": acquisition["last_rate_limit_reset_at"],
+        },
+        "privacy": {
+            "source_collected": False,
+            "pr_text_collected": False,
+            "review_text_collected": False,
+            "commit_messages_collected": False,
+            "logins_persisted": False,
+            "actor_identity": "pr_local_opaque_key",
+        },
+        "claim_boundary": {
+            "repository_window_description_supported": True,
+            "github_population_estimate_supported": False,
+            "reviewer_time_savings_supported": False,
+            "issue_recall_or_safety_supported": False,
+            "willingness_to_pay_supported": False,
+            "checkpoint_materialization_supported": False,
+        },
+        "summary": {
+            "status": status,
+            "selected_pull_requests": len(cases),
+            "formal_peer_reviewed_pull_requests": metrics_by_id[
+                "formal_peer_reviewed_pr_rate"
+            ]["numerator"],
+            "completed_reviewed_pull_requests": metrics_by_id[
+                "completed_review_pr_rate"
+            ]["numerator"],
+            "completed_reviewer_pairs": completed_pair_count,
+            "comparable_reviewer_pairs": comparable_pair_count,
+            "unobservable_reviewer_pairs": completed_pair_count - comparable_pair_count,
+            "drifted_reviewer_pairs": drifted_pair_count,
+            "affected_pull_requests": affected_pull_requests,
+        },
+        "descriptive_metrics": metrics,
+        "findings": findings,
+    }
+
+
+def collect_review_memory_audit(
+    api: GithubGraphQL,
+    repository: str,
+    hostname: str,
+    start: datetime,
+    end_exclusive: datetime,
+    limit: int,
+) -> dict[str, object]:
+    owner, name = repository.split("/")
+    candidates = search_repository_candidates(api, owner, name, start, end_exclusive)
+    selected = select_latest_candidates(candidates, limit)
+    classified_cases = []
+    for index, candidate in enumerate(selected, 1):
+        number = require_int(candidate["number"], "candidate.number", 1)
+        progress(f"auditing {repository}#{number} ({index}/{len(selected)})")
+        captured = capture_pull_request(api, owner, name, number)
+        pull_request = require_object(captured["pull_request"], "captured pull request")
+        require(
+            pull_request["node_id"] == candidate["node_id"],
+            f"captured pull request {repository}#{number} has a different node ID",
+        )
+        require(
+            pull_request["merged_at"] == candidate["merged_at"],
+            f"captured pull request {repository}#{number} has a different merge time",
+        )
+        classified_cases.append(classify_case(captured))
+    return build_review_memory_audit(
+        repository,
+        hostname,
+        start,
+        end_exclusive,
+        limit,
+        len(candidates),
+        classified_cases,
+        api.acquisition(),
+        now_timestamp(),
+    )
+
+
+def render_review_memory_audit_markdown(report: dict[str, object]) -> str:
+    scope = report["scope"]
+    window = scope["window"]
+    selection = scope["selection"]
+    summary = report["summary"]
+    status_messages = {
+        "no_eligible_reviews": "No eligible completed external-peer reviews were observed in the selected pull requests.",
+        "insufficient_evidence": "Checkpoint evidence is insufficient: fewer than 90% of completed reviewer pairs expose both checkpoint and final-head object IDs.",
+        "no_observed_drift": "No reviewer-checkpoint drift was observed among the comparable completed reviewer pairs.",
+        "affected": "Reviewer-checkpoint drift was observed in this repository window.",
+    }
+    status = str(summary["status"])
+    require(status in status_messages, f"unsupported audit status: {status}")
+    lines = [
+        "# StrataDiff Review Memory Audit",
+        "",
+        f"- Repository: [{scope['repository']}]({scope['provider_url']}/{scope['repository']})",
+        f"- Window: `{window['start']}` to `{window['end_exclusive']}` (end exclusive)",
+        f"- Selection: newest {selection['selected_count']} of {selection['candidate_count']} merged pull requests found; requested limit {selection['requested_limit']}",
+        f"- Status: `{status}`",
+        "",
+        status_messages[status],
+    ]
+    if int(summary["unobservable_reviewer_pairs"]) > 0:
+        lines.extend(
+            [
+                "",
+                f"{summary['unobservable_reviewer_pairs']} completed reviewer pair(s) could not be compared because a checkpoint or final-head object ID was unavailable. Unknown evidence is not evidence of no drift.",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "## Summary",
+            "",
+            "| Selected PRs | Completed-review PRs | Completed pairs | Comparable pairs | Drifted pairs | Affected PRs |",
+            "|---:|---:|---:|---:|---:|---:|",
+            f"| {summary['selected_pull_requests']} | {summary['completed_reviewed_pull_requests']} | {summary['completed_reviewer_pairs']} | {summary['comparable_reviewer_pairs']} | {summary['drifted_reviewer_pairs']} | {summary['affected_pull_requests']} |",
+            "",
+            "## Descriptive metrics",
+            "",
+            "| Metric | Numerator | Denominator | Basis points |",
+            "|---|---:|---:|---:|",
+        ]
+    )
+    for metric in report["descriptive_metrics"]:
+        basis_points = "unknown" if metric["basis_points"] is None else str(metric["basis_points"])
+        lines.append(
+            f"| `{metric['id']}` | {metric['numerator']} | {metric['denominator']} | {basis_points} |"
+        )
+    lines.extend(["", "## Findings", ""])
+    if not report["findings"]:
+        lines.append("No drifted or unobservable completed reviewer pairs were found.")
+    for finding in report["findings"]:
+        lines.extend(
+            [
+                f"### [Pull request #{finding['number']}]({finding['url']})",
+                "",
+                f"- Merged at: `{finding['merged_at']}`",
+                f"- Final head: `{finding['final_head_oid'] if finding['final_head_oid'] is not None else 'unknown'}`",
+                f"- Completed pairs: {finding['completed_pair_count']}; comparable: {finding['comparable_pair_count']}; unobservable: {finding['unobservable_pair_count']}",
+            ]
+        )
+        if int(finding["unobservable_pair_count"]) > 0:
+            lines.append(
+                "- One or more completed pairs are unknown, not evidence of no drift."
+            )
+        if finding["drifted_reviewers"]:
+            lines.extend(
+                [
+                    "",
+                    "| Reviewer key | Checkpoint | Submitted | State | Dismissed | Post-review force-push | Post-checkpoint force-push |",
+                    "|---|---|---|---|---|---|---|",
+                ]
+            )
+            for reviewer in finding["drifted_reviewers"]:
+                lines.append(
+                    f"| `{reviewer['reviewer_key']}` | `{reviewer['checkpoint_oid']}` | `{reviewer['checkpoint_submitted_at']}` | `{reviewer['checkpoint_state']}` | {str(reviewer['dismissed']).lower()} | {str(reviewer['post_completed_review_force_push']).lower()} | {str(reviewer['post_latest_checkpoint_force_push']).lower()} |"
+                )
+        lines.append("")
+    if lines[-1] != "":
+        lines.append("")
+    lines.extend(
+        [
+            "## Claim boundary",
+            "",
+            "This report describes only the selected pull requests in this repository and window. It is not a GitHub-wide prevalence estimate and does not establish reviewer time savings, issue recall, safety, or willingness to pay. It does not materialize checkpoint commits.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def aggregate_cases(
     cases: list[dict[str, object]], repository_names: list[str], minimum_denominator: int
 ) -> list[dict[str, object]]:
@@ -2388,9 +2790,38 @@ def load_plan(path: Path) -> tuple[bytes, dict[str, object]]:
     return payload, validate_plan(value)
 
 
+def command_audit(arguments: argparse.Namespace) -> None:
+    end_exclusive_text = (
+        now_timestamp()
+        if arguments.end_exclusive is None
+        else arguments.end_exclusive
+    )
+    end_exclusive = parse_utc_timestamp(end_exclusive_text, "end-exclusive")
+    start = end_exclusive - timedelta(days=arguments.days)
+    api = GithubGraphQL(arguments.gh, arguments.hostname)
+    report = collect_review_memory_audit(
+        api,
+        arguments.repository,
+        arguments.hostname,
+        start,
+        end_exclusive,
+        arguments.limit,
+    )
+    if arguments.format == "json":
+        payload = canonical_json(report)
+    else:
+        require(arguments.format == "markdown", "unsupported audit output format")
+        payload = render_review_memory_audit_markdown(report).encode("utf-8")
+    if arguments.output is not None:
+        atomic_write(arguments.output, payload)
+        progress(f"wrote review memory audit to {arguments.output}")
+    else:
+        sys.stdout.write(payload.decode("utf-8"))
+
+
 def command_sample(arguments: argparse.Namespace) -> None:
     plan_bytes, plan = load_plan(arguments.plan)
-    api = GithubGraphQL(arguments.gh)
+    api = GithubGraphQL(arguments.gh, "github.com")
     sample = build_sample(plan_bytes, plan, api)
     write_json(arguments.output, sample)
     print(
@@ -2403,7 +2834,7 @@ def command_capture(arguments: argparse.Namespace) -> None:
     plan_bytes, plan = load_plan(arguments.plan)
     sample_bytes, sample_value = read_json(arguments.sample)
     sample = validate_sample(sample_value, plan_bytes, plan)
-    api = GithubGraphQL(arguments.gh)
+    api = GithubGraphQL(arguments.gh, "github.com")
     existing = None
     if arguments.resume and arguments.output.exists():
         existing_bytes, existing_value = read_json(arguments.output)
@@ -2478,9 +2909,51 @@ def add_common_inputs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--sample", type=Path, default=DEFAULT_SAMPLE)
 
 
-def parse_arguments() -> argparse.Namespace:
+def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    audit = subparsers.add_parser(
+        "audit", help="audit recent review checkpoints in one repository"
+    )
+    audit.add_argument(
+        "--repository",
+        required=True,
+        type=audit_repository_argument,
+        help="GitHub repository in OWNER/REPO form",
+    )
+    audit.add_argument(
+        "--hostname",
+        required=True,
+        type=audit_hostname_argument,
+        help="GitHub hostname without a scheme or port",
+    )
+    audit.add_argument(
+        "--limit",
+        type=audit_limit_argument,
+        default=50,
+        help="newest merged pull requests to inspect (1-100; default: 50)",
+    )
+    audit.add_argument(
+        "--days",
+        type=audit_days_argument,
+        default=90,
+        help="days in the half-open audit window (1-365; default: 90)",
+    )
+    audit.add_argument(
+        "--end-exclusive",
+        type=audit_end_exclusive_argument,
+        help="reproducible exclusive UTC window end as an RFC3339 timestamp",
+    )
+    audit.add_argument(
+        "--format",
+        choices=("markdown", "json"),
+        default="markdown",
+        help="report format (default: markdown)",
+    )
+    audit.add_argument("--output", type=Path, help="write the report to this path")
+    audit.add_argument("--gh", default="gh", help="GitHub CLI executable (default: gh)")
+    audit.set_defaults(function=command_audit)
 
     sample = subparsers.add_parser("sample", help="query and deterministically sample merged PRs")
     sample.add_argument("--plan", type=Path, default=DEFAULT_PLAN)
@@ -2518,7 +2991,7 @@ def parse_arguments() -> argparse.Namespace:
     verify.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     verify.add_argument("--aggregate", type=Path, default=DEFAULT_AGGREGATE)
     verify.set_defaults(function=command_verify)
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def main() -> None:

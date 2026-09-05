@@ -9,10 +9,32 @@ usage() {
 Usage: gh stratadiff <command> [options]
 
 Commands:
+  audit                      Audit recent merged PRs for stranded review checkpoints
   resume <PR>                Resume your latest completed review
   ownership-snapshot <BASE> Collect exact-base CODEOWNERS identities and permissions
 
 Run `gh stratadiff <command> --help` for command-specific options.
+EOF
+}
+
+audit_usage() {
+  cat <<'EOF'
+Usage: gh stratadiff audit [options]
+
+Audit recent merged pull requests for completed reviews whose checkpoint no
+longer matches the final head.
+
+Options:
+  -R, --repo REPO              GitHub repository in [HOST/]OWNER/REPO form
+  --limit N                    Maximum merged pull requests to inspect (default: 50)
+  --days D                     Lookback window in days (default: 90)
+  --format markdown|json       Report format (default: markdown)
+  --output PATH                Write the report to PATH instead of stdout
+  --end-exclusive RFC3339      Fixed UTC end of the half-open audit window
+  -h, --help                   Show this help
+
+With -R, this command works outside a Git checkout. Without -R, repository
+inference is delegated to `gh repo view` in the current directory.
 EOF
 }
 
@@ -299,7 +321,7 @@ case "${subcommand}" in
     usage
     exit 0
     ;;
-  resume|ownership-snapshot) ;;
+  audit|resume|ownership-snapshot) ;;
   *)
     usage >&2
     die "unsupported command: ${subcommand}"
@@ -314,8 +336,67 @@ repository_directory=.
 output_path=
 port=0
 no_open=false
+audit_limit=50
+audit_days=90
+audit_format=markdown
+audit_end_exclusive=
 
 case "${subcommand}" in
+  audit)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -R|--repo)
+          require_value "$1" "${2:-}"
+          requested_repository=$2
+          shift 2
+          ;;
+        --limit)
+          require_value "$1" "${2:-}"
+          audit_limit=$2
+          shift 2
+          ;;
+        --days)
+          require_value "$1" "${2:-}"
+          audit_days=$2
+          shift 2
+          ;;
+        --format)
+          require_value "$1" "${2:-}"
+          audit_format=$2
+          shift 2
+          ;;
+        --output)
+          require_value "$1" "${2:-}"
+          output_path=$2
+          shift 2
+          ;;
+        --end-exclusive)
+          require_value "$1" "${2:-}"
+          audit_end_exclusive=$2
+          shift 2
+          ;;
+        -h|--help)
+          audit_usage
+          exit 0
+          ;;
+        --)
+          shift
+          [[ $# -eq 0 ]] || die "audit does not accept positional arguments"
+          ;;
+        -*) die "unknown option: $1" ;;
+        *) die "audit does not accept positional arguments" ;;
+      esac
+    done
+
+    [[ "${audit_limit}" =~ ^[1-9][0-9]*$ && "${audit_limit}" -le 100 ]] || die \
+      "--limit must be an integer from 1 through 100"
+    [[ "${audit_days}" =~ ^[1-9][0-9]*$ && "${audit_days}" -le 365 ]] || die \
+      "--days must be an integer from 1 through 365"
+    case "${audit_format}" in
+      markdown|json) ;;
+      *) die "--format must be markdown or json" ;;
+    esac
+    ;;
   resume)
     while [[ $# -gt 0 ]]; do
       case "$1" in
@@ -409,6 +490,51 @@ case "${subcommand}" in
 esac
 
 require_command gh
+
+if [[ "${subcommand}" == audit ]]; then
+  require_command python3
+  extension_directory="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  repository_root="$(cd -P -- "${extension_directory}/../.." && pwd -P)"
+  audit_tool=${STRATADIFF_AUDIT_TOOL:-${repository_root}/tools/review-churn-census/review_churn_census.py}
+  [[ -f "${audit_tool}" ]] || die "audit tool is not available: ${audit_tool}"
+
+  repo_view_arguments=(repo view)
+  if [[ -n "${requested_repository}" ]]; then
+    repo_view_arguments+=("${requested_repository}")
+  fi
+  repo_record="$(
+    gh "${repo_view_arguments[@]}" --json nameWithOwner,url --jq '[.nameWithOwner, .url] | @tsv'
+  )"
+  IFS=$'\t' read -r github_repository repository_url extra <<< "${repo_record}"
+  [[ -n "${github_repository}" && -n "${repository_url}" && -z "${extra:-}" ]] || die "GitHub repository metadata is incomplete"
+  [[ "${github_repository}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "GitHub repository is not a valid OWNER/REPO name"
+  [[ "${repository_url}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "GitHub repository URL is not a canonical HTTPS repository URL"
+  host_and_path=${repository_url#https://}
+  github_host=${host_and_path%%/*}
+  [[ -n "${github_host}" && "${github_host}" != *'@'* && "${github_host}" != *:* ]] || die "GitHub repository URL has an unsupported host"
+  [[ "${repository_url}" == "https://${github_host}/${github_repository}" ]] || die "GitHub repository URL does not match ${github_repository}"
+  if [[ "${requested_repository}" =~ ^([^/]+)/[^/]+/[^/]+$ ]]; then
+    [[ "${BASH_REMATCH[1]}" == "${github_host}" ]] || die \
+      "GitHub repository host ${github_host} does not match requested host ${BASH_REMATCH[1]}"
+  fi
+
+  audit_arguments=(
+    audit
+    --repository "${github_repository}"
+    --hostname "${github_host}"
+    --limit "${audit_limit}"
+    --days "${audit_days}"
+    --format "${audit_format}"
+  )
+  if [[ -n "${output_path}" ]]; then
+    audit_arguments+=(--output "${output_path}")
+  fi
+  if [[ -n "${audit_end_exclusive}" ]]; then
+    audit_arguments+=(--end-exclusive "${audit_end_exclusive}")
+  fi
+  exec python3 "${audit_tool}" "${audit_arguments[@]}"
+fi
+
 require_command git
 require_command env
 stratadiff=${STRATADIFF_BIN:-stratadiff}

@@ -36,6 +36,27 @@ only a validated prefix for the exact sample and continues with the first missin
 logins are used only in memory and are replaced before persistence with PR-local opaque keys;
 titles, review bodies, source code, and credentials are never collected.
 
+## One-repository audit
+
+`audit` applies the census capture and classification semantics to the newest merged pull requests
+in one bounded repository window. It does not use the frozen panel or persist raw capture data:
+
+```console
+python3 tools/review-churn-census/review_churn_census.py audit \
+  --repository OWNER/REPO \
+  --hostname github.com \
+  --limit 50 \
+  --days 90 \
+  --end-exclusive 2026-09-01T00:00:00Z
+```
+
+The default output is Markdown on stdout. Use `--format json` for the strict
+`stratadiff-review-memory-audit-v1` report, or `--output PATH` to write either format atomically
+with mode `0600`. A supplied `--end-exclusive` makes the half-open scan window reproducible.
+Completed scans exit successfully with one of four report statuses: `no_eligible_reviews`,
+`insufficient_evidence`, `no_observed_drift`, or `affected`. Missing checkpoint evidence is unknown,
+not evidence of no drift.
+
 The completed public v1 artifacts, observed metrics, signal decisions, and claim boundary are in
 [`../../benchmarks/review-churn-census-v1/`](../../benchmarks/review-churn-census-v1/). They can be
 verified offline with the same `verify` command by passing the four checked-in artifact paths.

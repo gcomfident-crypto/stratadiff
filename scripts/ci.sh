@@ -29,6 +29,9 @@ python3 -B tools/review-churn-census/review_churn_census.py verify \
   --manifest benchmarks/review-churn-census-v1/manifest.json \
   --aggregate benchmarks/review-churn-census-v1/aggregate.json
 (cd benchmarks/review-churn-census-v1 && sha256sum -c SHA256SUMS)
+python3 -B benchmarks/review-memory-audit-v1/verify.py verify
+python3 -B benchmarks/review-memory-audit-v1/verify.py self-test
+(cd benchmarks/review-memory-audit-v1 && sha256sum -c SHA256SUMS)
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
