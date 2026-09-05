@@ -406,8 +406,7 @@ def main():
     report = json.loads(report_path.read_text(encoding="utf-8"))
     expected, residue = validate_gate_report(report, oracle)
     expected_error = (
-        f"review residue gate is open: {expected['needs_review_now']} "
-        "current PR files need review"
+        f"review delta gate is open: {expected['needs_review_now']} files need review"
     )
     require(
         expected_error in gate.stderr,

@@ -10,7 +10,8 @@ The commands are:
 - `verify-provenance`: query each exact PR, review, Git commit object, and force-push event ID and
   require every field in that online verification contract to match the manifest;
 - `materialize`: fetch only the manifest's exact Q, B, and D commit IDs, hydrate the blobs required
-  by the two review ranges, pin Q/A/B/C/D refs, remove every remote, and prove offline replay;
+  by the two review ranges plus the A/B/C/D snapshots of every checkpoint path, pin Q/A/B/C/D
+  refs, remove every remote, and prove both offline replay and review-delta source closure;
 - `generate`: recompute and write the five independent oracle files from supplied bare repositories;
 - `verify`: recompute each oracle with lazy fetching disabled and require exact equality;
 - `evaluate`: verify the oracles, run a clean release StrataDiff binary, and write a conformance

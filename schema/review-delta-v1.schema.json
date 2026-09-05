@@ -1,0 +1,331 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json",
+  "title": "StrataDiff review delta v1",
+  "description": "A deterministic checkpoint-to-head review queue. Each entry states the exact baseline used, including a content digest when that baseline was reconstructed, and records every conservative fallback. This producer-attested artifact does not prove that a human reviewed the checkpoint, grant approval, or claim semantic equivalence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "engine_version",
+    "comparison",
+    "old_base_commit",
+    "checkpoint_commit",
+    "current_base_commit",
+    "head_commit",
+    "summary",
+    "entries",
+    "unresolved_retired_changes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json"
+    },
+    "engine_version": { "type": "string", "minLength": 1 },
+    "comparison": {
+      "enum": ["checkpoint_to_head", "per_file_review_baseline_to_head"]
+    },
+    "old_base_commit": { "$ref": "#/$defs/object_id" },
+    "checkpoint_commit": { "$ref": "#/$defs/object_id" },
+    "current_base_commit": { "$ref": "#/$defs/object_id" },
+    "head_commit": { "$ref": "#/$defs/object_id" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "entries": {
+      "type": "array",
+      "maxItems": 3000,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "unresolved_retired_changes": {
+      "type": "array",
+      "maxItems": 2000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/unresolved_change" }
+    }
+  },
+  "$defs": {
+    "object_id": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$"
+    },
+    "blake3": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "git_mode": {
+      "type": "string",
+      "pattern": "^[0-7]{6}$"
+    },
+    "path_encoding": {
+      "enum": ["utf8", "git_bytes_percent_encoded"]
+    },
+    "language": {
+      "enum": [
+        "universal",
+        "python",
+        "javascript",
+        "typescript",
+        "tsx",
+        "rust",
+        "java",
+        "json",
+        "c",
+        "cpp",
+        "c_sharp",
+        "go",
+        "ruby",
+        "bash",
+        "php",
+        "html",
+        "css",
+        "yaml",
+        "toml",
+        "markdown",
+        "kotlin",
+        "swift",
+        "lua",
+        "scala",
+        "r",
+        "elixir",
+        "haskell",
+        "ocaml",
+        "ocaml_interface",
+        "zig"
+      ]
+    },
+    "line_change_envelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["additions", "deletions"],
+      "properties": {
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "change_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "insertions",
+        "deletions",
+        "equivalent_relocations",
+        "child_order_changes",
+        "model_forced_updates",
+        "suggested_updates",
+        "formatting_only"
+      ],
+      "properties": {
+        "insertions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "equivalent_relocations": { "type": "integer", "minimum": 0 },
+        "child_order_changes": { "type": "integer", "minimum": 0 },
+        "model_forced_updates": { "type": "integer", "minimum": 0 },
+        "suggested_updates": { "type": "integer", "minimum": 0 },
+        "formatting_only": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "report_blake3",
+        "replay_check_passed_during_analysis",
+        "model_forced_relations",
+        "suggested_relations",
+        "ambiguity_groups",
+        "byte_edits",
+        "changes"
+      ],
+      "properties": {
+        "report_blake3": { "$ref": "#/$defs/blake3" },
+        "replay_check_passed_during_analysis": { "const": true },
+        "model_forced_relations": { "type": "integer", "minimum": 0 },
+        "suggested_relations": { "type": "integer", "minimum": 0 },
+        "ambiguity_groups": { "type": "integer", "minimum": 0 },
+        "byte_edits": { "type": "integer", "minimum": 0 },
+        "changes": { "$ref": "#/$defs/change_counts" }
+      }
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "priority", "lane", "reason"],
+      "properties": {
+        "status": {
+          "enum": ["added", "copied", "deleted", "modified", "renamed", "type_changed"]
+        },
+        "similarity_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "before_path": { "type": "string", "minLength": 1 },
+        "before_path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "after_path": { "type": "string", "minLength": 1 },
+        "after_path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "before_mode": { "$ref": "#/$defs/git_mode" },
+        "after_mode": { "$ref": "#/$defs/git_mode" },
+        "before_blob": { "$ref": "#/$defs/object_id" },
+        "after_blob": { "$ref": "#/$defs/object_id" },
+        "before_bytes": { "type": "integer", "minimum": 0 },
+        "after_bytes": { "type": "integer", "minimum": 0 },
+        "line_change_envelope": { "$ref": "#/$defs/line_change_envelope" },
+        "language": { "$ref": "#/$defs/language" },
+        "priority": { "enum": ["review_first", "evidence_follow_up"] },
+        "lane": {
+          "enum": ["review_first", "syntax_preserved", "content_preserved", "unverified"]
+        },
+        "checkpoint_state": { "enum": ["needs_review_now", "unchanged_since_checkpoint"] },
+        "checkpoint_match_basis": {
+          "enum": ["exact_git_change_identity", "exact_noninteracting_four_way_byte_replay"]
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence": { "$ref": "#/$defs/evidence" }
+      },
+      "dependentRequired": {
+        "before_path": ["before_path_encoding"],
+        "after_path": ["after_path_encoding"]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "displayable_files",
+        "unresolved_retired_changes",
+        "needs_review_files",
+        "gate_passed"
+      ],
+      "properties": {
+        "displayable_files": { "type": "integer", "minimum": 0, "maximum": 3000 },
+        "unresolved_retired_changes": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "needs_review_files": { "type": "integer", "minimum": 0, "maximum": 3000 },
+        "gate_passed": { "type": "boolean" }
+      }
+    },
+    "unresolved_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "path_encoding", "reason"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "reason": { "enum": ["non_utf8_git_path"] }
+      }
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "commit", "object_id"],
+          "properties": {
+            "kind": { "const": "git_object" },
+            "commit": { "$ref": "#/$defs/object_id" },
+            "object_id": { "$ref": "#/$defs/object_id" },
+            "byte_len": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "blake3", "byte_len"],
+          "properties": {
+            "kind": { "const": "reconstructed_bytes" },
+            "blake3": { "$ref": "#/$defs/blake3" },
+            "byte_len": { "type": "integer", "minimum": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "empty" }
+          }
+        }
+      ]
+    },
+    "reconstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "old_base_blob",
+        "reviewed_blob",
+        "current_base_blob",
+        "reviewed_on_current_base_blake3",
+        "upstream_on_checkpoint_blake3",
+        "reconstructed_blake3",
+        "byte_len"
+      ],
+      "properties": {
+        "algorithm": { "const": "bidirectional_noninteracting_byte_replay_v1" },
+        "old_base_blob": { "$ref": "#/$defs/object_id" },
+        "reviewed_blob": { "$ref": "#/$defs/object_id" },
+        "current_base_blob": { "$ref": "#/$defs/object_id" },
+        "reviewed_on_current_base_blake3": { "$ref": "#/$defs/blake3" },
+        "upstream_on_checkpoint_blake3": { "$ref": "#/$defs/blake3" },
+        "reconstructed_blake3": { "$ref": "#/$defs/blake3" },
+        "byte_len": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "baseline_basis", "before_source", "after_source"],
+      "properties": {
+        "file": { "$ref": "#/$defs/file" },
+        "baseline_basis": {
+          "enum": [
+            "checkpoint_snapshot",
+            "current_base_no_checkpoint_change",
+            "reconstructed_review_baseline",
+            "current_base_fallback",
+            "checkpoint_head_fallback"
+          ]
+        },
+        "before_source": { "$ref": "#/$defs/source" },
+        "after_source": { "$ref": "#/$defs/source" },
+        "baseline_reconstruction": { "$ref": "#/$defs/reconstruction" },
+        "fallback_reason": {
+          "enum": [
+            "overlap_or_adjacent",
+            "binary_nul",
+            "source_unavailable",
+            "unsupported_change",
+            "translation_failed",
+            "replay_orders_mismatch"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "baseline_basis": { "const": "reconstructed_review_baseline" } },
+            "required": ["baseline_basis"]
+          },
+          "then": {
+            "required": ["baseline_reconstruction"],
+            "properties": {
+              "before_source": {
+                "properties": { "kind": { "const": "reconstructed_bytes" } },
+                "required": ["kind"]
+              },
+              "file": { "not": { "required": ["before_blob"] } }
+            },
+            "not": { "required": ["fallback_reason"] }
+          },
+          "else": { "not": { "required": ["baseline_reconstruction"] } }
+        },
+        {
+          "if": {
+            "properties": {
+              "baseline_basis": {
+                "enum": ["current_base_fallback", "checkpoint_head_fallback"]
+              }
+            },
+            "required": ["baseline_basis"]
+          },
+          "then": { "required": ["fallback_reason"] },
+          "else": { "not": { "required": ["fallback_reason"] } }
+        }
+      ]
+    }
+  }
+}

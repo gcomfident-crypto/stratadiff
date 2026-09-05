@@ -88,11 +88,13 @@ never substitute another SHA. Current review lists can also gain later reviews, 
 must not replace the manifest's exact historical review ID.
 
 Offline evaluation begins only after the required graph, trees, and blobs have been materialized.
-It should remove all remotes, set `GIT_NO_LAZY_FETCH=1`, recompute both merge bases and both raw Git
-change sets, validate any four-way replay witnesses, and compare every file state and carry basis
-against a frozen oracle. CI should run bundle/schema checks, tamper tests, and offline evaluation;
-live GitHub checks belong in a non-blocking canary because API availability and object retention are
-external state.
+That blob closure includes both review ranges and the A/B/C/D snapshots of every checkpoint path,
+so retired-change fallback rows remain displayable without a promisor remote. Verification removes
+all remotes, sets `GIT_NO_LAZY_FETCH=1`, recomputes both merge bases and both raw Git change sets,
+validates the review-delta source closure and any four-way replay witnesses, and compares every file
+state and carry basis against a frozen oracle. CI should run bundle/schema checks, tamper tests, and
+offline evaluation; live GitHub checks belong in a non-blocking canary because API availability and
+object retention are external state.
 
 The bundled CLI implements that split. Only `verify-provenance` and `materialize` use the network:
 

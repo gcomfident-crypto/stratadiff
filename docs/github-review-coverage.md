@@ -2,7 +2,8 @@
 
 StrataDiff's first host integration answers one operational question:
 
-> Since a named reviewer last finished a review, which current PR changes still lack carry evidence?
+> Since a named reviewer last finished a review, what evidence-backed review baseline still differs
+> from the exact current head?
 
 It is designed to complement GitHub's native approval rule. It does not create, restore, or replace
 an approval.
@@ -13,7 +14,7 @@ an approval.
 |---|---|---|
 | No completed review by the configured reviewer | None | Gate fails; the complete PR remains reviewable |
 | Reviewer submits `APPROVED` or `CHANGES_REQUESTED` at head `R` | `R` | Zero residue at that exact head |
-| Author pushes new content at `H` | `R` | Gate fails on every current PR file not carried from `R` |
+| Author pushes, drops, or reverts content at `H` | `R` | Gate fails on every exact delta from the reviewed state, including changes absent from the current PR diff |
 | Stack tool rebases or restacks without interacting with reviewed edits | `R` | Exact identities and eligible four-way replays carry; upstream-only files are excluded |
 | Reviewer finishes another review at `H` | `H` | The new completed review closes the residue |
 
@@ -67,20 +68,30 @@ jobs:
           name: stratadiff-review-coverage
           path: |
             ${{ steps.coverage.outputs.report }}
+            ${{ steps.coverage.outputs.review_delta }}
             ${{ steps.coverage.outputs.checkpoint_record }}
           if-no-files-found: error
 ```
 
 The mutable action references in this example are readable previews, not supply-chain guidance.
 Pin `actions/checkout`, `actions/upload-artifact`, and StrataDiff to audited full commit IDs in a
-production workflow.
+production workflow. Run the coverage Action immediately after checkout and before any
+PR-controlled script; the runner's base tools, `PATH`, and earlier same-job processes remain
+trusted inputs.
 
 With `fail-on-review-residue: true`, a failed gate creates file-scoped GitHub error annotations for
-the first 20 current PR files that need review. If the queue is larger, one notice reports the
-omitted count while the step summary and JSON artifact retain every file. A missing checkpoint
+the first 20 displayable review-delta entries. If the queue is larger, one notice reports the
+omitted count while the step summary and `review_delta` JSON retain the complete queue. A missing checkpoint
 produces one check-level error because the complete PR, rather than a bounded file subset, remains
 in review. Paths and workflow-command data are escaped before emission; non-UTF-8 paths remain in
 the report but are represented by a check-level annotation instead of an invalid file link.
+
+The `review_delta` output follows the versioned `review-delta-v1` schema. Its summary reports
+`displayable_files`, `unresolved_retired_changes`, the authoritative `needs_review_files` total,
+and `gate_passed`. When the merge base moved, a `reconstructed_review_baseline` entry is the exact
+`S → D` delta after bidirectionally replaying the reviewed and upstream patches. Every other basis
+states the conservative comparison actually shown. Reconstructed bytes carry a BLAKE3 digest and
+are never mislabeled as a Git object ID. The artifact remains producer-attested in v1.
 
 The resolver requests at most 100 reviews from GitHub. It fails closed if pagination indicates a
 larger history. It verifies the selected review SHA through GitHub's Git commit-object endpoint. If
@@ -117,6 +128,7 @@ The default output is only the selected commit ID, which can be passed directly 
 ```text
 checkpoint="$(stratadiff github-checkpoint reviews.json --reviewer alice)"
 stratadiff review BASE HEAD --checkpoint "$checkpoint" --format json --output review.json \
+  --review-delta-output review-delta.json \
   --github-annotations --fail-on-review-residue
 ```
 

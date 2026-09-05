@@ -223,14 +223,12 @@ fn repository_workbench_serves_checkpoint_delta_and_commit_bound_sources() {
         payload["review"]["summary"]["checkpoint"]["retired_change_count"],
         1
     );
+    assert_eq!(payload["resume_delta"]["comparison"], "checkpoint_to_head");
+    assert_eq!(payload["resume_delta"]["checkpoint_commit"], checkpoint);
+    assert_eq!(payload["resume_delta"]["current_base_commit"], base);
+    assert_eq!(payload["resume_delta"]["summary"]["displayable_files"], 1);
     assert_eq!(
-        payload["resume_delta"]["comparison"],
-        "snapshot_to_snapshot"
-    );
-    assert_eq!(payload["resume_delta"]["source_base_commit"], checkpoint);
-    assert_eq!(payload["resume_delta"]["summary"]["changed_files"], 1);
-    assert_eq!(
-        payload["resume_delta"]["files"][0]["after_path"],
+        payload["resume_delta"]["entries"][0]["file"]["after_path"],
         "changing.py"
     );
 
@@ -359,7 +357,7 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
     let payload: serde_json::Value = serde_json::from_str(body).unwrap();
     assert_eq!(
         payload["resume_delta"]["comparison"],
-        "current_pr_unmatched_identities"
+        "per_file_review_baseline_to_head"
     );
     assert_eq!(
         payload["review"]["checkpoint"]["match_basis"],
@@ -369,16 +367,28 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
         payload["assessment"]["basis"],
         "exact_git_change_identity_or_noninteracting_four_way_byte_replay"
     );
-    assert_eq!(payload["resume_delta"]["source_base_commit"], current_base);
-    assert_eq!(payload["resume_delta"]["to_commit"], head);
-    let queue = payload["resume_delta"]["files"].as_array().unwrap();
+    assert_eq!(payload["resume_delta"]["old_base_commit"], original_base);
+    assert_eq!(payload["resume_delta"]["checkpoint_commit"], checkpoint);
+    assert_eq!(payload["resume_delta"]["current_base_commit"], current_base);
+    assert_eq!(payload["resume_delta"]["head_commit"], head);
+    let queue = payload["resume_delta"]["entries"].as_array().unwrap();
     assert_eq!(queue.len(), 1);
-    assert_eq!(queue[0]["after_path"], "current.py");
-    assert!(queue.iter().all(|file| file["after_path"] != "shared.py"));
+    assert_eq!(queue[0]["file"]["after_path"], "current.py");
+    assert_eq!(queue[0]["baseline_basis"], "reconstructed_review_baseline");
+    assert_eq!(queue[0]["before_source"]["kind"], "reconstructed_bytes");
+    assert_eq!(queue[0]["after_source"]["kind"], "git_object");
+    let reconstructed_blake3 = queue[0]["baseline_reconstruction"]["reconstructed_blake3"]
+        .as_str()
+        .unwrap();
     assert!(
         queue
             .iter()
-            .all(|file| file["after_path"] != "upstream-only.py")
+            .all(|entry| entry["file"]["after_path"] != "shared.py")
+    );
+    assert!(
+        queue
+            .iter()
+            .all(|entry| entry["file"]["after_path"] != "upstream-only.py")
     );
 
     let detail = get(
@@ -390,6 +400,14 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
     assert_eq!(
         detail_payload["repository_context"]["checkpoint_state"],
         "needs_review_now"
+    );
+    assert_eq!(
+        detail_payload["repository_context"]["baseline_basis"],
+        "reconstructed_review_baseline"
+    );
+    assert_eq!(
+        detail_payload["report"]["certificate"]["before_blake3"],
+        reconstructed_blake3
     );
     assert!(
         detail_payload["repository_context"]
@@ -418,13 +436,26 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
         &format!("/api/source/before?token={token}&file=0&scope=resume"),
     );
     let (_, before_body) = split_response(&before);
-    assert_eq!(before_body, b"value = 0\n");
+    assert_eq!(before_body, b"value = 1\n");
     let after = get_bytes(
         address,
         &format!("/api/source/after?token={token}&file=0&scope=resume"),
     );
     let (_, after_body) = split_response(&after);
     assert_eq!(after_body, b"value = 2\n");
+
+    let full_before = get_bytes(
+        address,
+        &format!("/api/source/before?token={token}&file=0&scope=full"),
+    );
+    let (_, full_before_body) = split_response(&full_before);
+    assert_eq!(full_before_body, b"value = 0\n");
+    let full_after = get_bytes(
+        address,
+        &format!("/api/source/after?token={token}&file=0&scope=full"),
+    );
+    let (_, full_after_body) = split_response(&full_after);
+    assert_eq!(full_after_body, b"value = 2\n");
 }
 
 fn get(address: &str, path: &str) -> String {

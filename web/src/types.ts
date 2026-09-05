@@ -152,6 +152,10 @@ export interface FileSessionPayload {
     scope: 'resume' | 'full'
     checkpoint_state?: CheckpointState
     checkpoint_match_basis?: 'exact_git_change_identity' | 'exact_noninteracting_four_way_byte_replay'
+    baseline_basis?: ReviewDeltaBaselineBasis
+    before_source?: ReviewDeltaSource
+    after_source?: ReviewDeltaSource
+    baseline_reconstruction?: ReviewBaselineReconstruction
   }
 }
 
@@ -237,13 +241,68 @@ export interface RepositoryReview {
   files: ReviewFile[]
 }
 
+export type ReviewDeltaBaselineBasis =
+  | 'checkpoint_snapshot'
+  | 'current_base_no_checkpoint_change'
+  | 'reconstructed_review_baseline'
+  | 'current_base_fallback'
+  | 'checkpoint_head_fallback'
+
+export type ReviewDeltaFallbackReason =
+  | 'overlap_or_adjacent'
+  | 'binary_nul'
+  | 'source_unavailable'
+  | 'unsupported_change'
+  | 'translation_failed'
+  | 'replay_orders_mismatch'
+
+export type ReviewDeltaSource =
+  | { kind: 'git_object'; commit: string; object_id: string; byte_len?: number }
+  | { kind: 'reconstructed_bytes'; blake3: string; byte_len: number }
+  | { kind: 'empty' }
+
+export interface ReviewBaselineReconstruction {
+  algorithm: 'bidirectional_noninteracting_byte_replay_v1'
+  old_base_blob: string
+  reviewed_blob: string
+  current_base_blob: string
+  reviewed_on_current_base_blake3: string
+  upstream_on_checkpoint_blake3: string
+  reconstructed_blake3: string
+  byte_len: number
+}
+
+export interface ReviewDeltaEntry {
+  file: ReviewFile
+  baseline_basis: ReviewDeltaBaselineBasis
+  before_source: ReviewDeltaSource
+  after_source: ReviewDeltaSource
+  baseline_reconstruction?: ReviewBaselineReconstruction
+  fallback_reason?: ReviewDeltaFallbackReason
+}
+
+export interface ReviewDeltaUnresolvedChange {
+  path: string
+  path_encoding: 'utf8' | 'git_bytes_percent_encoded'
+  reason: 'non_utf8_git_path'
+}
+
 export interface ReviewDelta {
-  comparison: 'snapshot_to_snapshot' | 'current_pr_unmatched_identities'
-  from_commit: string
-  source_base_commit: string
-  to_commit: string
-  summary: RepositoryReview['summary']
-  files: ReviewFile[]
+  schema: 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json'
+  engine_version: string
+  comparison: 'checkpoint_to_head' | 'per_file_review_baseline_to_head'
+  old_base_commit: string
+  checkpoint_commit: string
+  current_base_commit: string
+  head_commit: string
+  summary: {
+    displayable_files: number
+    unresolved_retired_changes: number
+    needs_review_files: number
+    gate_passed: boolean
+  }
+  entries: ReviewDeltaEntry[]
+  unresolved_retired_changes: ReviewDeltaUnresolvedChange[]
 }
 
 export interface RepositorySessionPayload {

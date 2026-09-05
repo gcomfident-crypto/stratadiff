@@ -21,7 +21,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { compactNumber, formatBytes, shortHash, titleCase } from '../lib/format'
 import { fetchReviewFileSources } from '../lib/session'
 import { visibleInlineText, visibleSourceText } from '../lib/visibleText'
-import type { DecodedArtifact, RepositorySessionPayload, ReviewFile } from '../types'
+import type { DecodedArtifact, RepositorySessionPayload, ReviewDeltaEntry, ReviewFile } from '../types'
 
 type ReviewScope = 'resume' | 'full'
 type FullFilter = 'needs' | 'carried' | 'all'
@@ -58,8 +58,33 @@ function checkpointCarryDetail(file: ReviewFile, scope: ReviewScope, resumeCompa
   if (file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') return 'four-way carry'
   if (file.checkpoint_match_basis === 'exact_git_change_identity') return 'exact-identity carry'
   if (file.checkpoint_state === 'needs_review_now') return 'not carried'
-  if (scope === 'resume' && resumeComparison === 'snapshot_to_snapshot') return 'changed after checkpoint'
+  if (scope === 'resume' && resumeComparison === 'checkpoint_to_head') return 'changed after checkpoint'
   return 'not evaluated'
+}
+
+function baselineLabel(entry: ReviewDeltaEntry): string {
+  switch (entry.baseline_basis) {
+    case 'checkpoint_snapshot': return 'Checkpoint snapshot → head'
+    case 'current_base_no_checkpoint_change': return 'New since checkpoint · current base → head'
+    case 'reconstructed_review_baseline': return 'Reconstructed review baseline → head'
+    case 'current_base_fallback': return 'Conservative current-base fallback'
+    case 'checkpoint_head_fallback': return 'Conservative checkpoint fallback'
+  }
+}
+
+function baselineExplanation(entry: ReviewDeltaEntry): string {
+  switch (entry.baseline_basis) {
+    case 'checkpoint_snapshot':
+      return 'This row compares the declared checkpoint snapshot directly with the current head.'
+    case 'current_base_no_checkpoint_change':
+      return 'No checkpoint change exists for this path, so the complete current-base-to-head change is new review work.'
+    case 'reconstructed_review_baseline':
+      return 'Both non-interacting replay orders produced the same review baseline. This row shows only that reconstructed baseline to the current head.'
+    case 'current_base_fallback':
+      return `An exact review baseline could not be reconstructed${entry.fallback_reason === undefined ? '' : ` (${titleCase(entry.fallback_reason)})`}; the complete current-base-to-head change is shown.`
+    case 'checkpoint_head_fallback':
+      return 'The reviewed identity disappeared and no exact rebase baseline was available, so this conservative checkpoint-to-head view may include upstream edits.'
+  }
 }
 
 function exportSession(session: RepositorySessionPayload): void {
@@ -88,7 +113,7 @@ function escapedPreview(bytes: Uint8Array): string {
   }).join('')
 }
 
-function SourceOnlyDiff({ before, after }: { before: DecodedArtifact; after: DecodedArtifact }) {
+function SourceOnlyDiff({ before, after, reconstructedBefore = false }: { before: DecodedArtifact; after: DecodedArtifact; reconstructedBefore?: boolean }) {
   const tooLarge = before.bytes.byteLength > MAX_INTERACTIVE_BYTES_PER_SIDE ||
     after.bytes.byteLength > MAX_INTERACTIVE_BYTES_PER_SIDE ||
     lineCount(before.bytes) > MAX_INTERACTIVE_LINES_PER_SIDE ||
@@ -101,7 +126,7 @@ function SourceOnlyDiff({ before, after }: { before: DecodedArtifact; after: Dec
       <div className="review-source-fallback">
         <ShieldAlert size={22} />
         <h3>Bounded source preview</h3>
-        <p>{tooLarge ? 'This file is too large for the interactive renderer.' : 'At least one side is not valid UTF-8.'} Exact Git objects remain the source of truth.</p>
+        <p>{tooLarge ? 'This file is too large for the interactive renderer.' : 'At least one side is not valid UTF-8.'} {reconstructedBefore ? 'The verified baseline digest and current Git object remain the source of truth.' : 'Exact Git objects remain the source of truth.'}</p>
         <div className="review-binary-panes">
           <pre>{escapedPreview(before.bytes)}</pre>
           <pre>{escapedPreview(after.bytes)}</pre>
@@ -132,8 +157,9 @@ function SourceOnlyDiff({ before, after }: { before: DecodedArtifact; after: Dec
   )
 }
 
-function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawer, open, onClose }: {
+function ReviewFileDetail({ file, deltaEntry, scope, resumeComparison, index, sources, drawer, open, onClose }: {
   file: ReviewFile
+  deltaEntry?: ReviewDeltaEntry
   scope: ReviewScope
   resumeComparison: RepositorySessionPayload['resume_delta']['comparison']
   index: number
@@ -212,9 +238,9 @@ function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawe
         <p>{visibleInlineText(file.reason)}</p>
         <p className="review-scope-note">
           {scope === 'resume'
-            ? resumeComparison === 'snapshot_to_snapshot'
-              ? 'This row compares the declared checkpoint snapshot directly with the current head.'
-              : 'This row is a current PR change carried by neither exact identity nor non-interacting four-way replay; upstream-only files are excluded.'
+            ? deltaEntry === undefined
+              ? 'This row has no review-baseline metadata.'
+              : baselineExplanation(deltaEntry)
             : file.checkpoint_state === 'unchanged_since_checkpoint'
               ? file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay'
                 ? 'The reviewed byte edits and upstream base edits were non-interacting, and both replay orders reproduced this exact current blob.'
@@ -237,6 +263,17 @@ function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawe
           </button>
         </section>
       )}
+      {deltaEntry?.baseline_reconstruction !== undefined && (
+        <section>
+          <h3><GitCompareArrows size={14} /> Review baseline</h3>
+          <dl>
+            <div><dt>Basis</dt><dd>bidirectional replay</dd></div>
+            <div><dt>Baseline</dt><dd title={deltaEntry.baseline_reconstruction.reconstructed_blake3}>{shortHash(deltaEntry.baseline_reconstruction.reconstructed_blake3)}</dd></div>
+            <div><dt>Replay orders</dt><dd>same bytes</dd></div>
+            <div><dt>Bytes</dt><dd>{formatBytes(deltaEntry.baseline_reconstruction.byte_len)}</dd></div>
+          </dl>
+        </section>
+      )}
       <section>
         <h3><GitCompareArrows size={14} /> Git identity</h3>
         <dl>
@@ -254,23 +291,25 @@ function ReviewFileDetail({ file, scope, resumeComparison, index, sources, drawe
 
 export function ReviewWorkbench({ session }: { session: RepositorySessionPayload }) {
   const checkpoint = session.review.checkpoint
-  const checkpointSummary = session.review.summary.checkpoint
-  if (checkpoint === undefined || checkpointSummary === undefined) throw new Error('Review Resume requires checkpoint metadata.')
+  if (checkpoint === undefined || session.review.summary.checkpoint === undefined) throw new Error('Review Resume requires checkpoint metadata.')
 
   const [scope, setScope] = useState<ReviewScope>('resume')
   const [fullFilter, setFullFilter] = useState<FullFilter>('needs')
   const [query, setQuery] = useState('')
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(session.resume_delta.files.length === 0 ? null : 0)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(session.resume_delta.entries.length === 0 ? null : 0)
   const [page, setPage] = useState(0)
   const [sources, setSources] = useState<SourceState>({ status: 'idle' })
   const [detailsOpen, setDetailsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const detailsButtonRef = useRef<HTMLButtonElement>(null)
   const detailsAreDrawer = useMediaQuery('(max-width: 1279px)')
-  const baseChanged = session.resume_delta.comparison === 'current_pr_unmatched_identities'
+  const baseChanged = checkpoint.base_commit !== session.review.base_commit
+  const needsReviewFiles = session.resume_delta.summary.needs_review_files
+  const unresolvedRetiredChanges = session.resume_delta.unresolved_retired_changes.length
   const exactIdentityCarries = session.review.files.filter((file) => file.checkpoint_match_basis === 'exact_git_change_identity').length
   const fourWayReplayCarries = session.review.files.filter((file) => file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay').length
-  const files = scope === 'resume' ? session.resume_delta.files : session.review.files
+  const reconstructedDeltas = session.resume_delta.entries.filter((entry) => entry.baseline_basis === 'reconstructed_review_baseline').length
+  const files = scope === 'resume' ? session.resume_delta.entries.map((entry) => entry.file) : session.review.files
   const entries = useMemo(() => files.map((file, index) => ({ file, index })).filter(({ file }) => {
     if (scope === 'full' && fullFilter !== 'all') {
       const wanted = fullFilter === 'needs' ? 'needs_review_now' : 'unchanged_since_checkpoint'
@@ -284,6 +323,9 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
   const visibleEntries = entries.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   const selectedEntry = entries.find(({ index }) => index === selectedIndex)
   const selectedFile = selectedEntry?.file
+  const selectedDeltaEntry = scope === 'resume' && selectedIndex !== null
+    ? session.resume_delta.entries[selectedIndex]
+    : undefined
 
   function closeDetails(): void {
     if (detailsOpen) detailsButtonRef.current?.focus()
@@ -360,32 +402,37 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
 
       <section className="resume-hero">
         <div className="resume-copy">
-          <span className="eyebrow">{baseChanged ? 'PR-RELATIVE RESIDUE AFTER BASE CHANGE' : 'WHAT CHANGED AFTER YOUR CHECKPOINT'}</span>
-          <h1>{session.resume_delta.files.length === 0
-            ? baseChanged ? 'No review residue' : 'No changes between checkpoint and head'
+          <span className="eyebrow">{baseChanged ? 'REVIEW-BASELINE DELTA AFTER BASE CHANGE' : 'WHAT CHANGED AFTER YOUR CHECKPOINT'}</span>
+          <h1>{needsReviewFiles === 0
+            ? baseChanged ? 'No remaining review delta' : 'No changes between checkpoint and head'
+            : unresolvedRetiredChanges > 0
+              ? `${needsReviewFiles.toLocaleString('en')} ${needsReviewFiles === 1 ? 'review item remains' : 'review items remain'}`
             : baseChanged
-              ? `${session.resume_delta.files.length.toLocaleString('en')} current PR ${session.resume_delta.files.length === 1 ? 'file needs' : 'files need'} review`
-              : `${session.resume_delta.files.length.toLocaleString('en')} ${session.resume_delta.files.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
+              ? `${session.resume_delta.entries.length.toLocaleString('en')} ${session.resume_delta.entries.length === 1 ? 'file needs' : 'files need'} review`
+              : `${session.resume_delta.entries.length.toLocaleString('en')} ${session.resume_delta.entries.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
           <p>{baseChanged
-            ? 'The merge base moved. This queue excludes upstream-only files and keeps changes that failed exact identity and non-interacting four-way replay.'
+            ? 'The merge base moved. Exact rows compare a reconstructed reviewed baseline with head; any unprovable row is explicitly shown as a conservative fallback.'
             : 'Start with the checkpoint → head delta. Switch to full PR context whenever you need the original base → head story.'}</p>
         </div>
         <div className="resume-stats" aria-label="Review resume summary">
-          <div className="attention"><span>Need review now</span><strong>{compactNumber(checkpointSummary.needs_review_now_files)}</strong></div>
+          <div className="attention"><span>Need review now</span><strong>{compactNumber(needsReviewFiles)}</strong></div>
           <div className="carried"><span>Exact-identity carry</span><strong>{compactNumber(exactIdentityCarries)}</strong></div>
           <div className="carried"><span>Four-way carry</span><strong>{compactNumber(fourWayReplayCarries)}</strong></div>
-          <div className="retired"><span>Retired identities</span><strong>{compactNumber(checkpointSummary.retired_change_count)}</strong></div>
+          <div className="retired"><span>Reconstructed deltas</span><strong>{compactNumber(reconstructedDeltas)}</strong></div>
         </div>
       </section>
 
       <div className="review-scope-bar">
         <div className="review-scope-switch" aria-label="Diff scope">
-          <button type="button" className={scope === 'resume' ? 'active' : ''} onClick={() => setScope('resume')}>{baseChanged ? 'Review residue' : 'Since checkpoint'} <small>{baseChanged ? "B' → H" : 'R → H'}</small></button>
+          <button type="button" className={scope === 'resume' ? 'active' : ''} onClick={() => setScope('resume')}>{baseChanged ? 'Review delta' : 'Since checkpoint'} <small>{baseChanged ? 'baseline → H' : 'R → H'}</small></button>
           <button type="button" className={scope === 'full' ? 'active' : ''} onClick={() => setScope('full')}>Full PR context <small>B → H</small></button>
         </div>
         <p><ShieldAlert size={14} /> {session.assessment.message}</p>
       </div>
       <div className="review-trust-banner"><ShieldAlert size={13} /> {baseChanged ? 'Base changed · exact-identity or four-way carry · unresolved changes need review' : 'Exact Git identity only · caller-attested checkpoint · not approval or semantic safety'}</div>
+      {unresolvedRetiredChanges > 0 && (
+        <div className="review-trust-banner"><AlertTriangle size={13} /> {unresolvedRetiredChanges.toLocaleString('en')} retired checkpoint {unresolvedRetiredChanges === 1 ? 'change has' : 'changes have'} no displayable fallback and still block review completion: {session.resume_delta.unresolved_retired_changes.slice(0, 3).map((change) => change.path).join(', ')}{unresolvedRetiredChanges > 3 ? ', …' : ''}</div>
+      )}
 
       <div className="review-workspace">
         <aside className="review-file-panel">
@@ -397,16 +444,16 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
               </div>
             )}
           </div>
-          <div className="review-list-heading"><span>{scope === 'resume' ? baseChanged ? 'Review residue' : 'Incremental queue' : 'Current PR files'}</span><strong>{entries.length}</strong></div>
+          <div className="review-list-heading"><span>{scope === 'resume' ? baseChanged ? 'Review delta' : 'Incremental queue' : 'Current PR files'}</span><strong>{entries.length}</strong></div>
           <div className="review-file-list">
             {visibleEntries.map(({ file, index }) => (
               <button type="button" className={`review-file-row ${selectedIndex === index ? 'selected' : ''}`} key={`${scope}-${index}`} onClick={() => setSelectedIndex(index)}>
                 <span aria-hidden="true" className={`review-state-dot ${file.checkpoint_state === 'unchanged_since_checkpoint' ? 'carried' : 'attention'}`} />
-                <span className="review-file-copy"><strong>{displayPath(file)}</strong><small>{titleCase(file.status)} · {titleCase(file.lane)}{checkpointStateLabel(file) === null ? '' : ` · ${checkpointStateLabel(file)}`}</small></span>
+                <span className="review-file-copy"><strong>{displayPath(file)}</strong><small>{titleCase(file.status)} · {titleCase(file.lane)}{scope === 'resume' && session.resume_delta.entries[index] !== undefined ? ` · ${baselineLabel(session.resume_delta.entries[index])}` : checkpointStateLabel(file) === null ? '' : ` · ${checkpointStateLabel(file)}`}</small></span>
                 <span className="review-line-count">{lineSummary(file)}</span>
               </button>
             ))}
-            {entries.length === 0 && <div className="review-empty"><Check size={22} /><strong>Nothing in this view</strong><span>Try another scope or clear the file search.</span></div>}
+            {entries.length === 0 && <div className="review-empty"><Check size={22} /><strong>{scope === 'resume' && unresolvedRetiredChanges > 0 ? 'No displayable delta' : 'Nothing in this view'}</strong><span>{scope === 'resume' && unresolvedRetiredChanges > 0 ? 'See the unresolved retired-change warning above.' : 'Try another scope or clear the file search.'}</span></div>}
           </div>
           {pageCount > 1 && <div className="review-pagination"><button type="button" disabled={safePage === 0} onClick={() => setPage(safePage - 1)} aria-label="Previous file page"><ChevronLeft size={14} /></button><span>{safePage + 1} / {pageCount}</span><button type="button" disabled={safePage === pageCount - 1} onClick={() => setPage(safePage + 1)} aria-label="Next file page"><ChevronRight size={14} /></button></div>}
         </aside>
@@ -415,7 +462,9 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           {selectedFile === undefined ? (
             entries.length === 0 && files.length > 0 ? (
               <div className="review-empty large"><FileSearch size={28} /><strong>No files match this view</strong><span>Clear the search or choose another checkpoint-state filter.</span></div>
-            ) : scope === 'resume' ? baseChanged ? (
+            ) : scope === 'resume' ? unresolvedRetiredChanges > 0 ? (
+              <div className="review-empty large"><AlertTriangle size={28} /><strong>Review remains blocked</strong><span>The retired changes above cannot be rendered safely; inspect the encoded paths and history manually.</span></div>
+            ) : baseChanged ? (
               <div className="review-empty large"><Check size={28} /><strong>No review residue</strong><span>Every current PR change was carried by exact identity or non-interacting four-way replay.</span></div>
             ) : (
               <div className="review-empty large"><Check size={28} /><strong>No changes between checkpoint and head</strong><span>There is no incremental file delta to inspect.</span></div>
@@ -425,21 +474,21 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           ) : (
             <>
               <div className="review-diff-heading">
-                <div><span className="surface-kicker">{scope === 'resume' ? baseChanged ? 'CURRENT PR · NEEDS REVIEW' : 'CHECKPOINT → HEAD' : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
+                <div><span className="surface-kicker">{scope === 'resume' ? selectedDeltaEntry === undefined ? 'REVIEW DELTA' : baselineLabel(selectedDeltaEntry).toLocaleUpperCase('en') : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
                 <div className="review-diff-actions">
                   <span>{lineSummary(selectedFile)}</span>
                   <button ref={detailsButtonRef} type="button" className="review-detail-trigger" onClick={() => setDetailsOpen(true)} aria-label="Open details and evidence"><Eye size={14} /> Details &amp; evidence</button>
                 </div>
               </div>
-              {sources.status === 'loading' && <div className="review-source-state"><LoaderCircle className="spin" size={22} /> Loading immutable Git objects…</div>}
+              {sources.status === 'loading' && <div className="review-source-state"><LoaderCircle className="spin" size={22} /> Loading review sources…</div>}
               {sources.status === 'error' && <div className="review-source-state error"><ShieldAlert size={22} /><strong>Source preview unavailable</strong><span>{sources.message}</span></div>}
-              {sources.status === 'ready' && <SourceOnlyDiff before={sources.before} after={sources.after} />}
+              {sources.status === 'ready' && <SourceOnlyDiff before={sources.before} after={sources.after} reconstructedBefore={selectedDeltaEntry?.before_source.kind === 'reconstructed_bytes'} />}
             </>
           )}
         </main>
 
         {detailsAreDrawer && detailsOpen && <button type="button" className="drawer-backdrop review-details-backdrop" onClick={closeDetails} aria-label="Close details and evidence" />}
-        {selectedFile !== undefined && <ReviewFileDetail file={selectedFile} scope={scope} resumeComparison={session.resume_delta.comparison} index={selectedIndex ?? 0} sources={sources} drawer={detailsAreDrawer} open={detailsOpen} onClose={closeDetails} />}
+        {selectedFile !== undefined && <ReviewFileDetail file={selectedFile} deltaEntry={selectedDeltaEntry} scope={scope} resumeComparison={session.resume_delta.comparison} index={selectedIndex ?? 0} sources={sources} drawer={detailsAreDrawer} open={detailsOpen} onClose={closeDetails} />}
       </div>
       <footer className="review-footer"><FileCode2 size={13} /> review-v1 is a producer-attested focus summary; only opened per-file reports receive independent structural verification.</footer>
     </div>

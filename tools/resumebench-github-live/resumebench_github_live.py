@@ -686,6 +686,14 @@ def read_blob(repository, object_id):
 
 
 def tree_blob_oid(repository, commit, path):
+    entry = tree_entry(repository, commit, path)
+    if entry is None:
+        return None
+    require(entry[1] == "blob", f"license path is not a blob: {commit}:{path}")
+    return entry[2]
+
+
+def tree_entry(repository, commit, path):
     raw = git_stdout(
         repository,
         ["ls-tree", "-z", commit, "--", f":(literal){path}"],
@@ -699,9 +707,9 @@ def tree_blob_oid(repository, commit, path):
     metadata, separator, raw_path = records[0].partition(b"\t")
     require(separator == b"\t" and raw_path == path.encode("utf-8"), f"tree path differs: {commit}:{path}")
     columns = metadata.decode("ascii").split()
-    require(len(columns) == 3 and columns[1] == "blob", f"license path is not a blob: {commit}:{path}")
+    require(len(columns) == 3, f"tree entry metadata differs: {commit}:{path}")
     validate_oid(columns[2], f"tree blob {commit}:{path}")
-    return columns[2]
+    return columns[0], columns[1], columns[2]
 
 
 def license_observation_evidence(case, repository, commits, *, read_content):
@@ -1170,7 +1178,10 @@ def repositories_from_materialization(manifest, manifest_path, materialization):
     for case in manifest["cases"]:
         relative = Path(metadata["repositories"][case["id"]])
         require(not relative.is_absolute() and ".." not in relative.parts, f"materialized repository path escapes its root: {relative}")
-        repositories[case["id"]] = root / relative
+        repository = root / relative
+        object_ids = required_review_delta_blob_ids(case, repository)
+        verify_required_review_delta_blobs(case, repository, object_ids, LOCAL_COMMAND_TIMEOUT_SECONDS)
+        repositories[case["id"]] = repository
     return repositories
 
 
@@ -1661,20 +1672,71 @@ def verify_bundle(manifest_path):
     return len(manifest["cases"])
 
 
-def hydrate_required_blobs(manifest, case, repository, token, timeout):
-    commits = {label: case["snapshots"][label]["commit"] for label in ("Q", "A", "B", "C", "D")}
-    checkpoint = raw_diff(repository, commits["A"], commits["B"])[2]
-    current = raw_diff(repository, commits["C"], commits["D"])[2]
+def change_blob_ids(changes):
     object_ids = set()
-    for change in [*checkpoint, *current]:
+    for change in changes:
         for object_field, mode_field in (
             ("before_object_id", "before_mode"),
             ("after_object_id", "after_mode"),
         ):
             if change[object_field] is not None and change[mode_field] != "160000":
                 object_ids.add(change[object_field])
+    return object_ids
+
+
+def review_delta_snapshot_blob_ids(repository, commits, checkpoint_changes):
+    paths = {
+        path
+        for change in checkpoint_changes
+        for path in (change["before_path"], change["after_path"])
+        if path is not None
+    }
+    object_ids = set()
+    for raw_path in paths:
+        try:
+            path = raw_path.decode("utf-8")
+        except UnicodeDecodeError:
+            # StrataDiff records non-UTF-8 retired paths as unresolved instead of
+            # claiming that their source can be displayed.
+            continue
+        for label in ("A", "B", "C", "D"):
+            entry = tree_entry(repository, commits[label], path)
+            if entry is not None and entry[1] == "blob":
+                object_ids.add(entry[2])
+    return object_ids
+
+
+def required_review_delta_blob_ids(case, repository):
+    commits = {label: case["snapshots"][label]["commit"] for label in ("Q", "A", "B", "C", "D")}
+    checkpoint = raw_diff(repository, commits["A"], commits["B"])[2]
+    current = raw_diff(repository, commits["C"], commits["D"])[2]
+    object_ids = change_blob_ids([*checkpoint, *current])
+    object_ids.update(review_delta_snapshot_blob_ids(repository, commits, checkpoint))
     license_evidence = license_observation_evidence(case, repository, commits, read_content=False)
     object_ids.add(license_evidence["blob_oid"])
+    return object_ids
+
+
+def verify_required_review_delta_blobs(case, repository, object_ids, timeout):
+    sorted_ids = sorted(object_ids)
+    request = "".join(f"{object_id}\n" for object_id in sorted_ids).encode("ascii")
+    output = git_stdout(
+        repository,
+        ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
+        input_bytes=request,
+        timeout=timeout,
+    ).decode("ascii").splitlines()
+    require(len(output) == len(object_ids), f"{case['id']} review-delta blob closure count differs")
+    for line, expected in zip(output, sorted_ids):
+        columns = line.split()
+        require(
+            len(columns) == 3 and columns[0] == expected and columns[1] == "blob",
+            f"{case['id']} is not offline-ready; review-delta blob is unavailable: {expected}",
+        )
+
+
+def hydrate_required_blobs(manifest, case, repository, token, timeout):
+    object_ids = required_review_delta_blob_ids(case, repository)
     sorted_ids = sorted(object_ids)
     scratch = Path(tempfile.mkdtemp(prefix=".resumebench-blobs-", dir=repository.parent))
     try:
@@ -1705,18 +1767,8 @@ def hydrate_required_blobs(manifest, case, repository, token, timeout):
         run_git(repository, ["update-ref", "--stdin"], input_bytes=deletion)
     finally:
         shutil.rmtree(scratch)
-
-    request = "".join(f"{object_id}\n" for object_id in sorted_ids).encode("ascii")
-    output = git_stdout(
-        repository,
-        ["cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
-        input_bytes=request,
-        timeout=timeout,
-    ).decode("ascii").splitlines()
-    require(len(output) == len(object_ids), f"{case['id']} blob hydration count differs")
-    for line, expected in zip(output, sorted_ids):
-        columns = line.split()
-        require(len(columns) == 3 and columns[0] == expected and columns[1] == "blob", f"{case['id']} failed to hydrate blob {expected}")
+    verify_required_review_delta_blobs(case, repository, object_ids, timeout)
+    return object_ids
 
 
 def materialize_case(manifest, case, repository, token, timeout):
@@ -1756,12 +1808,13 @@ def materialize_case(manifest, case, repository, token, timeout):
     run_git(repository, ["update-ref", "refs/resumebench/A", a_commit])
     run_git(repository, ["update-ref", "refs/resumebench/C", c_commit])
     run_git(repository, ["symbolic-ref", "HEAD", "refs/resumebench/D"])
-    hydrate_required_blobs(manifest, case, repository, token, timeout)
+    object_ids = hydrate_required_blobs(manifest, case, repository, token, timeout)
     generate_case_oracle(manifest, case, repository)
     run_git(repository, ["remote", "remove", "origin"])
     unset = run_git(repository, ["config", "--unset-all", "extensions.partialClone"], check=False)
     require(unset.returncode in (0, 5), f"{case['id']} failed to clear partial clone owner")
     require(not git_stdout(repository, ["remote"]), f"{case['id']} materialization retained a remote")
+    verify_required_review_delta_blobs(case, repository, object_ids, timeout)
     generate_case_oracle(manifest, case, repository)
 
 
@@ -1827,7 +1880,43 @@ def self_test():
         RejectRedirectHandler().redirect_request(None, None, 302, "Found", {}, "https://example.com/") is None,
         "self-test GitHub API redirects are not rejected",
     )
-    return {"tests": 13, "passed": 13}
+
+    with tempfile.TemporaryDirectory(prefix="stratadiff-github-live-self-test-") as temporary:
+        repository = Path(temporary)
+        run_git(repository, ["init", "--quiet"])
+        run_git(repository, ["config", "user.name", "StrataDiff Self Test"])
+        run_git(repository, ["config", "user.email", "stratadiff@example.test"])
+        (repository / "retired.txt").write_bytes(b"base\n")
+        run_git(repository, ["add", "retired.txt"])
+        run_git(repository, ["commit", "--quiet", "-m", "base"])
+        a_commit = resolve_commit(repository, "HEAD")
+
+        (repository / "retired.txt").write_bytes(b"reviewed\n")
+        run_git(repository, ["commit", "--quiet", "-am", "reviewed"])
+        b_commit = resolve_commit(repository, "HEAD")
+
+        run_git(repository, ["checkout", "--quiet", "--detach", a_commit])
+        (repository / "retired.txt").write_bytes(b"upstream\n")
+        run_git(repository, ["commit", "--quiet", "-am", "new base"])
+        c_commit = resolve_commit(repository, "HEAD")
+        (repository / "current.txt").write_bytes(b"current PR\n")
+        run_git(repository, ["add", "current.txt"])
+        run_git(repository, ["commit", "--quiet", "-m", "current head"])
+        d_commit = resolve_commit(repository, "HEAD")
+
+        checkpoint_changes = raw_diff(repository, a_commit, b_commit)[2]
+        current_changes = raw_diff(repository, c_commit, d_commit)[2]
+        diff_blob_ids = change_blob_ids([*checkpoint_changes, *current_changes])
+        snapshot_blob_ids = review_delta_snapshot_blob_ids(
+            repository,
+            {"A": a_commit, "B": b_commit, "C": c_commit, "D": d_commit},
+            checkpoint_changes,
+        )
+        retired_head_blob = tree_entry(repository, d_commit, "retired.txt")[2]
+        require(retired_head_blob not in diff_blob_ids, "self-test fixture unexpectedly covered retired head blob")
+        require(retired_head_blob in snapshot_blob_ids, "review-delta blob closure omitted retired head blob")
+
+    return {"tests": 14, "passed": 14}
 
 
 def add_manifest_argument(parser):

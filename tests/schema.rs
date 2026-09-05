@@ -2,7 +2,10 @@ use serde::Serialize;
 use stratadiff::{
     AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
     Language, Predicate, analyze_bytes,
-    review::{CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState},
+    review::{
+        CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState, ReviewDeltaBaselineBasis,
+        ReviewDeltaComparison, ReviewDeltaFallbackReason, ReviewDeltaUnresolvedReason,
+    },
 };
 
 #[test]
@@ -12,6 +15,7 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/report-v2.schema.json"),
         include_str!("../schema/report-v3.schema.json"),
         include_str!("../schema/review-v1.schema.json"),
+        include_str!("../schema/review-delta-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
         jsonschema::draft202012::new(&schema).unwrap();
@@ -169,6 +173,97 @@ fn review_schema_tracks_checkpoint_variants() {
             CheckpointMatchBasis::ExactGitChangeIdentity,
             CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay,
         ],
+    );
+}
+
+#[test]
+fn review_delta_schema_tracks_public_variants() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-delta-v1.schema.json")).unwrap();
+    assert_enum(
+        &schema["properties"]["comparison"]["enum"],
+        &[
+            ReviewDeltaComparison::CheckpointToHead,
+            ReviewDeltaComparison::PerFileReviewBaselineToHead,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["entry"]["properties"]["baseline_basis"]["enum"],
+        &[
+            ReviewDeltaBaselineBasis::CheckpointSnapshot,
+            ReviewDeltaBaselineBasis::CurrentBaseNoCheckpointChange,
+            ReviewDeltaBaselineBasis::ReconstructedReviewBaseline,
+            ReviewDeltaBaselineBasis::CurrentBaseFallback,
+            ReviewDeltaBaselineBasis::CheckpointHeadFallback,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["entry"]["properties"]["fallback_reason"]["enum"],
+        &[
+            ReviewDeltaFallbackReason::OverlapOrAdjacent,
+            ReviewDeltaFallbackReason::BinaryNul,
+            ReviewDeltaFallbackReason::SourceUnavailable,
+            ReviewDeltaFallbackReason::UnsupportedChange,
+            ReviewDeltaFallbackReason::TranslationFailed,
+            ReviewDeltaFallbackReason::ReplayOrdersMismatch,
+        ],
+    );
+    assert_enum(
+        &schema["$defs"]["unresolved_change"]["properties"]["reason"]["enum"],
+        &[ReviewDeltaUnresolvedReason::NonUtf8GitPath],
+    );
+}
+
+#[test]
+fn review_delta_schema_rejects_fallback_evidence_on_an_exact_basis() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-delta-v1.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let object_id = "0".repeat(40);
+    let mut exact = serde_json::json!({
+        "schema": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json",
+        "engine_version": "0.3.0",
+        "comparison": "per_file_review_baseline_to_head",
+        "old_base_commit": object_id,
+        "checkpoint_commit": object_id,
+        "current_base_commit": object_id,
+        "head_commit": object_id,
+        "summary": {
+            "displayable_files": 1,
+            "unresolved_retired_changes": 0,
+            "needs_review_files": 1,
+            "gate_passed": false
+        },
+        "entries": [{
+            "file": {
+                "status": "added",
+                "after_path": "new.py",
+                "after_path_encoding": "utf8",
+                "after_mode": "100644",
+                "after_blob": object_id,
+                "after_bytes": 8,
+                "priority": "review_first",
+                "lane": "unverified",
+                "checkpoint_state": "needs_review_now",
+                "reason": "new current change"
+            },
+            "baseline_basis": "current_base_no_checkpoint_change",
+            "before_source": {"kind": "empty"},
+            "after_source": {
+                "kind": "git_object",
+                "commit": object_id,
+                "object_id": object_id,
+                "byte_len": 8
+            }
+        }],
+        "unresolved_retired_changes": []
+    });
+    assert!(validator.is_valid(&exact));
+
+    exact["entries"][0]["fallback_reason"] = serde_json::json!("unsupported_change");
+    assert!(
+        !validator.is_valid(&exact),
+        "schema accepted fallback evidence on an exact baseline basis"
     );
 }
 

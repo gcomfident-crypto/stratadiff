@@ -14,7 +14,8 @@ use stratadiff::github::{
     verify_github_commit_object,
 };
 use stratadiff::review::{
-    github_workflow_annotations, markdown_report, review_git_range_with_checkpoint,
+    github_review_delta_annotations, github_workflow_annotations, markdown_report,
+    review_git_range_with_checkpoint, review_git_resume_delta,
 };
 use stratadiff::{
     AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_bytes, apply_patch,
@@ -125,13 +126,16 @@ enum Command {
         /// Write the review report to this path instead of stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Write the checkpoint-to-head review delta, including reconstructed-baseline evidence.
+        #[arg(long, requires = "checkpoint", conflicts_with = "workbench")]
+        review_delta_output: Option<PathBuf>,
         /// Append Markdown to the path named by GITHUB_STEP_SUMMARY.
         #[arg(long)]
         github_summary: bool,
         /// Emit GitHub workflow error annotations for the current review residue.
         #[arg(long, requires = "output", conflicts_with = "workbench")]
         github_annotations: bool,
-        /// Exit unsuccessfully unless a checkpoint exists and no current PR change needs review.
+        /// Exit unsuccessfully unless a checkpoint exists and its exact review queue is empty.
         #[arg(long)]
         fail_on_review_residue: bool,
         /// Open the repository review queue in the local Evidence Workbench.
@@ -388,6 +392,7 @@ fn run(command: Command) -> Result<()> {
             repo,
             format,
             output,
+            review_delta_output,
             github_summary,
             github_annotations,
             fail_on_review_residue,
@@ -400,6 +405,14 @@ fn run(command: Command) -> Result<()> {
             if workbench {
                 return viewer::serve_review(review, repo, port, !no_open);
             }
+            let resume_delta =
+                if (github_annotations || fail_on_review_residue || review_delta_output.is_some())
+                    && review.checkpoint.is_some()
+                {
+                    Some(review_git_resume_delta(&repo, &review)?)
+                } else {
+                    None
+                };
             if github_summary {
                 let summary_path = std::env::var_os("GITHUB_STEP_SUMMARY")
                     .context("--github-summary requires GITHUB_STEP_SUMMARY")?;
@@ -433,25 +446,36 @@ fn run(command: Command) -> Result<()> {
                     }
                 }
             }
+            if let Some(path) = review_delta_output {
+                let delta = resume_delta
+                    .as_ref()
+                    .context("review delta output requires a resolved checkpoint")?;
+                let encoded = serde_json::to_vec(delta)?;
+                std::fs::write(&path, encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+                eprintln!("wrote review delta to {}", display_path(&path));
+            }
             if github_annotations {
                 let mut stdout = std::io::stdout().lock();
-                stdout.write_all(github_workflow_annotations(&review).as_bytes())?;
+                let annotations = resume_delta.as_ref().map_or_else(
+                    || github_workflow_annotations(&review),
+                    github_review_delta_annotations,
+                );
+                stdout.write_all(annotations.as_bytes())?;
             }
             if fail_on_review_residue {
-                let checkpoint_summary = review
-                    .summary
-                    .checkpoint
+                let delta = resume_delta
                     .as_ref()
                     .context("review residue gate requires a resolved checkpoint")?;
+                let needs_review = delta.summary.needs_review_files;
+                let gate_message = if needs_review == 1 {
+                    "1 file needs review".to_owned()
+                } else {
+                    format!("{needs_review} files need review")
+                };
                 ensure!(
-                    checkpoint_summary.needs_review_now_files == 0,
-                    "review residue gate is open: {} current PR {} need review",
-                    checkpoint_summary.needs_review_now_files,
-                    if checkpoint_summary.needs_review_now_files == 1 {
-                        "file"
-                    } else {
-                        "files"
-                    }
+                    needs_review == 0,
+                    "review delta gate is open: {gate_message}"
                 );
             }
         }

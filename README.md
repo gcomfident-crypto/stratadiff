@@ -1,13 +1,24 @@
 # StrataDiff
 
-**Resume the review. Verify what changed.**
+**Stop re-reviewing code StrataDiff can prove unchanged after a rebase.**
 
-StrataDiff is a local, proof-carrying memory layer for human review of large refactors, codemods,
-and AI-written changes. Give it the last complete PR snapshot you reviewed and the current head. It
-first carries exact Git change identities. If the merge base changed, a unique same-path regular
-file modification may also carry when a strict four-way byte replay proves that the reviewed edit
-and the upstream edit do not interact. Everything else becomes `needs_review_now`. This is a
-review gate with inspectable evidence, not another generic "changes since last review" view.
+StrataDiff is a local, proof-carrying memory layer for human review of large refactors, stacked PRs,
+codemods, and AI-written changes. After a push, rebase, restack, or force-push, it reconstructs the
+reviewed baseline where that can be proved and shows the reviewer only the remaining exact delta.
+A dropped reviewed change stays visible even when it vanished from the current PR diff, and every
+unsupported or ambiguous case fails closed. GitHub remains the source of approval; StrataDiff adds
+an inspectable coverage gate without uploading source code.
+
+The engine first carries exact Git change identities. If the merge base changed, a unique same-path
+regular-file modification may also carry when strict four-way byte replay proves that the reviewed
+edit and the upstream edit do not interact. Everything else becomes `needs_review_now`. This is not
+another probabilistic AI reviewer or a generic "changes since last review" view.
+
+![Review Resume Workbench showing only the exact one-line author follow-up after a rebase](docs/assets/review-resume-workbench.png)
+
+_A controlled base-drift case: upstream changed the title, while the author changed only
+`followup = 0` to `followup = 1`. Resume shows that one-line `S -> D` delta and its reconstruction
+evidence; Full PR context remains one click away._
 
 The checkpoint policy is built on an evidence-carrying single-file differ whose report separates
 three questions that traditional AST diff tools often mix together:
@@ -25,7 +36,8 @@ historical fact.
 > alignment, duplicate ambiguity handling, deterministic JSON reports, a resource-bounded
 > matcher-free verifier crate, native Tree-sitter adapters, and an explicit Universal byte mode work
 > now. The alpha Action can resolve an explicitly named reviewer's latest completed GitHub review
-> and optionally fail a required check while any current PR file remains in the residue. A
+> and optionally fail a required check while any exact review-delta item remains, including a
+> dropped or reverted reviewed change that disappeared from the current PR diff. A
 > provenance-complete DiffBenchmark literature-subset evaluation is published below.
 > Binding-aware rename proofs remain on the roadmap.
 
@@ -101,6 +113,12 @@ contains 1,838 paths—1,815 outside the current PR—and still omits 24 current
 purposefully selected correctness cases with no human-priority ground truth, not prevalence,
 time-saving, or safety evidence.
 
+The [Review Delta v1 controlled benchmark](benchmarks/review-delta-v1/README.md) adds thirteen
+network-free five-snapshot histories for the exact resume queue. It independently checks raw Git
+identity, the CLI gate, and the bytes served by both Workbench scopes, including dropped work and
+upstream absorption as well as fail-closed overlap, binary, add/delete/rename, and mode-change
+cases. A clean pinned release run is required before treating an evaluation as release evidence.
+
 ## Quick start
 
 Rust 1.90 or newer is required. The repository includes the compiled Evidence Workbench in
@@ -113,7 +131,7 @@ target/release/stratadiff build-info
 target/release/stratadiff review origin/main HEAD
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA \
-  --fail-on-review-residue
+  --review-delta-output review-delta.json --fail-on-review-residue
 target/release/stratadiff github-checkpoint reviews.json --reviewer REVIEWER_LOGIN
 target/release/stratadiff diff examples/demo/before.py examples/demo/after.py \
   --output change.axd
@@ -184,6 +202,16 @@ account for effects from a newly changed file elsewhere, or grant approval. Reba
 already exists in products such as Reviewable and Graphite. StrataDiff's narrower goal is a
 deterministic, host-neutral gate whose evidence can become part of a portable Change Passport.
 
+`--review-delta-output` writes the separate, versioned `review-delta-v1` queue used by the exact
+gate and Review Resume Workbench. With a moved merge base, each eligible regular-file row compares
+the reconstructed reviewed baseline with the current head (`S → D`), so upstream base noise is not
+shown as author work. Unsupported or interacting changes are labeled fallbacks. The queue also
+retains reviewed changes that were later dropped or reverted, even when the current `C → D` PR diff
+is empty. Its summary distinguishes displayable rows from unresolved retired changes and makes the
+gate result explicit. A reconstructed baseline is identified by BLAKE3 rather than represented as
+a Git object. This v1 artifact is producer-attested; a self-contained offline-verifiable Change
+Passport remains future work.
+
 Every changed file is retained and placed in one of four lanes:
 
 - `review first`: new, deleted, or structurally changed code;
@@ -233,11 +261,14 @@ ref, the Action builds from its own directory so a checkout-level `.cargo/config
 redirect that build. A local `uses: ./` invocation has no such boundary because the Action and
 checkout are the same tree. The workflow still uses GitHub-hosted or self-hosted runner
 infrastructure plus third-party checkout, toolchain, cache, and optional artifact actions.
+Run the pinned remote Action immediately after checkout, before executing PR-controlled code; the
+runner's base tools, `PATH`, and any earlier same-job processes remain part of the trust boundary.
 `fail-on-review-residue` makes the Action suitable as an experimental required check, but it still
 does not grant or restore approval, prove semantic safety, or establish reviewer authorization.
-When that gate fails, the Action adds file-scoped GitHub error annotations for up to 20 current PR
-files that still need review. Larger residues stay bounded in the log and report their remaining
-count; the step summary and JSON artifact retain the complete queue.
+When that gate fails, the Action adds file-scoped GitHub error annotations for up to 20 displayable
+delta entries. Unaddressable paths receive check-level annotations instead of invalid file links.
+Larger queues stay bounded in the log and report their remaining count; the step summary and
+runner-local `review_delta` JSON retain the complete queue.
 Audit and pin every action to an immutable full commit before using it in a protected production
 workflow; the mutable `main` reference below is only a preview:
 
@@ -259,10 +290,12 @@ steps:
       github-token: ${{ github.token }}
       fail-on-review-residue: true
   - uses: actions/upload-artifact@v4
+    if: always()
     with:
       name: stratadiff-review-focus
       path: |
         ${{ steps.review-focus.outputs.report }}
+        ${{ steps.review-focus.outputs.review_delta }}
         ${{ steps.review-focus.outputs.checkpoint_record }}
 ```
 
@@ -287,12 +320,14 @@ target/release/stratadiff review origin/main HEAD \
 ```
 
 When both snapshots have the same merge base, Repository Review Resume opens on the checkpoint to
-head snapshot delta. When the base changed, that direct snapshot delta contains upstream noise, so
-the Workbench instead shows current-base-to-head files that were not carried by exact identity or
-four-way replay. Upstream-only files are excluded. Switch to full PR context to inspect the complete
-current merge-base-to-head range. A reverted checkpoint change can still appear in retired
-accounting without remaining in the current PR diff. File sources come from the object IDs recorded
-in the report, never from the mutable worktree.
+head snapshot delta. When the base changed, that direct snapshot delta contains upstream noise. For
+eligible non-interacting files the Workbench therefore shows the exact reconstructed review
+baseline `S` to current head `D`; unsupported cases expose their conservative `C -> D` or `B -> D`
+fallback explicitly. Upstream-only files are excluded. Switch to full PR context to inspect the
+complete current merge-base-to-head range. A dropped or reverted checkpoint change stays in Resume
+even when it no longer appears in the current PR diff. Regular-file sources come from the recorded
+Git objects, never from the mutable worktree. Gitlink/submodule entries retain their commit-pointer
+identity but do not yet have a Workbench source rendering.
 
 Files with a structural evidence digest can open the original single-file Workbench. That viewer
 keeps the readable code diff, structural relations, ambiguity constraints, and exact byte edits as

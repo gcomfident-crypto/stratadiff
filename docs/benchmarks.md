@@ -60,6 +60,25 @@ exercise policy behavior; they are neither random nor representative and contain
 ground truth. See the
 [`ResumeBench-GitHub-Live v1` dataset card](../benchmarks/resumebench-github-live-v1/README.md).
 
+## Review Delta v1 controlled contract
+
+[`Review Delta v1`](../benchmarks/review-delta-v1/README.md) is the network-free executable
+contract for the five-snapshot resume queue. Its thirteen synthetic Git histories cover pure
+rebase, an independent author follow-up, a dropped reviewed edit or rename, upstream absorption,
+overlap and adjacency rejection, binary content, and conservative add/delete/rename/mode
+fallbacks. Every case moves the merge base.
+
+The runner checks more than the serialized summary. An independent Git oracle derives the exact
+`C -> D` identities, then the runner queries both Workbench scopes and compares every served source
+byte in its regular-blob cases. This catches a class of failures where the gate is conservative but
+the reviewer is shown the wrong baseline. It also executes the residue gate and verifies the saved
+evaluation independently. Gitlink/submodule source rendering is explicitly outside the v1 claim.
+
+The development suite currently passes all 13 cases, and its Rust harness passes both integration
+tests. Those results establish behavior only for the enumerated histories. A publication or release
+claim additionally requires a pinned clean release build with `git_dirty=false`; the suite does not
+measure prevalence, semantic safety, defect recall, or reviewer time.
+
 ## DiffBenchmark literature-subset result
 
 The latest provenance-complete Java evaluation was run on 2026-09-04 against the 285-case

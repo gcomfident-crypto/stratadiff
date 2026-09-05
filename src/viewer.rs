@@ -26,8 +26,10 @@ use serde::{Deserialize, Serialize};
 use stratadiff::{
     DiffReport, VerificationLimits,
     review::{
-        CheckpointCarryBasis, CheckpointState, RepositoryReview, ReviewFile, ReviewFileSources,
-        load_review_file_sources, regenerate_review_file_report, review_git_resume_delta,
+        CheckpointCarryBasis, CheckpointState, RepositoryReview, ReviewBaselineReconstruction,
+        ReviewDeltaBaselineBasis, ReviewDeltaFile, ReviewDeltaSource, ReviewFileSources,
+        load_review_delta_file_sources, load_review_file_sources, regenerate_review_file_report,
+        review_git_resume_delta,
     },
 };
 use tokio::{net::TcpListener, runtime::Builder};
@@ -58,7 +60,7 @@ struct FileSession {
 struct RepositorySession {
     cache: tokio::sync::Mutex<Option<Arc<CachedReviewFile>>>,
     repository: PathBuf,
-    queue: Vec<ReviewFile>,
+    queue: Vec<ReviewDeltaFile>,
     review: RepositoryReview,
     session_json: Bytes,
 }
@@ -91,6 +93,14 @@ struct RepositoryContext {
     checkpoint_state: Option<CheckpointState>,
     #[serde(skip_serializing_if = "Option::is_none")]
     checkpoint_match_basis: Option<CheckpointCarryBasis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_basis: Option<ReviewDeltaBaselineBasis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    before_source: Option<ReviewDeltaSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    after_source: Option<ReviewDeltaSource>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    baseline_reconstruction: Option<ReviewBaselineReconstruction>,
 }
 
 #[derive(Deserialize)]
@@ -137,7 +147,7 @@ pub fn serve_review(
         .context("repository review workbench requires a checkpoint")?;
     let base_changed = checkpoint.base_commit != review.base_commit;
     let resume_delta = review_git_resume_delta(&repository, &review)?;
-    let queue = resume_delta.files.clone();
+    let queue = resume_delta.entries.clone();
     let mut session_json = Vec::new();
     session_json.extend_from_slice(br#"{"kind":"repository_review","review":"#);
     serde_json::to_writer(&mut session_json, &review)?;
@@ -154,7 +164,7 @@ pub fn serve_review(
                 "exact_git_change_identity"
             },
             message: if base_changed {
-                "The merge base changed. Upstream-only files are excluded; the queue contains current PR changes that were carried by neither exact identity nor non-interacting four-way replay. This is not proof of review, semantic safety, or approval."
+                "The merge base changed. Each queue row is either an exact reconstructed review-baseline delta or an explicitly marked conservative fallback. Upstream-only files are excluded. This is not proof of review, semantic safety, or approval."
             } else {
                 "Checkpoint carry-forward is an exact Git identity comparison. It is not proof of review, semantic safety, or approval."
             },
@@ -410,17 +420,31 @@ async fn cached_review_file(
         return Ok(Arc::clone(cached));
     }
 
-    let files = match scope {
-        ReviewScope::Resume => &repository.queue,
-        ReviewScope::Full => &repository.review.files,
+    let (file, resume_entry) = match scope {
+        ReviewScope::Resume => {
+            let entry = repository
+                .queue
+                .get(index)
+                .cloned()
+                .context("repository review file index is out of range")?;
+            (entry.file.clone(), Some(entry))
+        }
+        ReviewScope::Full => (
+            repository
+                .review
+                .files
+                .get(index)
+                .cloned()
+                .context("repository review file index is out of range")?,
+            None,
+        ),
     };
-    let file = files
-        .get(index)
-        .cloned()
-        .context("repository review file index is out of range")?;
     let repository_path = repository.repository.clone();
     let cached = tokio::task::spawn_blocking(move || -> Result<CachedReviewFile> {
-        let sources = load_review_file_sources(&repository_path, &file)?;
+        let sources = match &resume_entry {
+            Some(entry) => load_review_delta_file_sources(&repository_path, entry)?,
+            None => load_review_file_sources(&repository_path, &file)?,
+        };
         let evidence = if file.evidence.is_some() {
             let report = regenerate_review_file_report(&file, &sources)?;
             Some(file_session(
@@ -432,6 +456,16 @@ async fn cached_review_file(
                     scope,
                     checkpoint_state: file.checkpoint_state,
                     checkpoint_match_basis: file.checkpoint_match_basis,
+                    baseline_basis: resume_entry.as_ref().map(|entry| entry.baseline_basis),
+                    before_source: resume_entry
+                        .as_ref()
+                        .map(|entry| entry.before_source.clone()),
+                    after_source: resume_entry
+                        .as_ref()
+                        .map(|entry| entry.after_source.clone()),
+                    baseline_reconstruction: resume_entry
+                        .as_ref()
+                        .and_then(|entry| entry.baseline_reconstruction.clone()),
                 }),
             )?)
         } else {

@@ -12,6 +12,52 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+const reviewDeltaBaselineBases = [
+  'checkpoint_snapshot',
+  'current_base_no_checkpoint_change',
+  'reconstructed_review_baseline',
+  'current_base_fallback',
+  'checkpoint_head_fallback',
+] as const
+
+const reviewDeltaFallbackReasons = [
+  'overlap_or_adjacent',
+  'binary_nul',
+  'source_unavailable',
+  'unsupported_change',
+  'translation_failed',
+  'replay_orders_mismatch',
+] as const
+
+const reviewDeltaSchema = 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json'
+
+function isReviewFile(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) &&
+    typeof value.status === 'string' &&
+    typeof value.priority === 'string' &&
+    typeof value.lane === 'string' &&
+    typeof value.reason === 'string'
+}
+
+function isDeltaSource(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || typeof value.kind !== 'string') return false
+  if (value.kind === 'empty') return true
+  if (value.kind === 'reconstructed_bytes') {
+    return typeof value.blake3 === 'string' && typeof value.byte_len === 'number'
+  }
+  return value.kind === 'git_object' &&
+    typeof value.commit === 'string' &&
+    typeof value.object_id === 'string' &&
+    (value.byte_len === undefined || typeof value.byte_len === 'number')
+}
+
+function isUnresolvedRetiredChange(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) &&
+    typeof value.path === 'string' &&
+    ['utf8', 'git_bytes_percent_encoded'].includes(String(value.path_encoding)) &&
+    value.reason === 'non_utf8_git_path'
+}
+
 export function getSessionToken(search: string): string {
   const token = new URLSearchParams(search).get('token')
   if (token === null || token.length === 0) {
@@ -82,7 +128,11 @@ function assertDiffSession(value: unknown): asserts value is FileSessionPayload 
     (value.repository_context.checkpoint_state !== undefined &&
       !['needs_review_now', 'unchanged_since_checkpoint'].includes(String(value.repository_context.checkpoint_state))) ||
     (value.repository_context.checkpoint_match_basis !== undefined &&
-      !['exact_git_change_identity', 'exact_noninteracting_four_way_byte_replay'].includes(String(value.repository_context.checkpoint_match_basis)))
+      !['exact_git_change_identity', 'exact_noninteracting_four_way_byte_replay'].includes(String(value.repository_context.checkpoint_match_basis))) ||
+    (value.repository_context.baseline_basis !== undefined &&
+      !(reviewDeltaBaselineBases as readonly string[]).includes(String(value.repository_context.baseline_basis))) ||
+    (value.repository_context.before_source !== undefined && !isDeltaSource(value.repository_context.before_source)) ||
+    (value.repository_context.after_source !== undefined && !isDeltaSource(value.repository_context.after_source))
   )) {
     throw new Error('The viewer returned invalid repository navigation context.')
   }
@@ -97,9 +147,9 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
   const resumeDelta = value.resume_delta
   const summary = review.summary
   const reviewFiles = review.files
-  if (!isRecord(resumeDelta.summary) || !Array.isArray(resumeDelta.files)) throw new Error('The viewer returned an invalid checkpoint delta.')
+  if (!isRecord(resumeDelta.summary) || !Array.isArray(resumeDelta.entries)) throw new Error('The viewer returned an invalid checkpoint delta.')
   const resumeSummary = resumeDelta.summary
-  const resumeFiles = resumeDelta.files
+  const resumeEntries = resumeDelta.entries
   if (
     typeof review.schema !== 'string' ||
     typeof review.engine_version !== 'string' ||
@@ -125,33 +175,36 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
     ? 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
     : 'exact_git_change_identity'
   if (
-    !['snapshot_to_snapshot', 'current_pr_unmatched_identities'].includes(String(resumeDelta.comparison)) ||
-    typeof resumeDelta.from_commit !== 'string' ||
-    typeof resumeDelta.source_base_commit !== 'string' ||
-    typeof resumeDelta.to_commit !== 'string' ||
-    resumeDelta.from_commit !== review.checkpoint.commit ||
-    resumeDelta.to_commit !== review.head_commit ||
-    typeof resumeSummary.changed_files !== 'number' ||
-    resumeSummary.changed_files !== resumeFiles.length
+    resumeDelta.schema !== reviewDeltaSchema ||
+    typeof resumeDelta.engine_version !== 'string' ||
+    resumeDelta.engine_version !== review.engine_version ||
+    !['checkpoint_to_head', 'per_file_review_baseline_to_head'].includes(String(resumeDelta.comparison)) ||
+    resumeDelta.old_base_commit !== review.checkpoint.base_commit ||
+    resumeDelta.checkpoint_commit !== review.checkpoint.commit ||
+    resumeDelta.current_base_commit !== review.base_commit ||
+    resumeDelta.head_commit !== review.head_commit ||
+    !Array.isArray(resumeDelta.unresolved_retired_changes) ||
+    !resumeDelta.unresolved_retired_changes.every(isUnresolvedRetiredChange) ||
+    typeof resumeSummary.displayable_files !== 'number' ||
+    resumeSummary.displayable_files !== resumeEntries.length ||
+    typeof resumeSummary.unresolved_retired_changes !== 'number' ||
+    resumeSummary.unresolved_retired_changes !== resumeDelta.unresolved_retired_changes.length ||
+    typeof resumeSummary.needs_review_files !== 'number' ||
+    resumeSummary.needs_review_files !== resumeEntries.length + resumeDelta.unresolved_retired_changes.length ||
+    typeof resumeSummary.gate_passed !== 'boolean' ||
+    resumeSummary.gate_passed !== (resumeSummary.needs_review_files === 0)
   ) {
     throw new Error('The viewer returned inconsistent checkpoint delta metadata.')
   }
   if (
-    (resumeDelta.comparison === 'snapshot_to_snapshot' && resumeDelta.source_base_commit !== review.checkpoint.commit) ||
-    (resumeDelta.comparison === 'current_pr_unmatched_identities' && (
-      resumeDelta.source_base_commit !== review.base_commit ||
-      !baseChanged
-    ))
+    (resumeDelta.comparison === 'checkpoint_to_head' && baseChanged) ||
+    (resumeDelta.comparison === 'per_file_review_baseline_to_head' && !baseChanged)
   ) {
     throw new Error('The viewer returned an invalid review-residue scope.')
   }
   for (const file of reviewFiles) {
     if (
-      !isRecord(file) ||
-      typeof file.status !== 'string' ||
-      typeof file.priority !== 'string' ||
-      typeof file.lane !== 'string' ||
-      typeof file.reason !== 'string'
+      !isReviewFile(file)
     ) {
       throw new Error('The viewer returned an invalid repository review file.')
     }
@@ -163,15 +216,48 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
       throw new Error('The viewer returned inconsistent checkpoint carry evidence.')
     }
   }
-  for (const file of resumeFiles) {
+  for (const entry of resumeEntries) {
     if (
-      !isRecord(file) ||
-      typeof file.status !== 'string' ||
-      typeof file.priority !== 'string' ||
-      typeof file.lane !== 'string' ||
-      typeof file.reason !== 'string'
+      !isRecord(entry) ||
+      !isReviewFile(entry.file) ||
+      !(reviewDeltaBaselineBases as readonly string[]).includes(String(entry.baseline_basis)) ||
+      !isDeltaSource(entry.before_source) ||
+      !isDeltaSource(entry.after_source) ||
+      (entry.fallback_reason !== undefined &&
+        !(reviewDeltaFallbackReasons as readonly string[]).includes(String(entry.fallback_reason)))
     ) {
       throw new Error('The viewer returned an invalid checkpoint delta file.')
+    }
+    const fallback = entry.baseline_basis === 'current_base_fallback' || entry.baseline_basis === 'checkpoint_head_fallback'
+    if (fallback !== (entry.fallback_reason !== undefined)) {
+      throw new Error('The viewer returned inconsistent checkpoint delta fallback evidence.')
+    }
+    const reconstructed = entry.baseline_basis === 'reconstructed_review_baseline'
+    if (reconstructed) {
+      const evidence = entry.baseline_reconstruction
+      if (
+        entry.before_source.kind !== 'reconstructed_bytes' ||
+        !isRecord(evidence) ||
+        evidence.algorithm !== 'bidirectional_noninteracting_byte_replay_v1' ||
+        typeof evidence.reviewed_on_current_base_blake3 !== 'string' ||
+        evidence.reviewed_on_current_base_blake3 !== evidence.upstream_on_checkpoint_blake3 ||
+        evidence.reconstructed_blake3 !== evidence.reviewed_on_current_base_blake3 ||
+        evidence.reconstructed_blake3 !== entry.before_source.blake3 ||
+        evidence.byte_len !== entry.before_source.byte_len
+      ) {
+        throw new Error('The viewer returned invalid reconstructed-baseline evidence.')
+      }
+    } else if (entry.baseline_reconstruction !== undefined || entry.before_source.kind === 'reconstructed_bytes') {
+      throw new Error('The viewer returned reconstructed bytes without reconstruction evidence.')
+    }
+    const expectedBeforeCommit = entry.baseline_basis === 'checkpoint_snapshot' || entry.baseline_basis === 'checkpoint_head_fallback'
+      ? review.checkpoint.commit
+      : review.base_commit
+    if (entry.before_source.kind === 'git_object' && entry.before_source.commit !== expectedBeforeCommit) {
+      throw new Error('The viewer returned a checkpoint delta from the wrong Git commit.')
+    }
+    if (entry.after_source.kind === 'git_object' && entry.after_source.commit !== review.head_commit) {
+      throw new Error('The viewer returned a checkpoint delta targeting the wrong Git commit.')
     }
   }
   if (

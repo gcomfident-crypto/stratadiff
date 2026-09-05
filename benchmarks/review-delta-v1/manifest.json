@@ -1,0 +1,386 @@
+{
+  "schema": "stratadiff-review-delta-benchmark-manifest-v1",
+  "dataset_version": "1.0.0",
+  "name": "Review Delta v1 controlled histories",
+  "description": "Deterministic four-snapshot Git histories for the rebase-aware review-delta and Full PR scope contracts.",
+  "dataset_license": "MIT",
+  "file_scope": "Regular Git blobs with modes 100644 and 100755; symlinks and gitlinks are outside v1.",
+  "snapshot_model": {
+    "A": "old merge base",
+    "B": "reviewed checkpoint, whose parent is A",
+    "C": "current merge base, whose parent is A",
+    "D": "current head, whose parent is C",
+    "reconstructed_baseline": "S is the byte-identical result of replaying A->B and A->C in both orders"
+  },
+  "full_scope_contract": "Within the declared regular-blob scope, every Full PR entry and its Git identity must equal the independent C->D raw Git delta, even when the Resume scope uses S->D or B->D.",
+  "required_coverage": [
+    "pure_rebase",
+    "absorbed_retired_change",
+    "noninteracting_author_followup",
+    "new_current_change",
+    "drop_or_revert",
+    "overlap_fallback",
+    "adjacent_fallback",
+    "binary_fallback",
+    "add_fallback",
+    "delete_fallback",
+    "rename_fallback",
+    "dropped_rename",
+    "mode_fallback",
+    "full_scope_c_to_d"
+  ],
+  "cases": [
+    {
+      "id": "pure-rebase-carries-reviewed-edit",
+      "description": "An upstream edit and a reviewed edit commute; D equals reconstructed S, so Resume is empty while Full still shows C->D.",
+      "covers": ["pure_rebase", "full_scope_c_to_d"],
+      "history": {
+        "A": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'old'\nreviewed = 0\n"}}
+          }
+        },
+        "B": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'old'\nreviewed = 1\n"}}
+          }
+        },
+        "C": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'new'\nreviewed = 0\n"}}
+          }
+        },
+        "D": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'new'\nreviewed = 1\n"}}
+          }
+        }
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 0, "unchanged_since_checkpoint_files": 1, "retired_change_count": 0},
+        "full_scope": [
+          {"status": "modified", "before_path": "shared.py", "after_path": "shared.py", "additions": 1, "deletions": 1}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 0, "unresolved_retired_changes": 0, "needs_review_files": 0, "gate_passed": true},
+          "entries": []
+        }
+      }
+    },
+    {
+      "id": "noninteracting-author-followup",
+      "description": "The reviewed and upstream edits commute, but the author adds one later edit; Resume must expose only that one-line S->D residue.",
+      "covers": ["noninteracting_author_followup", "full_scope_c_to_d"],
+      "history": {
+        "A": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'old'\nreviewed = 0\nfollowup = 0\n"}}
+          }
+        },
+        "B": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'old'\nreviewed = 1\nfollowup = 0\n"}}
+          }
+        },
+        "C": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'new'\nreviewed = 0\nfollowup = 0\n"}}
+          }
+        },
+        "D": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'new'\nreviewed = 1\nfollowup = 1\n"}}
+          }
+        }
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "modified", "before_path": "shared.py", "after_path": "shared.py", "additions": 2, "deletions": 2}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "modified", "before_path": "shared.py", "after_path": "shared.py", "baseline_basis": "reconstructed_review_baseline", "fallback_reason": null, "before_source_kind": "reconstructed_bytes", "after_source_kind": "git_object", "additions": 1, "deletions": 1, "reconstructed_baseline_utf8": "title = 'new'\nreviewed = 1\nfollowup = 0\n"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "upstream-absorbed-reviewed-addition",
+      "description": "The current base already contains a byte-identical reviewed addition; the retired checkpoint identity is proven absorbed, so an empty Full and Resume scope must pass the gate.",
+      "covers": ["absorbed_retired_change", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "absorbed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 1\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "absorbed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 1\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "absorbed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 1\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 0, "needs_review_now_files": 0, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 0, "unresolved_retired_changes": 0, "needs_review_files": 0, "gate_passed": true},
+          "entries": []
+        }
+      }
+    },
+    {
+      "id": "new-current-file-after-checkpoint",
+      "description": "One reviewed file is carried exactly while a new unrelated file appears after the checkpoint; Resume must contain only the new C->D addition.",
+      "covers": ["new_current_change", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "reviewed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 0\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "reviewed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 1\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "reviewed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 0\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "reviewed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 1\n"}}, "new.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "new = 1\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 2, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 1, "retired_change_count": 0},
+        "full_scope": [
+          {"status": "added", "before_path": null, "after_path": "new.py", "additions": 1, "deletions": 0},
+          {"status": "modified", "before_path": "reviewed.py", "after_path": "reviewed.py", "additions": 1, "deletions": 1}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "added", "before_path": null, "after_path": "new.py", "baseline_basis": "current_base_no_checkpoint_change", "fallback_reason": null, "before_source_kind": "empty", "after_source_kind": "git_object", "additions": 1, "deletions": 0, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "dropped-reviewed-edit",
+      "description": "The reviewed edit disappears and C->D is empty; Resume must still show the reconstructed deletion and keep the gate open.",
+      "covers": ["drop_or_revert", "full_scope_c_to_d"],
+      "history": {
+        "A": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'old'\nreviewed = 0\n"}}
+          }
+        },
+        "B": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'old'\nreviewed = 1\n"}}
+          }
+        },
+        "C": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'new'\nreviewed = 0\n"}}
+          }
+        },
+        "D": {
+          "files": {
+            "shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "title = 'new'\nreviewed = 0\n"}}
+          }
+        }
+      },
+      "expected": {
+        "review_summary": {"changed_files": 0, "needs_review_now_files": 0, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "modified", "before_path": "shared.py", "after_path": "shared.py", "baseline_basis": "reconstructed_review_baseline", "fallback_reason": null, "before_source_kind": "reconstructed_bytes", "after_source_kind": "git_object", "additions": 1, "deletions": 1, "reconstructed_baseline_utf8": "title = 'new'\nreviewed = 1\n"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "overlapping-edits-fail-closed",
+      "description": "Checkpoint and upstream replace the same bytes; Resume must use the current-base fallback instead of manufacturing S.",
+      "covers": ["overlap_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 0000\n"}}}},
+        "B": {"files": {"shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1111\n"}}}},
+        "C": {"files": {"shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 2222\n"}}}},
+        "D": {"files": {"shared.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1111\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "modified", "before_path": "shared.py", "after_path": "shared.py", "additions": 1, "deletions": 1}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "modified", "before_path": "shared.py", "after_path": "shared.py", "baseline_basis": "current_base_fallback", "fallback_reason": "overlap_or_adjacent", "before_source_kind": "git_object", "after_source_kind": "git_object", "additions": 1, "deletions": 1, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "adjacent-edits-fail-closed",
+      "description": "Checkpoint and upstream touch adjacent byte ranges; the conservative v1 policy must refuse replay.",
+      "covers": ["adjacent_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"pair.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "x = 10\n"}}}},
+        "B": {"files": {"pair.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "x = 20\n"}}}},
+        "C": {"files": {"pair.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "x = 11\n"}}}},
+        "D": {"files": {"pair.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "x = 21\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "modified", "before_path": "pair.py", "after_path": "pair.py", "additions": 1, "deletions": 1}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "modified", "before_path": "pair.py", "after_path": "pair.py", "baseline_basis": "current_base_fallback", "fallback_reason": "overlap_or_adjacent", "before_source_kind": "git_object", "after_source_kind": "git_object", "additions": 1, "deletions": 1, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "binary-nul-fail-closed",
+      "description": "The four regular-file snapshots contain NUL bytes; Resume must expose C->D with binary_nul evidence rather than replaying.",
+      "covers": ["binary_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"asset.bin": {"mode": "100644", "content": {"encoding": "base64", "value": "dXBzdHJlYW09MAByZXZpZXdlZD0wCmF1dGhvcj0wCg=="}}}},
+        "B": {"files": {"asset.bin": {"mode": "100644", "content": {"encoding": "base64", "value": "dXBzdHJlYW09MAByZXZpZXdlZD0xCmF1dGhvcj0wCg=="}}}},
+        "C": {"files": {"asset.bin": {"mode": "100644", "content": {"encoding": "base64", "value": "dXBzdHJlYW09MQByZXZpZXdlZD0wCmF1dGhvcj0wCg=="}}}},
+        "D": {"files": {"asset.bin": {"mode": "100644", "content": {"encoding": "base64", "value": "dXBzdHJlYW09MQByZXZpZXdlZD0xCmF1dGhvcj0xCg=="}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "modified", "before_path": "asset.bin", "after_path": "asset.bin", "additions": 2, "deletions": 2}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "modified", "before_path": "asset.bin", "after_path": "asset.bin", "baseline_basis": "current_base_fallback", "fallback_reason": "binary_nul", "before_source_kind": "git_object", "after_source_kind": "git_object", "additions": 2, "deletions": 2, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "added-file-fallback",
+      "description": "Both reviewed and current branches add the same path with different bytes; additions are unsupported by byte replay and must fall back to C->D.",
+      "covers": ["add_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "added.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 1\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "added.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "reviewed = 2\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "added", "before_path": null, "after_path": "added.py", "additions": 1, "deletions": 0}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "added", "before_path": null, "after_path": "added.py", "baseline_basis": "current_base_fallback", "fallback_reason": "unsupported_change", "before_source_kind": "empty", "after_source_kind": "git_object", "additions": 1, "deletions": 0, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "deleted-file-fallback",
+      "description": "Both branches delete the same path after upstream changed its bytes; deletion replay is unsupported and must retain the current C->D deletion.",
+      "covers": ["delete_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "obsolete.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 'old'\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "obsolete.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 'upstream'\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "deleted", "before_path": "obsolete.py", "after_path": null, "additions": 0, "deletions": 1}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "deleted", "before_path": "obsolete.py", "after_path": null, "baseline_basis": "current_base_fallback", "fallback_reason": "unsupported_change", "before_source_kind": "git_object", "after_source_kind": "empty", "additions": 0, "deletions": 1, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "renamed-file-fallback",
+      "description": "The same exact relocation carries different blobs after base drift; it must remain a rename in Full and an unsupported current-base fallback in Resume.",
+      "covers": ["rename_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "old.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 0\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "renamed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 0\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "old.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "renamed.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "renamed", "before_path": "old.py", "after_path": "renamed.py", "additions": 0, "deletions": 0}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "renamed", "before_path": "old.py", "after_path": "renamed.py", "baseline_basis": "current_base_fallback", "fallback_reason": "unsupported_change", "before_source_kind": "git_object", "after_source_kind": "git_object", "additions": 0, "deletions": 0, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "dropped-rename-displays-both-paths",
+      "description": "A reviewed exact rename is absent after base drift and C->D is empty; Resume must restore the old path and delete the reviewed new path as two checkpoint-to-head entries.",
+      "covers": ["dropped_rename", "drop_or_revert", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "old.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "new.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "old.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "old.py": {"mode": "100644", "content": {"encoding": "utf8", "value": "value = 1\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 0, "needs_review_now_files": 0, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 2, "unresolved_retired_changes": 0, "needs_review_files": 2, "gate_passed": false},
+          "entries": [
+            {"status": "deleted", "before_path": "new.py", "after_path": null, "baseline_basis": "checkpoint_head_fallback", "fallback_reason": "unsupported_change", "before_source_kind": "git_object", "after_source_kind": "empty", "additions": 0, "deletions": 1, "reconstructed_baseline_utf8": null},
+            {"status": "added", "before_path": null, "after_path": "old.py", "baseline_basis": "checkpoint_head_fallback", "fallback_reason": "unsupported_change", "before_source_kind": "empty", "after_source_kind": "git_object", "additions": 1, "deletions": 0, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    },
+    {
+      "id": "mode-change-fallback",
+      "description": "A reviewed executable-bit change is reapplied after upstream content drift; mode-changing modifications are unsupported by byte replay.",
+      "covers": ["mode_fallback", "full_scope_c_to_d"],
+      "history": {
+        "A": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "run.sh": {"mode": "100644", "content": {"encoding": "utf8", "value": "#!/bin/sh\necho old\n"}}}},
+        "B": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=0\n"}}, "run.sh": {"mode": "100755", "content": {"encoding": "utf8", "value": "#!/bin/sh\necho old\n"}}}},
+        "C": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "run.sh": {"mode": "100644", "content": {"encoding": "utf8", "value": "#!/bin/sh\necho upstream\n"}}}},
+        "D": {"files": {"seed.txt": {"mode": "100644", "content": {"encoding": "utf8", "value": "seed=1\n"}}, "run.sh": {"mode": "100755", "content": {"encoding": "utf8", "value": "#!/bin/sh\necho upstream\n"}}}}
+      },
+      "expected": {
+        "review_summary": {"changed_files": 1, "needs_review_now_files": 1, "unchanged_since_checkpoint_files": 0, "retired_change_count": 1},
+        "full_scope": [
+          {"status": "modified", "before_path": "run.sh", "after_path": "run.sh", "additions": 0, "deletions": 0}
+        ],
+        "delta": {
+          "comparison": "per_file_review_baseline_to_head",
+          "summary": {"displayable_files": 1, "unresolved_retired_changes": 0, "needs_review_files": 1, "gate_passed": false},
+          "entries": [
+            {"status": "modified", "before_path": "run.sh", "after_path": "run.sh", "baseline_basis": "current_base_fallback", "fallback_reason": "unsupported_change", "before_source_kind": "git_object", "after_source_kind": "git_object", "additions": 0, "deletions": 0, "reconstructed_baseline_utf8": null}
+          ]
+        }
+      }
+    }
+  ]
+}
