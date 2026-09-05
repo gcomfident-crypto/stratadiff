@@ -23,7 +23,7 @@ import { fetchReviewFileSources } from '../lib/session'
 import { visibleInlineText, visibleSourceText } from '../lib/visibleText'
 import type { DecodedArtifact, RepositorySessionPayload, ReviewDeltaEntry, ReviewFile } from '../types'
 
-type ReviewScope = 'resume' | 'full'
+type ReviewScope = 'resume' | 'full' | 'base'
 type FullFilter = 'needs' | 'carried' | 'all'
 type SourceState =
   | { status: 'idle' | 'loading' }
@@ -55,6 +55,7 @@ function checkpointStateLabel(file: ReviewFile): string | null {
 }
 
 function checkpointCarryDetail(file: ReviewFile, scope: ReviewScope, resumeComparison: RepositorySessionPayload['resume_delta']['comparison']): string {
+  if (scope === 'base') return 'not part of PR carry'
   if (file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay') return 'four-way carry'
   if (file.checkpoint_match_basis === 'exact_git_change_identity') return 'exact-identity carry'
   if (file.checkpoint_state === 'needs_review_now') return 'not carried'
@@ -237,7 +238,9 @@ function ReviewFileDetail({ file, deltaEntry, scope, resumeComparison, index, so
         <h3><Eye size={14} /> Why it is here</h3>
         <p>{visibleInlineText(file.reason)}</p>
         <p className="review-scope-note">
-          {scope === 'resume'
+          {scope === 'base'
+            ? 'This row is upstream context from the checkpoint merge base to the current merge base. It does not itself block the current PR review.'
+            : scope === 'resume'
             ? deltaEntry === undefined
               ? 'This row has no review-baseline metadata.'
               : baselineExplanation(deltaEntry)
@@ -293,23 +296,44 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
   const checkpoint = session.review.checkpoint
   if (checkpoint === undefined || session.review.summary.checkpoint === undefined) throw new Error('Review Resume requires checkpoint metadata.')
 
-  const [scope, setScope] = useState<ReviewScope>('resume')
+  const baseChanged = checkpoint.base_commit !== session.review.base_commit
+  const baseDelta = session.base_drift.status === 'available' ? session.base_drift.delta : undefined
+  const requestedScope = new URLSearchParams(window.location.search).get('scope')
+  const hasNoReviewResidue = session.resume_delta.summary.needs_review_files === 0
+  const initialScope: ReviewScope = requestedScope === 'full'
+    ? 'full'
+    : requestedScope === 'base' && baseChanged
+      ? 'base'
+      : baseChanged && hasNoReviewResidue
+        ? 'base'
+        : 'resume'
+  const initialFileCount = initialScope === 'resume'
+    ? session.resume_delta.entries.length
+    : initialScope === 'full'
+      ? session.review.files.length
+      : baseDelta?.entries.length ?? 0
+  const [scope, setScope] = useState<ReviewScope>(initialScope)
   const [fullFilter, setFullFilter] = useState<FullFilter>('needs')
   const [query, setQuery] = useState('')
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(session.resume_delta.entries.length === 0 ? null : 0)
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(initialFileCount > 0 ? 0 : null)
   const [page, setPage] = useState(0)
   const [sources, setSources] = useState<SourceState>({ status: 'idle' })
   const [detailsOpen, setDetailsOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const detailsButtonRef = useRef<HTMLButtonElement>(null)
   const detailsAreDrawer = useMediaQuery('(max-width: 1279px)')
-  const baseChanged = checkpoint.base_commit !== session.review.base_commit
   const needsReviewFiles = session.resume_delta.summary.needs_review_files
   const unresolvedRetiredChanges = session.resume_delta.unresolved_retired_changes.length
   const exactIdentityCarries = session.review.files.filter((file) => file.checkpoint_match_basis === 'exact_git_change_identity').length
   const fourWayReplayCarries = session.review.files.filter((file) => file.checkpoint_match_basis === 'exact_noninteracting_four_way_byte_replay').length
   const reconstructedDeltas = session.resume_delta.entries.filter((entry) => entry.baseline_basis === 'reconstructed_review_baseline').length
-  const files = scope === 'resume' ? session.resume_delta.entries.map((entry) => entry.file) : session.review.files
+  const baseContextCount = session.base_drift.status === 'unavailable'
+    ? 'Unavailable'
+    : baseDelta?.entries.length === 0
+      ? 'No tree changes'
+      : compactNumber(baseDelta?.entries.length ?? 0)
+  const scopedDelta = scope === 'resume' ? session.resume_delta : scope === 'base' ? baseDelta : undefined
+  const files = scope === 'full' ? session.review.files : scopedDelta?.entries.map((entry) => entry.file) ?? []
   const entries = useMemo(() => files.map((file, index) => ({ file, index })).filter(({ file }) => {
     if (scope === 'full' && fullFilter !== 'all') {
       const wanted = fullFilter === 'needs' ? 'needs_review_now' : 'unchanged_since_checkpoint'
@@ -323,8 +347,8 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
   const visibleEntries = entries.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   const selectedEntry = entries.find(({ index }) => index === selectedIndex)
   const selectedFile = selectedEntry?.file
-  const selectedDeltaEntry = scope === 'resume' && selectedIndex !== null
-    ? session.resume_delta.entries[selectedIndex]
+  const selectedDeltaEntry = scopedDelta !== undefined && selectedIndex !== null
+    ? scopedDelta.entries[selectedIndex]
     : undefined
 
   function closeDetails(): void {
@@ -404,32 +428,36 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
         <div className="resume-copy">
           <span className="eyebrow">{baseChanged ? 'REVIEW-BASELINE DELTA AFTER BASE CHANGE' : 'WHAT CHANGED AFTER YOUR CHECKPOINT'}</span>
           <h1>{needsReviewFiles === 0
-            ? baseChanged ? 'No remaining review delta' : 'No changes between checkpoint and head'
+            ? baseChanged ? 'No author residue · base context changed' : 'No changes between checkpoint and head'
             : unresolvedRetiredChanges > 0
               ? `${needsReviewFiles.toLocaleString('en')} ${needsReviewFiles === 1 ? 'review item remains' : 'review items remain'}`
             : baseChanged
               ? `${session.resume_delta.entries.length.toLocaleString('en')} ${session.resume_delta.entries.length === 1 ? 'file needs' : 'files need'} review`
               : `${session.resume_delta.entries.length.toLocaleString('en')} ${session.resume_delta.entries.length === 1 ? 'file' : 'files'} changed since checkpoint`}</h1>
           <p>{baseChanged
-            ? 'The merge base moved. Exact rows compare a reconstructed reviewed baseline with head; any unprovable row is explicitly shown as a conservative fallback.'
+            ? 'The merge base moved. Author residue and upstream base context are separated; an empty residue never hides that the surrounding base changed.'
             : 'Start with the checkpoint → head delta. Switch to full PR context whenever you need the original base → head story.'}</p>
         </div>
         <div className="resume-stats" aria-label="Review resume summary">
           <div className="attention"><span>Need review now</span><strong>{compactNumber(needsReviewFiles)}</strong></div>
           <div className="carried"><span>Exact-identity carry</span><strong>{compactNumber(exactIdentityCarries)}</strong></div>
           <div className="carried"><span>Four-way carry</span><strong>{compactNumber(fourWayReplayCarries)}</strong></div>
-          <div className="retired"><span>Reconstructed deltas</span><strong>{compactNumber(reconstructedDeltas)}</strong></div>
+          <div className="retired"><span>{baseChanged ? 'Base context files' : 'Reconstructed deltas'}</span><strong>{baseChanged ? baseContextCount : compactNumber(reconstructedDeltas)}</strong></div>
         </div>
       </section>
 
       <div className="review-scope-bar">
         <div className="review-scope-switch" aria-label="Diff scope">
-          <button type="button" className={scope === 'resume' ? 'active' : ''} onClick={() => setScope('resume')}>{baseChanged ? 'Review delta' : 'Since checkpoint'} <small>{baseChanged ? 'baseline → H' : 'R → H'}</small></button>
-          <button type="button" className={scope === 'full' ? 'active' : ''} onClick={() => setScope('full')}>Full PR context <small>B → H</small></button>
+          <button type="button" className={scope === 'resume' ? 'active' : ''} onClick={() => setScope('resume')}>{baseChanged ? 'Review delta' : 'Since checkpoint'} <small>{baseChanged ? 'review baseline → head' : 'checkpoint → head'}</small></button>
+          <button type="button" className={scope === 'full' ? 'active' : ''} onClick={() => setScope('full')}>Full PR context <small>base → head</small></button>
+          {baseChanged && <button type="button" className={scope === 'base' ? 'active' : ''} onClick={() => setScope('base')}>Base drift <small>old base → base</small></button>}
         </div>
-        <p><ShieldAlert size={14} /> {session.assessment.message}</p>
+        <p><ShieldAlert size={14} /> {scope === 'base' ? session.base_drift.message : session.assessment.message}</p>
       </div>
       <div className="review-trust-banner"><ShieldAlert size={13} /> {baseChanged ? 'Base changed · exact-identity or four-way carry · unresolved changes need review' : 'Exact Git identity only · caller-attested checkpoint · not approval or semantic safety'}</div>
+      {session.base_drift.status === 'unavailable' && (
+        <div className="review-trust-banner"><AlertTriangle size={13} /> Base context unavailable: {session.base_drift.message}</div>
+      )}
       {unresolvedRetiredChanges > 0 && (
         <div className="review-trust-banner"><AlertTriangle size={13} /> {unresolvedRetiredChanges.toLocaleString('en')} retired checkpoint {unresolvedRetiredChanges === 1 ? 'change has' : 'changes have'} no displayable fallback and still block review completion: {session.resume_delta.unresolved_retired_changes.slice(0, 3).map((change) => change.path).join(', ')}{unresolvedRetiredChanges > 3 ? ', …' : ''}</div>
       )}
@@ -444,16 +472,16 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
               </div>
             )}
           </div>
-          <div className="review-list-heading"><span>{scope === 'resume' ? baseChanged ? 'Review delta' : 'Incremental queue' : 'Current PR files'}</span><strong>{entries.length}</strong></div>
+          <div className="review-list-heading"><span>{scope === 'resume' ? baseChanged ? 'Review delta' : 'Incremental queue' : scope === 'base' ? 'Upstream base context' : 'Current PR files'}</span><strong>{entries.length}</strong></div>
           <div className="review-file-list">
             {visibleEntries.map(({ file, index }) => (
               <button type="button" className={`review-file-row ${selectedIndex === index ? 'selected' : ''}`} key={`${scope}-${index}`} onClick={() => setSelectedIndex(index)}>
-                <span aria-hidden="true" className={`review-state-dot ${file.checkpoint_state === 'unchanged_since_checkpoint' ? 'carried' : 'attention'}`} />
-                <span className="review-file-copy"><strong>{displayPath(file)}</strong><small>{titleCase(file.status)} · {titleCase(file.lane)}{scope === 'resume' && session.resume_delta.entries[index] !== undefined ? ` · ${baselineLabel(session.resume_delta.entries[index])}` : checkpointStateLabel(file) === null ? '' : ` · ${checkpointStateLabel(file)}`}</small></span>
+                <span aria-hidden="true" className={`review-state-dot ${scope === 'base' ? 'context' : file.checkpoint_state === 'unchanged_since_checkpoint' ? 'carried' : 'attention'}`} />
+                <span className="review-file-copy"><strong>{displayPath(file)}</strong><small>{titleCase(file.status)} · {titleCase(file.lane)}{scope === 'base' ? ' · Base context only' : scope === 'resume' && session.resume_delta.entries[index] !== undefined ? ` · ${baselineLabel(session.resume_delta.entries[index])}` : checkpointStateLabel(file) === null ? '' : ` · ${checkpointStateLabel(file)}`}</small></span>
                 <span className="review-line-count">{lineSummary(file)}</span>
               </button>
             ))}
-            {entries.length === 0 && <div className="review-empty"><Check size={22} /><strong>{scope === 'resume' && unresolvedRetiredChanges > 0 ? 'No displayable delta' : 'Nothing in this view'}</strong><span>{scope === 'resume' && unresolvedRetiredChanges > 0 ? 'See the unresolved retired-change warning above.' : 'Try another scope or clear the file search.'}</span></div>}
+            {entries.length === 0 && <div className="review-empty">{scope === 'base' && session.base_drift.status === 'unavailable' ? <ShieldAlert size={22} /> : <Check size={22} />}<strong>{scope === 'resume' && unresolvedRetiredChanges > 0 ? 'No displayable delta' : scope === 'base' ? session.base_drift.status === 'unavailable' ? 'Base context unavailable' : 'No upstream base changes' : 'Nothing in this view'}</strong><span>{scope === 'resume' && unresolvedRetiredChanges > 0 ? 'See the unresolved retired-change warning above.' : scope === 'base' ? session.base_drift.message : 'Try another scope or clear the file search.'}</span></div>}
           </div>
           {pageCount > 1 && <div className="review-pagination"><button type="button" disabled={safePage === 0} onClick={() => setPage(safePage - 1)} aria-label="Previous file page"><ChevronLeft size={14} /></button><span>{safePage + 1} / {pageCount}</span><button type="button" disabled={safePage === pageCount - 1} onClick={() => setPage(safePage + 1)} aria-label="Next file page"><ChevronRight size={14} /></button></div>}
         </aside>
@@ -462,6 +490,8 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           {selectedFile === undefined ? (
             entries.length === 0 && files.length > 0 ? (
               <div className="review-empty large"><FileSearch size={28} /><strong>No files match this view</strong><span>Clear the search or choose another checkpoint-state filter.</span></div>
+            ) : scope === 'base' ? (
+              <div className="review-empty large"><ShieldAlert size={28} /><strong>{session.base_drift.status === 'unavailable' ? 'Base context unavailable' : 'No upstream base changes'}</strong><span>{session.base_drift.message}</span></div>
             ) : scope === 'resume' ? unresolvedRetiredChanges > 0 ? (
               <div className="review-empty large"><AlertTriangle size={28} /><strong>Review remains blocked</strong><span>The retired changes above cannot be rendered safely; inspect the encoded paths and history manually.</span></div>
             ) : baseChanged ? (
@@ -474,7 +504,7 @@ export function ReviewWorkbench({ session }: { session: RepositorySessionPayload
           ) : (
             <>
               <div className="review-diff-heading">
-                <div><span className="surface-kicker">{scope === 'resume' ? selectedDeltaEntry === undefined ? 'REVIEW DELTA' : baselineLabel(selectedDeltaEntry).toLocaleUpperCase('en') : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
+                <div><span className="surface-kicker">{scope === 'base' ? 'OLD BASE → CURRENT BASE · CONTEXT ONLY' : scope === 'resume' ? selectedDeltaEntry === undefined ? 'REVIEW DELTA' : baselineLabel(selectedDeltaEntry).toLocaleUpperCase('en') : 'MERGE BASE → HEAD'}</span><h2>{displayPath(selectedFile)}</h2></div>
                 <div className="review-diff-actions">
                   <span>{lineSummary(selectedFile)}</span>
                   <button ref={detailsButtonRef} type="button" className="review-detail-trigger" onClick={() => setDetailsOpen(true)} aria-label="Open details and evidence"><Eye size={14} /> Details &amp; evidence</button>

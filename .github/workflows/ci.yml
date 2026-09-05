@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  release-contract:
+    name: Release contract · ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Test release packaging and fail-closed verification
+        run: scripts/test-release-scripts.sh
+
   gh-extension:
     name: GitHub extension · ${{ matrix.os }}
     strategy:

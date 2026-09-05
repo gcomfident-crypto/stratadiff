@@ -1,0 +1,213 @@
+{
+  "schema": "stratadiff-review-continuity-manifest-v1",
+  "dataset_version": "1.0.0",
+  "designation": "controlled_synthetic_comparative_regression",
+  "name": "Review Continuity v1",
+  "description": "Deterministic four-snapshot Git histories comparing StrataDiff with three explicit low-cost review-continuity adapters.",
+  "dataset_license": "MIT",
+  "snapshot_model": {
+    "A": "old merge base",
+    "B": "caller-attested reviewed checkpoint, direct child of A",
+    "C": "current merge base, direct child of A",
+    "D": "current head, direct child of C"
+  },
+  "baseline_contracts": {
+    "git_patch_id": "Compare `git diff A B | git patch-id --stable` with `git diff C D | git patch-id --stable`; equal IDs carry everything, unequal IDs expose only C-to-D paths.",
+    "checkpoint_to_head": "Expose the raw no-rename B-to-D path diff as the review queue.",
+    "git_range_diff": "Run `git range-diff A..B C..D`; an all-equals series carries everything, otherwise expose the union of A-to-B and C-to-D paths.",
+    "stratadiff": "Run the real `stratadiff review C D --checkpoint B` review-delta path and use its fail-closed gate."
+  },
+  "required_coverage": [
+    "pure_rebase",
+    "author_followup",
+    "dropped_reviewed_edit",
+    "patch_id_whitespace_collision",
+    "hazardous_parent_change",
+    "stack_squash",
+    "rename_and_edit"
+  ],
+  "oracle": {
+    "path": "benchmarks/review-continuity-v1/oracle.json",
+    "sha256": "ca715b233e838ada71844f33ca4e8a4c1021c8a8e4bf9601336657a3c5036844"
+  },
+  "cases": [
+    {
+      "id": "pure-rebase",
+      "description": "The reviewed edit is replayed byte-for-byte on an unrelated new base.",
+      "covers": ["pure_rebase"],
+      "history": {
+        "A": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "feature.py": "reviewed = 0\n"
+          }
+        },
+        "B": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "feature.py": "reviewed = 1\n"
+          }
+        },
+        "C": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "feature.py": "reviewed = 0\n"
+          }
+        },
+        "D": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "feature.py": "reviewed = 1\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "author-followup",
+      "description": "The reviewed edit survives a rebase and the author changes a second line afterward.",
+      "covers": ["author_followup"],
+      "history": {
+        "A": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "feature.py": "reviewed = 0\nfollowup = 0\n"
+          }
+        },
+        "B": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "feature.py": "reviewed = 1\nfollowup = 0\n"
+          }
+        },
+        "C": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "feature.py": "reviewed = 0\nfollowup = 0\n"
+          }
+        },
+        "D": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "feature.py": "reviewed = 1\nfollowup = 1\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "dropped-reviewed-edit",
+      "description": "The reviewed edit disappears after the rebase even though the current PR diff is empty.",
+      "covers": ["dropped_reviewed_edit"],
+      "history": {
+        "A": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "feature.py": "reviewed = 0\n"
+          }
+        },
+        "B": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "feature.py": "reviewed = 1\n"
+          }
+        },
+        "C": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "feature.py": "reviewed = 0\n"
+          }
+        },
+        "D": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "feature.py": "reviewed = 0\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "whitespace-patch-id-collision",
+      "description": "The current patch differs from the reviewed patch only in leading whitespace, which stable patch-id normalizes away.",
+      "covers": ["patch_id_whitespace_collision"],
+      "history": {
+        "A": {
+          "files": {
+            "auth.py": "if enabled:\n    deny()\n"
+          }
+        },
+        "B": {
+          "files": {
+            "auth.py": "if enabled:\n    allow()\n"
+          }
+        },
+        "C": {
+          "files": {
+            "auth.py": "if enabled:\n    deny()\n"
+          }
+        },
+        "D": {
+          "files": {
+            "auth.py": "if enabled:\nallow()\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "stack-squash-parent-hazard",
+      "description": "The old reviewed head and new head have identical trees, but the restacked parent absorbed the reviewed edit and the child now reverses a parent policy change.",
+      "covers": ["hazardous_parent_change", "stack_squash"],
+      "history": {
+        "A": {
+          "files": {
+            "stack.py": "guard = 'strict'\nfeature = 0\n"
+          }
+        },
+        "B": {
+          "files": {
+            "stack.py": "guard = 'strict'\nfeature = 1\n"
+          }
+        },
+        "C": {
+          "files": {
+            "stack.py": "guard = 'permissive'\nfeature = 1\n"
+          }
+        },
+        "D": {
+          "files": {
+            "stack.py": "guard = 'strict'\nfeature = 1\n"
+          }
+        }
+      }
+    },
+    {
+      "id": "rename-and-edit",
+      "description": "A reviewed file is renamed and then edited after an unrelated base update.",
+      "covers": ["rename_and_edit"],
+      "history": {
+        "A": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "old.py": "reviewed = 0\nfollowup = 0\n"
+          }
+        },
+        "B": {
+          "files": {
+            "base.txt": "upstream=0\n",
+            "old.py": "reviewed = 1\nfollowup = 0\n"
+          }
+        },
+        "C": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "old.py": "reviewed = 0\nfollowup = 0\n"
+          }
+        },
+        "D": {
+          "files": {
+            "base.txt": "upstream=1\n",
+            "new.py": "reviewed = 1\nfollowup = 1\n"
+          }
+        }
+      }
+    }
+  ]
+}

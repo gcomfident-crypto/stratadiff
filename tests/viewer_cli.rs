@@ -210,6 +210,8 @@ fn repository_workbench_serves_checkpoint_delta_and_commit_bound_sources() {
     assert_eq!(payload["kind"], "repository_review");
     assert!(payload.get("verification").is_none());
     assert_eq!(payload["assessment"]["status"], "producer_attested");
+    assert_eq!(payload["base_drift"]["status"], "not_applicable");
+    assert!(payload["base_drift"].get("delta").is_none());
     assert_eq!(payload["review"]["summary"]["changed_files"], 2);
     assert_eq!(
         payload["review"]["summary"]["checkpoint"]["needs_review_now_files"],
@@ -371,6 +373,16 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
     assert_eq!(payload["resume_delta"]["checkpoint_commit"], checkpoint);
     assert_eq!(payload["resume_delta"]["current_base_commit"], current_base);
     assert_eq!(payload["resume_delta"]["head_commit"], head);
+    assert_eq!(payload["base_drift"]["status"], "available");
+    assert_eq!(
+        payload["base_drift"]["delta"]["old_base_commit"],
+        original_base
+    );
+    assert_eq!(payload["base_drift"]["delta"]["head_commit"], current_base);
+    assert_eq!(
+        payload["base_drift"]["delta"]["entries"][0]["file"]["after_path"],
+        "upstream-only.py"
+    );
     let queue = payload["resume_delta"]["entries"].as_array().unwrap();
     assert_eq!(queue.len(), 1);
     assert_eq!(queue[0]["file"]["after_path"], "current.py");
@@ -456,6 +468,203 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
     );
     let (_, full_after_body) = split_response(&full_after);
     assert_eq!(full_after_body, b"value = 2\n");
+
+    let base_before = get_bytes(
+        address,
+        &format!("/api/source/before?token={token}&file=0&scope=base"),
+    );
+    let (_, base_before_body) = split_response(&base_before);
+    assert!(base_before_body.is_empty());
+    let base_after = get_bytes(
+        address,
+        &format!("/api/source/after?token={token}&file=0&scope=base"),
+    );
+    let (_, base_after_body) = split_response(&base_after);
+    assert_eq!(base_after_body, b"base update\n");
+}
+
+#[test]
+fn repository_workbench_exposes_base_drift_when_four_way_carry_empties_residue() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("shared.py"), b"title = 'old'\nreviewed = 0\n").unwrap();
+    let original_base = commit(root, "original base");
+
+    fs::write(root.join("shared.py"), b"title = 'old'\nreviewed = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("shared.py"), b"title = 'new'\nreviewed = 0\n").unwrap();
+    let current_base = commit(root, "advanced base");
+    fs::write(root.join("shared.py"), b"title = 'new'\nreviewed = 1\n").unwrap();
+    let head = commit(root, "rebased reviewed change");
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(root)
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--workbench")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .arg("--")
+        .arg(&current_base)
+        .arg(&head)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let mut stderr = BufReader::new(child.0.stderr.take().unwrap());
+    let mut first_line = String::new();
+    stderr.read_line(&mut first_line).unwrap();
+    let url = first_line
+        .trim_end()
+        .strip_prefix("StrataDiff Review Resume Workbench: http://")
+        .unwrap();
+    let (address, token) = url.split_once("/?token=").unwrap();
+
+    let session = get(address, &format!("/api/session?token={token}"));
+    let (_, body) = session.split_once("\r\n\r\n").unwrap();
+    let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(payload["resume_delta"]["summary"]["needs_review_files"], 0);
+    assert_eq!(payload["resume_delta"]["summary"]["gate_passed"], true);
+    assert_eq!(payload["resume_delta"]["entries"], serde_json::json!([]));
+    assert_eq!(payload["base_drift"]["status"], "available");
+    assert_eq!(
+        payload["base_drift"]["delta"]["entries"][0]["file"]["after_path"],
+        "shared.py"
+    );
+    assert_eq!(
+        payload["review"]["files"][0]["checkpoint_match_basis"],
+        "exact_noninteracting_four_way_byte_replay"
+    );
+
+    let detail = get(
+        address,
+        &format!("/api/session?token={token}&file=0&scope=base"),
+    );
+    let (_, detail_body) = detail.split_once("\r\n\r\n").unwrap();
+    let detail_payload: serde_json::Value = serde_json::from_str(detail_body).unwrap();
+    assert_eq!(detail_payload["repository_context"]["scope"], "base");
+    assert!(
+        detail_payload["repository_context"]
+            .get("checkpoint_state")
+            .is_none()
+    );
+
+    fs::write(root.join("shared.py"), b"uncommitted worktree mutation\n").unwrap();
+    let base_before = get_bytes(
+        address,
+        &format!("/api/source/before?token={token}&file=0&scope=base"),
+    );
+    let (_, base_before_body) = split_response(&base_before);
+    assert_eq!(base_before_body, b"title = 'old'\nreviewed = 0\n");
+    let base_after = get_bytes(
+        address,
+        &format!("/api/source/after?token={token}&file=0&scope=base"),
+    );
+    let (_, base_after_body) = split_response(&base_after);
+    assert_eq!(base_after_body, b"title = 'new'\nreviewed = 0\n");
+}
+
+#[test]
+fn repository_workbench_starts_with_unavailable_base_context_after_budget_failure() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = directory.path();
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.name", "StrataDiff Test"]);
+    git(root, &["config", "user.email", "stratadiff@example.test"]);
+    fs::write(root.join("shared.py"), b"title = 'old'\nreviewed = 0\n").unwrap();
+    let original_base = commit(root, "original base");
+
+    fs::write(root.join("shared.py"), b"title = 'old'\nreviewed = 1\n").unwrap();
+    let checkpoint = commit(root, "reviewed checkpoint");
+
+    git(root, &["checkout", "-q", &original_base]);
+    fs::write(root.join("shared.py"), b"title = 'new'\nreviewed = 0\n").unwrap();
+    for index in 0..=1_000 {
+        fs::write(root.join(format!("base-{index:04}.txt")), b"base context\n").unwrap();
+    }
+    let current_base = commit(root, "oversized base drift");
+    fs::write(root.join("shared.py"), b"title = 'new'\nreviewed = 1\n").unwrap();
+    let head = commit(root, "rebased reviewed change");
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("review")
+        .arg("--repo")
+        .arg(root)
+        .arg("--checkpoint")
+        .arg(&checkpoint)
+        .arg("--workbench")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .arg("--")
+        .arg(&current_base)
+        .arg(&head)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let stderr = child.0.stderr.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let _reader = thread::spawn(move || {
+        let mut stderr = BufReader::new(stderr);
+        let mut first_line = String::new();
+        let mut stop_hint = String::new();
+        let mut warning = String::new();
+        let result = stderr
+            .read_line(&mut first_line)
+            .and_then(|_| stderr.read_line(&mut stop_hint))
+            .and_then(|_| stderr.read_line(&mut warning))
+            .map(|_| (first_line, warning));
+        let _ = sender.send(result);
+    });
+    let (first_line, warning) = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("review workbench did not publish readiness within 30 seconds")
+        .unwrap();
+    let url = first_line
+        .trim_end()
+        .strip_prefix("StrataDiff Review Resume Workbench: http://")
+        .unwrap();
+    assert!(
+        warning.starts_with("Could not materialize base-drift context:"),
+        "{warning}"
+    );
+    let (address, token) = url.split_once("/?token=").unwrap();
+
+    let session = get(address, &format!("/api/session?token={token}"));
+    assert!(session.starts_with("HTTP/1.1 200 OK\r\n"), "{session}");
+    let (_, body) = session.split_once("\r\n\r\n").unwrap();
+    let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(payload["resume_delta"]["summary"]["needs_review_files"], 0);
+    assert_eq!(payload["base_drift"]["status"], "unavailable");
+    assert!(payload["base_drift"].get("delta").is_none());
+
+    let full_detail = get(
+        address,
+        &format!("/api/session?token={token}&file=0&scope=full"),
+    );
+    assert!(
+        full_detail.starts_with("HTTP/1.1 200 OK\r\n"),
+        "{full_detail}"
+    );
+    let missing_base = get(
+        address,
+        &format!("/api/session?token={token}&file=0&scope=base"),
+    );
+    assert!(
+        missing_base.starts_with("HTTP/1.1 404 Not Found\r\n"),
+        "{missing_base}"
+    );
 }
 
 #[cfg(unix)]

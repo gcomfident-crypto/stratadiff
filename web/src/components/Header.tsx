@@ -24,16 +24,18 @@ function exportReport(session: LoadedFileSession): void {
   URL.revokeObjectURL(url)
 }
 
-function backToReviewQueue(): void {
+function reviewQueueUrl(): string {
   const params = new URLSearchParams(window.location.search)
   params.delete('file')
-  params.delete('scope')
-  window.location.assign(`/?${params.toString()}`)
+  return `/?${params.toString()}`
 }
 
 function reviewCoverage(session: LoadedFileSession): { label: string; tone: 'carried' | 'needs' | 'changed' } | null {
   const context = session.repository_context
   if (context === undefined) return null
+  if (context.scope === 'base') {
+    return { label: 'Base drift context · not PR coverage', tone: 'changed' }
+  }
   if (context.checkpoint_match_basis === 'exact_git_change_identity') {
     return { label: 'Coverage: exact-identity carry', tone: 'carried' }
   }
@@ -85,9 +87,9 @@ export function Header({ session, onOpenInspector, inspectorButtonRef }: HeaderP
 
       <div className="header-actions">
         {session.repository_context !== undefined && (
-          <button className="export-button" type="button" onClick={backToReviewQueue}>
+          <a className="export-button" href={reviewQueueUrl()}>
             <ArrowLeft size={15} aria-hidden="true" /> Back to queue
-          </button>
+          </a>
         )}
         <button ref={inspectorButtonRef} className="icon-button inspector-toggle" type="button" onClick={onOpenInspector} aria-label="Open evidence inspector">
           <PanelRightOpen size={17} />

@@ -1231,6 +1231,16 @@ pub fn review_git_snapshot_delta(repository: &Path, from: &str, to: &str) -> Res
     review_git_snapshot_delta_with_analysis(repository, from, to, &mut context)
 }
 
+pub fn review_git_snapshot_delta_bounded(
+    repository: &Path,
+    from: &str,
+    to: &str,
+) -> Result<ReviewDelta> {
+    let mut context =
+        ReviewAnalysisContext::bounded(MAX_REVIEW_FILES, MAX_REVIEW_TOTAL_SOURCE_BYTES);
+    review_git_snapshot_delta_with_analysis(repository, from, to, &mut context)
+}
+
 fn review_git_snapshot_delta_with_analysis(
     repository: &Path,
     from: &str,

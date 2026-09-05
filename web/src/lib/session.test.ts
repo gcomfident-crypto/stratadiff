@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { repositorySessionFixture, sessionFixture } from '../test/fixture'
+import { repositoryBaseDriftSessionFixture, repositorySessionFixture, sessionFixture } from '../test/fixture'
 import { decodeUtf8, fetchSession, getSessionToken } from './session'
 
 describe('session loading', () => {
@@ -68,6 +68,37 @@ describe('session loading', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(fallbackPayload), { status: 200 })))
     await expect(fetchSession('?token=repository-token')).rejects.toThrow('inconsistent checkpoint delta fallback evidence')
   })
+
+  it('binds base-drift context to the exact old and current merge bases', async () => {
+    const payload = repositoryBaseDriftSessionFixture()
+    if (payload.base_drift.status !== 'available') throw new Error('Missing base-drift fixture.')
+    payload.base_drift.delta.head_commit = payload.review.head_commit
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+    await expect(fetchSession('?token=repository-token')).rejects.toThrow('inconsistent base-drift metadata')
+  })
+
+  it.each(['source kind', 'object id', 'byte length'] as const)(
+    'binds each base-drift %s to its review-file metadata',
+    async (mismatch) => {
+      const payload = repositoryBaseDriftSessionFixture()
+      if (payload.base_drift.status !== 'available') throw new Error('Missing base-drift fixture.')
+      const entry = payload.base_drift.delta.entries[0]
+      if (entry === undefined) throw new Error('Missing base-drift entry.')
+      if (mismatch === 'source kind') {
+        entry.before_source = { kind: 'empty' }
+      } else if (mismatch === 'object id') {
+        if (entry.before_source.kind !== 'git_object') throw new Error('Missing before Git source.')
+        entry.before_source.object_id = 'f'.repeat(64)
+      } else {
+        if (entry.after_source.kind !== 'git_object') throw new Error('Missing after Git source.')
+        entry.after_source.byte_len = (entry.file.after_bytes ?? 0) + 1
+      }
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+      await expect(fetchSession('?token=repository-token')).rejects.toThrow('invalid base-drift file')
+    },
+  )
 
   it('detects invalid UTF-8 without replacement characters', () => {
     expect(decodeUtf8(Uint8Array.from([0xff, 0x00, 0xfe]))).toBeNull()

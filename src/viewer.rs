@@ -30,9 +30,9 @@ use stratadiff::{
     coverage::{MAX_REVIEW_COVERAGE_BYTES, ReviewCoveragePassport},
     review::{
         CheckpointCarryBasis, CheckpointState, RepositoryReview, ReviewBaselineReconstruction,
-        ReviewDeltaBaselineBasis, ReviewDeltaFile, ReviewDeltaSource, ReviewFileSources,
-        load_review_delta_file_sources, load_review_file_sources, regenerate_review_file_report,
-        review_git_resume_delta,
+        ReviewDelta, ReviewDeltaBaselineBasis, ReviewDeltaFile, ReviewDeltaSource,
+        ReviewFileSources, load_review_delta_file_sources, load_review_file_sources,
+        regenerate_review_file_report, review_git_resume_delta, review_git_snapshot_delta_bounded,
     },
 };
 use tokio::{net::TcpListener, runtime::Builder};
@@ -70,6 +70,7 @@ struct ReviewCoverageSession {
 
 struct RepositorySession {
     cache: tokio::sync::Mutex<Option<Arc<CachedReviewFile>>>,
+    base_queue: Vec<ReviewDeltaFile>,
     repository: PathBuf,
     queue: Vec<ReviewDeltaFile>,
     review: RepositoryReview,
@@ -89,11 +90,28 @@ struct ViewerVerification {
     message: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, Serialize)]
 struct RepositoryAssessment {
     status: &'static str,
     basis: &'static str,
     message: &'static str,
+}
+
+#[derive(Serialize)]
+struct BaseDriftAssessment<'a> {
+    status: &'static str,
+    message: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delta: Option<&'a ReviewDelta>,
+}
+
+#[derive(Serialize)]
+struct RepositoryViewerPayload<'a> {
+    kind: &'static str,
+    review: &'a RepositoryReview,
+    resume_delta: &'a ReviewDelta,
+    base_drift: BaseDriftAssessment<'a>,
+    assessment: RepositoryAssessment,
 }
 
 #[derive(Serialize)]
@@ -126,6 +144,7 @@ struct SessionQuery {
 enum ReviewScope {
     Resume,
     Full,
+    Base,
 }
 
 pub fn serve(
@@ -141,6 +160,7 @@ pub fn serve(
         "StrataDiff Evidence Workbench",
         port,
         open_browser,
+        None,
     )
 }
 
@@ -159,30 +179,80 @@ pub fn serve_review(
     let base_changed = checkpoint.base_commit != review.base_commit;
     let resume_delta = review_git_resume_delta(&repository, &review)?;
     let queue = resume_delta.entries.clone();
-    let mut session_json = Vec::new();
-    session_json.extend_from_slice(br#"{"kind":"repository_review","review":"#);
-    serde_json::to_writer(&mut session_json, &review)?;
-    session_json.extend_from_slice(br#", "resume_delta":"#);
-    serde_json::to_writer(&mut session_json, &resume_delta)?;
-    session_json.extend_from_slice(br#", "assessment":"#);
-    serde_json::to_writer(
-        &mut session_json,
-        &RepositoryAssessment {
-            status: "producer_attested",
-            basis: if base_changed {
-                "exact_git_change_identity_or_noninteracting_four_way_byte_replay"
-            } else {
-                "exact_git_change_identity"
-            },
-            message: if base_changed {
-                "The merge base changed. Each queue row is either an exact reconstructed review-baseline delta or an explicitly marked conservative fallback. Upstream-only files are excluded. This is not proof of review, semantic safety, or approval."
-            } else {
-                "Checkpoint carry-forward is an exact Git identity comparison. It is not proof of review, semantic safety, or approval."
-            },
-        },
-    )?;
-    session_json.push(b'}');
     let report_limit = VerificationLimits::default().max_report_bytes;
+    let mut startup_warning = None;
+    let mut base_delta = if base_changed {
+        match review_git_snapshot_delta_bounded(
+            &repository,
+            &checkpoint.base_commit,
+            &review.base_commit,
+        ) {
+            Ok(delta) => Some(delta),
+            Err(error) => {
+                startup_warning = Some(format!(
+                    "Could not materialize base-drift context: {error:#}"
+                ));
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let assessment = RepositoryAssessment {
+        status: "producer_attested",
+        basis: if base_changed {
+            "exact_git_change_identity_or_noninteracting_four_way_byte_replay"
+        } else {
+            "exact_git_change_identity"
+        },
+        message: if base_changed {
+            "The merge base changed. Review delta contains only author residue; Base drift exposes upstream context separately. Every carry is exact identity or strict four-way replay. This is not proof of review, semantic safety, or approval."
+        } else {
+            "Checkpoint carry-forward is an exact Git identity comparison. It is not proof of review, semantic safety, or approval."
+        },
+    };
+    let mut base_status = if base_changed && base_delta.is_some() {
+        "available"
+    } else if base_changed {
+        "unavailable"
+    } else {
+        "not_applicable"
+    };
+    let mut base_message = if base_delta.is_some() {
+        "Exact old-base to current-base context. These upstream changes are not PR residue and do not affect the residue gate."
+    } else if base_changed {
+        "The merge base changed, but bounded base context could not be materialized. Inspect the old and current base commits manually before relying on surrounding context."
+    } else {
+        "The checkpoint and current review use the same merge base."
+    };
+    let mut session_json = serde_json::to_vec(&RepositoryViewerPayload {
+        kind: "repository_review",
+        review: &review,
+        resume_delta: &resume_delta,
+        base_drift: BaseDriftAssessment {
+            status: base_status,
+            message: base_message,
+            delta: base_delta.as_ref(),
+        },
+        assessment,
+    })?;
+    if session_json.len() > report_limit && base_delta.is_some() {
+        base_delta = None;
+        base_status = "unavailable";
+        base_message = "The merge base changed, but base context exceeds the bounded viewer-session limit. Inspect the old and current base commits manually before relying on surrounding context.";
+        startup_warning = Some(base_message.to_owned());
+        session_json = serde_json::to_vec(&RepositoryViewerPayload {
+            kind: "repository_review",
+            review: &review,
+            resume_delta: &resume_delta,
+            base_drift: BaseDriftAssessment {
+                status: base_status,
+                message: base_message,
+                delta: None,
+            },
+            assessment,
+        })?;
+    }
     ensure!(
         session_json.len() <= report_limit,
         "repository viewer session bytes limit exceeded: observed {}, limit {report_limit}",
@@ -192,6 +262,7 @@ pub fn serve_review(
     serve_content(
         ViewerContent::Repository(Box::new(RepositorySession {
             cache: tokio::sync::Mutex::new(None),
+            base_queue: base_delta.map(|delta| delta.entries).unwrap_or_default(),
             repository,
             queue,
             review,
@@ -200,6 +271,7 @@ pub fn serve_review(
         "StrataDiff Review Resume Workbench",
         port,
         open_browser,
+        startup_warning,
     )
 }
 
@@ -235,6 +307,7 @@ pub fn serve_review_coverage(
         "StrataDiff Review Coverage Passport",
         port,
         open_browser,
+        None,
     )
 }
 
@@ -281,6 +354,7 @@ fn serve_content(
     label: &'static str,
     port: u16,
     open_browser: bool,
+    startup_warning: Option<String>,
 ) -> Result<()> {
     let token = session_token()?;
     let runtime = Builder::new_multi_thread()
@@ -321,6 +395,9 @@ fn serve_content(
 
         eprintln!("{label}: {url}");
         eprintln!("Press Ctrl+C to stop the local server.");
+        if let Some(warning) = startup_warning {
+            eprintln!("{warning}");
+        }
         if open_browser && let Err(error) = launch_browser(&url) {
             eprintln!("Could not open the browser automatically: {error:#}");
             eprintln!("Open this URL manually: {url}");
@@ -551,6 +628,7 @@ fn review_file_index_is_valid(
     match scope {
         ReviewScope::Resume => index < repository.queue.len(),
         ReviewScope::Full => index < repository.review.files.len(),
+        ReviewScope::Base => index < repository.base_queue.len(),
     }
 }
 
@@ -585,6 +663,14 @@ async fn cached_review_file(
                 .context("repository review file index is out of range")?,
             None,
         ),
+        ReviewScope::Base => {
+            let entry = repository
+                .base_queue
+                .get(index)
+                .cloned()
+                .context("repository base-drift file index is out of range")?;
+            (entry.file.clone(), Some(entry))
+        }
     };
     let repository_path = repository.repository.clone();
     let cached = tokio::task::spawn_blocking(move || -> Result<CachedReviewFile> {

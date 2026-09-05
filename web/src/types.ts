@@ -149,7 +149,7 @@ export interface FileSessionPayload {
   verification: VerificationResult
   repository_context?: {
     file_index: number
-    scope: 'resume' | 'full'
+    scope: 'resume' | 'full' | 'base'
     checkpoint_state?: CheckpointState
     checkpoint_match_basis?: 'exact_git_change_identity' | 'exact_noninteracting_four_way_byte_replay'
     baseline_basis?: ReviewDeltaBaselineBasis
@@ -309,6 +309,10 @@ export interface RepositorySessionPayload {
   kind: 'repository_review'
   review: RepositoryReview
   resume_delta: ReviewDelta
+  base_drift:
+    | { status: 'not_applicable'; message: string }
+    | { status: 'unavailable'; message: string }
+    | { status: 'available'; message: string; delta: ReviewDelta }
   assessment: {
     status: 'producer_attested'
     basis: 'exact_git_change_identity' | 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'

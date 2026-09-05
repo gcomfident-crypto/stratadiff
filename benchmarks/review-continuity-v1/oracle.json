@@ -1,0 +1,86 @@
+{
+  "schema": "stratadiff-review-continuity-oracle-v1",
+  "dataset_version": "1.0.0",
+  "oracle_unit": "repository-relative path requiring byte-level human reinspection",
+  "claim_boundary": [
+    "The oracle describes only six controlled byte histories; it is not a sample of real pull requests.",
+    "A required path means the controlled history contains review residue at that path, not that a defect exists.",
+    "A carryable path is byte-replay evidence within the declared history, not semantic equivalence or code correctness.",
+    "Line-change totals are deterministic Git or StrataDiff review envelopes, not reviewer time.",
+    "No outcome establishes human issue recall, safety, prevalence, product-market fit, or willingness to pay."
+  ],
+  "cases": [
+    {
+      "id": "pure-rebase",
+      "required_attention_paths": [],
+      "carryable_paths": ["feature.py"],
+      "exact_residue_line_changes": 0,
+      "expected_methods": {
+        "stratadiff": {"classification": "carry_all", "review_paths": [], "attention_line_changes": 0},
+        "git_patch_id": {"classification": "equivalent_patch", "review_paths": [], "attention_line_changes": 0},
+        "checkpoint_to_head": {"classification": "different_trees", "review_paths": ["base.txt"], "attention_line_changes": 2},
+        "git_range_diff": {"classification": "equivalent_series", "review_paths": [], "attention_line_changes": 0}
+      }
+    },
+    {
+      "id": "author-followup",
+      "required_attention_paths": ["feature.py"],
+      "carryable_paths": [],
+      "exact_residue_line_changes": 2,
+      "expected_methods": {
+        "stratadiff": {"classification": "review_residue", "review_paths": ["feature.py"], "attention_line_changes": 2},
+        "git_patch_id": {"classification": "different_patch", "review_paths": ["feature.py"], "attention_line_changes": 4},
+        "checkpoint_to_head": {"classification": "different_trees", "review_paths": ["base.txt", "feature.py"], "attention_line_changes": 4},
+        "git_range_diff": {"classification": "changed_series", "review_paths": ["feature.py"], "attention_line_changes": 6}
+      }
+    },
+    {
+      "id": "dropped-reviewed-edit",
+      "required_attention_paths": ["feature.py"],
+      "carryable_paths": [],
+      "exact_residue_line_changes": 2,
+      "expected_methods": {
+        "stratadiff": {"classification": "review_residue", "review_paths": ["feature.py"], "attention_line_changes": 2},
+        "git_patch_id": {"classification": "different_patch", "review_paths": [], "attention_line_changes": 0},
+        "checkpoint_to_head": {"classification": "different_trees", "review_paths": ["base.txt", "feature.py"], "attention_line_changes": 4},
+        "git_range_diff": {"classification": "changed_series", "review_paths": ["feature.py"], "attention_line_changes": 2}
+      }
+    },
+    {
+      "id": "whitespace-patch-id-collision",
+      "required_attention_paths": ["auth.py"],
+      "carryable_paths": [],
+      "exact_residue_line_changes": 2,
+      "expected_methods": {
+        "stratadiff": {"classification": "review_residue", "review_paths": ["auth.py"], "attention_line_changes": 2},
+        "git_patch_id": {"classification": "equivalent_patch", "review_paths": [], "attention_line_changes": 0},
+        "checkpoint_to_head": {"classification": "different_trees", "review_paths": ["auth.py"], "attention_line_changes": 2},
+        "git_range_diff": {"classification": "changed_series", "review_paths": ["auth.py"], "attention_line_changes": 4}
+      }
+    },
+    {
+      "id": "stack-squash-parent-hazard",
+      "required_attention_paths": ["stack.py"],
+      "carryable_paths": [],
+      "exact_residue_line_changes": 2,
+      "expected_methods": {
+        "stratadiff": {"classification": "review_residue", "review_paths": ["stack.py"], "attention_line_changes": 2},
+        "git_patch_id": {"classification": "different_patch", "review_paths": ["stack.py"], "attention_line_changes": 2},
+        "checkpoint_to_head": {"classification": "identical_trees", "review_paths": [], "attention_line_changes": 0},
+        "git_range_diff": {"classification": "changed_series", "review_paths": ["stack.py"], "attention_line_changes": 4}
+      }
+    },
+    {
+      "id": "rename-and-edit",
+      "required_attention_paths": ["new.py", "old.py"],
+      "carryable_paths": [],
+      "exact_residue_line_changes": 4,
+      "expected_methods": {
+        "stratadiff": {"classification": "review_residue", "review_paths": ["new.py", "old.py"], "attention_line_changes": 4},
+        "git_patch_id": {"classification": "different_patch", "review_paths": ["new.py", "old.py"], "attention_line_changes": 4},
+        "checkpoint_to_head": {"classification": "different_trees", "review_paths": ["base.txt", "new.py", "old.py"], "attention_line_changes": 6},
+        "git_range_diff": {"classification": "changed_series", "review_paths": ["new.py", "old.py"], "attention_line_changes": 6}
+      }
+    }
+  ]
+}

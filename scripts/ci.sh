@@ -22,6 +22,7 @@ python3 tools/resumebench-github-live/resumebench_github_live.py verify-bundle \
 python3 scripts/demo_review_coverage.py --self-test
 python3 -B tools/reviewer-value-v1/reviewer_value_v1.py verify
 bash extensions/gh-stratadiff/tests/resume_test.sh
+scripts/test-release-scripts.sh
 python3 -B tools/reviewer-study-v1/reviewer_study_v1.py self-test
 python3 -B -m unittest discover -s tools/review-churn-census -p 'test_*.py' -q
 python3 -B tools/review-churn-census/review_churn_census.py verify \

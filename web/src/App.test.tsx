@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { repositorySessionFixture, reviewCoverageSessionFixture, sessionFixture } from './test/fixture'
+import { repositoryBaseDriftSessionFixture, repositorySessionFixture, reviewCoverageSessionFixture, sessionFixture } from './test/fixture'
 
 vi.mock('@pierre/diffs/react', () => ({
   MultiFileDiff: ({ oldFile, newFile }: { oldFile: { contents: string }; newFile: { contents: string } }) => (
@@ -66,6 +66,27 @@ describe('Evidence Workbench', () => {
 
     expect(await screen.findByText('Coverage: needs review')).toBeInTheDocument()
     expect(screen.getByText('Diff evidence verified')).toBeInTheDocument()
+  })
+
+  it('labels base-drift evidence as context and preserves its scope when returning', async () => {
+    window.history.replaceState({}, '', '/?token=test-token&file=0&scope=base')
+    const payload = sessionFixture()
+    payload.repository_context = {
+      file_index: 0,
+      scope: 'base',
+      baseline_basis: 'checkpoint_snapshot',
+    }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      const source = url.includes('/before') ? 'const before = 1\n' : 'const after = 2\n'
+      return Promise.resolve(new Response(new TextEncoder().encode(source), { status: 200 }))
+    }))
+
+    render(<App />)
+
+    expect(await screen.findByText('Base drift context · not PR coverage')).toBeInTheDocument()
+    expect(screen.queryByText('Coverage: changed after checkpoint')).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Back to queue' })).toHaveAttribute('href', '/?token=test-token&scope=base')
   })
 
   it('switches all three evidence layers from the keyboard', async () => {
@@ -225,15 +246,10 @@ describe('Evidence Workbench', () => {
   })
 
   it('explains the PR-relative fallback when the merge base changed', async () => {
-    const payload = repositorySessionFixture()
-    payload.review.checkpoint!.base_commit = '3'.repeat(40)
-    payload.review.checkpoint!.match_basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
-    payload.assessment.basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+    const payload = repositoryBaseDriftSessionFixture()
     const replayCarried = payload.review.files.find((file) => file.after_path === 'src/carried.ts')
     if (replayCarried === undefined) throw new Error('Missing carried fixture file.')
     replayCarried.checkpoint_match_basis = 'exact_noninteracting_four_way_byte_replay'
-    payload.resume_delta.comparison = 'per_file_review_baseline_to_head'
-    payload.resume_delta.old_base_commit = payload.review.checkpoint!.base_commit
     const residueFile = payload.review.files[0]
     if (residueFile === undefined || residueFile.before_blob === undefined || residueFile.after_blob === undefined) throw new Error('Missing residue fixture file.')
     const oldBaseBlob = residueFile.before_blob
@@ -265,18 +281,23 @@ describe('Evidence Workbench', () => {
     render(<App />)
 
     expect(await screen.findByText('1 file needs review')).toBeInTheDocument()
-    expect(screen.getByText(/Exact rows compare a reconstructed reviewed baseline/)).toBeInTheDocument()
+    expect(screen.getByText(/Author residue and upstream base context are separated/)).toBeInTheDocument()
     expect(screen.getByText(/Base changed · exact-identity or four-way carry/)).toBeInTheDocument()
     expect(screen.getByText('RECONSTRUCTED REVIEW BASELINE → HEAD')).toBeInTheDocument()
     expect(screen.getByText('Replay orders').nextElementSibling).toHaveTextContent('same bytes')
     expect(screen.getByText('Checkpoint carry').nextElementSibling).toHaveTextContent('not carried')
-    expect(within(screen.getByLabelText('Review resume summary')).getByText('Reconstructed deltas').nextElementSibling).toHaveTextContent('1')
+    expect(within(screen.getByLabelText('Review resume summary')).getByText('Base context files').nextElementSibling).toHaveTextContent('1')
     expect(screen.queryByText('src/retired.ts')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: /Full PR context/ }))
     fireEvent.click(screen.getByRole('button', { name: 'Carried' }))
     expect(screen.getByRole('button', { name: /src\/carried\.ts.*Four-way carry/ })).toBeInTheDocument()
     expect(within(screen.getByLabelText('Review resume summary')).getByText('Four-way carry').nextElementSibling).toHaveTextContent('1')
+
+    fireEvent.click(screen.getByRole('button', { name: /Base drift/ }))
+    expect((await screen.findAllByText('src/upstream-context.ts')).length).toBeGreaterThan(0)
+    expect(screen.getByText('OLD BASE → CURRENT BASE · CONTEXT ONLY')).toBeInTheDocument()
+    expect(screen.getByText(/does not itself block the current PR review/)).toBeInTheDocument()
   })
 
   it('does not claim snapshots match when search or filters hide real changes', async () => {
@@ -308,6 +329,115 @@ describe('Evidence Workbench', () => {
 
     expect((await screen.findAllByText('No changes between checkpoint and head')).length).toBeGreaterThan(0)
     expect(screen.queryByText('No files match this view')).not.toBeInTheDocument()
+  })
+
+  it('opens base context instead of presenting a reassuring empty result after base drift', async () => {
+    const payload = repositoryBaseDriftSessionFixture()
+    payload.resume_delta.entries = []
+    payload.resume_delta.summary = {
+      displayable_files: 0,
+      unresolved_retired_changes: 0,
+      needs_review_files: 0,
+      gate_passed: true,
+    }
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      if (url === '/api/source/before?token=test-token&file=0&scope=base') return Promise.resolve(new Response(new TextEncoder().encode('const before = 1\n'), { status: 200 }))
+      if (url === '/api/source/after?token=test-token&file=0&scope=base') return Promise.resolve(new Response(new TextEncoder().encode('const after = 2\n'), { status: 200 }))
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByText('No author residue · base context changed')).toBeInTheDocument()
+    expect((await screen.findAllByText('src/upstream-context.ts')).length).toBeGreaterThan(0)
+    expect(screen.getByText('OLD BASE → CURRENT BASE · CONTEXT ONLY')).toBeInTheDocument()
+    expect(await screen.findByTestId('rendered-diff')).toHaveTextContent('const before = 1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/source/before?token=test-token&file=0&scope=base', expect.objectContaining({ cache: 'no-store' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/source/after?token=test-token&file=0&scope=base', expect.objectContaining({ cache: 'no-store' }))
+    expect(screen.queryByText('No review residue')).not.toBeInTheDocument()
+  })
+
+  it('surfaces unavailable base context when no review residue remains', async () => {
+    const payload = repositoryBaseDriftSessionFixture()
+    payload.resume_delta.entries = []
+    payload.resume_delta.summary = {
+      displayable_files: 0,
+      unresolved_retired_changes: 0,
+      needs_review_files: 0,
+      gate_passed: true,
+    }
+    payload.base_drift = {
+      status: 'unavailable',
+      message: 'The bounded base context could not be materialized.',
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByText('No author residue · base context changed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Base drift/ })).toHaveClass('active')
+    expect(within(screen.getByLabelText('Review resume summary')).getByText('Base context files').nextElementSibling).toHaveTextContent('Unavailable')
+    expect(screen.getAllByText(/Base context unavailable/).length).toBeGreaterThan(0)
+    expect(screen.queryByText('No review residue')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('states when an available base drift has no tree changes', async () => {
+    const payload = repositoryBaseDriftSessionFixture()
+    payload.resume_delta.entries = []
+    payload.resume_delta.summary = {
+      displayable_files: 0,
+      unresolved_retired_changes: 0,
+      needs_review_files: 0,
+      gate_passed: true,
+    }
+    if (payload.base_drift.status !== 'available') throw new Error('Missing base-drift fixture.')
+    payload.base_drift.delta.entries = []
+    payload.base_drift.delta.summary = {
+      displayable_files: 0,
+      unresolved_retired_changes: 0,
+      needs_review_files: 0,
+      gate_passed: true,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByText('No author residue · base context changed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Base drift/ })).toHaveClass('active')
+    expect(within(screen.getByLabelText('Review resume summary')).getByText('Base context files').nextElementSibling).toHaveTextContent('No tree changes')
+    expect(screen.getAllByText('No upstream base changes').length).toBeGreaterThan(0)
+    expect(screen.queryByText('No review residue')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps unresolved review residue ahead of available base context', async () => {
+    const payload = repositoryBaseDriftSessionFixture()
+    payload.resume_delta.entries = []
+    payload.resume_delta.unresolved_retired_changes = [{
+      path: 'git-bytes:%FF.ts',
+      path_encoding: 'git_bytes_percent_encoded',
+      reason: 'non_utf8_git_path',
+    }]
+    payload.resume_delta.summary = {
+      displayable_files: 0,
+      unresolved_retired_changes: 1,
+      needs_review_files: 1,
+      gate_passed: false,
+    }
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByText('Review remains blocked')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Review delta/ })).toHaveClass('active')
+    expect(screen.getByRole('button', { name: /Base drift/ })).not.toHaveClass('active')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('keeps unresolved retired changes visible even without a displayable file delta', async () => {

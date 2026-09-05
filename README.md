@@ -1,12 +1,14 @@
 # StrataDiff
 
-**Stop re-reviewing code StrataDiff can prove unchanged after a rebase.**
+**Resume the review. Don't restart it. Never inherit review without proof.**
 
-StrataDiff is a local, proof-carrying memory layer for human review of large refactors, stacked PRs,
+StrataDiff is a local Verified Review Delta for human review of large refactors, stacked PRs,
 codemods, and AI-written changes. After a push, rebase, restack, or force-push, it reconstructs the
 reviewed baseline where that can be proved and shows the reviewer only the remaining exact delta.
 A dropped reviewed change stays visible even when it vanished from the current PR diff, and every
-unsupported or ambiguous case fails closed. GitHub remains the source of approval; StrataDiff adds
+unsupported or ambiguous case fails closed. When the merge base moved, the Workbench exposes the
+old-base-to-current-base drift as a separate context scope, so an empty author residue cannot hide
+changes inherited from a rewritten parent. GitHub remains the source of approval; StrataDiff adds
 an inspectable coverage gate without uploading source code. A personal Inbox first finds the open
 pull requests whose exact completed-review checkpoint has moved, so Resume is an actionable queue
 rather than a diff tool reviewers must remember to invoke.
@@ -22,6 +24,12 @@ _A controlled base-drift case: upstream changed the title, while the author chan
 `followup = 0` to `followup = 1`. Resume shows that one-line `S -> D` delta and its reconstruction
 evidence; Full PR context remains one click away._
 
+![Base Drift context showing the exact upstream change separately from author residue](docs/assets/review-base-drift-context.png)
+
+_Base Drift is context, not a hidden carry or a gate result. It exposes the exact old-base to
+current-base change separately, including the hazardous case where author residue is empty after a
+stack rewrite._
+
 The checkpoint policy is built on an evidence-carrying single-file differ whose report separates
 three questions that traditional AST diff tools often mix together:
 
@@ -35,8 +43,8 @@ historical fact.
 
 > **Project status:** research alpha. The no-checkout `gh stratadiff audit`, personal
 > `gh stratadiff inbox`, native no-admin `stratadiff resume <PR>` path (also exposed as
-> `gh stratadiff resume <PR>`), exact base-drift replay, Review
-> Resume Workbench, webhook review ledger, exact-base CODEOWNERS and permission snapshots,
+> `gh stratadiff resume <PR>`), exact base-drift replay, Review Resume Workbench with explicit
+> upstream base context, webhook review ledger, exact-base CODEOWNERS and permission snapshots,
 > receiver-signed review-coverage Passport, offline verification, and deterministic Check Run
 > request generation work now. The implementation remains local tooling, not a hosted GitHub App:
 > installation-token issuance, durable latest-root storage, Check Run publication, and measured
@@ -148,6 +156,13 @@ network-free five-snapshot histories for the exact resume queue. It independentl
 identity, the CLI gate, and the bytes served by both Workbench scopes, including dropped work and
 upstream absorption as well as fail-closed overlap, binary, add/delete/rename, and mode-change
 cases. A clean pinned release run is required before treating an evaluation as release evidence.
+
+The [Review Continuity v1 comparison](benchmarks/review-continuity-v1/README.md) freezes six
+adversarial rewrite histories and independently compares the resulting review queue with stable
+patch-id, checkpoint-to-head diff, and a conservative `git range-diff` adapter. StrataDiff has zero
+synthetic false-carry cases and matches all six path-and-line oracles while the alternatives either
+miss required attention or expose avoidable lines. This is a controlled regression result, not a
+production safety rate or evidence that reviewers save time.
 
 ## Quick start
 
