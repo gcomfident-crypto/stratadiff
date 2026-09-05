@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  gh-extension:
+    name: GitHub extension · ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Test extension with system Bash
+        run: PATH="/usr/bin:/bin:$PATH" /bin/bash extensions/gh-stratadiff/tests/resume_test.sh
+
   web:
     name: Web · Node 24
     runs-on: ubuntu-latest

@@ -129,6 +129,7 @@ run_case() {
         DBUS_SESSION_BUS_ADDRESS=unix:path=/stratadiff-test-bus \
         XAUTHORITY="${case_directory}/Xauthority" \
         LANG=C.UTF-8 \
+        LANGUAGE= \
         GH_TOKEN=must-not-reach-git \
         GITHUB_TOKEN=must-not-reach-viewer \
         CALLER_SECRET=must-not-reach-viewer \
@@ -269,6 +270,7 @@ assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'DISPLAY=:99'
 assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'LANG=C.UTF-8'
 assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'GIT_CONFIG_GLOBAL=/dev/null'
 assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'GIT_NO_LAZY_FETCH=1'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" $'\nLANGUAGE=\n'
 assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GH_TOKEN='
 assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GITHUB_TOKEN='
 assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'CALLER_SECRET='
@@ -367,7 +369,7 @@ assert_contains "${CASE_LOG}" 'stratadiff github-commit-object'
 assert_contains "${CASE_LOG}" "stratadiff github-ownership-snapshot aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --repo ${CASE_REPOSITORY} --github-repository acme/widget --provider-url https://github.com --output ${CASE_OUTPUT_PATH}"
 assert_not_contains "${CASE_LOG}" 'gh auth token'
 [[ -f "${CASE_OUTPUT_PATH}" ]]
-[[ "$(stat -c '%a' "${CASE_OUTPUT_PATH}")" == 600 ]]
+[[ "$(python3 -c 'import os, stat, sys; print(oct(stat.S_IMODE(os.stat(sys.argv[1]).st_mode)))' "${CASE_OUTPUT_PATH}")" == 0o600 ]]
 assert_contains "$(< "${CASE_OUTPUT_PATH}")" '"base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
 
 run_ownership_snapshot ownership-missing-base GH_STUB_MISSING_BASE=true
