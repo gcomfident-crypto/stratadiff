@@ -217,20 +217,21 @@ Resume's shared 10,000-review limit.
 
 ### Resume your own GitHub review
 
-After building StrataDiff, run the extension from the pull request's checkout:
+After building StrataDiff, run the extension from any directory by naming the repository:
 
 ```console
 cd extensions/gh-stratadiff
 gh extension install .
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
-gh stratadiff resume 123
+gh stratadiff resume 123 -R OWNER/REPOSITORY
 ```
 
 It resolves the authenticated user's exact completed-review checkpoint, verifies that commit with
-GitHub, and opens Review Resume against the PR's current base and head. Missing historical objects
-fail explicitly; the extension never substitutes the current head, a branch tip, or another
-checkpoint. See the [extension guide](extensions/gh-stratadiff/README.md) for options and trust
-boundaries.
+GitHub, materializes the required objects in an isolated temporary bare repository, and opens Review
+Resume against the PR's current base and head. The temporary repository is deleted when the command
+exits. Pass `--repo-dir PATH` to reuse an existing checkout instead. Missing historical objects fail
+explicitly; the extension never substitutes the current head, a branch tip, or another checkpoint.
+See the [extension guide](extensions/gh-stratadiff/README.md) for options and trust boundaries.
 
 ### See the review-coverage gate on a real rebase
 

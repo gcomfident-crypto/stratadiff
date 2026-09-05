@@ -29,6 +29,9 @@ is_missing_locally() {
   if [[ -f "${GH_STUB_STATE}/local-${object_id}" ]]; then
     return 1
   fi
+  if [[ "${GH_TEST_RESUME_MODE:-}" == repository-only* ]]; then
+    return 0
+  fi
   case "${object_id}" in
     "${base}") [[ "${GH_STUB_MISSING_BASE:-false}" == true ]] ;;
     "${head}") [[ "${GH_STUB_MISSING_HEAD:-false}" == true ]] ;;
@@ -37,7 +40,21 @@ is_missing_locally() {
   esac
 }
 
+create_pack_keep() {
+  local repository=$1
+  local keep_object=$2
+  local object_directory=${repository}/.git/objects
+  if [[ "${repository}" == *.git ]]; then
+    object_directory=${repository}/objects
+  fi
+  mkdir -p "${object_directory}/pack"
+  : > "${object_directory}/pack/pack-${keep_object}.keep"
+}
+
 if [[ "${arguments}" == *" rev-parse --show-toplevel "* ]]; then
+  if [[ "${GH_STUB_NOT_GIT:-false}" == true ]]; then
+    exit 128
+  fi
   printf '%s\n' "${GH_STUB_REPOSITORY_DIRECTORY}"
 elif [[ "${arguments}" == *" cat-file -e "* ]]; then
   object=${!#}
@@ -63,6 +80,12 @@ elif [[ "${arguments}" == *" show-ref --verify --quiet refs/stratadiff/"* ]]; th
   exit 1
 elif [[ "${arguments}" == *" ls-remote --get-url "* ]]; then
   printf '%s\n' "${!#}"
+elif [[ "${arguments}" == *" rev-parse --git-path objects/pack/pack-"* ]]; then
+  if [[ "$2" == *.git ]]; then
+    printf '%s\n' "${!#}"
+  else
+    printf '.git/%s\n' "${!#}"
+  fi
 elif [[ "${arguments}" == *" fetch-pack --no-progress "* && "${arguments}" == *"/provider.git "* ]]; then
   [[ -z "${GIT_CONFIG_VALUE_0:-}" ]]
   [[ -z "${GIT_CONFIG_VALUE_1:-}" ]]
@@ -83,6 +106,31 @@ elif [[ "${arguments}" == *" fetch-pack --no-progress "* && "${arguments}" == *"
     printf '%s %s\n' dddddddddddddddddddddddddddddddddddddddd "${provider_ref}"
   elif [[ "${GH_STUB_FETCH_PACK_EXTRA_RECORD:-false}" == true ]]; then
     printf '%s %s\n%s %s\n' "${object}" "${provider_ref}" "${object}" refs/unexpected
+  elif [[ "${GH_STUB_FETCH_PACK_KEEP_RECORD:-false}" == true ]]; then
+    create_pack_keep "$2" dddddddddddddddddddddddddddddddddddddddd
+    printf 'keep\t%s\n%s %s\n' dddddddddddddddddddddddddddddddddddddddd "${object}" "${provider_ref}"
+  elif [[ "${GH_STUB_FETCH_PACK_DUPLICATE_KEEP:-false}" == true ]]; then
+    create_pack_keep "$2" dddddddddddddddddddddddddddddddddddddddd
+    printf 'keep\t%s\nkeep\t%s\n%s %s\n' \
+      dddddddddddddddddddddddddddddddddddddddd \
+      eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
+      "${object}" "${provider_ref}"
+  elif [[ "${GH_STUB_FETCH_PACK_MALFORMED_KEEP:-false}" == true ]]; then
+    printf 'keep %s\n%s %s\n' dddddddddddddddddddddddddddddddddddddddd "${object}" "${provider_ref}"
+  elif [[ "${GH_STUB_FETCH_PACK_KEEP_AFTER_REF:-false}" == true ]]; then
+    printf '%s %s\nkeep\t%s\n' "${object}" "${provider_ref}" dddddddddddddddddddddddddddddddddddddddd
+  elif [[ "${GH_STUB_FETCH_PACK_DUPLICATE_REF:-false}" == true ]]; then
+    printf '%s %s\n%s %s\n' "${object}" "${provider_ref}" "${object}" "${provider_ref}"
+  elif [[ "${GH_STUB_FETCH_PACK_OVERSIZED:-false}" == true ]]; then
+    create_pack_keep "$2" dddddddddddddddddddddddddddddddddddddddd
+    printf 'keep\t%s\n%s %s%s\n' \
+      dddddddddddddddddddddddddddddddddddddddd \
+      "${object}" "${provider_ref}" \
+      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  elif [[ "${GH_STUB_FETCH_PACK_TRAILING_BLANK:-false}" == true ]]; then
+    printf '%s %s\n\n' "${object}" "${provider_ref}"
+  elif [[ "${GH_STUB_FETCH_PACK_NO_FINAL_NEWLINE:-false}" == true ]]; then
+    printf '%s %s' "${object}" "${provider_ref}"
   else
     printf '%s %s\n' "${object}" "${provider_ref}"
   fi
