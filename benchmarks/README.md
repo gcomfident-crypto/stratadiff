@@ -58,6 +58,16 @@ gate plus both Workbench scopes for regular Git blobs, including the invariant t
 always uses the exact `C -> D` Git identities and source bytes. This is a controlled correctness
 suite, not a prevalence, semantic-safety, defect-recall, or reviewer-time claim.
 
+## Review Continuity v1 comparison
+
+[`review-continuity-v1/`](review-continuity-v1/) is a deterministic six-history comparison of the
+real StrataDiff review-delta path with stable `git patch-id`, a naive checkpoint-to-head diff, and
+a conservative `git range-diff` union adapter. It freezes pure rebase, author follow-up, dropped
+reviewed work, whitespace normalization collision, hazardous restacked-parent/squash, and
+rename-plus-edit cases. The standalone verifier independently reconstructs each Git path/line scope
+from manifest bytes and rejects seven classes of semantic or raw-byte tampering. Its path-level
+results are controlled regression evidence only, not human time, defect recall, or semantic safety.
+
 ## Rebase-aware real review oracle
 
 [`resumebench-real-v1/`](resumebench-real-v1/) freezes the previously rejected Gerrit base-drift
