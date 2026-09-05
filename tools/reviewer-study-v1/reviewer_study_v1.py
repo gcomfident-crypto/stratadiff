@@ -17,7 +17,8 @@ MAX_INPUT_BYTES = 32 * 1024 * 1024
 PARTICIPANT_ID = re.compile(r"p_[0-9a-f]{12}")
 PAIR_ID = re.compile(r"pair_[0-9a-f]{12}")
 TASK_ID = re.compile(r"task_[0-9a-f]{12}")
-STUDY_ID = re.compile(r"study_[a-z0-9][a-z0-9_-]{2,63}")
+REAL_STUDY_ID = re.compile(r"study_[0-9a-f]{16}")
+SYNTHETIC_STUDY_ID = re.compile(r"study_synthetic_[0-9a-f]{16}")
 ASSIGNMENT_CELLS = (
     "baseline_then_resume:a",
     "baseline_then_resume:b",
@@ -294,16 +295,29 @@ def validate_dataset(data, preregistration_bytes, preregistration):
         "study dataset",
     )
     require(data["schema"] == DATA_SCHEMA, "unsupported study data schema")
-    require_identifier(data["study_id"], STUDY_ID, "study_id")
+    require_boolean(data["synthetic"], "synthetic")
+    canonical_bytes, canonical = read_json(DEFAULT_PREREGISTRATION)
+    if data["synthetic"]:
+        expected = copy.deepcopy(canonical)
+        expected["minimums"] = preregistration["minimums"]
+        expected_bytes = canonical_bytes if preregistration == canonical else encoded(preregistration)
+        require(
+            preregistration == expected and preregistration_bytes == expected_bytes,
+            "synthetic preregistration may change only canonical integer minimums",
+        )
+    else:
+        require(
+            preregistration_bytes == canonical_bytes,
+            "prospective data must use the canonical Reviewer Study v1 preregistration",
+        )
+    study_id_pattern = SYNTHETIC_STUDY_ID if data["synthetic"] else REAL_STUDY_ID
+    require_identifier(data["study_id"], study_id_pattern, "study_id")
     require(data["protocol_version"] == preregistration["protocol_version"], "dataset protocol version mismatch")
     require(
         data["preregistration_sha256"] == sha256(preregistration_bytes),
         "dataset preregistration SHA-256 mismatch",
     )
-    require_boolean(data["synthetic"], "synthetic")
     require(data["collection_status"] in ("open", "locked"), "unsupported collection_status")
-    if data["synthetic"]:
-        require(data["study_id"].startswith("study_synthetic_"), "synthetic study_id must start with study_synthetic_")
 
     participants = data["participants"]
     require(type(participants) is list and participants, "participants must be a non-empty array")
@@ -689,7 +703,7 @@ def build_self_test_dataset(preregistration_bytes, preregistration):
             observations.append(observation)
     return {
         "schema": DATA_SCHEMA,
-        "study_id": "study_synthetic_selftest",
+        "study_id": "study_synthetic_0000000000000001",
         "protocol_version": preregistration["protocol_version"],
         "preregistration_sha256": sha256(preregistration_bytes),
         "synthetic": True,

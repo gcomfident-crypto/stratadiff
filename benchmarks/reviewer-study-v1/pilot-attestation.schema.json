@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/reviewer-study-v1/pilot-attestation.schema.json",
+  "title": "StrataDiff Reviewer Pilot operator attestation v1",
+  "description": "Content-free operator claims, counts, and artifact digests. The canonical JSON is authenticated by a detached sidecar signature and never embeds signature bytes.",
+  "oneOf": [
+    { "$ref": "#/$defs/plan_attestation" },
+    { "$ref": "#/$defs/final_attestation" }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "study_id": {
+      "type": "string",
+      "pattern": "^study_(?:[0-9a-f]{16}|synthetic_[0-9a-f]{16})$"
+    },
+    "operator_key_id": {
+      "type": "string",
+      "pattern": "^operator_[0-9a-f]{12}$"
+    },
+    "plan_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "study_id",
+        "operator_key_id",
+        "preregistration_sha256",
+        "plan_sha256",
+        "plan_anchor_sha256",
+        "task_catalog_sha256",
+        "task_spec_sha256",
+        "tool_source_sha256",
+        "signature_algorithm"
+      ],
+      "properties": {
+        "schema": { "const": "stratadiff-reviewer-pilot-plan-attestation-v1" },
+        "kind": { "const": "plan" },
+        "study_id": { "$ref": "#/$defs/study_id" },
+        "operator_key_id": { "$ref": "#/$defs/operator_key_id" },
+        "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+        "plan_sha256": { "$ref": "#/$defs/sha256" },
+        "plan_anchor_sha256": { "$ref": "#/$defs/sha256" },
+        "task_catalog_sha256": { "$ref": "#/$defs/sha256" },
+        "task_spec_sha256": { "$ref": "#/$defs/sha256" },
+        "tool_source_sha256": { "$ref": "#/$defs/sha256" },
+        "signature_algorithm": { "const": "openssh-ed25519-sshsig" }
+      }
+    },
+    "final_attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "study_id",
+        "operator_key_id",
+        "preregistration_sha256",
+        "plan_sha256",
+        "plan_anchor_sha256",
+        "task_catalog_sha256",
+        "event_chain_tip_sha256",
+        "dataset_sha256",
+        "aggregate_sha256",
+        "tool_source_sha256",
+        "flow_counts",
+        "claims",
+        "signature_algorithm"
+      ],
+      "properties": {
+        "schema": { "const": "stratadiff-reviewer-pilot-final-attestation-v1" },
+        "kind": { "const": "final" },
+        "study_id": { "$ref": "#/$defs/study_id" },
+        "operator_key_id": { "$ref": "#/$defs/operator_key_id" },
+        "preregistration_sha256": { "$ref": "#/$defs/sha256" },
+        "plan_sha256": { "$ref": "#/$defs/sha256" },
+        "plan_anchor_sha256": { "$ref": "#/$defs/sha256" },
+        "task_catalog_sha256": { "$ref": "#/$defs/sha256" },
+        "event_chain_tip_sha256": { "$ref": "#/$defs/sha256" },
+        "dataset_sha256": { "$ref": "#/$defs/sha256" },
+        "aggregate_sha256": { "$ref": "#/$defs/sha256" },
+        "tool_source_sha256": { "$ref": "#/$defs/sha256" },
+        "flow_counts": { "$ref": "#/$defs/final_flow_counts" },
+        "claims": { "$ref": "#/$defs/final_claims" },
+        "signature_algorithm": { "const": "openssh-ed25519-sshsig" }
+      }
+    },
+    "final_flow_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "planned_participant_slots",
+        "activated_participants",
+        "planned_pairs_for_activated",
+        "complete_pairs",
+        "incomplete_pairs",
+        "interrupted_arms",
+        "pre_start_invite_replacements",
+        "post_start_withdrawals"
+      ],
+      "properties": {
+        "planned_participant_slots": { "$ref": "#/$defs/count" },
+        "activated_participants": { "$ref": "#/$defs/count" },
+        "planned_pairs_for_activated": { "$ref": "#/$defs/count" },
+        "complete_pairs": { "$ref": "#/$defs/count" },
+        "incomplete_pairs": { "$ref": "#/$defs/count" },
+        "interrupted_arms": { "$ref": "#/$defs/count" },
+        "pre_start_invite_replacements": { "$ref": "#/$defs/count" },
+        "post_start_withdrawals": { "$ref": "#/$defs/count" }
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "final_claims": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assignment_frozen_before_collection",
+        "all_complete_pairs_included",
+        "consent_obtained",
+        "provider_authorized",
+        "linkage_key_not_exported",
+        "all_carries_blindly_adjudicated",
+        "follow_up_complete"
+      ],
+      "properties": {
+        "assignment_frozen_before_collection": { "const": true },
+        "all_complete_pairs_included": { "const": true },
+        "consent_obtained": { "const": true },
+        "provider_authorized": { "const": true },
+        "linkage_key_not_exported": { "const": true },
+        "all_carries_blindly_adjudicated": { "const": true },
+        "follow_up_complete": { "const": true }
+      }
+    }
+  }
+}

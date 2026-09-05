@@ -84,3 +84,10 @@ names, emails, GitHub logins, repository identifiers, pull-request URLs, code, i
 comments, or absolute event timestamps. The study operator remains responsible for consent, local
 ethics review, secure storage of any separately held linkage key, randomization execution, and
 provider authorization. This repository stores no linkage key.
+
+The opt-in [Reviewer Pilot Kit](../../tools/reviewer-study-v1/README.md) implements the collection
+workflow without changing this frozen analysis. It signs an externally anchored assignment plan,
+starts monotonic timing only after a pinned task bundle passes preflight, uses opaque response
+tokens, requires blind commit/reveal adjudication, and constructs the final dataset from an
+allowlist. Its private operator state is not a public study artifact and normal StrataDiff commands
+remain zero-telemetry.

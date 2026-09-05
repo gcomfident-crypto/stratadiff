@@ -21,7 +21,7 @@
     },
     "study_id": {
       "type": "string",
-      "pattern": "^study_[a-z0-9][a-z0-9_-]{2,63}$"
+      "pattern": "^study_(?:[0-9a-f]{16}|synthetic_[0-9a-f]{16})$"
     },
     "protocol_version": { "const": "1.0.0" },
     "preregistration_sha256": {
@@ -43,6 +43,20 @@
       "items": { "$ref": "#/$defs/paired_observation" }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "synthetic": { "const": true } },
+        "required": ["synthetic"]
+      },
+      "then": {
+        "properties": { "study_id": { "pattern": "^study_synthetic_[0-9a-f]{16}$" } }
+      },
+      "else": {
+        "properties": { "study_id": { "pattern": "^study_[0-9a-f]{16}$" } }
+      }
+    }
+  ],
   "$defs": {
     "participant_id": {
       "type": "string",
