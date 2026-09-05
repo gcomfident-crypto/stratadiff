@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/review-churn-census-v1/manifest.schema.json",
+  "title": "StrataDiff Review Churn Census classified manifest v1",
+  "description": "Privacy-minimized per-PR and PR-by-reviewer classifications deterministically derived from a complete v1 capture.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "dataset_version",
+    "tool_version",
+    "generated_at",
+    "sampling_plan_sha256",
+    "sample_sha256",
+    "capture_sha256",
+    "collection",
+    "repositories",
+    "pull_requests"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-churn-census-manifest-v1" },
+    "dataset_version": { "const": "1.0.0" },
+    "tool_version": { "const": "0.2.0" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "sampling_plan_sha256": { "$ref": "#/$defs/sha256" },
+    "sample_sha256": { "$ref": "#/$defs/sha256" },
+    "capture_sha256": { "$ref": "#/$defs/sha256" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "repositories": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/repository_summary" }
+    },
+    "pull_requests": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/pull_request" }
+    }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "nullable_sha1": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha1" },
+        { "type": "null" }
+      ]
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "node_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "nullable_node_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/node_id" },
+        { "type": "null" }
+      ]
+    },
+    "actor_key": { "type": "string", "pattern": "^actor-[0-9a-f]{24}$" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 202
+    },
+    "count": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "captured_at",
+        "selected_pull_requests",
+        "classified_pull_requests",
+        "capture_failures"
+      ],
+      "properties": {
+        "status": { "const": "complete" },
+        "captured_at": { "$ref": "#/$defs/timestamp" },
+        "selected_pull_requests": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "classified_pull_requests": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "capture_failures": { "const": 0 }
+      }
+    },
+    "repository_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name_with_owner", "frame_candidates", "target", "selected", "capture_failures"],
+      "properties": {
+        "name_with_owner": { "$ref": "#/$defs/repository" },
+        "frame_candidates": { "$ref": "#/$defs/count" },
+        "target": { "const": 50 },
+        "selected": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "capture_failures": { "const": 0 }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observed_reviews",
+        "submitted_review_sessions",
+        "all_human_review_sessions",
+        "peer_human_review_sessions",
+        "bot_review_sessions",
+        "self_review_sessions",
+        "other_actor_review_sessions",
+        "unknown_review_sessions",
+        "unsubmitted_or_pending_reviews",
+        "completed_review_sessions",
+        "distinct_completed_review_commits",
+        "completed_review_pairs",
+        "observable_checkpoint_oid_pairs",
+        "comparable_checkpoint_pairs",
+        "drifted_checkpoint_pairs",
+        "post_force_push_checkpoint_pairs",
+        "force_push_rereview_pairs",
+        "drift_without_observed_force_push_pairs",
+        "commented_only_pairs",
+        "commented_candidate_pairs",
+        "commented_newer_commit_candidate_pairs",
+        "force_push_events",
+        "review_dismissal_events",
+        "completed_review_dismissal_events",
+        "invalid_dismissal_order_events"
+      ],
+      "properties": {
+        "observed_reviews": { "$ref": "#/$defs/count" },
+        "submitted_review_sessions": { "$ref": "#/$defs/count" },
+        "all_human_review_sessions": { "$ref": "#/$defs/count" },
+        "peer_human_review_sessions": { "$ref": "#/$defs/count" },
+        "bot_review_sessions": { "$ref": "#/$defs/count" },
+        "self_review_sessions": { "$ref": "#/$defs/count" },
+        "other_actor_review_sessions": { "$ref": "#/$defs/count" },
+        "unknown_review_sessions": { "$ref": "#/$defs/count" },
+        "unsubmitted_or_pending_reviews": { "$ref": "#/$defs/count" },
+        "completed_review_sessions": { "$ref": "#/$defs/count" },
+        "distinct_completed_review_commits": { "$ref": "#/$defs/count" },
+        "completed_review_pairs": { "$ref": "#/$defs/count" },
+        "observable_checkpoint_oid_pairs": { "$ref": "#/$defs/count" },
+        "comparable_checkpoint_pairs": { "$ref": "#/$defs/count" },
+        "drifted_checkpoint_pairs": { "$ref": "#/$defs/count" },
+        "post_force_push_checkpoint_pairs": { "$ref": "#/$defs/count" },
+        "force_push_rereview_pairs": { "$ref": "#/$defs/count" },
+        "drift_without_observed_force_push_pairs": { "$ref": "#/$defs/count" },
+        "commented_only_pairs": { "$ref": "#/$defs/count" },
+        "commented_candidate_pairs": { "$ref": "#/$defs/count" },
+        "commented_newer_commit_candidate_pairs": { "$ref": "#/$defs/count" },
+        "force_push_events": { "$ref": "#/$defs/count" },
+        "review_dismissal_events": { "$ref": "#/$defs/count" },
+        "completed_review_dismissal_events": { "$ref": "#/$defs/count" },
+        "invalid_dismissal_order_events": { "$ref": "#/$defs/count" }
+      }
+    },
+    "latest_completed_checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_id",
+        "submitted_at",
+        "commit_oid",
+        "completed_state",
+        "current_state",
+        "dismissed",
+        "dismissal_event_id",
+        "differs_from_final_head",
+        "post_completed_review_force_push",
+        "post_latest_checkpoint_force_push",
+        "force_push_rereview"
+      ],
+      "properties": {
+        "review_id": { "$ref": "#/$defs/node_id" },
+        "submitted_at": { "$ref": "#/$defs/timestamp" },
+        "commit_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "completed_state": { "enum": ["APPROVED", "CHANGES_REQUESTED"] },
+        "current_state": { "enum": ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"] },
+        "dismissed": { "type": "boolean" },
+        "dismissal_event_id": { "$ref": "#/$defs/nullable_node_id" },
+        "differs_from_final_head": { "type": ["boolean", "null"] },
+        "post_completed_review_force_push": { "type": "boolean" },
+        "post_latest_checkpoint_force_push": { "type": "boolean" },
+        "force_push_rereview": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "dismissed": { "const": true } }, "required": ["dismissed"] },
+          "then": {
+            "properties": {
+              "current_state": { "const": "DISMISSED" },
+              "dismissal_event_id": { "$ref": "#/$defs/node_id" }
+            }
+          },
+          "else": {
+            "properties": {
+              "current_state": { "enum": ["APPROVED", "CHANGES_REQUESTED"] },
+              "dismissal_event_id": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "commit_oid": { "type": "null" } }, "required": ["commit_oid"] },
+          "then": { "properties": { "differs_from_final_head": { "type": "null" } } }
+        }
+      ]
+    },
+    "latest_commented_candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_id", "submitted_at", "commit_oid", "comment_count"],
+      "properties": {
+        "review_id": { "$ref": "#/$defs/node_id" },
+        "submitted_at": { "$ref": "#/$defs/timestamp" },
+        "commit_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "comment_count": { "$ref": "#/$defs/count" }
+      }
+    },
+    "reviewer_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewer_key",
+        "formal_review_sessions",
+        "completed_review_sessions",
+        "latest_completed_checkpoint",
+        "commented_candidate_sessions",
+        "latest_commented_candidate",
+        "commented_only",
+        "commented_newer_commit_candidate"
+      ],
+      "properties": {
+        "reviewer_key": { "$ref": "#/$defs/actor_key" },
+        "formal_review_sessions": { "type": "integer", "minimum": 1 },
+        "completed_review_sessions": { "$ref": "#/$defs/count" },
+        "latest_completed_checkpoint": {
+          "oneOf": [
+            { "$ref": "#/$defs/latest_completed_checkpoint" },
+            { "type": "null" }
+          ]
+        },
+        "commented_candidate_sessions": { "$ref": "#/$defs/count" },
+        "latest_commented_candidate": {
+          "oneOf": [
+            { "$ref": "#/$defs/latest_commented_candidate" },
+            { "type": "null" }
+          ]
+        },
+        "commented_only": { "type": "boolean" },
+        "commented_newer_commit_candidate": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "completed_review_sessions": { "const": 0 } }, "required": ["completed_review_sessions"] },
+          "then": { "properties": { "latest_completed_checkpoint": { "type": "null" } } },
+          "else": { "properties": { "latest_completed_checkpoint": { "$ref": "#/$defs/latest_completed_checkpoint" } } }
+        },
+        {
+          "if": { "properties": { "commented_candidate_sessions": { "const": 0 } }, "required": ["commented_candidate_sessions"] },
+          "then": { "properties": { "latest_commented_candidate": { "type": "null" } } },
+          "else": { "properties": { "latest_commented_candidate": { "$ref": "#/$defs/latest_commented_candidate" } } }
+        }
+      ]
+    },
+    "classification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formal_peer_reviewed",
+        "completed_reviewed",
+        "stranded_reviewer",
+        "multi_round_completed_review",
+        "completed_review_dismissal"
+      ],
+      "properties": {
+        "formal_peer_reviewed": { "type": "boolean" },
+        "completed_reviewed": { "type": "boolean" },
+        "stranded_reviewer": { "type": ["boolean", "null"] },
+        "multi_round_completed_review": { "type": "boolean" },
+        "completed_review_dismissal": { "type": "boolean" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "repository",
+        "number",
+        "node_id",
+        "merged_at",
+        "final_head_oid",
+        "last_commit_oid",
+        "author_class",
+        "capture_complete",
+        "counts",
+        "classification",
+        "reviewer_pairs"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^github-[a-z0-9_.-]+-[a-z0-9_.-]+-pr-[1-9][0-9]*$",
+          "maxLength": 256
+        },
+        "repository": { "$ref": "#/$defs/repository" },
+        "number": { "type": "integer", "minimum": 1 },
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "merged_at": { "$ref": "#/$defs/timestamp" },
+        "final_head_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "last_commit_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "author_class": { "enum": ["user", "bot", "other", "unknown"] },
+        "capture_complete": { "const": true },
+        "counts": { "$ref": "#/$defs/counts" },
+        "classification": { "$ref": "#/$defs/classification" },
+        "reviewer_pairs": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reviewer_pair" }
+        }
+      }
+    }
+  }
+}

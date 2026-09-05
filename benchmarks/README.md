@@ -1,5 +1,18 @@
 # Benchmark artifacts
 
+## Review Churn Census v1
+
+[`review-churn-census-v1/`](review-churn-census-v1/) freezes a pilot-informed, prospective
+randomized panel of 500 merged pull requests across ten review-heavy GitHub repositories. Its
+PR-by-reviewer metrics separate completed review checkpoints, observed post-review force-pushes,
+latest-checkpoint head drift, dismissed reviews, COMMENTED-only attention, and same-reviewer
+re-review. The companion collector persists no GitHub login and can resume an interrupted capture.
+
+This panel can screen which Review Resume hypothesis deserves a human experiment. It is not a
+GitHub-wide prevalence estimate and cannot establish time savings, defect recall, semantic safety,
+willingness to pay, or product-market fit. See the dataset card for the disclosed pilot evidence,
+frozen thresholds, missing-data policy, and exact reproduction commands.
+
 ## Rebase-aware review-delta contract
 
 [`review-delta-v1/`](review-delta-v1/) is a deterministic, network-free suite of thirteen synthetic

@@ -1,0 +1,456 @@
+{
+  "actor_policy": {
+    "artifact_identity_policy": "The collector may read login in process memory only. Before constructing capture.json it replaces every present login with actor- plus the first 24 lowercase hex characters of SHA-256(case_id UTF-8 || 0x00 || Unicode-casefolded login UTF-8). PR-author and review-author keys use the same per-PR function. Login strings must not enter sample, capture, manifest, aggregate, logs, or errors.",
+    "bot_author_typenames": [
+      "Bot"
+    ],
+    "exclude_pull_request_author": true,
+    "human_author_typenames": [
+      "User"
+    ],
+    "identity_comparison": "Equality of the PR-local opaque actor_key generated from Unicode-casefolded GitHub login",
+    "login_suffix_heuristics": false,
+    "missing_author_class": "unknown",
+    "primary_peer_definition": "A submitted non-PENDING GitHub PullRequestReview whose actor typename is User, whose actor_key is present, and whose actor_key differs from the PR author's actor_key.",
+    "self_and_unknown_policy": "Author self reviews and missing or unclassified actors are reported separately and excluded from external peer numerators and denominators."
+  },
+  "analysis": {
+    "denominator_adequacy": "Report whether each metric denominator is at least 100, including descriptive metrics. Product signals require it; descriptive metrics remain reportable with an inadequate label.",
+    "head_oid_observability": "Compute semantic completed-review pairs with both latest checkpoint and final head OIDs divided by all completed pairs. The all-round head-drift signal requires at least 9000 basis points; never drop missing pairs to improve a signal. The COMMENTED candidate signal uses its own OID-visible denominator and does not require the final-head observability gate.",
+    "missing_data": "No imputation, complete-case replacement, repository replacement, PR replacement, or fallback to an earlier completed review. Retain missingness, enforce capture completeness, and apply metric-specific observable denominators exactly as frozen.",
+    "multiplicity": "Thirteen metrics are descriptive. Three pilot-informed signals guide the next product experiment; they are not confirmatory null-hypothesis tests and receive no causal or market interpretation.",
+    "rate_encoding": "Retain integer numerator and denominator. Point estimates are integer basis points rounded half away from zero.",
+    "signal_decision": "After all global and signal-specific gates pass: pass only when Wilson lower_basis_points >= threshold; fail only when Wilson upper_basis_points < threshold; otherwise inconclusive. Gate failure is also inconclusive, never fail.",
+    "weighting": "The fixed equal-quota panel pooled estimate is primary. Also publish every repository numerator, denominator, interval, and the unweighted median of defined repository point estimates. Do not post-hoc volume-weight repositories.",
+    "wilson_interval": "For every metric with denominator n > 0, compute a two-sided 95% Wilson score interval without continuity correction using z = 1.959963984540054. Encode the lower endpoint as floor(10000 * lower) and upper endpoint as ceil(10000 * upper), clipped to 0..10000. A zero denominator yields null point and interval fields."
+  },
+  "bias_register": [
+    {
+      "direction": "Thresholds and metric refinements can favor patterns already seen in exploratory data.",
+      "id": "pilot_informed_thresholds",
+      "mitigation": "Disclose every probe and influence, use Wilson three-way decisions, call v1 descriptive replication rather than independent confirmation, and require a separate human experiment."
+    },
+    {
+      "direction": "The randomized sample may contain public PRs inspected during probes, especially in overlapping repositories.",
+      "id": "possible_probe_overlap",
+      "mitigation": "Do not claim an independent holdout, do not combine probe and v1 counts, and disclose any exact overlap that can be reconstructed."
+    },
+    {
+      "direction": "Likely upward for formal review and churn relative to all GitHub repositories.",
+      "id": "purposeful_repository_selection",
+      "mitigation": "Name every repository, randomize only within each fixed frame, publish repository denominators, and forbid GitHub-wide extrapolation."
+    },
+    {
+      "direction": "Excludes abandoned, rejected, open, and private work; direction for churn is unknown.",
+      "id": "merged_only_survivorship",
+      "mitigation": "Define the estimand as merged PRs only and make no claim about all review work."
+    },
+    {
+      "direction": "GitHub PullRequestReview omits issue comments, local review, chat, and unsubmitted attention, while submitted states do not prove review completeness.",
+      "id": "formal_review_visibility",
+      "mitigation": "Name the observable formal-review object and never equate COMMENTED or approval state with lines actually read."
+    },
+    {
+      "direction": "Deleted actors, missing commit OIDs, event retention, repository transfers, and API/index drift can undercount or make pairs incomparable.",
+      "id": "provider_visibility_and_retention",
+      "mitigation": "Record missingness, verify pagination counts and final-head consistency, require 90% OID observability, and never substitute another checkpoint."
+    },
+    {
+      "direction": "An absent captured force-push event can be misread as proof of an ordinary push.",
+      "id": "force_push_nonobservation",
+      "mitigation": "Use the literal label without_observed_force_push and prohibit ordinary-push claims."
+    },
+    {
+      "direction": "GitHub typename can miss humans operating automation through User accounts.",
+      "id": "actor_classification",
+      "mitigation": "Use no login suffix heuristic; publish peer, Bot, self, other, and unknown counts separately."
+    },
+    {
+      "direction": "The pooled rate does not match the PR-volume distribution of the panel or GitHub.",
+      "id": "equal_repository_quota",
+      "mitigation": "Report fixed-panel pooled and per-repository estimates and do not post-hoc volume-weight."
+    },
+    {
+      "direction": "Ninety days can reflect seasonality or temporary workflow and platform behavior.",
+      "id": "short_historical_window",
+      "mitigation": "Freeze exact UTC bounds, date every conclusion, and replicate in a later non-overlapping window before durable market claims."
+    }
+  ],
+  "checkpoint_policy": {
+    "commented_is_completed": false,
+    "commented_newer_commit_candidate": "A completed pair with a later COMMENTED session from the same reviewer whose non-null commit OID differs from the latest completed checkpoint OID. It remains a candidate for explicit confirmation, never a completed checkpoint.",
+    "commented_only_pair": "A pair with at least one non-null-commit COMMENTED session and no completed session.",
+    "commented_semantics": "COMMENTED is formal partial-attention evidence only. It never means completed review, approval, required-review satisfaction, CODEOWNER coverage, or permission to hide a change.",
+    "completed_pair_requires_commit_oid": false,
+    "completed_states": [
+      "APPROVED",
+      "CHANGES_REQUESTED"
+    ],
+    "dismissed_completed_rule": "A current DISMISSED review counts as a historical completed session only when its linked ReviewDismissedEvent.previousReviewState is APPROVED or CHANGES_REQUESTED and the event is not earlier than submittedAt.",
+    "dismissed_previous_states": [
+      "APPROVED",
+      "CHANGES_REQUESTED"
+    ],
+    "latest_completed_order": "Within each pair, order completed sessions by submittedAt and then canonical positive fullDatabaseId; the last session is the latest completed checkpoint.",
+    "latest_missing_commit_fallback": "forbidden",
+    "pair_unit": "unique pull request by external peer reviewer actor_key",
+    "usable_head_comparison": "The latest completed checkpoint commit OID and captured final head OID must both be non-null and agree with provider consistency checks."
+  },
+  "claim_boundary": {
+    "causal_product_effects_supported": false,
+    "github_population_estimates_supported": false,
+    "independent_confirmatory_test_supported": false,
+    "interpretation": "Results describe only the fixed, pilot-informed repository panel, 90-day period, provider-visible formal review objects, and frozen definitions. A missing force-push event means only not observed in the captured timeline; it does not prove an ordinary append-only push.",
+    "issue_recall_or_semantic_safety_supported": false,
+    "market_size_estimates_supported": false,
+    "ordinary_push_identification_supported": false,
+    "panel_period_descriptive_estimates_supported": true,
+    "reviewer_time_savings_supported": false,
+    "willingness_to_pay_supported": false
+  },
+  "dataset_version": "1.0.0",
+  "decision_thresholds": {
+    "all_round_review_continuity_bps": 2000,
+    "commented_partial_attention_bps": 1500,
+    "force_push_wedge_bps": 1000,
+    "max_capture_failures": 0,
+    "min_completed_reviewed_prs": 200,
+    "min_head_oid_observability_bps": 9000,
+    "min_repositories_at_target": 8,
+    "min_sampled_prs": 400,
+    "min_signal_denominator": 100,
+    "non_decisions": "No threshold establishes time saved, defect or issue recall, carry correctness, retention, willingness to pay, market size, production reliability, or product-market fit.",
+    "signals": {
+      "all_round_review_continuity": {
+        "metric_id": "checkpoint_pair_drift_without_observed_force_push_rate",
+        "requires_head_oid_observability_gate": true,
+        "threshold_basis_points": 2000
+      },
+      "commented_partial_attention": {
+        "metric_id": "commented_newer_commit_candidate_pair_rate",
+        "requires_head_oid_observability_gate": false,
+        "threshold_basis_points": 1500
+      },
+      "force_push_wedge": {
+        "metric_id": "completed_review_pair_post_force_push_rate",
+        "requires_head_oid_observability_gate": false,
+        "threshold_basis_points": 1000
+      }
+    },
+    "wilson_confidence_basis_points": 9500
+  },
+  "event_policy": {
+    "bot_review_session": "A submitted non-PENDING PullRequestReview whose actor typename is Bot.",
+    "completed_review_dismissal_pr": "A completed-checkpoint PR where at least one pair's latest completed session is current DISMISSED with previousReviewState APPROVED or CHANGES_REQUESTED.",
+    "drift_without_observed_force_push_pair": "A comparable head-drift pair has no captured force-push event strictly after its latest completed checkpoint. Earlier force-pushes before that latest checkpoint do not explain the final drift. This label means no qualifying event was observed, not that an ordinary push was proven.",
+    "force_push_rereview_pair": "A semantic post-force-push completed-review pair has completed_before.submittedAt < force_event.createdAt < completed_after.submittedAt for the same reviewer; neither session requires a commit OID.",
+    "head_drift_pair": "The latest completed checkpoint and final head OIDs are both observable and differ.",
+    "multi_round_completed_review_pr": "A completed-checkpoint PR whose external peer completed sessions cover at least two distinct non-null commit OIDs.",
+    "post_force_push_pair": "A semantic completed-review PR-by-reviewer pair has at least one captured HEAD_REF_FORCE_PUSHED_EVENT whose createdAt is strictly later than any completed session in that pair. This does not require a commit OID and is not restricted to the latest checkpoint.",
+    "stranded_reviewer_pr": "A completed-checkpoint PR for which every completed pair is OID-comparable and at least one latest completed pair has head drift."
+  },
+  "formal_review_policy": {
+    "formal_peer_reviewed_pr": "At least one submitted session from an external peer User, including COMMENTED and a DISMISSED review whose submitted session remains observable.",
+    "limitation": "A formal GitHub review object does not prove that the reviewer read every file or line. This census cannot observe issue comments, commit comments, local or IDE review, chat discussion, or attention outside submitted PullRequestReview objects.",
+    "provider_object": "GitHub PullRequestReview",
+    "submitted_session": "submittedAt is non-null and state is not PENDING"
+  },
+  "frame_construction": {
+    "candidate_predicate": "The object is a pull request in the named repository, is MERGED, and has mergedAt >= window.start and mergedAt < window.end_exclusive.",
+    "client_verification": "Validate each Search node in place for repository identity, node identity, merged state, and the exact half-open mergedAt window. Independently fetch every selected PR during capture and require its node ID, number, and mergedAt to match the frozen sample. Non-selected candidates are not independently re-fetched.",
+    "date_partitioning": "Query the full inclusive UTC date range. Recursively bisect into disjoint whole-day ranges whenever GitHub reports more than 1000 matches. A single day with more than 1000 matches is an explicit frame failure.",
+    "failure_policy": "Incomplete pagination, count mismatch, an unpartitionable search cap, a selected-object mismatch, deleted or inaccessible selected objects, rate-limit exhaustion, or an API error makes collection incomplete. Do not silently drop or replace a selected PR.",
+    "randomized_selection_boundary": "The v1 rank may use only repository identity and PR number after frame eligibility is established. It must not use reviews, actors, commits, force-pushes, dismissals, comments, diffs, or any probe outcome.",
+    "shortfall_policy": "If a repository has fewer than 50 verified candidates, retain all candidates and record the shortfall. Do not replace the repository, extend the window, or add a convenience case under v1.",
+    "source": "GitHub Search nodes for frame construction, followed by an independent exact GraphQL fetch for every selected PR"
+  },
+  "merged_at_window": {
+    "end_exclusive": "2026-09-01T00:00:00Z",
+    "field": "PullRequest.mergedAt",
+    "start": "2026-06-03T00:00:00Z",
+    "timezone": "UTC"
+  },
+  "method_status": {
+    "amendment_policy": "After randomized panel sampling begins, preserve v1 unchanged. Any correction, threshold change, exclusion, or alternate analysis requires a versioned amendment that identifies when and why it was made and reports both original and amended results.",
+    "designation": "pilot-informed prospective randomized panel",
+    "frozen_on": "2026-09-05",
+    "outcome_naive_preregistration": false,
+    "prospective_boundary": "Repository membership, metrics, sampling seed, 90-day frame, analysis rules, and gates are frozen before selecting and collecting the full v1 randomized sample. Earlier probes informed the hypotheses and thresholds, and individual v1 PRs may overlap those probes.",
+    "status": "frozen_after_pilot_disclosure_before_randomized_panel_sampling"
+  },
+  "metrics": [
+    {
+      "denominator": "All selected PRs in a complete valid capture.",
+      "id": "formal_peer_reviewed_pr_rate",
+      "numerator": "Selected PRs with at least one submitted non-PENDING external peer User PullRequestReview.",
+      "purpose": "Measure provider-visible formal external peer review activity without equating COMMENTED with completion.",
+      "unit": "pull_request"
+    },
+    {
+      "denominator": "All selected PRs in a complete valid capture.",
+      "id": "completed_review_pr_rate",
+      "numerator": "Selected PRs with at least one semantic external peer completed-review pair, whether or not its commit OID is observable.",
+      "purpose": "Measure provider-visible completed external peer review without conditioning on Git object retention.",
+      "unit": "pull_request"
+    },
+    {
+      "denominator": "All semantic completed-review pairs.",
+      "id": "checkpoint_oid_observability_rate",
+      "numerator": "Completed-review pairs whose latest completed checkpoint commit and final head OIDs are both observable.",
+      "purpose": "Expose whether head-drift estimates rest on sufficient retained Git identity evidence.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "Completed pairs whose latest completed checkpoint and final head OIDs are both observable.",
+      "id": "checkpoint_pair_head_drift_rate",
+      "numerator": "OID-comparable completed pairs whose latest completed checkpoint OID differs from final head.",
+      "purpose": "Measure total latest-checkpoint drift at the reviewer-specific unit.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "All semantic completed-review pairs under complete timeline capture.",
+      "id": "completed_review_pair_post_force_push_rate",
+      "numerator": "Semantic completed-review pairs with an observed force-push event strictly after any completed session in the pair.",
+      "purpose": "Measure the narrow force-push/restack acquisition wedge without letting a later re-review erase earlier churn.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "Completed pairs whose latest completed checkpoint and final head OIDs are both observable.",
+      "id": "checkpoint_pair_drift_without_observed_force_push_rate",
+      "numerator": "OID-comparable completed pairs with head drift and no observed force-push after the latest completed checkpoint.",
+      "purpose": "Screen for a broader continuity job while making no claim that the unobserved transition was an ordinary push.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "Completed-checkpoint PRs for which every completed pair has observable latest checkpoint and final head OIDs.",
+      "id": "stranded_reviewer_pr_rate",
+      "numerator": "Fully pair-comparable completed-checkpoint PRs with at least one drifted latest reviewer checkpoint.",
+      "purpose": "Measure PRs that leave at least one completed reviewer behind the final head.",
+      "unit": "pull_request"
+    },
+    {
+      "denominator": "Completed-checkpoint PRs.",
+      "id": "multi_round_completed_review_pr_rate",
+      "numerator": "Completed-checkpoint PRs whose external peer completed sessions span at least two distinct non-null commit OIDs.",
+      "purpose": "Measure repeated completed-review rounds without treating multiple reviewers on one snapshot as multiple rounds.",
+      "unit": "pull_request"
+    },
+    {
+      "denominator": "Completed-checkpoint PRs.",
+      "id": "completed_review_dismissal_pr_rate",
+      "numerator": "Completed-checkpoint PRs where at least one pair's latest completed session is DISMISSED with previous state APPROVED or CHANGES_REQUESTED.",
+      "purpose": "Measure provider-recorded invalidation of a latest completed peer review.",
+      "unit": "pull_request"
+    },
+    {
+      "denominator": "The union of completed pairs and COMMENTED candidate pairs.",
+      "id": "commented_only_pair_share",
+      "numerator": "External peer pairs with at least one non-null-commit COMMENTED session and no completed session.",
+      "purpose": "Describe partial-attention-only pairs without treating them as completed review.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "Completed pairs with an observable latest completed checkpoint OID.",
+      "id": "commented_newer_commit_candidate_pair_rate",
+      "numerator": "OID-visible completed pairs with a later same-reviewer COMMENTED session on a different non-null commit OID.",
+      "purpose": "Measure candidates for an explicit reviewer-confirmation flow that the first probe's new-pair uplift missed.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "Semantic completed-review pairs with an observed force-push strictly after an earlier completed session.",
+      "id": "completed_review_pair_force_push_rereview_rate",
+      "numerator": "Post-force-push semantic pairs where the same reviewer submitted another completed session after a qualifying force-push.",
+      "purpose": "Diagnose repeated completed review after force-push without conditioning on OID retention; descriptive only, with denominator adequacy and Wilson interval reported.",
+      "unit": "pull_request_reviewer_pair"
+    },
+    {
+      "denominator": "Submitted non-PENDING external peer User plus Bot review sessions; self, other, and unknown actors are excluded and reported.",
+      "id": "bot_review_session_share",
+      "numerator": "Submitted non-PENDING Bot PullRequestReview sessions.",
+      "purpose": "Describe machine-review presence only; review text is absent, so this cannot identify duplicate, correct, or low-quality findings.",
+      "unit": "submitted_review_session"
+    }
+  ],
+  "name": "Review Churn Census v1",
+  "panel_kind": "pilot_informed_prospective_randomized_target_segment_panel",
+  "prior_evidence_disclosure": {
+    "combining_probes_forbidden": true,
+    "disclosure_status": "frozen_before_v1_randomized_panel_sampling",
+    "overlap": {
+      "exact_pull_request_overlap": "not_frozen_or_deduplicated",
+      "repository_overlap": [
+        "PostHog/posthog"
+      ],
+      "v1_overlap": "The randomized v1 frame uses several repositories seen during probes and does not exclude previously inspected PR numbers, so exact observation overlap is possible and must be reported if reconstructed."
+    },
+    "probes": [
+      {
+        "definitions": "An exploratory PR-level probe of external APPROVED or CHANGES_REQUESTED reviews, later observed force-push events, and whether adding external COMMENTED reviews created an additional checkpoint-eligible unit. It predates the frozen PR-by-reviewer and dismissed-state rules.",
+        "id": "latest25_four_repository_probe",
+        "observations": {
+          "commented_checkpoint_uplift": {
+            "denominator_preserved": false,
+            "limitation": "The probe measured only newly eligible units after excluding PR authors; it did not measure a newer COMMENTED commit after an existing completed checkpoint.",
+            "reported_new_units": 0
+          },
+          "external_decisive_review_prs": {
+            "basis_points": 5700,
+            "denominator": 100,
+            "numerator": 57
+          },
+          "post_review_force_push_prs": {
+            "basis_points": 1404,
+            "denominator": 57,
+            "numerator": 8
+          }
+        },
+        "repositories": [
+          "PostHog/posthog",
+          "rust-lang/rust",
+          "microsoft/vscode",
+          "github/gh-stack"
+        ],
+        "sampled_pull_requests": 100,
+        "selection": "The latest-created 25 merged pull requests returned for each repository; not randomized within a fixed frame."
+      },
+      {
+        "definitions": "An exploratory PR-level probe counting APPROVED or CHANGES_REQUESTED presence, a later observed force-push, and whether the selected review commit differed from final head. It was not the frozen external peer PR-by-reviewer estimator and cannot be merged with the first probe.",
+        "id": "newest50_four_repository_convenience_probe",
+        "observations": {
+          "decisive_review_prs": {
+            "basis_points": 6800,
+            "denominator": 200,
+            "numerator": 136
+          },
+          "post_review_force_push_prs": {
+            "basis_points": 2353,
+            "denominator": 136,
+            "numerator": 32
+          },
+          "review_commit_differs_from_final_head_prs": {
+            "basis_points": 2941,
+            "denominator": 136,
+            "numerator": 40
+          }
+        },
+        "repositories": [
+          "astral-sh/ruff",
+          "zephyrproject-rtos/zephyr",
+          "PostHog/posthog",
+          "kubernetes/kubernetes"
+        ],
+        "sampled_pull_requests": 200,
+        "selection": "The newest 50 merged pull requests per repository from a convenience query; not randomized within the v1 frame."
+      }
+    ],
+    "reason_not_confirmatory": "Both probes were convenience analyses with different repositories, selection rules, units, and partially different actor/checkpoint definitions. The thresholds were chosen after observing them, PostHog appears in both, exact PR overlap was not frozen, and the v1 frame may sample previously inspected public PRs.",
+    "semantic_case_role": "These cases were inspected to understand author self-review, dismissed-state, COMMENTED recency, head OID, and event semantics. They are not members of either frequency denominator and provide no prevalence evidence.",
+    "semantic_cases_not_frequency_samples": [
+      "home-assistant/core#181236",
+      "PostHog/posthog#95380",
+      "PostHog/posthog#95326",
+      "rust-lang/rust#162237"
+    ],
+    "threshold_influence": {
+      "all_round_review_continuity": "The 20% threshold was retained after observing 40/136 PR-level head drift. v1 instead tests the stricter PR-by-reviewer drift-without-observed-force-push metric.",
+      "commented_partial_attention": "The 15% threshold was chosen after a zero-uplift probe that omitted COMMENTED recency and after semantic cases exposed that omission. v1 measures newer different-commit COMMENTED candidates separately.",
+      "force_push_wedge": "The 10% threshold was retained after observing exploratory point estimates of 8/57 and 32/136.",
+      "interpretation": "These are pilot-informed product-screening values, not independent confirmatory cutoffs, statistical truths, market thresholds, or evidence of product value."
+    }
+  },
+  "privacy": {
+    "actor_key_contract": "actor- plus the first 24 lowercase hexadecimal characters of SHA-256(case_id UTF-8 || 0x00 || Unicode-casefolded login UTF-8). The same function is used for PR author and review actors within a case.",
+    "aggregate_policy": "Aggregate output contains no actor keys or per-reviewer records.",
+    "capture_release_policy": "A privacy-minimized capture conforming to the closed capture schema may be checked in for reproducibility. Raw provider responses and artifacts containing login strings must not be checked in.",
+    "data_source": "Public GitHub metadata fetched with an authorized API credential.",
+    "in_memory_identity_use": "The collector reads PR-author and review-author logins only inside the API response processing step, derives PR-local actor_key values immediately, and discards login strings before constructing the capture artifact.",
+    "prohibited_artifact_fields": [
+      "access tokens or authorization headers",
+      "GitHub login strings",
+      "names or email addresses",
+      "avatar URLs",
+      "PR titles or bodies",
+      "review, issue-comment, or commit-comment text",
+      "source code, patches, or diffs",
+      "raw API responses"
+    ],
+    "reidentification_boundary": "The actor key is deterministic and unsalted within a public, identified PR. Public PR metadata can permit reidentification. This is pseudonymous metadata, not anonymous data, and no anonymity claim is allowed.",
+    "retained_public_identifiers": [
+      "repository nameWithOwner",
+      "PR number and node ID",
+      "review and timeline-event node/database IDs needed for provenance",
+      "Git object IDs",
+      "ordering timestamps",
+      "PR-local opaque actor keys and GitHub actor typename"
+    ]
+  },
+  "repositories": [
+    {
+      "name": "gh-stack",
+      "owner": "github"
+    },
+    {
+      "name": "posthog",
+      "owner": "PostHog"
+    },
+    {
+      "name": "vscode",
+      "owner": "microsoft"
+    },
+    {
+      "name": "kubernetes",
+      "owner": "kubernetes"
+    },
+    {
+      "name": "rust",
+      "owner": "rust-lang"
+    },
+    {
+      "name": "core",
+      "owner": "home-assistant"
+    },
+    {
+      "name": "grafana",
+      "owner": "grafana"
+    },
+    {
+      "name": "next.js",
+      "owner": "vercel"
+    },
+    {
+      "name": "elasticsearch",
+      "owner": "elastic"
+    },
+    {
+      "name": "runtime",
+      "owner": "dotnet"
+    }
+  ],
+  "schema": "stratadiff-review-churn-census-sampling-plan-v1",
+  "selection": {
+    "algorithm": "sha256_v1",
+    "algorithm_version": "1",
+    "ordering": "Ascending lexicographic SHA-256 digest, then ascending PR number as a collision tie-breaker.",
+    "quota": "Take the first 50 candidates independently within each repository.",
+    "ranking_preimage": "seed bytes || 0x00 || Unicode-casefolded GitHub nameWithOwner UTF-8 || 0x00 || canonical base-10 PR number ASCII",
+    "seed_hex": "647bc818d8ee4d313d6735cf7c2e8d985e367a0fe1b2fe11c17aca3e15de491f",
+    "unit": "pull_request_within_repository",
+    "without_replacement": true
+  },
+  "target_population": {
+    "description": "API-visible public GitHub pull requests merged during the fixed 90-day window in ten purposefully selected repositories that plausibly resemble StrataDiff's review-heavy target segment.",
+    "excluded_populations": [
+      "open or closed-unmerged pull requests",
+      "private repositories",
+      "repositories outside the fixed panel",
+      "non-GitHub review systems",
+      "standalone issue comments, commit comments, local review, chat, and other attention not represented by a submitted GitHub PullRequestReview",
+      "pull-request-author self reviews in external peer metrics",
+      "reviews whose actor cannot be classified from the captured GitHub actor typename and per-PR key"
+    ],
+    "primary_user": "An external peer reviewer in an active repository with completed GitHub review sessions followed by head churn, history rewrites, or additional partial-attention sessions.",
+    "repository_selection": "Purposeful and fixed before v1 sampling; only PR selection within each repository is randomized.",
+    "unit": "merged pull request, with checkpoint outcomes measured per pull request by external peer reviewer"
+  },
+  "target_pull_requests_per_repository": 50
+}

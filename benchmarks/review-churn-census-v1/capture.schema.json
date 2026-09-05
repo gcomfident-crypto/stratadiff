@@ -1,0 +1,300 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/review-churn-census-v1/capture.schema.json",
+  "title": "StrataDiff Review Churn Census privacy-minimized capture v1",
+  "description": "Provider facts required for classification. Actor logins are replaced in memory by deterministic PR-local opaque keys before this artifact is constructed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "dataset_version",
+    "tool_version",
+    "captured_at",
+    "capture_complete",
+    "source_sample",
+    "cases",
+    "summary",
+    "acquisition"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-churn-census-capture-v1" },
+    "dataset_version": { "const": "1.0.0" },
+    "tool_version": { "const": "0.2.0" },
+    "captured_at": { "$ref": "#/$defs/timestamp" },
+    "capture_complete": { "type": "boolean" },
+    "source_sample": { "$ref": "#/$defs/source_sample" },
+    "cases": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "acquisition": { "$ref": "#/$defs/acquisition" }
+  },
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "nullable_sha1": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha1" },
+        { "type": "null" }
+      ]
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "node_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "actor_key": { "type": "string", "pattern": "^actor-[0-9a-f]{24}$" },
+    "repository_component": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+$",
+      "maxLength": 100
+    },
+    "repository_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 202
+    },
+    "count": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+    "source_sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "dataset_version", "sha256"],
+      "properties": {
+        "schema": { "const": "stratadiff-review-churn-census-sample-v1" },
+        "dataset_version": { "const": "1.0.0" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["typename", "actor_key"],
+      "properties": {
+        "typename": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "actor_key": {
+          "oneOf": [
+            { "$ref": "#/$defs/actor_key" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "nullable_actor": {
+      "oneOf": [
+        { "$ref": "#/$defs/actor" },
+        { "type": "null" }
+      ]
+    },
+    "database_id": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "pattern": "^[1-9][0-9]*$", "maxLength": 40 },
+        { "type": "null" }
+      ]
+    },
+    "review_state": {
+      "enum": ["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED", "PENDING"]
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "database_id",
+        "state",
+        "submitted_at",
+        "author",
+        "commit_oid",
+        "comment_count"
+      ],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "database_id": { "$ref": "#/$defs/database_id" },
+        "state": { "$ref": "#/$defs/review_state" },
+        "submitted_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "author": { "$ref": "#/$defs/nullable_actor" },
+        "commit_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "comment_count": { "$ref": "#/$defs/count" }
+      }
+    },
+    "force_push_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "type", "created_at", "before_oid", "after_oid"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "type": { "const": "HeadRefForcePushedEvent" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "before_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "after_oid": { "$ref": "#/$defs/nullable_sha1" }
+      }
+    },
+    "dismissal_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "type", "created_at", "previous_review_state", "review"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "type": { "const": "ReviewDismissedEvent" },
+        "created_at": { "$ref": "#/$defs/timestamp" },
+        "previous_review_state": {
+          "oneOf": [
+            { "$ref": "#/$defs/review_state" },
+            { "type": "null" }
+          ]
+        },
+        "review": {
+          "oneOf": [
+            { "$ref": "#/$defs/review" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "owner", "name", "name_with_owner", "url"],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "owner": { "$ref": "#/$defs/repository_component" },
+        "name": { "$ref": "#/$defs/repository_component" },
+        "name_with_owner": { "$ref": "#/$defs/repository_name" },
+        "url": { "type": "string", "format": "uri", "pattern": "^https://github\\.com/" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "number",
+        "merged_at",
+        "head_oid",
+        "last_commit_oid",
+        "commit_count",
+        "head_matches_last_commit",
+        "author"
+      ],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "number": { "type": "integer", "minimum": 1 },
+        "merged_at": { "$ref": "#/$defs/timestamp" },
+        "head_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "last_commit_oid": { "$ref": "#/$defs/nullable_sha1" },
+        "commit_count": { "$ref": "#/$defs/count" },
+        "head_matches_last_commit": {
+          "oneOf": [
+            { "const": true },
+            { "type": "null" }
+          ]
+        },
+        "author": { "$ref": "#/$defs/nullable_actor" }
+      }
+    },
+    "review_pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pages", "reported_total_count", "captured_node_count", "pagination_complete"],
+      "properties": {
+        "pages": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "reported_total_count": { "$ref": "#/$defs/count" },
+        "captured_node_count": { "$ref": "#/$defs/count" },
+        "pagination_complete": { "const": true }
+      }
+    },
+    "timeline_pagination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pages",
+        "reported_total_count_unfiltered",
+        "captured_filtered_node_count",
+        "pagination_complete"
+      ],
+      "properties": {
+        "pages": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "reported_total_count_unfiltered": { "$ref": "#/$defs/count" },
+        "captured_filtered_node_count": { "$ref": "#/$defs/count" },
+        "pagination_complete": { "const": true }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "repository", "pull_request", "reviews", "timeline_events", "pagination"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^github-[a-z0-9_.-]+-[a-z0-9_.-]+-pr-[1-9][0-9]*$",
+          "maxLength": 256
+        },
+        "repository": { "$ref": "#/$defs/repository" },
+        "pull_request": { "$ref": "#/$defs/pull_request" },
+        "reviews": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/review" }
+        },
+        "timeline_events": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "oneOf": [
+              { "$ref": "#/$defs/force_push_event" },
+              { "$ref": "#/$defs/dismissal_event" }
+            ]
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reviews", "timeline_events"],
+          "properties": {
+            "reviews": { "$ref": "#/$defs/review_pagination" },
+            "timeline_events": { "$ref": "#/$defs/timeline_pagination" }
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected_pull_requests", "captured_pull_requests", "capture_failures"],
+      "properties": {
+        "selected_pull_requests": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "captured_pull_requests": { "type": "integer", "minimum": 0, "maximum": 500 },
+        "capture_failures": { "const": 0 }
+      }
+    },
+    "acquisition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graphql_calls", "minimum_rate_limit_remaining", "last_rate_limit_reset_at"],
+      "properties": {
+        "graphql_calls": { "$ref": "#/$defs/count" },
+        "minimum_rate_limit_remaining": {
+          "oneOf": [
+            { "$ref": "#/$defs/count" },
+            { "type": "null" }
+          ]
+        },
+        "last_rate_limit_reset_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    }
+  }
+}
