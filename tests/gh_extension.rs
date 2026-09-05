@@ -42,7 +42,7 @@ fn gh_extension_contract_passes_with_stubbed_tools() {
 }
 
 #[test]
-fn git_225_fetch_pack_import_never_touches_fetch_head_and_ref_creation_is_cas() {
+fn git_fetch_pack_into_bare_repo_accepts_keep_record_without_touching_fetch_head() {
     let directory = tempfile::tempdir().unwrap();
     let source = directory.path().join("source");
     let provider = directory.path().join("provider.git");
@@ -92,13 +92,18 @@ fn git_225_fetch_pack_import_never_touches_fetch_head_and_ref_creation_is_cas() 
         ),
         "seed provider",
     );
-    assert_git_success(&git(&target, &["init", "--quiet"]), "initialize target");
+    assert_git_success(
+        &git(&target, &["init", "--bare", "--quiet"]),
+        "initialize bare target",
+    );
 
-    let fetch_head = target.join(".git/FETCH_HEAD");
+    let fetch_head = target.join("FETCH_HEAD");
     fs::write(&fetch_head, b"caller fetch state\n").unwrap();
     let fetch_pack = git(
         &target,
         &[
+            "-c",
+            "fetch.unpackLimit=1",
             "-c",
             "fetch.fsckObjects=true",
             "-c",
@@ -110,10 +115,28 @@ fn git_225_fetch_pack_import_never_touches_fetch_head_and_ref_creation_is_cas() 
         ],
     );
     assert_git_success(&fetch_pack, "fetch exact provider ref with fetch-pack");
-    assert_eq!(
-        String::from_utf8(fetch_pack.stdout).unwrap().trim(),
-        format!("{commit} {provider_ref}")
-    );
+    assert!(fetch_pack.stdout.ends_with(b"\n"));
+    let stdout = String::from_utf8(fetch_pack.stdout).unwrap();
+    let records = stdout.lines().collect::<Vec<_>>();
+    let expected_ref = format!("{commit} {provider_ref}");
+    let ref_record = match records.as_slice() {
+        [ref_record] => *ref_record,
+        [keep_record, ref_record] => {
+            let keep_object = keep_record
+                .strip_prefix("keep\t")
+                .expect("first fetch-pack record must be a strict keep record");
+            assert!(keep_object.len() == 40 || keep_object.len() == 64);
+            assert!(
+                keep_object
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+                "keep record must contain one lowercase object ID: {keep_record}"
+            );
+            *ref_record
+        }
+        _ => panic!("unexpected fetch-pack stdout records: {records:?}"),
+    };
+    assert_eq!(ref_record, expected_ref);
     assert_eq!(fs::read(&fetch_head).unwrap(), b"caller fetch state\n");
 
     let imported_ref = "refs/stratadiff/resume/test/checkpoint";

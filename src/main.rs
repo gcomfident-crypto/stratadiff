@@ -51,6 +51,7 @@ use stratadiff::{
     verify_and_replay_report_bytes, verify_report_bytes,
 };
 
+mod demo;
 mod viewer;
 
 const LEGACY_REPORT_SCHEMA_V1: &str = "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/report-v1.schema.json";
@@ -61,6 +62,7 @@ const BUILD_GIT_DIRTY: &str = env!("STRATADIFF_BUILD_GIT_DIRTY");
 const BUILD_CARGO_LOCK_SHA256: &str = env!("STRATADIFF_BUILD_CARGO_LOCK_SHA256");
 const BUILD_PROFILE: &str = env!("STRATADIFF_BUILD_PROFILE");
 const BUILD_RUSTC_VERSION: &str = env!("STRATADIFF_BUILD_RUSTC_VERSION");
+const THIRD_PARTY_NOTICES: &str = include_str!("../THIRD_PARTY_NOTICES.txt");
 const GITHUB_API_HEADER_BYTES: usize = 64 * 1024;
 const GITHUB_API_TIMEOUT: Duration = Duration::from_secs(30);
 const GITHUB_OWNERSHIP_TOTAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -77,6 +79,17 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Open a deterministic offline Review Resume scenario.
+    Demo {
+        /// Loopback port to listen on. Zero asks the operating system to choose one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the workbench URL without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Print the third-party notices embedded in this executable.
+    Licenses,
     /// Print machine-readable provenance for this exact executable.
     BuildInfo,
     /// Resolve one reviewer's latest completed GitHub review to a commit checkpoint.
@@ -387,6 +400,8 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::Demo { port, no_open } => demo::run(port, no_open)?,
+        Command::Licenses => print!("{THIRD_PARTY_NOTICES}"),
         Command::BuildInfo => {
             let mut stdout = std::io::stdout().lock();
             serde_json::to_writer(&mut stdout, &embedded_build_info())?;

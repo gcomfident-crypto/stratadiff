@@ -1534,7 +1534,8 @@ class InboxTest(unittest.TestCase):
             rendered,
         )
         self.assertIn("unknown, not evidence", rendered)
-        self.assertIn("Run Resume commands from a checkout", rendered)
+        self.assertIn("Run Resume commands from any directory", rendered)
+        self.assertIn("isolated temporary repository", rendered)
         self.assertNotIn("review-old", rendered)
 
     def test_markdown_does_not_call_insufficient_evidence_up_to_date(self):
@@ -1558,6 +1559,12 @@ class InboxTest(unittest.TestCase):
             rendered,
         )
         self.assertNotIn("No exact review resume is currently required", rendered)
+
+    def test_empty_markdown_inbox_offers_the_offline_demo(self):
+        report = self.build_report([])
+        rendered = census.render_review_inbox_markdown(report)
+        self.assertIn("No eligible review currently needs Resume.", rendered)
+        self.assertIn("Try: gh stratadiff demo", rendered)
 
     def test_public_metadata_seed_matches_product_classification(self):
         oracle_path = (

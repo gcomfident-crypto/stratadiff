@@ -34,11 +34,13 @@ run_case() {
   local github_repository=github.com/acme/widget
   local audit_case=default
   local inbox_case=default
+  local resume_case=repo-dir-only
   local setting
   for setting in "$@"; do
     case "${setting}" in
       GH_TEST_FETCH_HEAD_ABSENT=true) fetch_head_existed=false ;;
       GH_STUB_ENTERPRISE=true) github_repository=ghe.example/acme/widget ;;
+      GH_TEST_RESUME_MODE=*) resume_case=${setting#GH_TEST_RESUME_MODE=} ;;
       GH_TEST_AUDIT_INFER=true) audit_case=infer ;;
       GH_TEST_AUDIT_ALL_OPTIONS=true) audit_case=all-options ;;
       GH_TEST_AUDIT_BAD_FORMAT=true) audit_case=bad-format ;;
@@ -66,8 +68,54 @@ run_case() {
   local -a command_arguments
   local command_directory=${case_directory}
   case "${command}" in
+    demo)
+      command_directory=${case_directory}/non-git
+      command_arguments=(demo --port 0 --no-open)
+      ;;
     resume)
-      command_arguments=(resume 17 --repo-dir "${case_directory}/repository" --no-open)
+      case "${resume_case}" in
+        current)
+          command_directory=${case_directory}/repository
+          command_arguments=(resume 17 --no-open)
+          ;;
+        current-outside)
+          command_directory=${case_directory}/non-git
+          command_arguments=(resume 17 --no-open)
+          ;;
+        repo-dir-only)
+          command_arguments=(resume 17 --repo-dir "${case_directory}/repository" --no-open)
+          ;;
+        repository-only)
+          command_directory=${case_directory}/non-git
+          command_arguments=(resume 17 -R "${github_repository}" --no-open)
+          ;;
+        repository-only-inside)
+          command_directory=${case_directory}/repository
+          command_arguments=(resume 17 -R "${github_repository}" --no-open)
+          ;;
+        both)
+          command_directory=${case_directory}/non-git
+          command_arguments=(
+            resume 17
+            --repo-dir "${case_directory}/repository"
+            -R "${github_repository}"
+            --no-open
+          )
+          ;;
+        invalid-repo-dir)
+          command_directory=${case_directory}/non-git
+          command_arguments=(
+            resume 17
+            --repo-dir "${case_directory}/missing-repository"
+            -R "${github_repository}"
+            --no-open
+          )
+          ;;
+        *)
+          printf 'unknown resume test mode: %s\n' "${resume_case}" >&2
+          exit 1
+          ;;
+      esac
       ;;
     ownership-snapshot)
       command_arguments=(
@@ -186,6 +234,10 @@ run_case() {
   CASE_LOG="$(< "${case_directory}/calls.txt")"
   CASE_STATE=${case_directory}/state
   CASE_REPOSITORY=${case_directory}/repository
+  CASE_ISOLATED_REPOSITORY="$(
+    printf '%s\n' "${CASE_LOG}" |
+      sed -n 's#^git init --bare --quiet \(.*/repository\.git\)$#\1#p'
+  )"
   CASE_OUTPUT_PATH=${case_directory}/ownership.json
   CASE_AUDIT_OUTPUT_PATH=${case_directory}/audit.json
   CASE_INBOX_OUTPUT_PATH=${case_directory}/inbox.json
@@ -193,6 +245,9 @@ run_case() {
   if [[ -f "${case_directory}/home/review-environment.txt" ]]; then
     CASE_LOG+=$'\n'"$(< "${case_directory}/home/review-call.txt")"
     CASE_VIEWER_ENVIRONMENT="$(< "${case_directory}/home/review-environment.txt")"
+  elif [[ -f "${case_directory}/home/demo-environment.txt" ]]; then
+    CASE_LOG+=$'\n'"$(< "${case_directory}/home/demo-call.txt")"
+    CASE_VIEWER_ENVIRONMENT="$(< "${case_directory}/home/demo-environment.txt")"
   fi
   if [[ "${fetch_head_existed}" == true ]]; then
     [[ "$(< "${case_directory}/FETCH_HEAD")" == 'original fetch head' ]] || {
@@ -207,6 +262,10 @@ run_case() {
     printf 'temporary ref state remained for case %s\n' "${name}" >&2
     exit 1
   fi
+  if compgen -G "${case_directory}/repository/.git/objects/pack/*.keep" >/dev/null; then
+    printf 'temporary pack keep file remained for case %s\n' "${name}" >&2
+    exit 1
+  fi
   if compgen -G "${case_directory}/tmp/gh-stratadiff-*" >/dev/null; then
     printf 'temporary directory remained for case %s\n' "${name}" >&2
     exit 1
@@ -217,6 +276,12 @@ run_extension() {
   local name=$1
   shift
   run_case "${name}" resume "$@"
+}
+
+run_demo() {
+  local name=$1
+  shift
+  run_case "${name}" demo "$@"
 }
 
 run_ownership_snapshot() {
@@ -246,10 +311,76 @@ assert_discovery_did_not_touch_git_state() {
 
 TOP_LEVEL_HELP="$(bash "${extension_directory}/gh-stratadiff" --help)"
 assert_contains "${TOP_LEVEL_HELP}" 'inbox                      Find open PRs that need your review resumed'
+assert_contains "${TOP_LEVEL_HELP}" 'demo                       Open a deterministic offline Review Resume scenario'
+DEMO_HELP="$(bash "${extension_directory}/gh-stratadiff" demo --help)"
+assert_contains "${DEMO_HELP}" 'Usage: gh stratadiff demo [options]'
+assert_contains "${DEMO_HELP}" 'network-free Review Resume scenario'
+set +e
+DEMO_BAD_PORT_OUTPUT="$(bash "${extension_directory}/gh-stratadiff" demo --port 65536 2>&1)"
+DEMO_BAD_PORT_STATUS=$?
+DEMO_POSITIONAL_OUTPUT="$(bash "${extension_directory}/gh-stratadiff" demo unexpected 2>&1)"
+DEMO_POSITIONAL_STATUS=$?
+set -e
+[[ "${DEMO_BAD_PORT_STATUS}" -ne 0 ]]
+assert_contains "${DEMO_BAD_PORT_OUTPUT}" '--port must be an integer from 0 through 65535'
+[[ "${DEMO_POSITIONAL_STATUS}" -ne 0 ]]
+assert_contains "${DEMO_POSITIONAL_OUTPUT}" 'demo does not accept positional arguments'
 INBOX_HELP="$(bash "${extension_directory}/gh-stratadiff" inbox --help)"
 assert_contains "${INBOX_HELP}" 'Usage: gh stratadiff inbox [options]'
 assert_contains "${INBOX_HELP}" '--format markdown|json'
 assert_contains "${INBOX_HELP}" 'works outside a Git checkout'
+RESUME_HELP="$(bash "${extension_directory}/gh-stratadiff" resume --help)"
+assert_contains "${RESUME_HELP}" 'With -R and no --repo-dir'
+assert_contains "${RESUME_HELP}" 'isolated temporary bare'
+
+run_demo demo-default
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'stratadiff demo --port 0 --no-open'
+assert_not_contains "${CASE_LOG}" 'gh '
+assert_not_contains "${CASE_LOG}" 'git '
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'DISPLAY=:99'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'LANG=C.UTF-8'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'GIT_CONFIG_GLOBAL=/dev/null'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'GIT_NO_LAZY_FETCH=1'
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GH_TOKEN='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GITHUB_TOKEN='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'CALLER_SECRET='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'STRATADIFF_EXTENSION_TEST_LOG='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GH_STUB_STATE='
+
+demo_signal_case=${temporary_directory}/demo-signal
+mkdir -p "${demo_signal_case}/home" "${demo_signal_case}/non-git" "${demo_signal_case}/tmp"
+: > "${demo_signal_case}/home/demo-wait"
+(
+  cd -- "${demo_signal_case}/non-git"
+  exec env \
+    PATH="${stubs}:${PATH}" \
+    HOME="${demo_signal_case}/home" \
+    TMPDIR="${demo_signal_case}/tmp" \
+    STRATADIFF_BIN=stratadiff \
+    bash "${extension_directory}/gh-stratadiff" demo --port 0 --no-open
+) > "${demo_signal_case}/output.txt" 2>&1 &
+demo_wrapper_pid=$!
+demo_ready_deadline=$((SECONDS + 10))
+while [[ ! -f "${demo_signal_case}/home/demo-ready" ]]; do
+  [[ "${SECONDS}" -lt "${demo_ready_deadline}" ]] || {
+    printf 'demo wrapper child did not become ready\n' >&2
+    kill -KILL "${demo_wrapper_pid}" 2>/dev/null || true
+    exit 1
+  }
+  sleep 1
+done
+kill -TERM "${demo_wrapper_pid}"
+set +e
+wait "${demo_wrapper_pid}"
+demo_signal_status=$?
+set -e
+[[ "${demo_signal_status}" -eq 143 ]]
+[[ "$(< "${demo_signal_case}/home/demo-signal.txt")" == TERM ]]
+if compgen -G "${demo_signal_case}/tmp/gh-stratadiff-demo-*" >/dev/null; then
+  printf 'temporary demo directory remained after signaling the wrapper\n' >&2
+  exit 1
+fi
 
 run_audit audit-default
 [[ "${CASE_STATUS}" -eq 0 ]]
@@ -348,9 +479,82 @@ run_audit audit-high-days GH_TEST_AUDIT_HIGH_DAYS=true
 assert_contains "${CASE_OUTPUT}" '--days must be an integer from 1 through 365'
 assert_not_contains "${CASE_LOG}" 'audit-tool'
 
-run_extension happy
+run_extension current-repository-mode GH_TEST_RESUME_MODE=current
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'git -C . rev-parse --show-toplevel'
+assert_contains "${CASE_LOG}" 'gh repo view --json nameWithOwner,url'
+assert_not_contains "${CASE_LOG}" 'git init --bare --quiet'
+assert_contains "${CASE_LOG}" "stratadiff review aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --repo ${CASE_REPOSITORY}"
+
+run_extension explicit-repository-mode GH_TEST_RESUME_MODE=both
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" "git -C ${CASE_REPOSITORY} rev-parse --show-toplevel"
+assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
+assert_not_contains "${CASE_LOG}" 'git init --bare --quiet'
+assert_contains "${CASE_LOG}" "stratadiff review aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --repo ${CASE_REPOSITORY}"
+
+run_extension first-run-non-git \
+  GH_TEST_RESUME_MODE=repository-only \
+  GH_STUB_FETCH_PACK_KEEP_RECORD=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+[[ -n "${CASE_ISOLATED_REPOSITORY}" ]]
+[[ ! -e "${CASE_ISOLATED_REPOSITORY}" ]]
+assert_contains "${CASE_LOG}" "git init --bare --quiet ${CASE_ISOLATED_REPOSITORY}"
+assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'gh api --hostname github.com repos/acme/widget/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+assert_contains "${CASE_LOG}" 'gh api --hostname github.com repos/acme/widget/git/commits/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+assert_contains "${CASE_LOG}" 'gh api --hostname github.com repos/acme/widget/git/commits/cccccccccccccccccccccccccccccccccccccccc'
+assert_contains "${CASE_LOG}" "stratadiff review aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --repo ${CASE_ISOLATED_REPOSITORY}"
+assert_not_contains "${CASE_LOG}" 'rev-parse --show-toplevel'
+assert_not_contains "${CASE_LOG}" "git -C ${CASE_REPOSITORY}"
+assert_not_contains "${CASE_LOG}" ' clone '
+assert_not_contains "${CASE_LOG}" ' checkout '
+assert_not_contains "${CASE_LOG}" ' switch '
+assert_not_contains "${CASE_LOG}" ' reset '
+assert_not_contains "${CASE_LOG}" ' pull '
+
+run_extension first-run-ignores-current-checkout GH_TEST_RESUME_MODE=repository-only-inside
+[[ "${CASE_STATUS}" -eq 0 ]]
+[[ -n "${CASE_ISOLATED_REPOSITORY}" ]]
+[[ ! -e "${CASE_ISOLATED_REPOSITORY}" ]]
+assert_contains "${CASE_LOG}" "git init --bare --quiet ${CASE_ISOLATED_REPOSITORY}"
+assert_contains "${CASE_LOG}" "stratadiff review aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --repo ${CASE_ISOLATED_REPOSITORY}"
+assert_not_contains "${CASE_LOG}" 'rev-parse --show-toplevel'
+assert_not_contains "${CASE_LOG}" "git -C ${CASE_REPOSITORY}"
+
+run_extension first-run-failure-cleans-scratch \
+  GH_TEST_RESUME_MODE=repository-only \
+  GH_STUB_PROVIDER_MISSING_BASE=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+[[ -n "${CASE_ISOLATED_REPOSITORY}" ]]
+[[ ! -e "${CASE_ISOLATED_REPOSITORY}" ]]
+assert_contains "${CASE_OUTPUT}" 'GitHub no longer exposes exact pull request base aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension current-outside-does-not-fallback \
+  GH_TEST_RESUME_MODE=current-outside \
+  GH_STUB_NOT_GIT=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'current directory is not inside a Git repository; use -R HOST/OWNER/REPO to run without a checkout'
+assert_not_contains "${CASE_LOG}" 'git init --bare --quiet'
+assert_not_contains "${CASE_LOG}" 'gh repo view'
+assert_not_contains "${CASE_LOG}" 'stratadiff '
+
+run_extension invalid-explicit-repo-dir-does-not-fallback \
+  GH_TEST_RESUME_MODE=invalid-repo-dir \
+  GH_STUB_NOT_GIT=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--repo-dir is not inside a Git repository'
+assert_not_contains "${CASE_LOG}" 'git init --bare --quiet'
+assert_not_contains "${CASE_LOG}" 'gh repo view'
+assert_not_contains "${CASE_LOG}" 'stratadiff '
+
+run_extension repo-dir-inferred-mode
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_OUTPUT}" 'Resuming @alice review of acme/widget#17 at exact checkpoint cccccccccccccccccccccccccccccccccccccccc.'
+assert_contains "${CASE_LOG}" "git -C ${CASE_REPOSITORY} rev-parse --show-toplevel"
+assert_contains "${CASE_LOG}" 'gh repo view --json nameWithOwner,url'
+assert_not_contains "${CASE_LOG}" 'git init --bare --quiet'
 assert_contains "${CASE_LOG}" 'gh api --paginate --slurp --hostname github.com repos/acme/widget/pulls/17/reviews?per_page=100'
 assert_not_contains "${CASE_LOG}" '&page='
 assert_not_contains "${CASE_LOG}" '--include'
@@ -441,6 +645,53 @@ assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/
 assert_not_contains "${CASE_LOG}" 'stratadiff review '
 
 run_extension extra-fetch-pack-record GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_EXTRA_RECORD=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension keep-fetch-pack-record GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_KEEP_RECORD=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_OUTPUT}" 'Resuming @alice review of acme/widget#17 at exact checkpoint cccccccccccccccccccccccccccccccccccccccc.'
+assert_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+
+run_extension duplicate-fetch-pack-keep GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_DUPLICATE_KEEP=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension malformed-fetch-pack-keep GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_MALFORMED_KEEP=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension late-fetch-pack-keep GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_KEEP_AFTER_REF=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension duplicate-fetch-pack-ref GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_DUPLICATE_REF=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension oversized-fetch-pack-output GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_OVERSIZED=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import returned oversized output'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension trailing-blank-fetch-pack-output GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_TRAILING_BLANK=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
+assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'
+assert_not_contains "${CASE_LOG}" 'stratadiff review '
+
+run_extension unterminated-fetch-pack-output GH_STUB_MISSING_CHECKPOINT=true GH_STUB_FETCH_PACK_NO_FINAL_NEWLINE=true
 [[ "${CASE_STATUS}" -ne 0 ]]
 assert_contains "${CASE_OUTPUT}" 'local import did not return the exact verified review checkpoint ref'
 assert_not_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/resume/'

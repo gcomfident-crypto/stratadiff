@@ -38,6 +38,23 @@ case "${1:-} ${2:-}" in
       else
         [[ " $* " == *" github.com/acme/widget "* ]]
       fi
+    elif [[ "${GH_STUB_COMMAND:-}" == resume ]]; then
+      case "${GH_TEST_RESUME_MODE:-repo-dir-only}" in
+        current|repo-dir-only)
+          [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
+          [[ " $* " != *" github.com/acme/widget "* ]]
+          [[ " $* " != *" ghe.example/acme/widget "* ]]
+          ;;
+        repository-only|repository-only-inside)
+          [[ "${PWD}" == "${TMPDIR}"/gh-stratadiff-resume-*/repository.git ]]
+          [[ " $* " == *" github.com/acme/widget "* || " $* " == *" ghe.example/acme/widget "* ]]
+          ;;
+        both)
+          [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
+          [[ " $* " == *" github.com/acme/widget "* || " $* " == *" ghe.example/acme/widget "* ]]
+          ;;
+        *) exit 70 ;;
+      esac
     else
       [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
     fi

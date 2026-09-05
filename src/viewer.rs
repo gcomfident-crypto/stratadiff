@@ -1,8 +1,10 @@
 use std::{
+    future::IntoFuture,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     process::Command,
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -34,6 +36,8 @@ use stratadiff::{
     },
 };
 use tokio::{net::TcpListener, runtime::Builder};
+
+const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(2);
 
 #[derive(RustEmbed)]
 #[folder = "web/dist/"]
@@ -312,10 +316,55 @@ fn serve_content(
             eprintln!("Open this URL manually: {url}");
         }
 
-        axum::serve(listener, app)
-            .await
-            .context("local viewer server failed")
+        let (shutdown_started, mut shutdown_received) = tokio::sync::oneshot::channel();
+        let shutdown = async move {
+            let _ = shutdown_started.send(wait_for_shutdown_signal().await);
+        };
+        let server = axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .into_future();
+        tokio::pin!(server);
+
+        tokio::select! {
+            result = &mut server => result.context("local viewer server failed"),
+            result = &mut shutdown_received => {
+                result.context("local viewer shutdown listener stopped unexpectedly")??;
+                match tokio::time::timeout(SHUTDOWN_GRACE_PERIOD, &mut server).await {
+                    Ok(result) => result.context("local viewer server failed"),
+                    Err(_) => {
+                        eprintln!("Local viewer shutdown grace period expired; closing active connections.");
+                        Ok(())
+                    }
+                }
+            }
+        }
     })
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() -> Result<()> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut terminate = signal(SignalKind::terminate()).context("failed to listen for SIGTERM")?;
+    let mut hangup = signal(SignalKind::hangup()).context("failed to listen for SIGHUP")?;
+    tokio::select! {
+        result = tokio::signal::ctrl_c() => result.context("failed to listen for Ctrl+C"),
+        received = terminate.recv() => {
+            ensure!(received.is_some(), "SIGTERM listener closed unexpectedly");
+            Ok(())
+        }
+        received = hangup.recv() => {
+            ensure!(received.is_some(), "SIGHUP listener closed unexpectedly");
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() -> Result<()> {
+    tokio::signal::ctrl_c()
+        .await
+        .context("failed to listen for Ctrl+C")
 }
 
 async fn session(

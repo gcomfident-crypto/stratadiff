@@ -6,7 +6,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::mpsc,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 struct ChildGuard(Child);
@@ -456,6 +456,155 @@ fn repository_workbench_serves_pr_relative_residue_after_base_change() {
     );
     let (_, full_after_body) = split_response(&full_after);
     assert_eq!(full_after_body, b"value = 2\n");
+}
+
+#[cfg(unix)]
+#[test]
+fn offline_demo_runs_outside_a_checkout_and_cleans_up_after_ctrl_c() {
+    let sandbox = tempfile::tempdir().unwrap();
+    let runtime = sandbox.path().join("runtime");
+    let non_git = sandbox.path().join("non-git");
+    fs::create_dir(&runtime).unwrap();
+    fs::create_dir(&non_git).unwrap();
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("demo")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .current_dir(&non_git)
+        .env("TMPDIR", &runtime)
+        .env("GIT_DIR", "/must/not/reach/demo/git")
+        .env("GIT_CONFIG_GLOBAL", "/must/not/reach/demo/config")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let stderr = child.0.stderr.take().unwrap();
+    let (sender, receiver) = mpsc::channel();
+    let _reader = thread::spawn(move || {
+        let mut stderr = BufReader::new(stderr);
+        let mut first_line = String::new();
+        let result = stderr.read_line(&mut first_line).map(|_| first_line);
+        let _ = sender.send(result);
+    });
+    let first_line = receiver
+        .recv_timeout(Duration::from_secs(30))
+        .expect("offline demo did not print its URL within 30 seconds")
+        .unwrap();
+    let url = first_line
+        .trim_end()
+        .strip_prefix("StrataDiff Review Resume Workbench: http://")
+        .unwrap();
+    let (address, token) = url.split_once("/?token=").unwrap();
+
+    let session = get(address, &format!("/api/session?token={token}"));
+    let (_, body) = session.split_once("\r\n\r\n").unwrap();
+    let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+    assert_eq!(payload["kind"], "repository_review");
+    assert_eq!(
+        payload["resume_delta"]["comparison"],
+        "per_file_review_baseline_to_head"
+    );
+    assert_eq!(payload["resume_delta"]["summary"]["displayable_files"], 1);
+    assert_eq!(payload["resume_delta"]["summary"]["needs_review_files"], 1);
+    assert_eq!(
+        payload["resume_delta"]["entries"][0]["baseline_basis"],
+        "reconstructed_review_baseline"
+    );
+    assert_eq!(
+        payload["resume_delta"]["entries"][0]["file"]["line_change_envelope"],
+        serde_json::json!({"additions": 1, "deletions": 1})
+    );
+
+    let before = get_bytes(
+        address,
+        &format!("/api/source/before?token={token}&file=0&scope=resume"),
+    );
+    let (_, before_body) = split_response(&before);
+    assert_eq!(before_body, b"title = 'new'\nreviewed = 1\nfollowup = 0\n");
+    let after = get_bytes(
+        address,
+        &format!("/api/source/after?token={token}&file=0&scope=resume"),
+    );
+    let (_, after_body) = split_response(&after);
+    assert_eq!(after_body, b"title = 'new'\nreviewed = 1\nfollowup = 1\n");
+
+    let signal_result = unsafe { libc::kill(child.0.id() as i32, libc::SIGINT) };
+    assert_eq!(signal_result, 0);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "offline demo did not stop on Ctrl+C"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "offline demo exited with {status}");
+    assert!(!non_git.join(".git").exists());
+    assert_eq!(fs::read_dir(&runtime).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn offline_demo_bounds_shutdown_with_a_stalled_connection_and_cleans_up_after_signals() {
+    for signal in [libc::SIGTERM, libc::SIGHUP] {
+        assert_stalled_demo_shutdown_cleans_up(signal);
+    }
+}
+
+#[cfg(unix)]
+fn assert_stalled_demo_shutdown_cleans_up(signal: i32) {
+    let sandbox = tempfile::tempdir().unwrap();
+    let runtime = sandbox.path().join("runtime");
+    let non_git = sandbox.path().join("non-git");
+    fs::create_dir(&runtime).unwrap();
+    fs::create_dir(&non_git).unwrap();
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("demo")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .current_dir(&non_git)
+        .env("TMPDIR", &runtime)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let mut stderr = BufReader::new(child.0.stderr.take().unwrap());
+    let mut first_line = String::new();
+    stderr.read_line(&mut first_line).unwrap();
+    let url = first_line
+        .trim_end()
+        .strip_prefix("StrataDiff Review Resume Workbench: http://")
+        .unwrap();
+    let (address, _) = url.split_once("/?token=").unwrap();
+
+    let address: SocketAddr = address.parse().unwrap();
+    let mut stalled = TcpStream::connect_timeout(&address, Duration::from_secs(5)).unwrap();
+    stalled.write_all(b"GET / HTTP/1.1\r\nHost:").unwrap();
+
+    let signal_result = unsafe { libc::kill(child.0.id() as i32, signal) };
+    assert_eq!(signal_result, 0);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "offline demo did not bound graceful shutdown"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "offline demo exited with {status}");
+    assert_eq!(fs::read_dir(&runtime).unwrap().count(), 0);
 }
 
 fn get(address: &str, path: &str) -> String {

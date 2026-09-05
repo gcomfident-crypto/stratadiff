@@ -1,10 +1,11 @@
 # `gh stratadiff`
 
 This directory contains the first personal, repository-admin-free entry point for StrataDiff.
-It is a GitHub CLI script extension with four commands:
+It is a GitHub CLI script extension with five commands:
 
 ```console
 gh stratadiff audit -R OWNER/REPOSITORY
+gh stratadiff demo
 gh stratadiff inbox -R OWNER/REPOSITORY
 gh stratadiff resume <PR>
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
@@ -15,6 +16,11 @@ checkpoints drifted from the final head. It is the no-checkout discovery path: w
 from any directory and does not invoke Git, materialize commits, or create temporary refs. The
 report distinguishes `no_eligible_reviews`, `insufficient_evidence`, `no_observed_drift`, and
 `affected` instead of treating incomplete review data as a clean result.
+
+`demo` creates a deterministic A/B/C/D Git history entirely in a temporary directory and opens the
+Review Resume Workbench without contacting GitHub. An upstream base edit and a previously reviewed
+author edit are reconstructed, leaving exactly one post-review line in the queue. The temporary
+history is removed when the Workbench stops.
 
 `inbox` is the daily, reviewer-specific path. It finds open pull requests where the authenticated
 GitHub user completed a review and the current head differs from that exact checkpoint. Each
@@ -33,7 +39,8 @@ would exceed Resume's shared 10,000-review limit.
 request's exact base and head commits, and opens the existing local Review Resume Workbench. If an
 exact commit is absent locally, the extension verifies it through GitHub and imports only that SHA
 as an exact ref over authenticated HTTPS. Git transfers the reachable object closure needed to
-materialize that commit; source analysis remains local.
+materialize that commit; source analysis remains local. With `-R` and no `--repo-dir`, the target
+object store is an isolated temporary bare repository, so the first run needs no checkout.
 
 `ownership-snapshot` loads CODEOWNERS from one exact local base commit, verifies that commit against
 the selected GitHub host, and delegates live identity, team-membership, and repository-permission
@@ -53,7 +60,8 @@ Point the extension at the binary from this checkout:
 
 ```console
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
-gh stratadiff resume 123
+gh stratadiff demo
+gh stratadiff resume 123 -R OWNER/REPOSITORY
 ```
 
 To audit the most recent 50 merged pull requests in a 90-day window:
@@ -101,16 +109,22 @@ the built-in Actions `GITHUB_TOKEN` for team ownership because it cannot general
 membership. The collector queries effective permission only for referenced principals; it does not
 download the repository's complete collaborator list.
 
-Run the command from a checkout of the pull request's repository. The checkout does not need to be
-on the pull request branch. Missing PR base, current head, and review checkpoint commits are fetched
-by exact object ID without switching branches or changing worktree files. Use `--repo-dir PATH` when
-invoking it elsewhere. `-R OWNER/REPO` selects a different GitHub repository, and `--reviewer LOGIN`
-selects another reviewer when policy permits access to that review history.
+Resume selects its repository mode only from the presence of `-R` and `--repo-dir`:
 
-Repository inference is performed from the canonical `--repo-dir` checkout rather than the shell's
-current directory. Subsequent pull-request requests use the host-qualified repository identity, so
-the default path and GitHub Enterprise hosts do not silently fall back to an unrelated checkout or
-to `github.com`.
+| `-R` | `--repo-dir` | Repository behavior |
+| --- | --- | --- |
+| omitted | omitted | Use the current Git worktree and let `gh repo view` infer GitHub coordinates. |
+| omitted | set | Use that local Git worktree and infer GitHub coordinates from it. |
+| set | omitted | Create an isolated temporary bare repository and use the explicit GitHub coordinates. |
+| set | set | Use that local Git worktree and the explicit GitHub coordinates. |
+
+There is no fallback between modes: an invalid explicit `--repo-dir` fails, and a non-Git current
+directory fails unless `-R` is supplied. The local modes do not need to be on the pull request
+branch. Missing PR base, current head, and review checkpoint commits are fetched by exact object ID
+without switching branches or changing worktree files. `--reviewer LOGIN` selects another reviewer
+when policy permits access to that review history. Subsequent pull-request requests use the
+host-qualified repository identity, so GitHub Enterprise hosts do not silently fall back to
+`github.com`.
 
 For a terminal-only session:
 
@@ -136,8 +150,9 @@ Provider fetches run in an isolated bare repository with inherited Git credentia
 proxies, and trace settings removed. The credential header is scoped to the canonical HTTPS fetch;
 the tokenless local import uses `git fetch-pack`, then atomically creates a temporary
 `refs/stratadiff/resume/...` ref. It never reads or writes the caller's `FETCH_HEAD` and removes its
-temporary refs on exit. Imported objects may remain in the object database, but no branch or
-worktree file is changed.
+temporary refs and any fetch-pack keep file on exit. In a local mode, imported objects may remain in
+the selected object database, but no branch or worktree file is changed. In the `-R`-only mode, the
+target object database is also temporary and is removed in full when the command exits.
 
 If GitHub's API or HTTPS transport no longer serves an exact object, the command stops with that
 SHA. It never substitutes the current head, a moving branch, or another review checkpoint.
@@ -180,27 +195,35 @@ Inbox:
 --output PATH            Write the report to PATH instead of stdout
 ```
 
+Demo:
+
+```text
+--port PORT        Loopback viewer port; 0 chooses an available port
+--no-open          Print the viewer URL without opening a browser
+```
+
 Resume:
 
 ```text
 --reviewer LOGIN   Reviewer login; defaults to the authenticated gh user
 -R, --repo REPO    GitHub repository in [HOST/]OWNER/REPO form
---repo-dir PATH    Local Git repository; defaults to the current repository
+--repo-dir PATH    Use an existing local Git worktree or repository
 --port PORT        Loopback viewer port; 0 chooses an available port
 --no-open          Print the viewer URL without opening a browser
 ```
 
-`resume` and `ownership-snapshot` require Bash, GitHub CLI, Git, `env`, `base64`, and a built
-`stratadiff` executable. GitHub Enterprise hosts without a port in their HTTPS origin are supported
+`demo` requires Bash, Git, `env`, and a built `stratadiff` executable, but it does not require a
+checkout, GitHub authentication, or network access. `resume` and `ownership-snapshot` additionally
+require GitHub CLI and `base64`. GitHub Enterprise hosts without a port in their HTTPS origin are supported
 through the repository URL returned by `gh`; the current prototype does not accept origins with
 embedded credentials or explicit ports.
 
 ## Test
 
 The test suite uses only stubbed GitHub, Git, StrataDiff, and Python backend executables; it needs no
-token and makes no network request. It covers all four commands, including audit and inbox from a
-non-Git directory, host-qualified GHES operation, provider verification of a locally present base,
-exact-object recovery, output mode, and cleanup on failure:
+token and makes no network request. It covers all five commands, including Demo and audit/inbox from a
+non-Git directory, Resume's four explicit repository modes, host-qualified GHES operation, provider
+verification of a locally present base, exact-object recovery, output mode, and cleanup on failure:
 
 ```console
 bash tests/resume_test.sh
@@ -208,9 +231,10 @@ bash tests/resume_test.sh
 
 It covers successful command binding, exact-object recovery for missing current base/head and a
 historical checkpoint, provider/API disappearance, temporary-ref cleanup, `FETCH_HEAD` immutability,
-fetch-pack output and ref-collision failures, a PR head changing during resolution, absence of an
-eligible review, bounded single-response review retrieval, and the final Workbench environment
-allowlist. Audit-specific cases verify option forwarding, repository inference, backend status
-propagation, input validation, and the absence of Git or temporary-ref activity.
+fetch-pack keep-record handling, malformed or extra output, ref-collision failures, a PR head
+changing during resolution, absence of an eligible review, bounded single-response review
+retrieval, and the final Workbench environment allowlist. Audit-specific cases verify option
+forwarding, repository inference, backend status propagation, input validation, and the absence of
+Git or temporary-ref activity.
 Inbox-specific cases verify explicit and inferred repositories, backend output and status
 propagation, strict argument validation, and the same no-Git/no-StrataDiff boundary.

@@ -1,0 +1,18 @@
+StrataDiff third-party software notices
+========================================
+
+This file is generated from Cargo.lock with cargo-about. The StrataDiff license
+is distributed separately in LICENSE.
+
+{{#each licenses}}
+-------------------------------------------------------------------------------
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+- {{{crate.name}}} {{{crate.version}}}{{#if crate.repository}} ({{{crate.repository}}}){{/if}}
+{{/each}}
+
+{{{text}}}
+
+{{/each}}

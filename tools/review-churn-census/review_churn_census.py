@@ -2021,7 +2021,13 @@ def render_review_inbox_markdown(report: dict[str, object]) -> str:
                 "The available evidence cannot establish that every review is current; no verified Resume action can be generated."
             )
         else:
-            lines.append("No exact review resume is currently required.")
+            lines.extend(
+                [
+                    "No eligible review currently needs Resume.",
+                    "",
+                    "Try: gh stratadiff demo",
+                ]
+            )
     else:
         lines.extend(
             [
@@ -2046,7 +2052,7 @@ def render_review_inbox_markdown(report: dict[str, object]) -> str:
         lines.extend(
             [
                 "",
-                "Run Resume commands from a checkout of the selected repository; Resume rereads the PR and verifies every exact commit before opening source locally.",
+                "Run Resume commands from any directory. With `-R` and no `--repo-dir`, Resume uses an isolated temporary repository, rereads the PR, and verifies every exact commit before opening source locally.",
             ]
         )
     unobservable = require_array(report["unobservable"], "inbox.unobservable")
