@@ -77,7 +77,7 @@ impl Fixture {
         cross_repository_pr: bool,
     ) -> Self {
         let temporary = test_tempdir();
-        let root = temporary.path().to_path_buf();
+        let root = fs::canonicalize(temporary.path()).unwrap();
         let source = root.join("source");
         let provider = root.join("provider.git");
         let isolated = root.join("isolated.git");
