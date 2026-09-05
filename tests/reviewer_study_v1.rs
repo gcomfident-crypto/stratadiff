@@ -10,7 +10,7 @@ fn study_schema() -> serde_json::Value {
 fn schema_valid_observation() -> serde_json::Value {
     json!({
         "schema": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/reviewer-study-v1/study-data.schema.json",
-        "study_id": "study_synthetic_schema",
+        "study_id": "study_synthetic_0000000000000001",
         "protocol_version": "1.0.0",
         "preregistration_sha256": "0".repeat(64),
         "synthetic": true,
@@ -75,4 +75,14 @@ fn reviewer_study_schema_rejects_same_variant_and_unknown_measurement_fields() {
     let mut unknown_field = schema_valid_observation();
     unknown_field["paired_observations"][0]["baseline"]["free_text"] = json!("prohibited");
     assert!(!validator.is_valid(&unknown_field));
+}
+
+#[test]
+fn reviewer_study_schema_rejects_study_id_mode_mismatch() {
+    let schema = study_schema();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let mut data = schema_valid_observation();
+    data["study_id"] = json!("study_0000000000000001");
+
+    assert!(!validator.is_valid(&data));
 }

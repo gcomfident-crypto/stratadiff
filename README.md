@@ -138,7 +138,10 @@ time-saving, or safety evidence.
 The derived [Reviewer Value v1](benchmarks/reviewer-value-v1/README.md) artifact independently
 recomputes those file-level surface counts. A separate
 [prospective Reviewer Study v1](benchmarks/reviewer-study-v1/PROTOCOL.md) preregisters the human
-go/no experiment; no observed reviewer dataset or performance result is checked in.
+go/no experiment. The local, opt-in [Reviewer Pilot Kit](tools/reviewer-study-v1/README.md) now
+freezes and signs assignments, preloads tasks before monotonic timing, records only structured
+counts, runs blind carry adjudication, enforces the 28-day follow-up, and delegates analysis to the
+independent frozen evaluator. No observed reviewer dataset or performance result is checked in.
 
 The [Review Delta v1 controlled benchmark](benchmarks/review-delta-v1/README.md) adds thirteen
 network-free five-snapshot histories for the exact resume queue. It independently checks raw Git
@@ -702,7 +705,8 @@ representation and re-derives the report's claims.
   pagination, missing-OID, and `CHANGES_REQUESTED` cases.
 - Measure Inbox-to-Resume conversion, repeated weekly use, review time, and issue recall with real
   reviewers instead of treating metadata drift as product-market fit.
-- Run the preregistered reviewer study before claiming time savings, safety, or product-market fit.
+- Recruit the first reviewer cohort and run the preregistered study with the local Pilot Kit before
+  claiming time savings, safety, or product-market fit.
 - If that study passes, package the loop as an informational GitHub App before adding a required
   coverage gate.
 - Binding-aware alpha equivalence and no-capture rename certificates.

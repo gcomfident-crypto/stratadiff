@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/reviewer-study-v1/pilot-task-catalog.schema.json",
+  "title": "StrataDiff Reviewer Pilot public task catalog v1",
+  "description": "Sanitized task metadata containing only artifact digests and opaque study-local identifiers.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "stratadiff_build_sha256", "task_families"],
+  "properties": {
+    "schema": { "const": "stratadiff-reviewer-pilot-task-catalog-v1" },
+    "stratadiff_build_sha256": { "$ref": "#/$defs/sha256" },
+    "task_families": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/task_family" }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "task_family_id": {
+      "type": "string",
+      "pattern": "^task_[0-9a-f]{12}$"
+    },
+    "issue_id": {
+      "type": "string",
+      "pattern": "^issue_[0-9a-f]{16}$"
+    },
+    "file_id": {
+      "type": "string",
+      "pattern": "^file_[0-9a-f]{16}$"
+    },
+    "line_id": {
+      "type": "string",
+      "pattern": "^line_[0-9a-f]{16}$"
+    },
+    "carry_id": {
+      "type": "string",
+      "pattern": "^carry_[0-9a-f]{16}$"
+    },
+    "task_family": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_family_id", "variants"],
+      "properties": {
+        "task_family_id": { "$ref": "#/$defs/task_family_id" },
+        "variants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["a", "b"],
+          "properties": {
+            "a": { "$ref": "#/$defs/task_variant" },
+            "b": { "$ref": "#/$defs/task_variant" }
+          }
+        }
+      }
+    },
+    "task_variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["response_issue_ids", "seeded_issue_ids", "presentations"],
+      "properties": {
+        "response_issue_ids": { "$ref": "#/$defs/issue_ids" },
+        "seeded_issue_ids": { "$ref": "#/$defs/issue_ids" },
+        "presentations": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline", "resume"],
+          "properties": {
+            "baseline": { "$ref": "#/$defs/baseline_presentation" },
+            "resume": { "$ref": "#/$defs/presentation" }
+          }
+        }
+      }
+    },
+    "issue_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/issue_id" }
+    },
+    "baseline_presentation": {
+      "allOf": [
+        { "$ref": "#/$defs/presentation" },
+        { "properties": { "carried_unit_ids": { "maxItems": 0 } } }
+      ]
+    },
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_sha256",
+        "reopened_file_ids",
+        "reopened_line_ids",
+        "carried_unit_ids"
+      ],
+      "properties": {
+        "bundle_sha256": { "$ref": "#/$defs/sha256" },
+        "reopened_file_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/file_id" }
+        },
+        "reopened_line_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100000000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/line_id" }
+        },
+        "carried_unit_ids": {
+          "type": "array",
+          "maxItems": 100000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/carry_id" }
+        }
+      }
+    }
+  }
+}
