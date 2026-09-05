@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ "${1:-}" == review ]]; then
+  printf 'stratadiff' > "${HOME}/review-call.txt"
+  printf ' %s' "$@" >> "${HOME}/review-call.txt"
+  printf '\n' >> "${HOME}/review-call.txt"
+  env | LC_ALL=C sort > "${HOME}/review-environment.txt"
+  exit 0
+fi
+
+printf 'stratadiff' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+printf ' %s' "$@" >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+
+checkpoint=cccccccccccccccccccccccccccccccccccccccc
+case "${1:-}" in
+  github-checkpoint)
+    reviews_path=$2
+    reviews_payload="$(< "${reviews_path}")"
+    [[ " $* " == *" --gh-included-response "* ]]
+    [[ "${reviews_payload}" == 'HTTP/2.0 200 OK'* ]]
+    [[ "${reviews_payload}" == *$'Content-Type: application/json; charset=utf-8\r\n'* ]]
+    if [[ "${reviews_payload}" == *$'\nLink:'* ]]; then
+      printf 'Error: GitHub review count limit exceeded: observed at least 101, limit 100 (pagination Link header present)\n' >&2
+      exit 1
+    fi
+    reviews_payload=${reviews_payload#*$'\r\n\r\n'}
+    [[ "${reviews_payload}" == \[* ]]
+    [[ "${reviews_payload}" == *'"id":101'* ]]
+    [[ "${reviews_payload}" == *'"id":102'* ]]
+    if [[ "${GH_STUB_NO_REVIEW:-false}" != true ]]; then
+      printf '%s\n' "${checkpoint}"
+    fi
+    exit 0
+    ;;
+  github-commit-object)
+    while [[ $# -gt 0 ]]; do
+      if [[ "$1" == --expected ]]; then
+        printf '%s\n' "$2"
+        exit 0
+      fi
+      shift
+    done
+    exit 70
+    ;;
+  *)
+    printf 'unexpected stratadiff invocation: %s\n' "$*" >&2
+    exit 70
+    ;;
+esac

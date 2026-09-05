@@ -15,7 +15,8 @@ treated as oracle labels.
 Audit the pinned checkout before attempting an evaluation:
 
 ```console
-cargo run --release --bin stratadiff-benchmark -- /absolute/path/to/DiffBenchmark
+scripts/build-release.sh --bin stratadiff-benchmark
+target/release/stratadiff-benchmark /absolute/path/to/DiffBenchmark
 ```
 
 The audit is strict by default. At the pinned revision, the literature corpus contains 285 oracle
@@ -32,7 +33,7 @@ oracle edges remain reported but unscored until repository mode exists.
 Materialize the exact before/after revisions without placing third-party sources in this repository:
 
 ```console
-cargo build --locked --release --bin stratadiff-materialize
+scripts/build-release.sh --bin stratadiff-materialize
 target/release/stratadiff-materialize \
   /absolute/path/to/DiffBenchmark \
   /absolute/path/to/materialized \
@@ -53,7 +54,7 @@ Bootstrap the pinned JDT dependencies and run the complete evaluator without `--
 JAVA_HOME=/absolute/path/to/jdk-17 \
   tools/diffbenchmark/jdt/bootstrap.sh /absolute/path/to/jdt-cache
 
-cargo build --locked --release --bin stratadiff-evaluate
+scripts/build-release.sh --bin stratadiff-evaluate
 target/release/stratadiff-evaluate \
   /absolute/path/to/DiffBenchmark \
   /absolute/path/to/materialized \

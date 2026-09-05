@@ -1,0 +1,273 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/github-review-ledger-v1.schema.json",
+  "title": "StrataDiff GitHub review ledger v1",
+  "description": "A deterministic set of HMAC-verified GitHub webhook facts. Each delivery signs its derived-fact digest, and a receiver-signed snapshot binds the complete ledger body. Review dismissals are additive tombstones and never erase immutable review receipts; their provider-supplied commit and submission metadata may be null. The artifact records receiver-verified payload digests; it is not a publicly verifiable GitHub signature or proof of freshness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider_url",
+    "repository",
+    "pull_request",
+    "receiver",
+    "deliveries",
+    "review_receipts",
+    "dismissals",
+    "head_observations",
+    "snapshot"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/github-review-ledger-v1.schema.json"
+    },
+    "provider_url": {
+      "type": "string",
+      "pattern": "^https://[^/]+$"
+    },
+    "repository": { "$ref": "#/$defs/repository" },
+    "pull_request": { "$ref": "#/$defs/pull_request" },
+    "receiver": { "$ref": "#/$defs/receiver" },
+    "deliveries": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/delivery" }
+    },
+    "review_receipts": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/review_receipt" }
+    },
+    "dismissals": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/dismissal" }
+    },
+    "head_observations": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/head_observation" }
+    },
+    "snapshot": { "$ref": "#/$defs/snapshot" }
+  },
+  "$defs": {
+    "positive_id": { "type": "integer", "minimum": 1 },
+    "node_id": { "type": "string", "minLength": 1 },
+    "sha1": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "delivery_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9-]+$"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "node_id", "full_name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/positive_id" },
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "full_name": { "type": "string", "pattern": "^[^/]+/[^/]+$" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "node_id", "number"],
+      "properties": {
+        "id": { "$ref": "#/$defs/positive_id" },
+        "node_id": { "$ref": "#/$defs/node_id" },
+        "number": { "$ref": "#/$defs/positive_id" }
+      }
+    },
+    "receiver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "public_key"],
+      "properties": {
+        "algorithm": { "const": "ed25519" },
+        "key_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9_.:-]+$"
+        },
+        "public_key": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "pull_request_review_dismissed",
+                  "pull_request_synchronize"
+                ]
+              }
+            },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "derived_fact_sha256": { "$ref": "#/$defs/sha256" }
+            }
+          }
+        }
+      ],
+      "required": [
+        "delivery_id",
+        "kind",
+        "received_at",
+        "payload_sha256",
+        "derived_fact_sha256",
+        "receiver_signature"
+      ],
+      "properties": {
+        "delivery_id": { "$ref": "#/$defs/delivery_id" },
+        "kind": {
+          "enum": [
+            "pull_request_review_submitted",
+            "pull_request_review_dismissed",
+            "pull_request_synchronize"
+          ]
+        },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "payload_sha256": { "$ref": "#/$defs/sha256" },
+        "derived_fact_sha256": {
+          "anyOf": [
+            { "$ref": "#/$defs/sha256" },
+            { "type": "null" }
+          ]
+        },
+        "receiver_signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      }
+    },
+    "review_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_id",
+        "review_node_id",
+        "reviewer_id",
+        "reviewer_node_id",
+        "reviewer_login",
+        "state",
+        "commit_id",
+        "submitted_at",
+        "html_url",
+        "author_association",
+        "source_delivery_id",
+        "payload_sha256",
+        "receipt_sha256"
+      ],
+      "properties": {
+        "review_id": { "$ref": "#/$defs/positive_id" },
+        "review_node_id": { "$ref": "#/$defs/node_id" },
+        "reviewer_id": { "$ref": "#/$defs/positive_id" },
+        "reviewer_node_id": { "$ref": "#/$defs/node_id" },
+        "reviewer_login": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["approved", "changes_requested"] },
+        "commit_id": { "$ref": "#/$defs/sha1" },
+        "submitted_at": { "$ref": "#/$defs/timestamp" },
+        "html_url": { "type": "string", "minLength": 1 },
+        "author_association": { "type": "string", "minLength": 1 },
+        "source_delivery_id": { "$ref": "#/$defs/delivery_id" },
+        "payload_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "dismissal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_id",
+        "reviewer_id",
+        "reviewer_node_id",
+        "reviewer_login",
+        "commit_id",
+        "submitted_at",
+        "source_delivery_id",
+        "received_at",
+        "payload_sha256"
+      ],
+      "properties": {
+        "review_id": { "$ref": "#/$defs/positive_id" },
+        "reviewer_id": { "$ref": "#/$defs/positive_id" },
+        "reviewer_node_id": { "$ref": "#/$defs/node_id" },
+        "reviewer_login": { "type": "string", "minLength": 1 },
+        "commit_id": {
+          "anyOf": [
+            { "$ref": "#/$defs/sha1" },
+            { "type": "null" }
+          ]
+        },
+        "submitted_at": {
+          "anyOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "source_delivery_id": { "$ref": "#/$defs/delivery_id" },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "payload_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "head_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "before_commit",
+        "head_commit",
+        "base_commit",
+        "source_delivery_id",
+        "received_at",
+        "payload_sha256"
+      ],
+      "properties": {
+        "before_commit": { "$ref": "#/$defs/sha1" },
+        "head_commit": { "$ref": "#/$defs/sha1" },
+        "base_commit": { "$ref": "#/$defs/sha1" },
+        "source_delivery_id": { "$ref": "#/$defs/delivery_id" },
+        "received_at": { "$ref": "#/$defs/timestamp" },
+        "payload_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "delivery_count",
+        "review_receipt_count",
+        "dismissal_count",
+        "head_observation_count",
+        "body_sha256",
+        "receiver_signature"
+      ],
+      "properties": {
+        "revision": { "type": "integer", "minimum": 1 },
+        "delivery_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "review_receipt_count": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "dismissal_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "head_observation_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "body_sha256": { "$ref": "#/$defs/sha256" },
+        "receiver_signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      }
+    }
+  }
+}

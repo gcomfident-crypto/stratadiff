@@ -76,7 +76,7 @@ python3 benchmarks/resumebench-real-v1/verify.py verify-oracle \
 Evaluate a clean release build and write a provenance-bound result:
 
 ```text
-cargo build --locked --release --bin stratadiff
+scripts/build-release.sh --bin stratadiff
 python3 benchmarks/resumebench-real-v1/verify.py evaluate \
   --repository /absolute/path/to/resumebench-real-v1/repository.git \
   --stratadiff target/release/stratadiff \

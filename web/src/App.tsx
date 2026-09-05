@@ -1,10 +1,11 @@
 import { AlertCircle, LoaderCircle, RefreshCw } from 'lucide-react'
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ByteView } from './components/ByteView'
 import { CodeDiffView } from './components/CodeDiffView'
 import { Header } from './components/Header'
 import { HelpDialog } from './components/HelpDialog'
 import { Inspector } from './components/Inspector'
+import { ReviewCoverageWorkbench } from './components/ReviewCoverageWorkbench'
 import { ReviewWorkbench } from './components/ReviewWorkbench'
 import { Sidebar, type SidebarFilters } from './components/Sidebar'
 import { StructureView } from './components/StructureView'
@@ -28,7 +29,7 @@ function LoadingScreen() {
       <div className="state-mark loading"><LoaderCircle size={24} /></div>
       <span className="eyebrow">LOCAL VERIFIED SESSION</span>
       <h1>Opening evidence workbench</h1>
-      <p>Loading the report and both source snapshots…</p>
+      <p>Loading the verified local session…</p>
     </main>
   )
 }
@@ -40,7 +41,7 @@ function ErrorScreen({ message }: { message: string }) {
       <span className="eyebrow">SESSION UNAVAILABLE</span>
       <h1>Could not open this report</h1>
       <p>{message}</p>
-      <code>stratadiff view &lt;before&gt; &lt;after&gt;<br />stratadiff review &lt;base&gt; &lt;head&gt; --checkpoint &lt;rev&gt; --workbench</code>
+      <code>stratadiff view &lt;before&gt; &lt;after&gt;<br />stratadiff review &lt;base&gt; &lt;head&gt; --checkpoint &lt;rev&gt; --workbench<br />stratadiff review-coverage-view &lt;passport&gt; --trusted-receiver-public-key &lt;key&gt;</code>
       <button type="button" onClick={() => window.location.reload()}><RefreshCw size={15} />Retry</button>
       <small>For safety, this viewer requires the one-time token created by the local StrataDiff server.</small>
     </main>
@@ -111,7 +112,7 @@ function Workbench({ session }: { session: LoadedFileSession }) {
     if (next !== null) selectEvidence(next)
   }
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     function handleKeyDown(event: KeyboardEvent): void {
       const target = event.target
       const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
@@ -240,5 +241,6 @@ export default function App() {
   if (error !== null) return <ErrorScreen message={error} />
   if (session === null) return <LoadingScreen />
   if (session.kind === 'repository_review') return <ReviewWorkbench session={session} />
+  if (session.kind === 'review_coverage_passport') return <ReviewCoverageWorkbench session={session} />
   return <Workbench session={session} />
 }

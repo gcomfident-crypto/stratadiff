@@ -68,7 +68,7 @@ For a result intended for publication or release evidence, build from a clean ch
 the embedded provenance to report both `git_dirty=false` and `build_profile=release`:
 
 ```text
-cargo build --locked --release --bin stratadiff
+scripts/build-release.sh --bin stratadiff
 python3 tools/review-delta-v1/run.py \
   --stratadiff target/release/stratadiff \
   --require-clean \

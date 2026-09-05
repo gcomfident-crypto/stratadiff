@@ -13,8 +13,8 @@ use axum::{
     http::{
         HeaderMap, HeaderValue, StatusCode, Uri,
         header::{
-            CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HOST, REFERRER_POLICY,
-            X_CONTENT_TYPE_OPTIONS,
+            CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HOST,
+            REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
         },
     },
     middleware::{self, Next},
@@ -25,6 +25,7 @@ use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use stratadiff::{
     DiffReport, VerificationLimits,
+    coverage::{MAX_REVIEW_COVERAGE_BYTES, ReviewCoveragePassport},
     review::{
         CheckpointCarryBasis, CheckpointState, RepositoryReview, ReviewBaselineReconstruction,
         ReviewDeltaBaselineBasis, ReviewDeltaFile, ReviewDeltaSource, ReviewFileSources,
@@ -48,12 +49,18 @@ struct ViewerState {
 enum ViewerContent {
     File(FileSession),
     Repository(Box<RepositorySession>),
+    ReviewCoverage(ReviewCoverageSession),
 }
 
 #[derive(Clone)]
 struct FileSession {
     after: Bytes,
     before: Bytes,
+    session_json: Bytes,
+}
+
+struct ReviewCoverageSession {
+    passport_json: Bytes,
     session_json: Bytes,
 }
 
@@ -192,6 +199,41 @@ pub fn serve_review(
     )
 }
 
+pub fn serve_review_coverage(
+    passport: ReviewCoveragePassport,
+    passport_json: Vec<u8>,
+    port: u16,
+    open_browser: bool,
+) -> Result<()> {
+    ensure!(
+        passport_json.len() <= MAX_REVIEW_COVERAGE_BYTES,
+        "review coverage passport bytes limit exceeded: observed {}, limit {MAX_REVIEW_COVERAGE_BYTES}",
+        passport_json.len()
+    );
+    let mut session_json = Vec::new();
+    session_json.extend_from_slice(br#"{"kind":"review_coverage_passport","passport":"#);
+    serde_json::to_writer(&mut session_json, &passport)?;
+    session_json.extend_from_slice(br#", "verification":"#);
+    serde_json::to_writer(
+        &mut session_json,
+        &ViewerVerification {
+            verified: true,
+            message: "The receiver signature and embedded coverage decision were independently recomputed from the exact offline Git objects before this viewer opened.",
+        },
+    )?;
+    session_json.push(b'}');
+
+    serve_content(
+        ViewerContent::ReviewCoverage(ReviewCoverageSession {
+            passport_json: Bytes::from(passport_json),
+            session_json: Bytes::from(session_json),
+        }),
+        "StrataDiff Review Coverage Passport",
+        port,
+        open_browser,
+    )
+}
+
 fn file_session(
     report: DiffReport,
     before: Vec<u8>,
@@ -256,6 +298,7 @@ fn serve_content(
         };
         let app = Router::new()
             .route("/api/session", get(session))
+            .route("/api/passport", get(passport_download))
             .route("/api/source/before", get(before_source))
             .route("/api/source/after", get(after_source))
             .fallback(get(static_asset))
@@ -317,12 +360,43 @@ async fn session(
             }
             None => repository.session_json.clone(),
         },
+        ViewerContent::ReviewCoverage(coverage) => {
+            if query.file.is_some() {
+                return plain_response(StatusCode::NOT_FOUND, "Not found");
+            }
+            coverage.session_json.clone()
+        }
     };
     response(
         StatusCode::OK,
         "application/json; charset=utf-8",
         Body::from(session_json),
     )
+}
+
+async fn passport_download(
+    State(state): State<ViewerState>,
+    headers: HeaderMap,
+    Query(query): Query<SessionQuery>,
+) -> Response {
+    if !request_host_is_valid(&headers, &state)
+        || !tokens_match(&query.token, &state.token)
+        || query.file.is_some()
+    {
+        return plain_response(StatusCode::NOT_FOUND, "Not found");
+    }
+    let ViewerContent::ReviewCoverage(coverage) = state.content.as_ref() else {
+        return plain_response(StatusCode::NOT_FOUND, "Not found");
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "application/json; charset=utf-8")
+        .header(
+            CONTENT_DISPOSITION,
+            "attachment; filename=review-coverage-passport.json",
+        )
+        .body(Body::from(coverage.passport_json.clone()))
+        .expect("static passport response metadata is valid")
 }
 
 async fn before_source(
@@ -387,6 +461,9 @@ async fn source_response(
                 SourceSide::Before => Bytes::copy_from_slice(&file.sources.before),
                 SourceSide::After => Bytes::copy_from_slice(&file.sources.after),
             }
+        }
+        ViewerContent::ReviewCoverage(_) => {
+            return plain_response(StatusCode::NOT_FOUND, "Not found");
         }
     };
     response(
@@ -559,6 +636,7 @@ fn content_type(path: &str) -> &'static str {
         Some("html") => "text/html; charset=utf-8",
         Some("js") | Some("mjs") => "text/javascript; charset=utf-8",
         Some("json") | Some("map") => "application/json; charset=utf-8",
+        Some("txt") => "text/plain; charset=utf-8",
         Some("png") => "image/png",
         Some("svg") => "image/svg+xml",
         Some("woff") => "font/woff",
@@ -616,7 +694,7 @@ fn launch_browser(_url: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{content_type, session_token, tokens_match};
+    use super::{WebAssets, content_type, session_token, tokens_match};
 
     #[test]
     fn session_tokens_are_full_length_and_compared_without_an_early_byte_exit() {
@@ -634,6 +712,20 @@ mod tests {
             content_type("assets/app.js"),
             "text/javascript; charset=utf-8"
         );
+        assert_eq!(
+            content_type("THIRD_PARTY_NOTICES.txt"),
+            "text/plain; charset=utf-8"
+        );
         assert_eq!(content_type("asset.bin"), "application/octet-stream");
+    }
+
+    #[test]
+    fn third_party_notices_are_embedded() {
+        let asset = <WebAssets as rust_embed::RustEmbed>::get("THIRD_PARTY_NOTICES.txt")
+            .expect("production dependency notices must be embedded");
+        let notices = std::str::from_utf8(asset.data.as_ref()).unwrap();
+        assert!(notices.starts_with("StrataDiff Evidence Workbench Third-Party Notices\n"));
+        assert!(notices.contains("\nreact@"));
+        assert!(notices.contains("\nlucide-react@"));
     }
 }

@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+[[ -z "${GH_TOKEN+x}" ]]
+[[ -z "${GITHUB_TOKEN+x}" ]]
+[[ -z "${GH_ENTERPRISE_TOKEN+x}" ]]
+[[ -z "${STRATADIFF_GITHUB_TOKEN+x}" ]]
+[[ -z "${github_token+x}" ]]
+[[ -z "${git_authorization+x}" ]]
+[[ "${GIT_NO_LAZY_FETCH:-}" == 1 ]]
+[[ "${GIT_NO_REPLACE_OBJECTS:-}" == 1 ]]
+
+printf 'git' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+printf ' %s' "$@" >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+
+base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+checkpoint=cccccccccccccccccccccccccccccccccccccccc
+arguments=" $* "
+
+is_missing_locally() {
+  local object_id=$1
+  if [[ -f "${GH_STUB_STATE}/local-${object_id}" ]]; then
+    return 1
+  fi
+  case "${object_id}" in
+    "${base}") [[ "${GH_STUB_MISSING_BASE:-false}" == true ]] ;;
+    "${head}") [[ "${GH_STUB_MISSING_HEAD:-false}" == true ]] ;;
+    "${checkpoint}") [[ "${GH_STUB_MISSING_CHECKPOINT:-false}" == true ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+if [[ "${arguments}" == *" rev-parse --show-toplevel "* ]]; then
+  printf '%s\n' "${GH_STUB_REPOSITORY_DIRECTORY}"
+elif [[ "${arguments}" == *" cat-file -e "* ]]; then
+  object=${!#}
+  object=${object%\^\{commit\}}
+  ! is_missing_locally "${object}"
+elif [[ "${arguments}" == *" init --bare --quiet "* ]]; then
+  mkdir -p "${!#}"
+elif [[ "${arguments}" == *" fetch "* && "${arguments}" == *" https://github.com/acme/widget.git "* ]]; then
+  [[ "${HOME}" == */provider-home ]]
+  [[ "${GIT_CONFIG_VALUE_1:-}" == "AUTHORIZATION: basic "* ]]
+  [[ "${GIT_CONFIG_VALUE_2:-}" == false ]]
+  [[ "${GIT_CONFIG_VALUE_5:-}" == never ]]
+  [[ "${GIT_CONFIG_VALUE_6:-}" == always ]]
+  [[ "${GIT_CONFIG_VALUE_7:-}" == never ]]
+  [[ "${GIT_CONFIG_VALUE_9:-}" == true ]]
+  refspec=${!#}
+  object=${refspec%%:*}
+  if [[ "${GH_STUB_FETCH_MISSING_CHECKPOINT:-false}" == true && "${object}" == "${checkpoint}" ]]; then
+    exit 1
+  fi
+  printf '%s\n' "${object}" > "${GH_STUB_STATE}/provider-${object}"
+elif [[ "${arguments}" == *" show-ref --verify --quiet refs/stratadiff/resume/"* ]]; then
+  exit 1
+elif [[ "${arguments}" == *" ls-remote --get-url "* ]]; then
+  printf '%s\n' "${!#}"
+elif [[ "${arguments}" == *" fetch-pack --no-progress "* && "${arguments}" == *"/provider.git "* ]]; then
+  [[ -z "${GIT_CONFIG_VALUE_0:-}" ]]
+  [[ -z "${GIT_CONFIG_VALUE_1:-}" ]]
+  [[ "${GIT_CONFIG_VALUE_2:-}" == never ]]
+  [[ "${GIT_CONFIG_VALUE_3:-}" == always ]]
+  [[ "${GIT_CONFIG_VALUE_4:-}" == never ]]
+  [[ "${GIT_CONFIG_VALUE_5:-}" == true ]]
+  [[ "${GIT_CONFIG_VALUE_6:-}" == true ]]
+  provider_ref=${!#}
+  provider_name=${provider_ref##*/}
+  object=${provider_name#*-}
+  [[ -f "${GH_STUB_STATE}/provider-${object}" ]]
+  if [[ "${GH_STUB_LOCAL_IMPORT_FAIL:-false}" == true ]]; then
+    exit 1
+  fi
+  : > "${GH_STUB_STATE}/local-${object}"
+  if [[ "${GH_STUB_FETCH_PACK_WRONG_RECORD:-false}" == true ]]; then
+    printf '%s %s\n' dddddddddddddddddddddddddddddddddddddddd "${provider_ref}"
+  elif [[ "${GH_STUB_FETCH_PACK_EXTRA_RECORD:-false}" == true ]]; then
+    printf '%s %s\n%s %s\n' "${object}" "${provider_ref}" "${object}" refs/unexpected
+  else
+    printf '%s %s\n' "${object}" "${provider_ref}"
+  fi
+elif [[ "${arguments}" == *" update-ref --no-deref refs/stratadiff/resume/"* ]]; then
+  imported_ref=$5
+  object=$6
+  [[ $# -eq 7 && -z "$7" ]]
+  if [[ "${GH_STUB_UPDATE_REF_COLLISION:-false}" == true ]]; then
+    : > "${GH_STUB_STATE}/colliding-ref"
+    exit 1
+  fi
+  ref_name=${imported_ref##*/}
+  : > "${GH_STUB_STATE}/ref-${ref_name}"
+elif [[ "${arguments}" == *" update-ref --no-deref -d refs/stratadiff/resume/"* ]]; then
+  imported_ref=$6
+  expected=$7
+  ref_name=${imported_ref##*/}
+  case "${ref_name}" in
+    base) [[ "${expected}" == "${base}" ]] ;;
+    head) [[ "${expected}" == "${head}" ]] ;;
+    checkpoint) [[ "${expected}" == "${checkpoint}" ]] ;;
+    *) exit 70 ;;
+  esac
+  rm -- "${GH_STUB_STATE}/ref-${ref_name}"
+elif [[ "${arguments}" == *" rev-parse --verify "* ]]; then
+  object=${!#}
+  if [[ "${object}" == refs/stratadiff/provider/* ]]; then
+    provider_name=${object#refs/stratadiff/provider/}
+    provider_name=${provider_name%\^\{commit\}}
+    printf '%s\n' "${provider_name#*-}"
+  elif [[ "${object}" == refs/stratadiff/resume/* ]]; then
+    ref_name=${object%\^\{commit\}}
+    ref_name=${ref_name##*/}
+    [[ -f "${GH_STUB_STATE}/ref-${ref_name}" ]]
+    case "${ref_name}" in
+      base) printf '%s\n' "${base}" ;;
+      head) printf '%s\n' "${head}" ;;
+      checkpoint) printf '%s\n' "${checkpoint}" ;;
+      *) exit 70 ;;
+    esac
+  else
+    printf '%s\n' "${object%\^\{commit\}}"
+  fi
+else
+  printf 'unexpected git invocation: %s\n' "$*" >&2
+  exit 70
+fi

@@ -8,10 +8,9 @@ target_directory="${RUNNER_TEMP}/stratadiff-target"
 case "${STRATADIFF_ACTION_PHASE:-review}" in
   build)
     unset STRATADIFF_GITHUB_TOKEN github_token git_authorization
-    (
-      cd -- "${GITHUB_ACTION_PATH}"
-      cargo build --release --locked --manifest-path Cargo.toml --target-dir "${target_directory}"
-    )
+    "${GITHUB_ACTION_PATH}/scripts/build-release.sh" \
+      --bin stratadiff \
+      --target-dir "${target_directory}"
     exit 0
     ;;
   review) ;;

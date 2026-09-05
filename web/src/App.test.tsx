@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { repositorySessionFixture, sessionFixture } from './test/fixture'
+import { repositorySessionFixture, reviewCoverageSessionFixture, sessionFixture } from './test/fixture'
 
 vi.mock('@pierre/diffs/react', () => ({
   MultiFileDiff: ({ oldFile, newFile }: { oldFile: { contents: string }; newFile: { contents: string } }) => (
@@ -98,6 +98,7 @@ describe('Evidence Workbench', () => {
 
     fireEvent.keyDown(window, { key: '2' })
 
+    expect(await screen.findByText('Relations')).toBeInTheDocument()
     await waitFor(() => expect(stage.scrollTop).toBe(500))
   })
 
@@ -353,5 +354,49 @@ describe('Evidence Workbench', () => {
     fireEvent.keyDown(drawer, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Selected file details' })).not.toBeInTheDocument())
     await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('renders an offline-verified owner coverage passport without source code', async () => {
+    const payload = reviewCoverageSessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+    render(<App />)
+
+    expect(await screen.findByText('Gate FAILED')).toBeInTheDocument()
+    const summary = within(screen.getByLabelText('Coverage summary'))
+    expect(summary.getByText('Covered').nextElementSibling).toHaveTextContent('1')
+    expect(summary.getByText('Needs review').nextElementSibling).toHaveTextContent('1')
+    expect(summary.getByText('Blocked').nextElementSibling).toHaveTextContent('2')
+    expect(summary.getByText('Retired').nextElementSibling).toHaveTextContent('1')
+    expect(summary.getByText('Unresolved').nextElementSibling).toHaveTextContent('1')
+    expect(screen.getByText('.github/CODEOWNERS')).toBeInTheDocument()
+    expect(screen.getByText('@acme/payments')).toBeInTheDocument()
+    expect(screen.getByText('@acme/security')).toBeInTheDocument()
+    expect(screen.getByText(/does not have write permission/)).toBeInTheDocument()
+    expect(screen.getByText('git-bytes:%FF.ts')).toBeInTheDocument()
+    expect(screen.getByText(/does not create, restore, or replace GitHub approval/)).toBeInTheDocument()
+    expect(screen.getByText(/No source code is served by this view/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Download passport' })).toHaveAttribute(
+      'href',
+      '/api/passport?token=test-token',
+    )
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('filters the passport matrix by coverage state and owner', async () => {
+    const payload = reviewCoverageSessionFixture()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+    render(<App />)
+    await screen.findByText('Gate FAILED')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Covered' }))
+    expect(screen.getByText('security/policy.ts')).toBeInTheDocument()
+    expect(screen.queryByText('payments/charge.ts')).not.toBeInTheDocument()
+    expect(screen.queryByText('Unresolved retired residue')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'All requirements' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search paths or owners' }), { target: { value: '@acme/payments' } })
+    expect(screen.getByText('payments/charge.ts')).toBeInTheDocument()
+    expect(screen.queryByText('security/policy.ts')).not.toBeInTheDocument()
   })
 })

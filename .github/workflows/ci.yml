@@ -22,10 +22,14 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci
         working-directory: web
+      - run: npm run notices:check
+        working-directory: web
       - run: npm test
         working-directory: web
       - run: npm run build
         working-directory: web
+      - name: Check embedded third-party notices
+        run: cmp web/public/THIRD_PARTY_NOTICES.txt web/dist/THIRD_PARTY_NOTICES.txt
       - name: Check committed production build
         run: |
           if [[ -n "$(git status --porcelain --untracked-files=all -- web/dist)" ]]; then

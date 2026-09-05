@@ -316,7 +316,121 @@ export interface RepositorySessionPayload {
   }
 }
 
-export type SessionPayload = FileSessionPayload | RepositorySessionPayload
+export type CoverageState = 'covered' | 'needs_review' | 'blocked'
+export type CoverageScope = 'current_change' | 'retired_residue'
+
+export type CodeownerIdentity =
+  | { kind: 'user'; login: string }
+  | { kind: 'team'; organization: string; slug: string }
+  | { kind: 'email'; address: string }
+
+export interface CoverageChangeIdentity {
+  status: FileStatus
+  similarity_percent?: number
+  before_path?: string
+  before_path_encoding?: 'utf8' | 'git_bytes_percent_encoded'
+  after_path?: string
+  after_path_encoding?: 'utf8' | 'git_bytes_percent_encoded'
+  before_mode?: string
+  after_mode?: string
+  before_blob?: string
+  after_blob?: string
+}
+
+export interface CodeownersRuleMatch {
+  line: number
+  pattern: string
+  owner_alternatives: CodeownerIdentity[]
+}
+
+export interface OwnerCoverage {
+  owner: CodeownerIdentity
+  eligible_reviewer_ids: number[]
+  active_review_ids: number[]
+  covering_review_ids: number[]
+  blockers: string[]
+}
+
+export interface FileCoverage {
+  scope: CoverageScope
+  change: CoverageChangeIdentity
+  path: string
+  path_encoding: 'utf8' | 'git_bytes_percent_encoded'
+  matching_rule?: CodeownersRuleMatch
+  owner_alternatives: OwnerCoverage[]
+  state: CoverageState
+  reason: string
+}
+
+export interface UnresolvedCoverage {
+  checkpoint_commit: string
+  path: string
+  path_encoding: 'utf8' | 'git_bytes_percent_encoded'
+  reason: string
+}
+
+export interface ReviewCoverageSummary {
+  current_files: number
+  retired_residue_files: number
+  unresolved_residue: number
+  total_requirements: number
+  covered_files: number
+  needs_review_files: number
+  blocked_files: number
+  active_review_receipts: number
+  unique_checkpoint_proofs: number
+  gate_passed: boolean
+}
+
+export interface ReviewCoveragePassport {
+  schema: 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-coverage-v1.schema.json'
+  body: {
+    engine_version: string
+    protected_base_commit: string
+    merge_base_commit: string
+    head_commit: string
+    codeowners_source?: {
+      base_commit: string
+      path: '.github/CODEOWNERS' | 'CODEOWNERS' | 'docs/CODEOWNERS'
+      blob_oid: string
+      byte_len: number
+      blake3: string
+    }
+    ledger: {
+      provider_url: string
+      repository: { id: number; node_id: string; full_name: string }
+      pull_request: { id: number; node_id: string; number: number }
+      receiver: { algorithm: 'ed25519'; key_id: string; public_key: string }
+      review_receipts: unknown[]
+      dismissals: unknown[]
+    }
+    ownership: {
+      provider_url: string
+      repository_id: number
+      base_commit: string
+      observed_at: string
+    }
+    checkpoint_proofs: unknown[]
+    files: FileCoverage[]
+    unresolved_residue: UnresolvedCoverage[]
+    summary: ReviewCoverageSummary
+    non_claims: string[]
+  }
+  attestation: {
+    algorithm: 'ed25519'
+    key_id: string
+    body_sha256: string
+    signature: string
+  }
+}
+
+export interface ReviewCoverageSessionPayload {
+  kind: 'review_coverage_passport'
+  passport: ReviewCoveragePassport
+  verification: VerificationResult
+}
+
+export type SessionPayload = FileSessionPayload | RepositorySessionPayload | ReviewCoverageSessionPayload
 
 export type EvidenceSelection =
   | { type: 'change'; index: number }
@@ -335,4 +449,4 @@ export interface LoadedFileSession extends FileSessionPayload {
   decodedAfter: DecodedArtifact
 }
 
-export type LoadedSession = LoadedFileSession | RepositorySessionPayload
+export type LoadedSession = LoadedFileSession | RepositorySessionPayload | ReviewCoverageSessionPayload

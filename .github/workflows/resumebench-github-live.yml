@@ -26,7 +26,7 @@ jobs:
           python3 tools/resumebench-github-live/resumebench_github_live.py self-test
           python3 tools/resumebench-github-live/resumebench_github_live.py verify-bundle \
             --manifest benchmarks/resumebench-github-live-v1/manifest.json
-      - run: cargo build --locked --release --bin stratadiff
+      - run: scripts/build-release.sh --bin stratadiff
       - name: Verify live GitHub provenance
         env:
           GITHUB_TOKEN: ${{ github.token }}

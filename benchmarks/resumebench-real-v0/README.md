@@ -89,7 +89,7 @@ Run StrataDiff against the frozen oracle from a clean checkout so the evaluator 
 result to an exact source revision:
 
 ```text
-cargo build --locked --release --bin stratadiff
+scripts/build-release.sh --bin stratadiff
 python3 tools/resumebench-real/resumebench_real.py evaluate \
   --manifest benchmarks/resumebench-real-v0/manifest.json \
   --repository /absolute/path/to/resumebench-real-v0/repository.git \
@@ -101,7 +101,9 @@ The evaluator reports false carry, false invalidation, identity omissions/extras
 mismatches, and fail-closed behavior. It also records the exact binary digest plus the embedded Git
 revision, dirty state, Cargo.lock digest, build profile, and Rust compiler version from
 `stratadiff build-info`. `benchmark_complete=true` requires every frozen case to run and pass using
-a clean release build with complete engine provenance.
+a clean release build with complete engine provenance. These fields describe that historical
+release; its Cargo.lock digest is deliberately not compared with the evolving checkout. A current
+engine requires a newly generated evaluation artifact rather than relabeling this frozen result.
 
 ## Claim boundary and licensing
 

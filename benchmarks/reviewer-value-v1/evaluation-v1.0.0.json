@@ -1,0 +1,99 @@
+{
+  "cases": [
+    {
+      "current_files_carried": 0,
+      "current_files_needing_review": 9,
+      "current_pr_files": 9,
+      "current_recheck_reduction_basis_points": 0,
+      "exact_resume_queue_items": 61,
+      "id": "github-posthog-posthog-pr95077-review5117951817",
+      "naive_extra_paths": 1650,
+      "naive_missing_current_paths": 1,
+      "naive_snapshot_paths": 1658,
+      "retired_residue_files": 52,
+      "snapshot_path_count_minus_exact_queue": 1597
+    },
+    {
+      "current_files_carried": 25,
+      "current_files_needing_review": 1,
+      "current_pr_files": 26,
+      "current_recheck_reduction_basis_points": 9615,
+      "exact_resume_queue_items": 3,
+      "id": "github-opensearch-project-agent-health-pr481-review5118041097",
+      "naive_extra_paths": 79,
+      "naive_missing_current_paths": 21,
+      "naive_snapshot_paths": 84,
+      "retired_residue_files": 2,
+      "snapshot_path_count_minus_exact_queue": 81
+    },
+    {
+      "current_files_carried": 1,
+      "current_files_needing_review": 2,
+      "current_pr_files": 3,
+      "current_recheck_reduction_basis_points": 3333,
+      "exact_resume_queue_items": 4,
+      "id": "github-jellyfin-jellyfin-kodi-pr1178-review5118549415",
+      "naive_extra_paths": 72,
+      "naive_missing_current_paths": 0,
+      "naive_snapshot_paths": 75,
+      "retired_residue_files": 2,
+      "snapshot_path_count_minus_exact_queue": 71
+    },
+    {
+      "current_files_carried": 3,
+      "current_files_needing_review": 2,
+      "current_pr_files": 5,
+      "current_recheck_reduction_basis_points": 6000,
+      "exact_resume_queue_items": 4,
+      "id": "github-beetbox-beets-pr6990-review5111747101",
+      "naive_extra_paths": 7,
+      "naive_missing_current_paths": 2,
+      "naive_snapshot_paths": 10,
+      "retired_residue_files": 2,
+      "snapshot_path_count_minus_exact_queue": 6
+    },
+    {
+      "current_files_carried": 0,
+      "current_files_needing_review": 4,
+      "current_pr_files": 4,
+      "current_recheck_reduction_basis_points": 0,
+      "exact_resume_queue_items": 13,
+      "id": "github-astral-sh-ruff-pr28311-review5116550397",
+      "naive_extra_paths": 7,
+      "naive_missing_current_paths": 0,
+      "naive_snapshot_paths": 11,
+      "retired_residue_files": 9,
+      "snapshot_path_count_minus_exact_queue": -2
+    }
+  ],
+  "claim_boundary": {
+    "defect_recall_measured": false,
+    "human_time_savings_measured": false,
+    "measures": "deterministic file-level review-surface counts",
+    "population_estimates_supported": false,
+    "sample": "five purposefully selected public GitHub force-push histories"
+  },
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-reviewer-value-evaluation-v1",
+  "source": {
+    "dataset_version": "1.0.0",
+    "schema": "stratadiff-resumebench-github-live-evaluation-v1",
+    "sha256": "b0932eb6449fd592dae58cb4f5cbe5b1cfe336a6308c5b4205f24bc4c57560b3"
+  },
+  "summary": {
+    "cases": 5,
+    "cases_with_current_carry": 3,
+    "cases_with_no_current_carry": 2,
+    "current_files_carried": 29,
+    "current_files_needing_review": 18,
+    "current_pr_files": 47,
+    "current_recheck_reduction_basis_points": 6170,
+    "exact_resume_queue_items": 85,
+    "naive_extra_paths": 1815,
+    "naive_missing_current_paths": 24,
+    "naive_snapshot_paths": 1838,
+    "retired_residue_files": 67,
+    "snapshot_path_count_minus_exact_queue": 1753,
+    "snapshot_path_count_reduction_basis_points": 9538
+  }
+}

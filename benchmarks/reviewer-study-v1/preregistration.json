@@ -1,0 +1,51 @@
+{
+  "schema": "stratadiff-reviewer-study-preregistration-v1",
+  "protocol_version": "1.0.0",
+  "design": {
+    "assignment": "randomized_counterbalanced_within_reviewer_matched_task_pairs",
+    "unit_of_analysis": "completed_baseline_resume_pair",
+    "primary_population": "all_schema_valid_complete_pairs_locked_before_analysis",
+    "follow_up_window_days": 28,
+    "counterbalance": {
+      "cell_definition": "assignment_order_crossed_with_baseline_variant",
+      "global_max_cell_count_difference": 1,
+      "participant_max_cell_count_difference": 1,
+      "task_family_max_cell_count_difference": 1,
+      "minimum_observations_per_task_family": 4,
+      "participant_task_family_reuse": "forbidden"
+    }
+  },
+  "minimums": {
+    "eligible_pairs": 100,
+    "unique_participants": 20,
+    "adjudicated_carry_units": 1
+  },
+  "gates": {
+    "median_completion_reduction_basis_points": 2000,
+    "median_reopened_files_reduction_basis_points": 4000,
+    "issue_recall_noninferiority_margin_basis_points": 0,
+    "maximum_confirmed_false_carries": 0,
+    "repeat_use_rate_basis_points": 5000
+  },
+  "analysis": {
+    "completion_and_reopen_reduction": "paired integer basis points rounded half away from zero, then median with the same rounding rule",
+    "issue_recall": "micro_average issues_found divided by seeded_issues within each arm",
+    "false_carry_unit": "carried_file_change",
+    "reopened_lines_role": "exploratory_paired_endpoint",
+    "missing_data": "no imputation; an incomplete required field invalidates the locked dataset"
+  },
+  "privacy": {
+    "identifier_policy": "random study-local opaque identifiers",
+    "prohibited_fields": [
+      "name",
+      "email",
+      "github_login",
+      "repository",
+      "pull_request_url",
+      "issue_text",
+      "code",
+      "free_text"
+    ],
+    "retained_granularity": "pair-level counts and participant-level repeat-use booleans only"
+  }
+}
