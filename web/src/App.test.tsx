@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { repositorySessionFixture, sessionFixture } from './test/fixture'
@@ -35,6 +35,7 @@ describe('Evidence Workbench', () => {
   })
 
   afterEach(() => {
+    cleanup()
     vi.unstubAllGlobals()
     delete (HTMLElement.prototype as { scrollIntoView?: typeof HTMLElement.prototype.scrollIntoView }).scrollIntoView
   })
@@ -69,7 +70,7 @@ describe('Evidence Workbench', () => {
 
   it('switches all three evidence layers from the keyboard', async () => {
     render(<App />)
-    await screen.findByText('Evidence Workbench')
+    await screen.findByTestId('rendered-diff')
 
     fireEvent.keyDown(window, { key: '2' })
     expect(await screen.findByText('Relations')).toBeInTheDocument()
@@ -91,7 +92,7 @@ describe('Evidence Workbench', () => {
       }),
     })
     render(<App />)
-    await screen.findByText('Evidence Workbench')
+    await screen.findByTestId('rendered-diff')
     const stage = screen.getByRole('tabpanel')
     stage.scrollTop = 250
 
@@ -102,7 +103,7 @@ describe('Evidence Workbench', () => {
 
   it('keeps Code visible while navigating every evidence type', async () => {
     render(<App />)
-    await screen.findByText('Evidence Workbench')
+    await screen.findByTestId('rendered-diff')
 
     fireEvent.keyDown(window, { key: 'j' })
     fireEvent.keyDown(window, { key: 'j' })
