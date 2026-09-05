@@ -25,13 +25,20 @@ OID_B = "b" * 40
 OID_C = "c" * 40
 
 
-def actor(typename, identity):
+def actor(typename, identity, case_id="github-acme-widgets-pr-7"):
     return {
         "typename": typename,
         "actor_key": None
         if identity is None
-        else census.opaque_actor_key("github-acme-widgets-pr-7", identity),
+        else census.opaque_actor_key(case_id, identity),
     }
+
+
+def raw_actor(typename, login, node_id=None):
+    value = {"__typename": typename, "login": login}
+    if node_id is not None:
+        value["id"] = node_id
+    return value
 
 
 def review(review_id, database_id, state, submitted_at, author, commit_oid, comment_count=0):
@@ -72,7 +79,9 @@ def capture_case(
             "last_commit_oid": head_oid,
             "commit_count": 3,
             "head_matches_last_commit": None if head_oid is None else True,
-            "author": None if pr_author is None else actor("User", pr_author),
+            "author": None
+            if pr_author is None
+            else actor("User", pr_author, f"github-acme-widgets-pr-{number}"),
         },
         "reviews": reviews,
         "timeline_events": events,
@@ -376,7 +385,17 @@ class AuditTest(unittest.TestCase):
         "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
     }
 
-    def build_report(self, cases):
+    def identities(self, *reviewers):
+        identities = census.AuditIdentityRegistry()
+        for number, login, node_id in reviewers:
+            identities.record(
+                raw_actor("User", login, node_id),
+                f"PR #{number} reviewer",
+                f"github-acme-widgets-pr-{number}",
+            )
+        return identities
+
+    def build_report(self, cases, identities):
         return census.build_review_memory_audit(
             "acme/widgets",
             "ghe.example",
@@ -385,6 +404,7 @@ class AuditTest(unittest.TestCase):
             50,
             len(cases),
             cases,
+            identities,
             self.acquisition,
             "2026-09-05T00:00:00Z",
         )
@@ -428,7 +448,7 @@ class AuditTest(unittest.TestCase):
             def acquisition(self):
                 return AuditTest.acquisition
 
-        def captured(_api, _owner, _name, number):
+        def captured(_api, _owner, _name, number, _identities):
             merged_at = next(
                 candidate["merged_at"]
                 for candidate in candidates
@@ -438,7 +458,9 @@ class AuditTest(unittest.TestCase):
 
         with mock.patch.object(
             census, "search_repository_candidates", return_value=candidates
-        ), mock.patch.object(census, "capture_pull_request", side_effect=captured) as capture:
+        ), mock.patch.object(
+            census, "capture_audit_pull_request", side_effect=captured
+        ) as capture:
             report = census.collect_review_memory_audit(
                 FakeApi(),
                 "acme/widgets",
@@ -468,7 +490,7 @@ class AuditTest(unittest.TestCase):
             census, "search_repository_candidates", return_value=candidates
         ), mock.patch.object(
             census,
-            "capture_pull_request",
+            "capture_audit_pull_request",
             side_effect=census.CensusError("capture failed"),
         ):
             with self.assertRaisesRegex(census.CensusError, "capture failed"):
@@ -482,7 +504,9 @@ class AuditTest(unittest.TestCase):
                 )
 
     def test_report_contract_metrics_findings_and_privacy(self):
-        report = self.build_report([self.classified()])
+        report = self.build_report(
+            [self.classified()], self.identities((7, "bob", "U_bob"))
+        )
         self.assertEqual(
             set(report),
             {
@@ -498,7 +522,7 @@ class AuditTest(unittest.TestCase):
                 "findings",
             },
         )
-        self.assertEqual(report["schema"], "stratadiff-review-memory-audit-v1")
+        self.assertEqual(report["schema"], "stratadiff-review-memory-audit-v2")
         self.assertEqual(report["tool_version"], census.AUDIT_TOOL_VERSION)
         self.assertEqual(
             report["scope"]["selection"],
@@ -524,12 +548,12 @@ class AuditTest(unittest.TestCase):
         finding = report["findings"][0]
         self.assertEqual(finding["url"], "https://ghe.example/acme/widgets/pull/7")
         self.assertEqual(len(finding["drifted_reviewers"]), 1)
-        self.assertEqual(
-            finding["drifted_reviewers"][0]["reviewer_key"],
-            actor("User", "bob")["actor_key"],
-        )
+        reviewer = finding["drifted_reviewers"][0]
+        self.assertEqual(reviewer["login"], "bob")
+        self.assertEqual(reviewer["node_id"], "U_bob")
+        self.assertNotIn("reviewer_key", reviewer)
         encoded = census.canonical_json(report).decode("utf-8")
-        self.assertNotIn("bob", encoded)
+        self.assertIn('"login": "bob"', encoded)
         self.assertNotIn("review-1", encoded)
         self.assertEqual(
             report["privacy"],
@@ -538,16 +562,148 @@ class AuditTest(unittest.TestCase):
                 "pr_text_collected": False,
                 "review_text_collected": False,
                 "commit_messages_collected": False,
-                "logins_persisted": False,
-                "actor_identity": "pr_local_opaque_key",
+                "logins_persisted": True,
+                "actor_identity": "github_user_node_id_and_login",
             },
         )
 
+    def test_reviewer_identity_is_stable_across_pull_requests(self):
+        cases = []
+        for number in (7, 8):
+            case_id = f"github-acme-widgets-pr-{number}"
+            cases.append(
+                census.classify_case(
+                    capture_case(
+                        [
+                            review(
+                                f"review-{number}",
+                                number,
+                                "APPROVED",
+                                f"2026-08-0{number - 6}T01:00:00Z",
+                                actor("User", "bob", case_id),
+                                OID_A,
+                            )
+                        ],
+                        [],
+                        number=number,
+                        merged_at=f"2026-08-0{number - 6}T06:00:00Z",
+                    )
+                )
+            )
+        self.assertNotEqual(
+            cases[0]["reviewer_pairs"][0]["reviewer_key"],
+            cases[1]["reviewer_pairs"][0]["reviewer_key"],
+        )
+        report = self.build_report(
+            cases,
+            self.identities((7, "bob", "U_bob"), (8, "bob", "U_bob")),
+        )
+        reviewers = [
+            finding["drifted_reviewers"][0] for finding in report["findings"]
+        ]
+        self.assertEqual(
+            [(reviewer["login"], reviewer["node_id"]) for reviewer in reviewers],
+            [("bob", "U_bob"), ("bob", "U_bob")],
+        )
+
+    def test_missing_reviewer_identity_fails_closed(self):
+        with self.assertRaisesRegex(census.CensusError, "identity is unavailable"):
+            self.build_report([self.classified()], self.identities())
+        with self.assertRaisesRegex(census.CensusError, "id is required"):
+            self.identities().record(
+                raw_actor("User", "bob"),
+                "review.author",
+                "github-acme-widgets-pr-7",
+            )
+
+    def test_conflicting_reviewer_identity_fails_closed(self):
+        identities = self.identities((7, "bob", "U_bob"))
+        with self.assertRaisesRegex(census.CensusError, "conflicting logins"):
+            identities.record(
+                raw_actor("User", "alice", "U_bob"),
+                "review.author",
+                "github-acme-widgets-pr-8",
+            )
+
+        identities = self.identities((7, "bob", "U_bob"))
+        with self.assertRaisesRegex(census.CensusError, "conflicting node IDs"):
+            identities.record(
+                raw_actor("User", "bob", "U_other"),
+                "review.author",
+                "github-acme-widgets-pr-8",
+            )
+
+        identities = census.AuditIdentityRegistry()
+        identities.record_review(
+            {"id": "PRR_1", "author": raw_actor("User", "bob", "U_bob")},
+            "reviews[0]",
+            "github-acme-widgets-pr-7",
+        )
+        with self.assertRaisesRegex(census.CensusError, "conflicting author identity"):
+            identities.record_review(
+                {
+                    "id": "PRR_1",
+                    "author": raw_actor("User", "alice", "U_alice"),
+                },
+                "timeline_events[0].review",
+                "github-acme-widgets-pr-7",
+            )
+
+    def test_audit_queries_request_stable_user_node_ids(self):
+        for query in (
+            census.CAPTURE_QUERY,
+            census.REVIEWS_PAGE_QUERY,
+            census.TIMELINE_PAGE_QUERY,
+        ):
+            with self.subTest(query=query.splitlines()[1]):
+                self.assertNotIn("... on User { id }", query)
+        for query in (
+            census.AUDIT_CAPTURE_QUERY,
+            census.AUDIT_REVIEWS_PAGE_QUERY,
+            census.AUDIT_TIMELINE_PAGE_QUERY,
+        ):
+            with self.subTest(query=query.splitlines()[1]):
+                self.assertIn("author { __typename login ... on User { id } }", query)
+
+    def test_capture_paths_dispatch_to_distinct_query_families(self):
+        api = object()
+        identities = census.AuditIdentityRegistry()
+        with mock.patch.object(
+            census, "capture_pull_request_with_queries", return_value={}
+        ) as capture:
+            census.capture_pull_request(api, "acme", "widgets", 7)
+            self.assertEqual(
+                capture.call_args.args[4:7],
+                (
+                    census.CAPTURE_QUERY,
+                    census.REVIEWS_PAGE_QUERY,
+                    census.TIMELINE_PAGE_QUERY,
+                ),
+            )
+            self.assertIsNone(capture.call_args.args[7])
+
+            census.capture_audit_pull_request(
+                api, "acme", "widgets", 7, identities
+            )
+            self.assertEqual(
+                capture.call_args.args[4:7],
+                (
+                    census.AUDIT_CAPTURE_QUERY,
+                    census.AUDIT_REVIEWS_PAGE_QUERY,
+                    census.AUDIT_TIMELINE_PAGE_QUERY,
+                ),
+            )
+            self.assertIs(capture.call_args.args[7], identities)
+
     def test_all_complete_audit_statuses(self):
-        no_eligible = self.build_report([census.classify_case(capture_case([], []))])
-        insufficient = self.build_report([self.classified(None)])
-        no_drift = self.build_report([self.classified(OID_C)])
-        affected = self.build_report([self.classified(OID_A)])
+        no_eligible = self.build_report(
+            [census.classify_case(capture_case([], []))], self.identities()
+        )
+        insufficient = self.build_report([self.classified(None)], self.identities())
+        no_drift = self.build_report([self.classified(OID_C)], self.identities())
+        affected = self.build_report(
+            [self.classified(OID_A)], self.identities((7, "bob", "U_bob"))
+        )
         self.assertEqual(no_eligible["summary"]["status"], "no_eligible_reviews")
         self.assertEqual(insufficient["summary"]["status"], "insufficient_evidence")
         self.assertEqual(no_drift["summary"]["status"], "no_observed_drift")
@@ -573,7 +729,8 @@ class AuditTest(unittest.TestCase):
                         [],
                     )
                 )
-            ]
+            ],
+            self.identities(),
         )
         self.assertEqual(ninety_percent["summary"]["status"], "no_observed_drift")
         self.assertEqual(ninety_percent["summary"]["unobservable_reviewer_pairs"], 1)
@@ -596,7 +753,8 @@ class AuditTest(unittest.TestCase):
                         [],
                     )
                 )
-            ]
+            ],
+            self.identities((7, "mixed-reviewer-1", "U_mixed_reviewer_1")),
         )
         self.assertEqual(known_drift_with_unknowns["summary"]["status"], "affected")
         self.assertEqual(
@@ -605,9 +763,14 @@ class AuditTest(unittest.TestCase):
         self.assertEqual(
             known_drift_with_unknowns["summary"]["unobservable_reviewer_pairs"], 9
         )
+        rendered = census.render_review_memory_audit_markdown(
+            known_drift_with_unknowns
+        )
+        self.assertIn("@mixed-reviewer-1", rendered)
+        self.assertIn("Unknown evidence is not evidence of no drift.", rendered)
 
     def test_markdown_is_derived_from_report_and_calls_unknown_out(self):
-        report = self.build_report([self.classified(None)])
+        report = self.build_report([self.classified(None)], self.identities())
         rendered = census.render_review_memory_audit_markdown(report)
         self.assertIn("# StrataDiff Review Memory Audit", rendered)
         self.assertIn("`insufficient_evidence`", rendered)
@@ -650,7 +813,9 @@ class AuditTest(unittest.TestCase):
                 self.assertEqual(raised.exception.code, 2)
 
     def test_command_writes_canonical_private_json(self):
-        report = self.build_report([self.classified()])
+        report = self.build_report(
+            [self.classified()], self.identities((7, "bob", "U_bob"))
+        )
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "audit.json"
             arguments = census.argparse.Namespace(
@@ -1812,9 +1977,31 @@ class AggregateTest(unittest.TestCase):
 
 
 class CaptureContractTest(unittest.TestCase):
+    def test_frozen_build_capture_uses_the_v1_capture_path(self):
+        plan_bytes, plan = census.read_json(census.DEFAULT_PLAN)
+        sample = valid_one_sample(plan_bytes, plan)
+
+        class FakeApi:
+            def acquisition(self):
+                return {
+                    "graphql_calls": 0,
+                    "minimum_rate_limit_remaining": None,
+                    "last_rate_limit_reset_at": None,
+                }
+
+        api = FakeApi()
+        with mock.patch.object(
+            census, "capture_pull_request", return_value=capture_case([], [])
+        ) as capture, mock.patch.object(census, "capture_audit_pull_request") as audit:
+            census.build_capture(census.canonical_json(sample), sample, api)
+        capture.assert_called_once_with(api, "github", "gh-stack", 7)
+        audit.assert_not_called()
+
     def test_actor_is_pseudonymized_before_capture(self):
         stored = census.normalize_actor(
-            {"__typename": "User", "login": "alice"}, "actor", "github-acme-widgets-pr-7"
+            {"__typename": "User", "login": "alice", "id": "U_alice"},
+            "actor",
+            "github-acme-widgets-pr-7",
         )
         self.assertEqual(set(stored), {"typename", "actor_key"})
         self.assertNotIn("alice", json.dumps(stored))

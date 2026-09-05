@@ -189,7 +189,8 @@ gh stratadiff audit -R HOST/OWNER/REPOSITORY \
 
 The report distinguishes no eligible reviews, insufficient checkpoint evidence, no observed
 drift, and observed reviewer-checkpoint drift. It never converts missing object IDs or an
-incomplete provider response into a clean percentage.
+incomplete provider response into a clean percentage. Audit v2 identifies each drifted reviewer by
+GitHub login and immutable user node ID; missing or conflicting reviewer identity fails closed.
 
 ### Find the open reviews that need to be resumed
 
