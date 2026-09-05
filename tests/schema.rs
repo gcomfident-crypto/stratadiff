@@ -2,11 +2,82 @@ use serde::Serialize;
 use stratadiff::{
     AmbiguityAbstentionCause, AmbiguityConstraint, ChangeKind, Correspondence, DiffReport,
     Language, Predicate, analyze_bytes,
+    codeowners::MAX_OWNERS_PER_RULE,
+    coverage::{
+        MAX_REVIEW_COVERAGE_CHECKPOINTS, MAX_REVIEW_COVERAGE_OWNER_RESULT_ITEMS,
+        MAX_REVIEW_COVERAGE_REQUIREMENTS,
+    },
+    ledger::GITHUB_REVIEW_LEDGER_SCHEMA,
+    ownership::GITHUB_OWNERSHIP_SNAPSHOT_SCHEMA,
     review::{
-        CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState, ReviewDeltaBaselineBasis,
-        ReviewDeltaComparison, ReviewDeltaFallbackReason, ReviewDeltaUnresolvedReason,
+        CheckpointCarryBasis, CheckpointMatchBasis, CheckpointState, REVIEW_DELTA_SCHEMA,
+        ReviewDeltaBaselineBasis, ReviewDeltaComparison, ReviewDeltaFallbackReason,
+        ReviewDeltaUnresolvedReason,
     },
 };
+
+#[test]
+fn review_coverage_schema_uses_the_global_requirement_limit() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-coverage-v1.schema.json")).unwrap();
+    let expected = serde_json::json!(MAX_REVIEW_COVERAGE_REQUIREMENTS);
+
+    for pointer in [
+        "/$defs/body/properties/files/maxItems",
+        "/$defs/body/properties/unresolved_residue/maxItems",
+        "/$defs/summary/properties/current_files/maximum",
+        "/$defs/summary/properties/retired_residue_files/maximum",
+        "/$defs/summary/properties/unresolved_residue/maximum",
+        "/$defs/summary/properties/total_requirements/maximum",
+        "/$defs/summary/properties/covered_files/maximum",
+        "/$defs/summary/properties/needs_review_files/maximum",
+        "/$defs/summary/properties/blocked_files/maximum",
+    ] {
+        assert_eq!(schema.pointer(pointer).unwrap(), &expected, "{pointer}");
+    }
+
+    let checkpoint_limit = serde_json::json!(MAX_REVIEW_COVERAGE_CHECKPOINTS);
+    for pointer in [
+        "/$defs/body/properties/checkpoint_proofs/maxItems",
+        "/$defs/summary/properties/unique_checkpoint_proofs/maximum",
+    ] {
+        assert_eq!(
+            schema.pointer(pointer).unwrap(),
+            &checkpoint_limit,
+            "{pointer}"
+        );
+    }
+}
+
+#[test]
+fn review_coverage_schema_bounds_owner_cells_per_rule() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-coverage-v1.schema.json")).unwrap();
+    let expected = serde_json::json!(MAX_OWNERS_PER_RULE);
+
+    for pointer in [
+        "/$defs/rule/properties/owner_alternatives/maxItems",
+        "/$defs/file_coverage/properties/owner_alternatives/maxItems",
+    ] {
+        assert_eq!(schema.pointer(pointer).unwrap(), &expected, "{pointer}");
+    }
+}
+
+#[test]
+fn review_coverage_schema_bounds_expanded_owner_results() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-coverage-v1.schema.json")).unwrap();
+    let expected = serde_json::json!(MAX_REVIEW_COVERAGE_OWNER_RESULT_ITEMS);
+
+    for pointer in [
+        "/$defs/owner_coverage/properties/eligible_reviewer_ids/maxItems",
+        "/$defs/owner_coverage/properties/active_review_ids/maxItems",
+        "/$defs/owner_coverage/properties/covering_review_ids/maxItems",
+        "/$defs/owner_coverage/properties/blockers/maxItems",
+    ] {
+        assert_eq!(schema.pointer(pointer).unwrap(), &expected, "{pointer}");
+    }
+}
 
 #[test]
 fn every_published_schema_is_valid_draft_2020_12() {
@@ -16,10 +87,39 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/report-v3.schema.json"),
         include_str!("../schema/review-v1.schema.json"),
         include_str!("../schema/review-delta-v1.schema.json"),
+        include_str!("../schema/github-review-ledger-v1.schema.json"),
+        include_str!("../schema/github-ownership-snapshot-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
         jsonschema::draft202012::new(&schema).unwrap();
     }
+
+    let coverage_schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-coverage-v1.schema.json")).unwrap();
+    let ledger_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../schema/github-review-ledger-v1.schema.json"
+    ))
+    .unwrap();
+    let ownership_schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../schema/github-ownership-snapshot-v1.schema.json"
+    ))
+    .unwrap();
+    let review_delta_schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-delta-v1.schema.json")).unwrap();
+    let registry = jsonschema::Registry::new()
+        .add(GITHUB_REVIEW_LEDGER_SCHEMA, ledger_schema)
+        .unwrap()
+        .add(GITHUB_OWNERSHIP_SNAPSHOT_SCHEMA, ownership_schema)
+        .unwrap()
+        .add(REVIEW_DELTA_SCHEMA, review_delta_schema)
+        .unwrap()
+        .prepare()
+        .unwrap();
+    jsonschema::draft202012::options()
+        .with_registry(&registry)
+        .offline()
+        .build(&coverage_schema)
+        .unwrap();
 }
 
 #[test]

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 pub const GITHUB_CHECKPOINT_SCHEMA: &str = "stratadiff-github-review-checkpoint-v1";
 pub const MAX_GITHUB_REVIEWS: usize = 100;
 pub const MAX_GITHUB_REVIEWS_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_GITHUB_RESPONSE_HEADERS_BYTES: usize = 64 * 1024;
+pub const MAX_GITHUB_REVIEWS_INCLUDED_RESPONSE_BYTES: usize =
+    MAX_GITHUB_RESPONSE_HEADERS_BYTES + MAX_GITHUB_REVIEWS_BYTES;
 pub const MAX_GITHUB_COMMIT_OBJECT_BYTES: usize = 1024 * 1024;
 
 const SELECTION_POLICY: &str =
@@ -74,6 +77,49 @@ pub fn resolve_github_review_checkpoint(
     reviews_json: &[u8],
     reviewer: &str,
 ) -> Result<GithubCheckpointResolution> {
+    let reviews: Vec<GithubReview> = serde_json::from_slice(reviews_json)
+        .context("failed to decode GitHub pull request reviews")?;
+    resolve_github_reviews(reviews, reviewer)
+}
+
+pub fn resolve_github_review_checkpoint_included_response(
+    response: &[u8],
+    reviewer: &str,
+) -> Result<GithubCheckpointResolution> {
+    let body = github_json_response_body(response)?;
+    ensure!(
+        body.len() <= MAX_GITHUB_REVIEWS_BYTES,
+        "GitHub pull request reviews bytes limit exceeded: observed {}, limit {MAX_GITHUB_REVIEWS_BYTES}",
+        body.len()
+    );
+    resolve_github_review_checkpoint(body, reviewer)
+}
+
+pub fn resolve_github_review_checkpoint_slurp_pages(
+    review_pages_json: &[u8],
+    reviewer: &str,
+) -> Result<GithubCheckpointResolution> {
+    let pages: Vec<Vec<GithubReview>> = serde_json::from_slice(review_pages_json)
+        .context("failed to decode gh api --paginate --slurp review pages")?;
+    let mut reviews = Vec::new();
+    for page in pages {
+        let combined_count = reviews
+            .len()
+            .checked_add(page.len())
+            .context("GitHub review count overflow while combining pages")?;
+        ensure!(
+            combined_count <= MAX_GITHUB_REVIEWS,
+            "GitHub review count limit exceeded: observed at least {combined_count}, limit {MAX_GITHUB_REVIEWS}"
+        );
+        reviews.extend(page);
+    }
+    resolve_github_reviews(reviews, reviewer)
+}
+
+fn resolve_github_reviews(
+    reviews: Vec<GithubReview>,
+    reviewer: &str,
+) -> Result<GithubCheckpointResolution> {
     ensure!(
         !reviewer.is_empty(),
         "GitHub reviewer login must not be empty"
@@ -82,8 +128,6 @@ pub fn resolve_github_review_checkpoint(
         reviewer.trim() == reviewer,
         "GitHub reviewer login must not contain surrounding whitespace"
     );
-    let reviews: Vec<GithubReview> = serde_json::from_slice(reviews_json)
-        .context("failed to decode GitHub pull request reviews")?;
     ensure!(
         reviews.len() <= MAX_GITHUB_REVIEWS,
         "GitHub review count limit exceeded: observed {}, limit {MAX_GITHUB_REVIEWS}",
@@ -153,6 +197,153 @@ pub fn resolve_github_review_checkpoint(
     })
 }
 
+fn github_json_response_body(response: &[u8]) -> Result<&[u8]> {
+    let (status_line, mut cursor) = next_http_line(response, 0)?;
+    ensure!(
+        valid_success_status_line(status_line),
+        "GitHub included response does not contain one HTTP 200 status line"
+    );
+
+    let mut content_type_seen = false;
+    loop {
+        ensure!(
+            cursor <= MAX_GITHUB_RESPONSE_HEADERS_BYTES,
+            "GitHub response headers bytes limit exceeded: observed at least {cursor}, limit {MAX_GITHUB_RESPONSE_HEADERS_BYTES}"
+        );
+        let (line, next_cursor) = next_http_line(response, cursor)?;
+        cursor = next_cursor;
+        ensure!(
+            cursor <= MAX_GITHUB_RESPONSE_HEADERS_BYTES,
+            "GitHub response headers bytes limit exceeded: observed at least {cursor}, limit {MAX_GITHUB_RESPONSE_HEADERS_BYTES}"
+        );
+        if line.is_empty() {
+            break;
+        }
+        ensure!(
+            !matches!(line.first(), Some(b' ' | b'\t')),
+            "GitHub included response contains an obsolete folded header"
+        );
+        let separator = line
+            .iter()
+            .position(|byte| *byte == b':')
+            .context("GitHub included response contains a malformed header")?;
+        let name = &line[..separator];
+        let value = trim_optional_whitespace(&line[separator + 1..]);
+        ensure!(
+            valid_http_header_name(name) && valid_http_header_value(value),
+            "GitHub included response contains a malformed header"
+        );
+        ensure!(
+            !name.eq_ignore_ascii_case(b"link"),
+            "GitHub review count limit exceeded: observed at least 101, limit {MAX_GITHUB_REVIEWS} (pagination Link header present)"
+        );
+        if name.eq_ignore_ascii_case(b"content-type") {
+            ensure!(
+                !content_type_seen,
+                "GitHub included response contains duplicate Content-Type headers"
+            );
+            let media_type = trim_optional_whitespace(
+                value
+                    .split(|byte| *byte == b';')
+                    .next()
+                    .expect("split always returns one item"),
+            );
+            ensure!(
+                media_type.eq_ignore_ascii_case(b"application/json"),
+                "GitHub included response Content-Type is not application/json"
+            );
+            content_type_seen = true;
+        }
+    }
+    ensure!(
+        content_type_seen,
+        "GitHub included response is missing Content-Type"
+    );
+    Ok(&response[cursor..])
+}
+
+fn next_http_line(bytes: &[u8], start: usize) -> Result<(&[u8], usize)> {
+    ensure!(
+        start < bytes.len(),
+        "GitHub included response is missing the header/body separator"
+    );
+    let relative_end = bytes[start..]
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .context("GitHub included response contains an unterminated header line")?;
+    let end = start + relative_end;
+    let mut line = &bytes[start..end];
+    if line.last() == Some(&b'\r') {
+        line = &line[..line.len() - 1];
+    }
+    ensure!(
+        !line.contains(&b'\r'),
+        "GitHub included response contains an invalid carriage return"
+    );
+    Ok((line, end + 1))
+}
+
+fn valid_success_status_line(line: &[u8]) -> bool {
+    let Ok(line) = std::str::from_utf8(line) else {
+        return false;
+    };
+    let mut fields = line.split_ascii_whitespace();
+    let Some(protocol) = fields.next() else {
+        return false;
+    };
+    let Some(status) = fields.next() else {
+        return false;
+    };
+    line.as_bytes().first() == Some(&b'H')
+        && protocol.strip_prefix("HTTP/").is_some_and(|version| {
+            !version.is_empty()
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        })
+        && status == "200"
+}
+
+fn trim_optional_whitespace(mut value: &[u8]) -> &[u8] {
+    while matches!(value.first(), Some(b' ' | b'\t')) {
+        value = &value[1..];
+    }
+    while matches!(value.last(), Some(b' ' | b'\t')) {
+        value = &value[..value.len() - 1];
+    }
+    value
+}
+
+fn valid_http_header_name(name: &[u8]) -> bool {
+    !name.is_empty()
+        && name.iter().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'-'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                )
+        })
+}
+
+fn valid_http_header_value(value: &[u8]) -> bool {
+    value
+        .iter()
+        .all(|byte| *byte == b'\t' || (b' '..=b'~').contains(byte) || *byte >= 0x80)
+}
+
 pub fn verify_github_commit_object(commit_json: &[u8], expected_sha: &str) -> Result<()> {
     ensure!(
         is_sha1(expected_sha),
@@ -196,6 +387,26 @@ fn valid_github_timestamp(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const INCLUDED_REVIEW_BODY: &[u8] = br#"[{
+      "id": 7,
+      "user": {"login": "reviewer", "type": "User"},
+      "state": "APPROVED",
+      "html_url": "https://github.example/review/7",
+      "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "submitted_at": "2026-09-04T17:10:09Z",
+      "author_association": "MEMBER",
+      "body": "Link: this is review text, not an HTTP header"
+    }]"#;
+
+    fn included_response(headers: &[u8], body: &[u8]) -> Vec<u8> {
+        let mut response =
+            b"HTTP/2.0 200 OK\nContent-Type: application/json; charset=utf-8\r\n".to_vec();
+        response.extend_from_slice(headers);
+        response.extend_from_slice(b"\r\n");
+        response.extend_from_slice(body);
+        response
+    }
 
     #[test]
     fn selects_the_latest_completed_human_review_for_the_requested_reviewer() {
@@ -246,6 +457,95 @@ mod tests {
         assert_eq!(checkpoint.review_id, 2);
         assert_eq!(checkpoint.review_state, "changes_requested");
         assert_eq!(checkpoint.commit_id, "b".repeat(40));
+    }
+
+    #[test]
+    fn included_response_accepts_gh_mixed_line_endings_and_ignores_body_header_text() {
+        let response = included_response(b"Etag: \"review-snapshot\"\r\n", INCLUDED_REVIEW_BODY);
+        let resolution =
+            resolve_github_review_checkpoint_included_response(&response, "reviewer").unwrap();
+
+        assert_eq!(resolution.observed_reviews, 1);
+        assert_eq!(resolution.checkpoint.unwrap().review_id, 7);
+    }
+
+    #[test]
+    fn included_response_rejects_every_pagination_link_before_decoding_the_body() {
+        for name in [b"Link".as_slice(), b"link", b"LiNk"] {
+            let mut headers = name.to_vec();
+            headers.extend_from_slice(
+                b": <https://api.github.example/reviews?page=2>; rel=\"next\"\r\n",
+            );
+            let response = included_response(&headers, b"not json");
+            let error = resolve_github_review_checkpoint_included_response(&response, "reviewer")
+                .unwrap_err();
+            assert!(error.to_string().contains("observed at least 101"));
+        }
+    }
+
+    #[test]
+    fn included_response_rejects_malformed_http_envelopes() {
+        let malformed = [
+            b"HTTP/2.0 500 Internal Server Error\nContent-Type: application/json\r\n\r\n[]"
+                .as_slice(),
+            b"HTTP/2.0 200 OK\nContent-Type: text/plain\r\n\r\n[]".as_slice(),
+            b"HTTP/2.0 200 OK\nX-Test: value\r\n\r\n[]".as_slice(),
+            b"HTTP/2.0 200 OK\nContent-Type: application/json\r\n folded\r\n\r\n[]"
+                .as_slice(),
+            b"HTTP/2.0 200 OK\nContent Type: application/json\r\n\r\n[]".as_slice(),
+            b"HTTP/2.0 200 OK\nContent-Type: application/json\r\n[]".as_slice(),
+            b"HTTP/2.0 200 OK\nContent-Type: application/json\r\nContent-Type: application/json\r\n\r\n[]"
+                .as_slice(),
+            b"HTTP/2.0 200 OK\nContent-Type: application/json\r\n\r\nHTTP/2.0 200 OK\n\r\n[]"
+                .as_slice(),
+        ];
+        for response in malformed {
+            assert!(
+                resolve_github_review_checkpoint_included_response(response, "reviewer").is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn included_response_enforces_independent_header_and_body_byte_limits() {
+        let mut oversized_header = b"HTTP/2.0 200 OK\nX-Test: ".to_vec();
+        oversized_header.extend(std::iter::repeat_n(b'a', MAX_GITHUB_RESPONSE_HEADERS_BYTES));
+        oversized_header.extend_from_slice(b"\r\nContent-Type: application/json\r\n\r\n[]");
+        let header_error =
+            resolve_github_review_checkpoint_included_response(&oversized_header, "reviewer")
+                .unwrap_err();
+        assert!(
+            header_error
+                .to_string()
+                .contains("headers bytes limit exceeded")
+        );
+
+        let oversized_body = vec![b' '; MAX_GITHUB_REVIEWS_BYTES + 1];
+        let response = included_response(b"", &oversized_body);
+        let body_error =
+            resolve_github_review_checkpoint_included_response(&response, "reviewer").unwrap_err();
+        assert!(
+            body_error
+                .to_string()
+                .contains("reviews bytes limit exceeded")
+        );
+    }
+
+    #[test]
+    fn included_response_accepts_exactly_one_hundred_reviews_without_a_link() {
+        let reviews = (1..=MAX_GITHUB_REVIEWS)
+            .map(|id| {
+                format!(
+                    r#"{{"id":{id},"user":{{"login":"reviewer","type":"User"}},"state":"APPROVED","html_url":"https://github.example/review/{id}","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}}"#
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let response = included_response(b"", format!("[{reviews}]").as_bytes());
+        let resolution =
+            resolve_github_review_checkpoint_included_response(&response, "reviewer").unwrap();
+
+        assert_eq!(resolution.observed_reviews, MAX_GITHUB_REVIEWS);
     }
 
     #[test]

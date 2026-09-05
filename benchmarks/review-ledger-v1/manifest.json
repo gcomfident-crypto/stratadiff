@@ -1,0 +1,875 @@
+{
+  "schema": "stratadiff-review-ledger-benchmark-manifest-v1",
+  "dataset_version": "1.0.0",
+  "created_at": "2026-09-05T12:56:40+08:00",
+  "name": "Review Ledger v1 controlled oracle",
+  "description": "Declarative, implementation-independent scenarios for GitHub webhook authenticity and ordering, immutable review receipts, exact-base CODEOWNERS ownership, owner-specific review carry, and fail-closed object handling.",
+  "dataset_license": "MIT",
+  "issue": {
+    "number": 14,
+    "title": "P0: build the reviewer × CODEOWNERS coverage ledger",
+    "url": "https://github.com/gcomfident-crypto/stratadiff/issues/14"
+  },
+  "official_semantics_verified_at": "2026-09-05T12:56:40+08:00",
+  "sources": [
+    {
+      "id": "github-review-webhook",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request_review",
+      "supports": [
+        "pull_request_review submitted and dismissed actions",
+        "review, pull_request, and repository payload identity"
+      ]
+    },
+    {
+      "id": "github-pull-request-review-rest",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/rest/pulls/reviews",
+      "supports": [
+        "review commit_id identifies the reviewed commit when present",
+        "REST review metadata can expose a null commit_id",
+        "completed review identity and state"
+      ]
+    },
+    {
+      "id": "github-pull-request-webhook",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request",
+      "supports": [
+        "synchronize records a pull request head branch update",
+        "synchronize before and after transition evidence"
+      ]
+    },
+    {
+      "id": "github-delivery-headers",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/webhooks/webhook-events-and-payloads#delivery-headers",
+      "supports": [
+        "X-GitHub-Delivery is globally unique",
+        "redelivery retains the original delivery identifier"
+      ]
+    },
+    {
+      "id": "github-signature-validation",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries",
+      "supports": [
+        "X-Hub-Signature-256 is HMAC-SHA256 over the unmodified request body",
+        "constant-time signature comparison"
+      ]
+    },
+    {
+      "id": "github-webhook-best-practices",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks",
+      "supports": [
+        "webhook deliveries can arrive out of order",
+        "delivery identifiers should prevent duplicate processing"
+      ]
+    },
+    {
+      "id": "github-webhook-redelivery",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/webhooks/testing-and-troubleshooting-webhooks/redelivering-webhooks",
+      "supports": [
+        "GitHub does not automatically redeliver failed webhook deliveries",
+        "manual redelivery is available for deliveries from the previous three days"
+      ]
+    },
+    {
+      "id": "github-codeowners",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners",
+      "supports": [
+        "CODEOWNERS is read from the pull request base branch",
+        "source path precedence and last matching rule",
+        "owners on one rule are alternatives",
+        "teams must be visible and have write access"
+      ]
+    },
+    {
+      "id": "github-team-members",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/rest/teams/members",
+      "supports": [
+        "active and pending team membership are distinct states",
+        "team membership can be resolved by stable GitHub identity"
+      ]
+    },
+    {
+      "id": "github-required-checks",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-status-checks-before-merging",
+      "supports": [
+        "a required check gates merging",
+        "a required check can be bound to an expected GitHub App"
+      ]
+    },
+    {
+      "id": "github-check-runs",
+      "kind": "github_official",
+      "url": "https://docs.github.com/en/rest/checks/runs",
+      "supports": [
+        "a check run is bound to head_sha",
+        "check creation requires a GitHub App with Checks write permission"
+      ]
+    }
+  ],
+  "normative_layers": [
+    {
+      "id": "github_official",
+      "meaning": "Provider facts taken from the official sources above."
+    },
+    {
+      "id": "issue_14_safety_policy",
+      "meaning": "StrataDiff product policy: preserve immutable evidence, compute reviewer × owner coverage, and fail closed on missing or ambiguous evidence."
+    },
+    {
+      "id": "review_delta_contract",
+      "meaning": "Existing exact Git identity and conservative four-snapshot byte-replay carry rules."
+    }
+  ],
+  "oracle_contract": {
+    "implementation_independent": true,
+    "fixture_form": "Symbolic provider events, ownership snapshots, and Git snapshots. A future runner must materialize raw request bytes and Git objects without consulting product output to derive expected values.",
+    "delivery_identity": "The original and every redelivery share one delivery_id. The first valid observation is canonical. A later observation with the same event name and raw-body digest is duplicate even when its local received_at differs; the first received_at is retained. The same delivery_id with a different event name or raw-body digest is an atomic conflict.",
+    "authentication": "Verify HMAC-SHA256 over the exact raw body before JSON decoding or state mutation. X-GitHub-Delivery is not covered by the body HMAC, so authenticity and deduplication are separate checks.",
+    "review_reduction": "Receipts and dismissals are append-only facts. A dismissal targets its exact review_id and dominates that review regardless of delivery order, including when its nullable commit metadata is unavailable. A retained or delayed receipt supplies the immutable commit evidence; the tombstone must not invent it. For one reviewer, a dismissed latest completed review does not fall back to an older receipt; a distinct later completed review can reactivate coverage. Ambiguous ordering fails closed.",
+    "head_reduction": "Synchronize payloads are transition evidence, not authoritative mutable state. Retain every valid transition, then reconcile effective head and base against an authoritative exact pull-request observation. A delayed older transition cannot roll state back; disconnected or unverifiable histories remain blocked.",
+    "ownership_reduction": "Load CODEOWNERS only from the exact protected-base commit, using .github/CODEOWNERS, CODEOWNERS, then docs/CODEOWNERS precedence. The last matching rule wins. Owners on that one rule form OR alternatives; distinct matched owner domains form independent requirements whose conjunction gates the pull request.",
+    "ownership_snapshot_provenance": "Every identity reduction is bound to provider_url, repository_id, exact base_commit, GitHub API version, observed_at, stable user and team IDs, team privacy and repository permission, and active or pending membership state. A supplied snapshot without this provenance is not a reproducible oracle input.",
+    "invalid_codeowners_policy": "Although GitHub can skip invalid CODEOWNERS lines, this benchmark deliberately applies Issue #14's stricter fail-closed policy: any invalid line in the selected source blocks all coverage evaluation and no lower-precedence source is substituted.",
+    "carry_reduction": "Carry requires complete raw Git change-identity equality or the approved same-path regular-file four-snapshot byte witness. Four-way edits must be non-overlapping and non-adjacent, and both replay orders must reproduce the exact current bytes. All other current changes remain residue for every required owner domain.",
+    "missing_object_policy": "Every receipt and carry proof is bound to exact full object IDs. An unavailable object is a blocker; no branch tip, current head, pull-request ref, mirror result, or alternate commit may substitute for it.",
+    "gate": "The required check is green only when every required owner domain has proven coverage and no blocker exists. These oracles make no semantic-safety, approval-restoration, or safe-to-merge claim."
+  },
+  "snapshot_model": {
+    "A": "reviewed checkpoint base",
+    "B": "reviewed checkpoint commit, based on A",
+    "C": "current protected-base commit",
+    "D": "current pull-request head, based on C"
+  },
+  "fixture_symbols": {
+    "repository": {
+      "id": 99,
+      "node_id": "R_99",
+      "full_name": "acme/widgets"
+    },
+    "pull_request": {
+      "id": 700,
+      "node_id": "PR_700",
+      "number": 7
+    },
+    "commits": {
+      "A": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "B": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "C": "cccccccccccccccccccccccccccccccccccccccc",
+      "D": "dddddddddddddddddddddddddddddddddddddddd",
+      "H0": "0000000000000000000000000000000000000000",
+      "H1": "1111111111111111111111111111111111111111",
+      "H2": "2222222222222222222222222222222222222222",
+      "ORPHAN": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    "reviewers": {
+      "alice": {
+        "id": 17,
+        "node_id": "U_17",
+        "login": "alice",
+        "type": "User"
+      },
+      "bob": {
+        "id": 18,
+        "node_id": "U_18",
+        "login": "bob",
+        "type": "User"
+      }
+    }
+  },
+  "required_coverage": [
+    "verified_submit",
+    "duplicate_redelivery",
+    "same_delivery_id_conflicting_body",
+    "dismiss_before_submit",
+    "latest_dismissed_no_fallback",
+    "new_review_reactivates",
+    "out_of_order_synchronize_not_current_state",
+    "tampered_signature",
+    "two_owner_domains_selective_invalidation",
+    "owner_or",
+    "invalid_codeowners",
+    "team_missing",
+    "team_secret",
+    "team_read_permission",
+    "team_pending_membership",
+    "exact_base_codeowners_source",
+    "exact_identity_restack",
+    "four_way_replay",
+    "genuine_author_edit_residue",
+    "orphan_review_commit"
+  ],
+  "cases": [
+    {
+      "id": "verified-submit-persists-sha-bound-receipt",
+      "category": "webhook_ledger",
+      "covers": ["verified_submit"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "deliveries": [
+          {
+            "delivery_id": "delivery-submit-401",
+            "event": "pull_request_review",
+            "action": "submitted",
+            "body_id": "review-401-approved-at-B",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:00:00Z",
+            "review": {
+              "id": 401,
+              "reviewer": "alice",
+              "state": "approved",
+              "commit": "B",
+              "submitted_at": "2026-09-05T01:00:00Z"
+            },
+            "pull_request_base": "A",
+            "pull_request_head": "B"
+          }
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["applied"],
+        "delivery_count": 1,
+        "audited_review_ids": [401],
+        "audited_dismissal_ids": [],
+        "active_review_ids": [401],
+        "coverage": "not_evaluated",
+        "blockers": [],
+        "required_check": "not_evaluated",
+        "must_not": ["accept_unverified_body", "detach_receipt_from_commit_B"]
+      }
+    },
+    {
+      "id": "duplicate-redelivery-is-idempotent-across-receive-times",
+      "category": "webhook_ledger",
+      "covers": ["duplicate_redelivery"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "deliveries": [
+          {
+            "delivery_id": "delivery-submit-401",
+            "event": "pull_request_review",
+            "body_id": "review-401-approved-at-B",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:00:00Z"
+          },
+          {
+            "delivery_id": "delivery-submit-401",
+            "event": "pull_request_review",
+            "body_id": "review-401-approved-at-B",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:10:00Z",
+            "redelivery": true
+          }
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["applied", "duplicate"],
+        "delivery_count": 1,
+        "canonical_received_at": "2026-09-05T02:00:00Z",
+        "audited_review_ids": [401],
+        "active_review_ids": [401],
+        "coverage": "not_evaluated",
+        "blockers": [],
+        "required_check": "not_evaluated",
+        "must_not": ["append_second_receipt", "treat_later_local_receive_time_as_conflicting_body"]
+      }
+    },
+    {
+      "id": "same-delivery-id-with-conflicting-body-is-rejected",
+      "category": "webhook_ledger",
+      "covers": ["same_delivery_id_conflicting_body"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "deliveries": [
+          {
+            "delivery_id": "delivery-collision",
+            "event": "pull_request_review",
+            "body_id": "review-401-approved-at-B",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:00:00Z"
+          },
+          {
+            "delivery_id": "delivery-collision",
+            "event": "pull_request_review",
+            "body_id": "review-402-changes-requested-at-D",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:01:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["applied", "rejected_atomically"],
+        "delivery_count": 1,
+        "audited_review_ids": [401],
+        "active_review_ids": [401],
+        "coverage": "not_evaluated",
+        "blockers": ["delivery_id_conflicting_body"],
+        "required_check": "not_evaluated",
+        "must_not": ["overwrite_first_delivery", "apply_second_body"]
+      }
+    },
+    {
+      "id": "dismiss-before-submit-cannot-reactivate-dismissed-review",
+      "category": "review_state",
+      "covers": ["dismiss_before_submit"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "deliveries": [
+          {
+            "delivery_id": "delivery-dismiss-401",
+            "event": "pull_request_review",
+            "action": "dismissed",
+            "body_id": "review-401-dismissed-null-metadata",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:00:00Z",
+            "review": {
+              "id": 401,
+              "reviewer": "alice",
+              "state": "dismissed",
+              "commit": null,
+              "submitted_at": null
+            }
+          },
+          {
+            "delivery_id": "delivery-submit-401",
+            "event": "pull_request_review",
+            "action": "submitted",
+            "body_id": "review-401-approved-at-B",
+            "signature": "valid_for_exact_body",
+            "received_at": "2026-09-05T02:05:00Z",
+            "review": {
+              "id": 401,
+              "reviewer": "alice",
+              "state": "approved",
+              "commit": "B",
+              "submitted_at": "2026-09-05T01:00:00Z"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["applied", "applied"],
+        "delivery_count": 2,
+        "canonical_received_at": "2026-09-05T02:00:00Z",
+        "audited_review_ids": [401],
+        "audited_dismissal_ids": [401],
+        "dismissal_metadata": [{"review_id": 401, "commit_id": null, "submitted_at": null}],
+        "active_review_ids": [],
+        "coverage": "no_active_receipt_for_alice",
+        "blockers": [],
+        "required_check": "not_evaluated",
+        "must_not": ["reject_tombstone_only_because_commit_metadata_is_null", "reactivate_review_401_from_delayed_submit", "invent_dismissal_commit_metadata", "delete_original_receipt"]
+      }
+    },
+    {
+      "id": "latest-dismissed-review-does-not-fall-back",
+      "category": "review_state",
+      "covers": ["latest_dismissed_no_fallback"],
+      "normative_basis": ["issue_14_safety_policy"],
+      "fixture": {
+        "facts_in_chronological_order": [
+          {"review_id": 400, "reviewer": "alice", "state": "approved", "commit": "A", "submitted_at": "2026-09-05T00:30:00Z"},
+          {"review_id": 401, "reviewer": "alice", "state": "approved", "commit": "B", "submitted_at": "2026-09-05T01:00:00Z"},
+          {"review_id": 401, "reviewer": "alice", "state": "dismissed", "commit": "B", "submitted_at": "2026-09-05T01:00:00Z"}
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["applied", "applied", "applied"],
+        "audited_review_ids": [400, 401],
+        "audited_dismissal_ids": [401],
+        "active_review_ids": [],
+        "coverage": "no_active_receipt_for_alice",
+        "blockers": [],
+        "required_check": "not_evaluated",
+        "must_not": ["fall_back_to_review_400", "delete_review_401_evidence"]
+      }
+    },
+    {
+      "id": "distinct-new-review-reactivates-coverage",
+      "category": "review_state",
+      "covers": ["new_review_reactivates"],
+      "normative_basis": ["issue_14_safety_policy"],
+      "fixture": {
+        "facts_in_chronological_order": [
+          {"review_id": 401, "reviewer": "alice", "state": "approved", "commit": "B", "submitted_at": "2026-09-05T01:00:00Z"},
+          {"review_id": 401, "reviewer": "alice", "state": "dismissed", "commit": "B", "submitted_at": "2026-09-05T01:00:00Z"},
+          {"review_id": 402, "reviewer": "alice", "state": "approved", "commit": "D", "submitted_at": "2026-09-05T03:00:00Z"}
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["applied", "applied", "applied"],
+        "audited_review_ids": [401, 402],
+        "audited_dismissal_ids": [401],
+        "active_review_ids": [402],
+        "coverage": "active_receipt_for_alice_at_D",
+        "blockers": [],
+        "required_check": "not_evaluated",
+        "must_not": ["reactivate_review_401", "discard_dismissal_audit"]
+      }
+    },
+    {
+      "id": "out-of-order-synchronize-does-not-roll-back-current-head",
+      "category": "head_state",
+      "covers": ["out_of_order_synchronize_not_current_state"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "deliveries_in_arrival_order": [
+          {
+            "delivery_id": "delivery-sync-new",
+            "event": "pull_request",
+            "action": "synchronize",
+            "before": "H1",
+            "after": "H2",
+            "payload_head": "H2",
+            "payload_base": "C",
+            "received_at": "2026-09-05T03:00:00Z"
+          },
+          {
+            "delivery_id": "delivery-sync-old",
+            "event": "pull_request",
+            "action": "synchronize",
+            "before": "H0",
+            "after": "H1",
+            "payload_head": "H1",
+            "payload_base": "A",
+            "received_at": "2026-09-05T03:05:00Z"
+          }
+        ],
+        "authoritative_pull_request_observation": {
+          "base": "C",
+          "head": "H2",
+          "observed_at": "2026-09-05T03:06:00Z"
+        }
+      },
+      "expected": {
+        "ingest_outcomes": ["applied", "applied"],
+        "audited_transitions": ["H0->H1", "H1->H2"],
+        "effective_base": "C",
+        "effective_head": "H2",
+        "coverage": "recompute_for_C_H2",
+        "blockers": [],
+        "required_check": "pending_until_recomputed_then_oracle_dependent",
+        "reconciliation_checks": ["disconnected_history_rejected", "stale_head_rejected"],
+        "must_not": ["set_effective_head_to_H1_from_last_arrival", "order_by_delivery_id"]
+      }
+    },
+    {
+      "id": "tampered-body-fails-hmac-before-state-mutation",
+      "category": "webhook_authenticity",
+      "covers": ["tampered_signature"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "deliveries": [
+          {
+            "delivery_id": "delivery-tampered",
+            "event": "pull_request_review",
+            "body_id": "modified-review-401-body",
+            "signature": "valid_only_for_unmodified-review-401-body",
+            "received_at": "2026-09-05T02:00:00Z"
+          }
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": ["rejected_before_decode"],
+        "delivery_count": 0,
+        "audited_review_ids": [],
+        "active_review_ids": [],
+        "coverage": "unchanged",
+        "blockers": ["invalid_webhook_hmac"],
+        "required_check": "unchanged",
+        "must_not": ["parse_before_authentication", "persist_unverified_payload"]
+      }
+    },
+    {
+      "id": "two-owner-domains-invalidate-selectively",
+      "category": "ownership_coverage",
+      "covers": ["two_owner_domains_selective_invalidation"],
+      "normative_basis": ["issue_14_safety_policy", "review_delta_contract"],
+      "fixture": {
+        "codeowners_at_exact_base_C": [
+          {"pattern": "/payments/**", "owners": ["@alice"]},
+          {"pattern": "/docs/**", "owners": ["@bob"]}
+        ],
+        "active_receipts": [
+          {"review_id": 501, "reviewer": "alice", "commit": "B"},
+          {"review_id": 502, "reviewer": "bob", "commit": "B"}
+        ],
+        "current_paths": [
+          {"path": "payments/pay.rs", "since_B": "genuine_author_edit"},
+          {"path": "docs/guide.md", "since_B": "exact_identity_carry"}
+        ]
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "satisfied_domains": ["@bob"],
+        "uncovered_domains": ["@alice"],
+        "carried_paths": ["docs/guide.md"],
+        "residue_paths": ["payments/pay.rs"],
+        "coverage": "partially_covered",
+        "blockers": [],
+        "required_check": "red",
+        "must_not": ["invalidate_bob_domain", "treat_one_satisfied_domain_as_global_success"]
+      }
+    },
+    {
+      "id": "one-owner-alternative-satisfies-winning-rule",
+      "category": "ownership_coverage",
+      "covers": ["owner_or"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "codeowners_at_exact_base_C": [
+          {"pattern": "/api/**", "owners": ["@alice", "@bob"], "line": 7}
+        ],
+        "path": "api/router.rs",
+        "active_receipts": [
+          {"review_id": 501, "reviewer": "alice", "commit": "D", "covers": ["api/router.rs"]}
+        ],
+        "bob_receipt": null
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "winning_rule_line": 7,
+        "owner_operator": "or",
+        "satisfying_owner": "@alice",
+        "coverage": "covered",
+        "blockers": [],
+        "required_check": "green",
+        "must_not": ["require_both_alice_and_bob", "combine_owners_from_nonwinning_rules"]
+      }
+    },
+    {
+      "id": "invalid-selected-codeowners-source-fails-closed",
+      "category": "ownership_policy",
+      "covers": ["invalid_codeowners"],
+      "normative_basis": ["issue_14_safety_policy"],
+      "fixture": {
+        "exact_base": "C",
+        "tree_entries": {
+          ".github/CODEOWNERS": "[invalid-pattern @alice\n/api/** @alice\n",
+          "CODEOWNERS": "/** @bob\n"
+        }
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "selected_source": ".github/CODEOWNERS",
+        "coverage": "blocked",
+        "blockers": ["invalid_codeowners_line"],
+        "required_check": "red",
+        "must_not": ["skip_invalid_line", "partially_apply_selected_source", "fall_back_to_root_CODEOWNERS"]
+      }
+    },
+    {
+      "id": "missing-codeowner-team-fails-closed",
+      "category": "ownership_identity",
+      "covers": ["team_missing"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "winning_owner": "@acme/missing",
+        "ownership_snapshot": {
+          "provider_url": "https://github.com",
+          "repository_id": 99,
+          "base_commit": "C",
+          "api_version": "2022-11-28",
+          "observed_at": "2026-09-05T04:00:00Z",
+          "users": [],
+          "teams": []
+        }
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "eligible_reviewer_ids": [],
+        "required_snapshot_provenance": ["provider_url", "repository_id", "base_commit", "api_version", "observed_at", "stable_identity_ids", "membership_state"],
+        "coverage": "blocked",
+        "blockers": ["team_not_found"],
+        "required_check": "red",
+        "must_not": ["guess_team_members", "ignore_required_owner"]
+      }
+    },
+    {
+      "id": "secret-codeowner-team-fails-closed",
+      "category": "ownership_identity",
+      "covers": ["team_secret"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "winning_owner": "@acme/security",
+        "ownership_snapshot": {
+          "provider_url": "https://github.com",
+          "repository_id": 99,
+          "base_commit": "C",
+          "api_version": "2022-11-28",
+          "observed_at": "2026-09-05T04:00:00Z",
+          "users": [{"id": 17, "login": "alice", "repository_permission": "write"}],
+          "teams": [
+            {"id": 21, "organization_login": "acme", "slug": "security", "privacy": "secret", "repository_permission": "admin", "members": [{"user_id": 17, "state": "active", "inherited": false}]}
+          ]
+        }
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "eligible_reviewer_ids": [],
+        "required_snapshot_provenance": ["provider_url", "repository_id", "base_commit", "api_version", "observed_at", "stable_identity_ids", "membership_state"],
+        "coverage": "blocked",
+        "blockers": ["team_not_visible"],
+        "required_check": "red",
+        "must_not": ["use_members_of_secret_team", "treat_admin_permission_as_visibility"]
+      }
+    },
+    {
+      "id": "read-only-codeowner-team-fails-closed",
+      "category": "ownership_identity",
+      "covers": ["team_read_permission"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "winning_owner": "@acme/readers",
+        "ownership_snapshot": {
+          "provider_url": "https://github.com",
+          "repository_id": 99,
+          "base_commit": "C",
+          "api_version": "2022-11-28",
+          "observed_at": "2026-09-05T04:00:00Z",
+          "users": [{"id": 17, "login": "alice", "repository_permission": "write"}],
+          "teams": [
+            {"id": 22, "organization_login": "acme", "slug": "readers", "privacy": "closed", "repository_permission": "read", "members": [{"user_id": 17, "state": "active", "inherited": false}]}
+          ]
+        }
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "eligible_reviewer_ids": [],
+        "required_snapshot_provenance": ["provider_url", "repository_id", "base_commit", "api_version", "observed_at", "stable_identity_ids", "membership_state"],
+        "coverage": "blocked",
+        "blockers": ["insufficient_repository_permission"],
+        "required_check": "red",
+        "must_not": ["accept_read_permission", "promote_member_permission_implicitly"]
+      }
+    },
+    {
+      "id": "pending-only-team-membership-fails-closed",
+      "category": "ownership_identity",
+      "covers": ["team_pending_membership"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "winning_owner": "@acme/payments",
+        "ownership_snapshot": {
+          "provider_url": "https://github.com",
+          "repository_id": 99,
+          "base_commit": "C",
+          "api_version": "2022-11-28",
+          "observed_at": "2026-09-05T04:00:00Z",
+          "users": [{"id": 17, "login": "alice", "repository_permission": "write"}],
+          "teams": [
+            {
+              "id": 23,
+              "organization_login": "acme",
+              "slug": "payments",
+              "privacy": "closed",
+              "repository_permission": "write",
+              "members": [
+                {"user_id": 17, "state": "pending", "repository_permission": "write"}
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "eligible_reviewer_ids": [],
+        "required_snapshot_provenance": ["provider_url", "repository_id", "base_commit", "api_version", "observed_at", "stable_identity_ids", "membership_state"],
+        "coverage": "blocked",
+        "blockers": ["no_eligible_team_members"],
+        "required_check": "red",
+        "must_not": ["count_pending_member_as_active", "drop_team_requirement"]
+      }
+    },
+    {
+      "id": "codeowners-source-is-pinned-to-exact-base-commit",
+      "category": "ownership_provenance",
+      "covers": ["exact_base_codeowners_source"],
+      "normative_basis": ["github_official", "issue_14_safety_policy"],
+      "fixture": {
+        "pull_request_base": "C",
+        "sources": [
+          {"location": "C:.github/CODEOWNERS", "content": "/api/** @alice\n", "exists": true},
+          {"location": "D:.github/CODEOWNERS", "content": "/api/** @bob\n", "exists": true},
+          {"location": "working-tree:.github/CODEOWNERS", "content": "/api/** @bob\n", "exists": true},
+          {"location": "C:CODEOWNERS", "content": "/** @bob\n", "exists": true}
+        ],
+        "path": "api/router.rs"
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "selected_source": "C:.github/CODEOWNERS",
+        "selected_owner_alternatives": ["@alice"],
+        "required_provenance": ["base_commit", "source_path", "blob_oid", "byte_length", "blake3"],
+        "coverage": "oracle_dependent_on_alice_receipt",
+        "blockers": [],
+        "required_check": "oracle_dependent",
+        "must_not": ["read_from_head_D", "read_from_working_tree", "fall_back_to_C_root_when_C_dotgithub_exists"]
+      }
+    },
+    {
+      "id": "byte-identical-restack-carries-by-exact-change-identity",
+      "category": "review_carry",
+      "covers": ["exact_identity_restack"],
+      "normative_basis": ["issue_14_safety_policy", "review_delta_contract"],
+      "fixture": {
+        "snapshots": {
+          "A": {"src/value.rs": "value = 0\n"},
+          "B": {"src/value.rs": "value = 1\n"},
+          "C": {"src/value.rs": "value = 0\n"},
+          "D": {"src/value.rs": "value = 1\n"}
+        },
+        "review": {"review_id": 501, "reviewer": "alice", "commit": "B"},
+        "owner": "@alice",
+        "identity_relation": "complete_raw_git_identity_A_to_B_equals_C_to_D",
+        "commit_identity_relation": "B_and_D_are_distinct"
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "carried_paths": ["src/value.rs"],
+        "carry_basis": {"src/value.rs": "exact_git_change_identity"},
+        "residue_paths": [],
+        "coverage": "covered",
+        "blockers": [],
+        "required_check": "green",
+        "must_not": ["require_same_commit_id", "classify_rewritten_commit_as_author_edit"]
+      }
+    },
+    {
+      "id": "noninteracting-base-drift-carries-by-four-way-replay",
+      "category": "review_carry",
+      "covers": ["four_way_replay"],
+      "normative_basis": ["issue_14_safety_policy", "review_delta_contract"],
+      "fixture": {
+        "snapshots": {
+          "A": {"src/shared.py": "title = 'old'\nstable = 0\nreviewed = 0\n"},
+          "B": {"src/shared.py": "title = 'old'\nstable = 0\nreviewed = 1\n"},
+          "C": {"src/shared.py": "title = 'new'\nstable = 0\nreviewed = 0\n"},
+          "D": {"src/shared.py": "title = 'new'\nstable = 0\nreviewed = 1\n"}
+        },
+        "review": {"review_id": 501, "reviewer": "alice", "commit": "B"},
+        "owner": "@alice",
+        "witness": "A_to_B_and_A_to_C_are_nonoverlapping_nonadjacent_and_both_replay_orders_equal_D"
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "carried_paths": ["src/shared.py"],
+        "carry_basis": {"src/shared.py": "exact_noninteracting_four_way_byte_replay"},
+        "residue_paths": [],
+        "coverage": "covered",
+        "blockers": [],
+        "required_check": "green",
+        "must_not": ["require_byte_identical_base", "claim_semantic_equivalence"]
+      }
+    },
+    {
+      "id": "genuine-author-edit-remains-owner-residue",
+      "category": "review_carry",
+      "covers": ["genuine_author_edit_residue"],
+      "normative_basis": ["issue_14_safety_policy", "review_delta_contract"],
+      "fixture": {
+        "snapshots": {
+          "A": {"src/shared.py": "title = 'old'\nstable = 0\nreviewed = 0\nfollowup = 0\n"},
+          "B": {"src/shared.py": "title = 'old'\nstable = 0\nreviewed = 1\nfollowup = 0\n"},
+          "C": {"src/shared.py": "title = 'new'\nstable = 0\nreviewed = 0\nfollowup = 0\n"},
+          "D": {"src/shared.py": "title = 'new'\nstable = 0\nreviewed = 1\nfollowup = 1\n"}
+        },
+        "review": {"review_id": 501, "reviewer": "alice", "commit": "B"},
+        "owner": "@alice"
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "carried_paths": [],
+        "residue_paths": ["src/shared.py"],
+        "residue_basis": {"src/shared.py": "current_bytes_differ_from_reconstructed_review_baseline"},
+        "coverage": "uncovered",
+        "blockers": [],
+        "required_check": "red",
+        "must_not": ["carry_entire_file_because_reviewed_edit_survived", "hide_followup_edit"]
+      }
+    },
+    {
+      "id": "unavailable-orphan-review-commit-fails-closed",
+      "category": "object_provenance",
+      "covers": ["orphan_review_commit"],
+      "normative_basis": ["issue_14_safety_policy", "review_delta_contract"],
+      "fixture": {
+        "receipt": {"review_id": 501, "reviewer": "alice", "commit": "ORPHAN"},
+        "object_resolution": {
+          "local_exact_object": "missing",
+          "provider_exact_object": "not_found",
+          "current_head": "D",
+          "pull_request_ref": "H2"
+        }
+      },
+      "expected": {
+        "ingest_outcomes": [],
+        "audited_review_ids": [501],
+        "active_review_ids": [501],
+        "carried_paths": [],
+        "residue_paths": [],
+        "coverage": "blocked",
+        "blockers": ["review_commit_unavailable"],
+        "required_check": "red",
+        "must_not": ["substitute_current_head_D", "substitute_pull_request_ref_H2", "discard_receipt"]
+      }
+    }
+  ],
+  "implementation_snapshot": {
+    "observed_at": "2026-09-05T12:56:40+08:00",
+    "basis": "Source and focused tests present in the feat/reviewer-codeowners-ledger working tree at dataset authoring time. This is informational and must not be used to derive oracle expectations.",
+    "status_definitions": {
+      "implemented": "The complete declared case behavior has a focused current implementation and test at the named component boundary.",
+      "partial": "Relevant primitives or narrower tests exist, but the complete declared case is not implemented end to end.",
+      "not_implemented": "The declared state reduction or owner-coverage behavior is absent."
+    },
+    "cases": [
+      {"case_id": "verified-submit-persists-sha-bound-receipt", "status": "implemented", "evidence": ["src/ledger.rs", "tests/github_ledger_cli.rs"]},
+      {"case_id": "duplicate-redelivery-is-idempotent-across-receive-times", "status": "partial", "evidence": ["src/ledger.rs", "tests/github_ledger_cli.rs"], "gap": "Current duplicate equality includes received_at; the existing test reuses the same received_at and does not cover a delayed real redelivery."},
+      {"case_id": "same-delivery-id-with-conflicting-body-is-rejected", "status": "implemented", "evidence": ["src/ledger.rs"]},
+      {"case_id": "dismiss-before-submit-cannot-reactivate-dismissed-review", "status": "implemented", "evidence": ["src/ledger.rs", "schema/github-review-ledger-v1.schema.json", "tools/review-ledger-v1/runner.py"]},
+      {"case_id": "latest-dismissed-review-does-not-fall-back", "status": "implemented", "evidence": ["src/ledger.rs"]},
+      {"case_id": "distinct-new-review-reactivates-coverage", "status": "implemented", "evidence": ["src/ledger.rs"]},
+      {"case_id": "out-of-order-synchronize-does-not-roll-back-current-head", "status": "implemented", "evidence": ["src/ledger.rs", "src/coverage.rs", "tools/review-ledger-v1/runner.py"]},
+      {"case_id": "tampered-body-fails-hmac-before-state-mutation", "status": "implemented", "evidence": ["src/ledger.rs", "tests/github_ledger_cli.rs"]},
+      {"case_id": "two-owner-domains-invalidate-selectively", "status": "implemented", "evidence": ["src/coverage.rs", "tests/review_coverage.rs"]},
+      {"case_id": "one-owner-alternative-satisfies-winning-rule", "status": "partial", "evidence": ["src/codeowners.rs"], "gap": "Owner alternatives and winning-rule provenance are represented, but receipt-based OR satisfaction is not integrated."},
+      {"case_id": "invalid-selected-codeowners-source-fails-closed", "status": "partial", "evidence": ["src/codeowners.rs", "tests/codeowners.rs"], "gap": "The parser emits a typed blocker, but the blocker is not yet wired to the required check."},
+      {"case_id": "missing-codeowner-team-fails-closed", "status": "partial", "evidence": ["src/ownership.rs", "tests/ownership.rs"], "gap": "The resolver emits team_not_found, but the blocker is not yet wired to owner coverage and the required check."},
+      {"case_id": "secret-codeowner-team-fails-closed", "status": "partial", "evidence": ["src/ownership.rs", "tests/ownership.rs"], "gap": "The resolver emits team_not_visible, but the blocker is not yet wired to owner coverage and the required check."},
+      {"case_id": "read-only-codeowner-team-fails-closed", "status": "partial", "evidence": ["src/ownership.rs", "tests/ownership.rs"], "gap": "The resolver emits insufficient_repository_permission, but the blocker is not yet wired to owner coverage and the required check."},
+      {"case_id": "pending-only-team-membership-fails-closed", "status": "partial", "evidence": ["src/ownership.rs", "tests/ownership.rs"], "gap": "The resolver excludes pending members, but the blocker is not yet wired to owner coverage and the required check."},
+      {"case_id": "codeowners-source-is-pinned-to-exact-base-commit", "status": "implemented", "evidence": ["src/codeowners.rs", "tests/codeowners.rs"]},
+      {"case_id": "byte-identical-restack-carries-by-exact-change-identity", "status": "implemented", "evidence": ["src/review.rs", "src/coverage.rs", "tests/review_coverage.rs", "benchmarks/review-delta-v1/manifest.json"]},
+      {"case_id": "noninteracting-base-drift-carries-by-four-way-replay", "status": "partial", "evidence": ["src/review.rs", "benchmarks/review-delta-v1/manifest.json"], "gap": "Four-way replay exists, but owner-specific receipt coverage and required-check integration do not."},
+      {"case_id": "genuine-author-edit-remains-owner-residue", "status": "implemented", "evidence": ["src/review.rs", "src/coverage.rs", "tests/review_coverage.rs", "benchmarks/review-delta-v1/manifest.json"]},
+      {"case_id": "unavailable-orphan-review-commit-fails-closed", "status": "implemented", "evidence": ["src/coverage.rs", "tests/review_coverage.rs"]}
+    ],
+    "not_fully_implemented_case_ids": [
+      "duplicate-redelivery-is-idempotent-across-receive-times",
+      "one-owner-alternative-satisfies-winning-rule",
+      "invalid-selected-codeowners-source-fails-closed",
+      "missing-codeowner-team-fails-closed",
+      "secret-codeowner-team-fails-closed",
+      "read-only-codeowner-team-fails-closed",
+      "pending-only-team-membership-fails-closed",
+      "noninteracting-base-drift-carries-by-four-way-replay"
+    ]
+  },
+  "known_limitations": [
+    "The offline runner materializes deterministic raw webhook bodies and Git objects, but it does not replace validation against live GitHub delivery behavior.",
+    "HMAC vectors are generated deterministically from the checked-in symbolic fixtures and benchmark-only secret.",
+    "The exact base and head are caller-provided authoritative observations; neither the ledger nor the coverage passport authenticates their provider freshness.",
+    "Head reconciliation fails closed when retained synchronize history is missing, branched, cyclic, or disconnected, which can reduce liveness when delivery history is incomplete.",
+    "The invalid-CODEOWNERS expectation is an explicit StrataDiff fail-closed policy and is stricter than GitHub's native behavior of skipping invalid lines.",
+    "The suite establishes state-machine and provenance expectations, not semantic safety, defect recall, reviewer comprehension, approval restoration, or merge safety."
+  ]
+}

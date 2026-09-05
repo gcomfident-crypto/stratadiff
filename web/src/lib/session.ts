@@ -4,6 +4,7 @@ import type {
   LoadedFileSession,
   LoadedSession,
   RepositorySessionPayload,
+  ReviewCoverageSessionPayload,
   ReviewFile,
   SessionPayload,
 } from '../types'
@@ -30,6 +31,9 @@ const reviewDeltaFallbackReasons = [
 ] as const
 
 const reviewDeltaSchema = 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json'
+const reviewCoverageSchema = 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-coverage-v1.schema.json'
+const coverageStates = ['covered', 'needs_review', 'blocked'] as const
+const coverageScopes = ['current_change', 'retired_residue'] as const
 
 function isReviewFile(value: unknown): value is Record<string, unknown> {
   return isRecord(value) &&
@@ -271,12 +275,150 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
   }
 }
 
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
+function isIdList(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every((entry) => Number.isSafeInteger(entry) && entry > 0)
+}
+
+function isCodeowner(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  if (value.kind === 'user') return typeof value.login === 'string' && value.login.length > 0
+  if (value.kind === 'team') {
+    return typeof value.organization === 'string' && value.organization.length > 0 &&
+      typeof value.slug === 'string' && value.slug.length > 0
+  }
+  return value.kind === 'email' && typeof value.address === 'string' && value.address.length > 0
+}
+
+function isOwnerCoverage(value: unknown): boolean {
+  return isRecord(value) &&
+    isCodeowner(value.owner) &&
+    isIdList(value.eligible_reviewer_ids) &&
+    isIdList(value.active_review_ids) &&
+    isIdList(value.covering_review_ids) &&
+    Array.isArray(value.blockers) &&
+    value.blockers.every((blocker) => typeof blocker === 'string' && blocker.length > 0)
+}
+
+function isCoverageFile(value: unknown): boolean {
+  if (!isRecord(value) || !isRecord(value.change)) return false
+  const matchingRule = value.matching_rule
+  return (coverageScopes as readonly unknown[]).includes(value.scope) &&
+    typeof value.change.status === 'string' &&
+    typeof value.path === 'string' && value.path.length > 0 &&
+    ['utf8', 'git_bytes_percent_encoded'].includes(String(value.path_encoding)) &&
+    (matchingRule === undefined || (
+      isRecord(matchingRule) &&
+      Number.isSafeInteger(matchingRule.line) && (matchingRule.line as number) > 0 &&
+      typeof matchingRule.pattern === 'string' && matchingRule.pattern.length > 0 &&
+      Array.isArray(matchingRule.owner_alternatives) && matchingRule.owner_alternatives.every(isCodeowner)
+    )) &&
+    Array.isArray(value.owner_alternatives) && value.owner_alternatives.every(isOwnerCoverage) &&
+    (coverageStates as readonly unknown[]).includes(value.state) &&
+    typeof value.reason === 'string' && value.reason.length > 0
+}
+
+function assertReviewCoverageSession(value: unknown): asserts value is ReviewCoverageSessionPayload {
+  if (!isRecord(value) || value.kind !== 'review_coverage_passport' || !isRecord(value.passport)) {
+    throw new Error('The viewer returned an invalid review coverage passport.')
+  }
+  if (!isRecord(value.verification) || value.verification.verified !== true || typeof value.verification.message !== 'string') {
+    throw new Error('The review coverage passport was not independently verified.')
+  }
+  const passport = value.passport
+  if (passport.schema !== reviewCoverageSchema || !isRecord(passport.body) || !isRecord(passport.attestation)) {
+    throw new Error('The viewer returned an unsupported review coverage passport.')
+  }
+  const body = passport.body
+  const summary = body.summary
+  if (
+    typeof body.engine_version !== 'string' ||
+    typeof body.protected_base_commit !== 'string' ||
+    typeof body.merge_base_commit !== 'string' ||
+    typeof body.head_commit !== 'string' ||
+    !isRecord(body.ledger) ||
+    !isRecord(body.ledger.repository) ||
+    typeof body.ledger.repository.full_name !== 'string' ||
+    !isRecord(body.ledger.pull_request) ||
+    !Number.isSafeInteger(body.ledger.pull_request.number) ||
+    !isRecord(body.ledger.receiver) ||
+    body.ledger.receiver.algorithm !== 'ed25519' ||
+    typeof body.ledger.receiver.key_id !== 'string' ||
+    typeof body.ledger.receiver.public_key !== 'string' ||
+    !Array.isArray(body.ledger.review_receipts) ||
+    !Array.isArray(body.ledger.dismissals) ||
+    !isRecord(body.ownership) ||
+    body.ownership.base_commit !== body.protected_base_commit ||
+    typeof body.ownership.observed_at !== 'string' ||
+    !Array.isArray(body.checkpoint_proofs) ||
+    !Array.isArray(body.files) || !body.files.every(isCoverageFile) ||
+    !Array.isArray(body.unresolved_residue) ||
+    !body.unresolved_residue.every((entry) => isRecord(entry) &&
+      typeof entry.checkpoint_commit === 'string' &&
+      typeof entry.path === 'string' &&
+      ['utf8', 'git_bytes_percent_encoded'].includes(String(entry.path_encoding)) &&
+      typeof entry.reason === 'string') ||
+    !Array.isArray(body.non_claims) || !body.non_claims.every((claim) => typeof claim === 'string' && claim.length > 0) ||
+    !isRecord(summary)
+  ) {
+    throw new Error('The viewer returned incomplete review coverage evidence.')
+  }
+  const summaryFields = [
+    summary.current_files,
+    summary.retired_residue_files,
+    summary.unresolved_residue,
+    summary.total_requirements,
+    summary.covered_files,
+    summary.needs_review_files,
+    summary.blocked_files,
+    summary.active_review_receipts,
+    summary.unique_checkpoint_proofs,
+  ]
+  const covered = body.files.filter((file) => isRecord(file) && file.state === 'covered').length
+  const needsReview = body.files.filter((file) => isRecord(file) && file.state === 'needs_review').length
+  const blocked = body.files.filter((file) => isRecord(file) && file.state === 'blocked').length + body.unresolved_residue.length
+  const current = body.files.filter((file) => isRecord(file) && file.scope === 'current_change').length
+  const retired = body.files.filter((file) => isRecord(file) && file.scope === 'retired_residue').length
+  if (
+    !summaryFields.every(isNonNegativeInteger) ||
+    summary.current_files !== current ||
+    summary.retired_residue_files !== retired ||
+    summary.unresolved_residue !== body.unresolved_residue.length ||
+    summary.total_requirements !== body.files.length + body.unresolved_residue.length ||
+    summary.covered_files !== covered ||
+    summary.needs_review_files !== needsReview ||
+    summary.blocked_files !== blocked ||
+    typeof summary.gate_passed !== 'boolean' ||
+    summary.gate_passed !== (summary.covered_files === summary.total_requirements) ||
+    passport.attestation.algorithm !== 'ed25519' ||
+    passport.attestation.key_id !== body.ledger.receiver.key_id ||
+    typeof passport.attestation.body_sha256 !== 'string' ||
+    typeof passport.attestation.signature !== 'string'
+  ) {
+    throw new Error('The viewer returned inconsistent review coverage metadata.')
+  }
+  if (body.codeowners_source !== undefined && (
+    !isRecord(body.codeowners_source) ||
+    body.codeowners_source.base_commit !== body.protected_base_commit ||
+    !['.github/CODEOWNERS', 'CODEOWNERS', 'docs/CODEOWNERS'].includes(String(body.codeowners_source.path)) ||
+    typeof body.codeowners_source.blob_oid !== 'string' ||
+    typeof body.codeowners_source.blake3 !== 'string' ||
+    !isNonNegativeInteger(body.codeowners_source.byte_len)
+  )) {
+    throw new Error('The viewer returned invalid CODEOWNERS provenance.')
+  }
+}
+
 function assertSessionPayload(value: unknown): asserts value is SessionPayload {
   if (!isRecord(value) || typeof value.kind !== 'string') {
     throw new Error('The viewer returned an invalid session kind.')
   }
   if (value.kind === 'file_diff') assertDiffSession(value)
   else if (value.kind === 'repository_review') assertRepositorySession(value)
+  else if (value.kind === 'review_coverage_passport') assertReviewCoverageSession(value)
   else throw new Error(`The viewer returned an unsupported session kind: ${value.kind}`)
 }
 
@@ -300,7 +442,7 @@ export async function fetchSession(search: string, signal?: AbortSignal): Promis
   await checkedResponse(sessionResponse, 'Session')
   const payload: unknown = await sessionResponse.json()
   assertSessionPayload(payload)
-  if (payload.kind === 'repository_review') return payload
+  if (payload.kind !== 'file_diff') return payload
 
   const request = (path: string) => fetch(`${path}?${query}`, {
     signal,

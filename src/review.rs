@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     env,
     ffi::OsStr,
+    fmt,
     io::{self, Read},
     path::Path,
     process::{Command, Output, Stdio},
@@ -23,8 +24,9 @@ pub const MAX_REVIEW_TOTAL_SOURCE_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_GITHUB_WORKFLOW_ANNOTATIONS: usize = 20;
 const MAX_REVIEW_TOTAL_LINE_STAT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_REVIEW_MARKDOWN_BYTES: usize = 900 * 1024;
+const MAX_GIT_RAW_DIFF_BYTES: usize = 16 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum FileStatus {
     Added,
@@ -44,7 +46,7 @@ pub enum ReviewLane {
     Unverified,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum PathEncoding {
     Utf8,
@@ -229,6 +231,30 @@ pub struct ReviewFile {
     pub evidence: Option<FileEvidence>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewChangeIdentity {
+    pub status: FileStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub similarity_percent: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_path_encoding: Option<PathEncoding>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_path_encoding: Option<PathEncoding>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before_blob: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after_blob: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ReviewCheckpoint {
@@ -254,6 +280,28 @@ impl ReviewFile {
             (Some(before), None) => before.clone(),
             (None, None) => "<unknown>".to_owned(),
         }
+    }
+
+    pub fn change_identity(&self) -> ReviewChangeIdentity {
+        ReviewChangeIdentity {
+            status: self.status,
+            similarity_percent: self.similarity_percent,
+            before_path: self.before_path.clone(),
+            before_path_encoding: self.before_path_encoding,
+            after_path: self.after_path.clone(),
+            after_path_encoding: self.after_path_encoding,
+            before_mode: self.before_mode.clone(),
+            after_mode: self.after_mode.clone(),
+            before_blob: self.before_blob.clone(),
+            after_blob: self.after_blob.clone(),
+        }
+    }
+
+    pub fn ownership_path(&self) -> Option<(&str, PathEncoding)> {
+        self.after_path
+            .as_deref()
+            .zip(self.after_path_encoding)
+            .or_else(|| self.before_path.as_deref().zip(self.before_path_encoding))
     }
 }
 
@@ -645,6 +693,345 @@ struct BlobLoader {
     line_changes: HashMap<(Option<String>, Option<String>), Option<LineChangeEnvelope>>,
 }
 
+#[derive(Debug)]
+pub(crate) struct ReviewAnalysisBudgetExceeded {
+    resource: &'static str,
+    observed: usize,
+    limit: usize,
+}
+
+impl fmt::Display for ReviewAnalysisBudgetExceeded {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "review analysis {} budget exceeded: observed at least {}, limit {}",
+            self.resource, self.observed, self.limit
+        )
+    }
+}
+
+impl std::error::Error for ReviewAnalysisBudgetExceeded {}
+
+pub(crate) struct ReviewAnalysisContext {
+    max_file_visits: Option<usize>,
+    file_visits: usize,
+    max_source_bytes: Option<usize>,
+    source_bytes: usize,
+    processed_source_bytes: usize,
+    metadata_bytes: usize,
+    diff_queries: usize,
+    source_oids: HashSet<String>,
+    retain_source_overrides: bool,
+    changes: HashMap<(String, String), Vec<GitChange>>,
+    analyzed_files: HashMap<GitChangeIdentity, ReviewFile>,
+    blob_loader: BlobLoader,
+}
+
+impl ReviewAnalysisContext {
+    fn unbounded() -> Self {
+        Self {
+            max_file_visits: None,
+            file_visits: 0,
+            max_source_bytes: None,
+            source_bytes: 0,
+            processed_source_bytes: 0,
+            metadata_bytes: 0,
+            diff_queries: 0,
+            source_oids: HashSet::new(),
+            retain_source_overrides: true,
+            changes: HashMap::new(),
+            analyzed_files: HashMap::new(),
+            blob_loader: BlobLoader::default(),
+        }
+    }
+
+    pub(crate) fn bounded(max_file_visits: usize, max_source_bytes: usize) -> Self {
+        Self {
+            max_file_visits: Some(max_file_visits),
+            file_visits: 0,
+            max_source_bytes: Some(max_source_bytes),
+            source_bytes: 0,
+            processed_source_bytes: 0,
+            metadata_bytes: 0,
+            diff_queries: 0,
+            source_oids: HashSet::new(),
+            retain_source_overrides: false,
+            changes: HashMap::new(),
+            analyzed_files: HashMap::new(),
+            blob_loader: BlobLoader::default(),
+        }
+    }
+
+    fn consume_file_visits(&mut self, additional: usize) -> Result<()> {
+        let Some(limit) = self.max_file_visits else {
+            return Ok(());
+        };
+        self.file_visits =
+            checked_analysis_budget_add(self.file_visits, additional, limit, "file visit")?;
+        Ok(())
+    }
+
+    fn consume_diff_query(&mut self) -> Result<()> {
+        let Some(limit) = self.max_file_visits else {
+            return Ok(());
+        };
+        self.diff_queries = checked_analysis_budget_add(self.diff_queries, 1, limit, "diff query")?;
+        Ok(())
+    }
+
+    fn consume_metadata_bytes(&mut self, additional: usize) -> Result<()> {
+        let Some(limit) = self.max_source_bytes else {
+            return Ok(());
+        };
+        self.metadata_bytes = checked_analysis_budget_add(
+            self.metadata_bytes,
+            additional,
+            limit,
+            "diff metadata byte",
+        )?;
+        Ok(())
+    }
+
+    fn consume_processed_source_bytes(&mut self, additional: usize) -> Result<()> {
+        let Some(limit) = self.max_source_bytes else {
+            return Ok(());
+        };
+        self.processed_source_bytes = checked_analysis_budget_add(
+            self.processed_source_bytes,
+            additional,
+            limit,
+            "processed source byte",
+        )?;
+        Ok(())
+    }
+
+    fn discover_changes(
+        &mut self,
+        repository: &Path,
+        from_commit: &str,
+        to_commit: &str,
+    ) -> Result<Vec<GitChange>> {
+        let key = (from_commit.to_owned(), to_commit.to_owned());
+        if let Some(changes) = self.changes.get(&key) {
+            return Ok(changes.clone());
+        }
+        self.consume_diff_query()?;
+        let remaining_metadata_bytes = self
+            .max_source_bytes
+            .map(|limit| limit.saturating_sub(self.metadata_bytes));
+        let output_limit = remaining_metadata_bytes.map_or(MAX_GIT_RAW_DIFF_BYTES, |remaining| {
+            remaining.min(MAX_GIT_RAW_DIFF_BYTES)
+        });
+        let captured =
+            discover_git_change_output(repository, from_commit, to_commit, output_limit)?;
+        let observed_bytes = captured
+            .output
+            .stdout
+            .len()
+            .saturating_add(usize::from(captured.stdout_exceeded));
+        self.consume_metadata_bytes(observed_bytes)?;
+        if captured.stdout_exceeded {
+            let (resource, limit) = if output_limit < MAX_GIT_RAW_DIFF_BYTES {
+                (
+                    "diff metadata byte",
+                    self.max_source_bytes.expect("bounded metadata budget"),
+                )
+            } else {
+                ("raw diff metadata byte", MAX_GIT_RAW_DIFF_BYTES)
+            };
+            return Err(ReviewAnalysisBudgetExceeded {
+                resource,
+                observed: if output_limit < MAX_GIT_RAW_DIFF_BYTES {
+                    self.metadata_bytes.saturating_add(1)
+                } else {
+                    MAX_GIT_RAW_DIFF_BYTES + 1
+                },
+                limit,
+            }
+            .into());
+        }
+        let changes = parse_git_change_output(captured)?;
+        self.changes.insert(key, changes.clone());
+        Ok(changes)
+    }
+
+    fn reserve_sources<'a>(
+        &mut self,
+        repository: &Path,
+        changes: impl IntoIterator<Item = &'a GitChange>,
+        limits: &VerificationLimits,
+    ) -> Result<()> {
+        let Some(limit) = self.max_source_bytes else {
+            return Ok(());
+        };
+        let mut candidates = HashMap::<String, String>::new();
+        for change in changes {
+            for (object_id, mode) in [
+                (change.before_blob.as_ref(), change.before_mode.as_ref()),
+                (change.after_blob.as_ref(), change.after_mode.as_ref()),
+            ] {
+                let (Some(object_id), Some(mode)) = (object_id, mode) else {
+                    continue;
+                };
+                if !matches!(mode.as_str(), "100644" | "100755") {
+                    continue;
+                }
+                if self.source_oids.contains(object_id) || candidates.contains_key(object_id) {
+                    continue;
+                }
+                candidates.insert(object_id.clone(), mode.clone());
+            }
+        }
+
+        let mut reservations = Vec::new();
+        let mut additional_bytes = 0_usize;
+        for (object_id, mode) in candidates {
+            let Some(blob) = inspect_optional_blob(
+                repository,
+                Some(&object_id),
+                Some(&mode),
+                limits,
+                &mut self.blob_loader,
+            )?
+            else {
+                continue;
+            };
+            let Some(size) = blob.size.filter(|_| blob.unavailable_reason.is_none()) else {
+                continue;
+            };
+            additional_bytes =
+                checked_analysis_budget_add(additional_bytes, size, usize::MAX, "source byte")?;
+            reservations.push(object_id);
+        }
+        self.source_bytes =
+            checked_analysis_budget_add(self.source_bytes, additional_bytes, limit, "source byte")?;
+        self.source_oids.extend(reservations);
+        Ok(())
+    }
+
+    fn source_work_bytes<'a>(
+        &mut self,
+        repository: &Path,
+        sources: impl IntoIterator<Item = (Option<&'a String>, Option<&'a String>)>,
+        limits: &VerificationLimits,
+    ) -> Result<usize> {
+        let mut bytes = 0_usize;
+        for (object_id, mode) in sources {
+            let (Some(object_id), Some(mode)) = (object_id, mode) else {
+                continue;
+            };
+            let Some(blob) = inspect_optional_blob(
+                repository,
+                Some(object_id),
+                Some(mode),
+                limits,
+                &mut self.blob_loader,
+            )?
+            else {
+                continue;
+            };
+            let Some(size) = blob.size.filter(|_| blob.unavailable_reason.is_none()) else {
+                continue;
+            };
+            bytes = checked_analysis_budget_add(bytes, size, usize::MAX, "processed source byte")?;
+        }
+        Ok(bytes)
+    }
+
+    fn reserve_change_work(
+        &mut self,
+        repository: &Path,
+        change: &GitChange,
+        limits: &VerificationLimits,
+    ) -> Result<()> {
+        let bytes = self.source_work_bytes(
+            repository,
+            [
+                (change.before_blob.as_ref(), change.before_mode.as_ref()),
+                (change.after_blob.as_ref(), change.after_mode.as_ref()),
+            ],
+            limits,
+        )?;
+        self.consume_processed_source_bytes(bytes)
+    }
+
+    fn reconstruct_review_baseline(
+        &mut self,
+        repository: &Path,
+        checkpoint: &GitChange,
+        current: &GitChange,
+        limits: &VerificationLimits,
+    ) -> Result<BaselineReconstructionOutcome> {
+        if replay_candidate_metadata_matches(checkpoint, current) {
+            let bytes = self.source_work_bytes(
+                repository,
+                [
+                    (
+                        checkpoint.before_blob.as_ref(),
+                        checkpoint.before_mode.as_ref(),
+                    ),
+                    (
+                        checkpoint.after_blob.as_ref(),
+                        checkpoint.after_mode.as_ref(),
+                    ),
+                    (current.before_blob.as_ref(), current.before_mode.as_ref()),
+                    (current.after_blob.as_ref(), current.after_mode.as_ref()),
+                ],
+                limits,
+            )?;
+            self.consume_processed_source_bytes(bytes)?;
+        }
+        reconstruct_review_baseline(
+            repository,
+            checkpoint,
+            current,
+            limits,
+            &mut self.blob_loader,
+        )
+    }
+
+    fn analyze_change(
+        &mut self,
+        repository: &Path,
+        change: GitChange,
+        limits: &VerificationLimits,
+    ) -> Result<ReviewFile> {
+        let identity = GitChangeIdentity::from(&change);
+        if let Some(file) = self.analyzed_files.get(&identity) {
+            return Ok(file.clone());
+        }
+        self.reserve_change_work(repository, &change, limits)?;
+        let file = analyze_change(repository, change, limits, &mut self.blob_loader)?;
+        self.analyzed_files.insert(identity, file.clone());
+        Ok(file)
+    }
+}
+
+fn checked_analysis_budget_add(
+    current: usize,
+    additional: usize,
+    limit: usize,
+    resource: &'static str,
+) -> Result<usize> {
+    let Some(observed) = current.checked_add(additional) else {
+        return Err(ReviewAnalysisBudgetExceeded {
+            resource,
+            observed: usize::MAX,
+            limit,
+        }
+        .into());
+    };
+    if observed > limit {
+        return Err(ReviewAnalysisBudgetExceeded {
+            resource,
+            observed,
+            limit,
+        }
+        .into());
+    }
+    Ok(observed)
+}
+
 enum StructuralBlobPair {
     Available { before: Vec<u8>, after: Vec<u8> },
     Unavailable(String),
@@ -656,7 +1043,8 @@ enum BlobLoad {
 }
 
 pub fn review_git_range(repository: &Path, base: &str, head: &str) -> Result<RepositoryReview> {
-    review_git_range_with_checkpoint(repository, base, head, None)
+    let mut context = ReviewAnalysisContext::unbounded();
+    review_git_range_with_analysis(repository, base, head, None, &mut context)
 }
 
 pub fn review_git_range_with_checkpoint(
@@ -664,6 +1052,17 @@ pub fn review_git_range_with_checkpoint(
     base: &str,
     head: &str,
     checkpoint: Option<&str>,
+) -> Result<RepositoryReview> {
+    let mut context = ReviewAnalysisContext::unbounded();
+    review_git_range_with_analysis(repository, base, head, checkpoint, &mut context)
+}
+
+pub(crate) fn review_git_range_with_analysis(
+    repository: &Path,
+    base: &str,
+    head: &str,
+    checkpoint: Option<&str>,
+    context: &mut ReviewAnalysisContext,
 ) -> Result<RepositoryReview> {
     let shallow = git_text(repository, &["rev-parse", "--is-shallow-repository"])?;
     ensure!(
@@ -704,66 +1103,93 @@ pub fn review_git_range_with_checkpoint(
     let checkpoint_changes = checkpoint
         .as_ref()
         .map(|checkpoint| {
-            discover_git_changes(repository, &checkpoint.base_commit, &checkpoint.commit)
+            context.discover_changes(repository, &checkpoint.base_commit, &checkpoint.commit)
         })
         .transpose()?;
-    let changes = discover_git_changes(repository, &base_commit, &head_commit)?;
+    let changes = context.discover_changes(repository, &base_commit, &head_commit)?;
     let base_changed = checkpoint
         .as_ref()
         .is_some_and(|checkpoint| checkpoint.base_commit != base_commit);
 
     let limits = VerificationLimits::default();
+    let checkpoint_file_count = checkpoint_changes.as_ref().map_or(0, Vec::len);
+    context.consume_file_visits(changes.len())?;
+    context.consume_file_visits(checkpoint_file_count)?;
+    context.reserve_sources(
+        repository,
+        changes
+            .iter()
+            .chain(checkpoint_changes.as_deref().unwrap_or_default().iter()),
+        &limits,
+    )?;
     let mut files = Vec::with_capacity(changes.len());
-    let mut blob_loader = BlobLoader::default();
     let mut matched_checkpoint_indices = HashSet::new();
     for change in changes {
         let mut carried_by_replay = false;
         let mut checkpoint_match_basis = None;
-        let checkpoint_state = checkpoint_changes.as_ref().map(|checkpoint_changes| {
-            let identity = GitChangeIdentity::from(&change);
-            let mut exact_match = false;
-            for (index, checkpoint_change) in checkpoint_changes.iter().enumerate() {
-                if GitChangeIdentity::from(checkpoint_change) == identity {
-                    matched_checkpoint_indices.insert(index);
-                    exact_match = true;
+        let checkpoint_state = checkpoint_changes
+            .as_ref()
+            .map(|checkpoint_changes| -> Result<CheckpointState> {
+                let identity = GitChangeIdentity::from(&change);
+                let mut exact_match = false;
+                for (index, checkpoint_change) in checkpoint_changes.iter().enumerate() {
+                    if GitChangeIdentity::from(checkpoint_change) == identity {
+                        matched_checkpoint_indices.insert(index);
+                        exact_match = true;
+                    }
                 }
-            }
-            if exact_match {
-                checkpoint_match_basis = Some(CheckpointCarryBasis::ExactGitChangeIdentity);
-                return CheckpointState::UnchangedSinceCheckpoint;
-            }
+                if exact_match {
+                    checkpoint_match_basis = Some(CheckpointCarryBasis::ExactGitChangeIdentity);
+                    return Ok(CheckpointState::UnchangedSinceCheckpoint);
+                }
 
-            let replay_match = base_changed
-                && unique_replay_candidate(checkpoint_changes, &change).is_some_and(
-                    |(index, checkpoint_change)| {
+                let replay_match = if base_changed {
+                    if let Some((index, checkpoint_change)) =
+                        unique_replay_candidate(checkpoint_changes, &change)
+                    {
                         if matched_checkpoint_indices.contains(&index) {
-                            return false;
-                        }
-                        match independent_four_way_replay_matches(
-                            repository,
-                            checkpoint_change,
-                            &change,
-                            &limits,
-                            &mut blob_loader,
-                        ) {
-                            Ok(true) => {
-                                matched_checkpoint_indices.insert(index);
-                                true
+                            false
+                        } else {
+                            match independent_four_way_replay_matches(
+                                repository,
+                                checkpoint_change,
+                                &change,
+                                &limits,
+                                context,
+                            ) {
+                                Ok(true) => {
+                                    matched_checkpoint_indices.insert(index);
+                                    true
+                                }
+                                Ok(false) => false,
+                                Err(error) => {
+                                    if error
+                                        .downcast_ref::<ReviewAnalysisBudgetExceeded>()
+                                        .is_some()
+                                    {
+                                        return Err(error);
+                                    }
+                                    false
+                                }
                             }
-                            Ok(false) | Err(_) => false,
                         }
-                    },
-                );
-            if replay_match {
-                carried_by_replay = true;
-                checkpoint_match_basis =
-                    Some(CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay);
-                CheckpointState::UnchangedSinceCheckpoint
-            } else {
-                CheckpointState::NeedsReviewNow
-            }
-        });
-        let mut file = analyze_change(repository, change, &limits, &mut blob_loader)?;
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                if replay_match {
+                    carried_by_replay = true;
+                    checkpoint_match_basis =
+                        Some(CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay);
+                    Ok(CheckpointState::UnchangedSinceCheckpoint)
+                } else {
+                    Ok(CheckpointState::NeedsReviewNow)
+                }
+            })
+            .transpose()?;
+        let mut file = context.analyze_change(repository, change, &limits)?;
         file.checkpoint_state = checkpoint_state;
         file.checkpoint_match_basis = checkpoint_match_basis;
         if carried_by_replay {
@@ -801,19 +1227,25 @@ pub fn review_git_range_with_checkpoint(
 }
 
 pub fn review_git_snapshot_delta(repository: &Path, from: &str, to: &str) -> Result<ReviewDelta> {
+    let mut context = ReviewAnalysisContext::unbounded();
+    review_git_snapshot_delta_with_analysis(repository, from, to, &mut context)
+}
+
+fn review_git_snapshot_delta_with_analysis(
+    repository: &Path,
+    from: &str,
+    to: &str,
+    context: &mut ReviewAnalysisContext,
+) -> Result<ReviewDelta> {
     let from_commit = resolve_commit(repository, from)?;
     let to_commit = resolve_commit(repository, to)?;
-    let changes = discover_git_changes(repository, &from_commit, &to_commit)?;
+    let changes = context.discover_changes(repository, &from_commit, &to_commit)?;
     let limits = VerificationLimits::default();
-    let mut blob_loader = BlobLoader::default();
+    context.consume_file_visits(changes.len())?;
+    context.reserve_sources(repository, &changes, &limits)?;
     let mut files = Vec::with_capacity(changes.len());
     for change in changes {
-        files.push(analyze_change(
-            repository,
-            change,
-            &limits,
-            &mut blob_loader,
-        )?);
+        files.push(context.analyze_change(repository, change, &limits)?);
     }
     files.sort_by_key(|file| {
         (
@@ -856,13 +1288,26 @@ pub fn review_git_resume_delta(
     repository: &Path,
     review: &RepositoryReview,
 ) -> Result<ReviewDelta> {
+    let mut context = ReviewAnalysisContext::unbounded();
+    review_git_resume_delta_with_analysis(repository, review, &mut context)
+}
+
+pub(crate) fn review_git_resume_delta_with_analysis(
+    repository: &Path,
+    review: &RepositoryReview,
+    context: &mut ReviewAnalysisContext,
+) -> Result<ReviewDelta> {
     let checkpoint = review
         .checkpoint
         .as_ref()
         .context("review residue requires a checkpoint")?;
     if checkpoint.base_commit == review.base_commit {
-        let mut delta =
-            review_git_snapshot_delta(repository, &checkpoint.commit, &review.head_commit)?;
+        let mut delta = review_git_snapshot_delta_with_analysis(
+            repository,
+            &checkpoint.commit,
+            &review.head_commit,
+            context,
+        )?;
         delta.old_base_commit = checkpoint.base_commit.clone();
         delta.current_base_commit = review.base_commit.clone();
         delta.validate()?;
@@ -870,11 +1315,17 @@ pub fn review_git_resume_delta(
     }
 
     let checkpoint_changes =
-        discover_git_changes(repository, &checkpoint.base_commit, &checkpoint.commit)?;
+        context.discover_changes(repository, &checkpoint.base_commit, &checkpoint.commit)?;
     let current_changes =
-        discover_git_changes(repository, &review.base_commit, &review.head_commit)?;
+        context.discover_changes(repository, &review.base_commit, &review.head_commit)?;
     let limits = VerificationLimits::default();
-    let mut blob_loader = BlobLoader::default();
+    context.consume_file_visits(checkpoint_changes.len())?;
+    context.consume_file_visits(current_changes.len())?;
+    context.reserve_sources(
+        repository,
+        checkpoint_changes.iter().chain(&current_changes),
+        &limits,
+    )?;
     // A multi-path checkpoint change is consumed only after every distinct path side has been
     // accounted for. A current change touching one side of a rename must not hide the other side.
     let mut associated_checkpoint_paths = HashSet::new();
@@ -917,12 +1368,11 @@ pub fn review_git_resume_delta(
                 index,
                 checkpoint_change,
             );
-            match reconstruct_review_baseline(
+            match context.reconstruct_review_baseline(
                 repository,
                 checkpoint_change,
                 current_change,
                 &limits,
-                &mut blob_loader,
             )? {
                 BaselineReconstructionOutcome::Reconstructed(reconstruction) => {
                     if reconstruction.baseline != reconstruction.current_after {
@@ -932,6 +1382,7 @@ pub fn review_git_resume_delta(
                             *reconstruction,
                             &review.head_commit,
                             &limits,
+                            context.retain_source_overrides,
                         )?);
                     }
                 }
@@ -978,6 +1429,7 @@ pub fn review_git_resume_delta(
         if unassociated_paths.is_empty() {
             continue;
         }
+        context.consume_file_visits(1)?;
         let Some(current_snapshot) = same_path_snapshot_change(
             repository,
             &review.base_commit,
@@ -991,34 +1443,31 @@ pub fn review_git_resume_delta(
                 &checkpoint.commit,
                 &review.head_commit,
                 &limits,
-                &mut blob_loader,
+                context,
             )?;
             entries.extend(fallback.entries);
             unresolved_retired_changes.extend(fallback.unresolved);
             continue;
         };
 
-        match reconstruct_review_baseline(
+        context.reserve_sources(repository, std::iter::once(&current_snapshot), &limits)?;
+        match context.reconstruct_review_baseline(
             repository,
             checkpoint_change,
             &current_snapshot,
             &limits,
-            &mut blob_loader,
         )? {
             BaselineReconstructionOutcome::Reconstructed(reconstruction) => {
                 if reconstruction.baseline != reconstruction.current_after {
-                    let fallback_file = analyze_change(
-                        repository,
-                        current_snapshot.clone(),
-                        &limits,
-                        &mut blob_loader,
-                    )?;
+                    let fallback_file =
+                        context.analyze_change(repository, current_snapshot.clone(), &limits)?;
                     entries.push(reconstructed_delta_entry(
                         fallback_file,
                         &current_snapshot,
                         *reconstruction,
                         &review.head_commit,
                         &limits,
+                        context.retain_source_overrides,
                     )?);
                 }
             }
@@ -1029,7 +1478,7 @@ pub fn review_git_resume_delta(
                     &checkpoint.commit,
                     &review.head_commit,
                     &limits,
-                    &mut blob_loader,
+                    context,
                 )?;
                 entries.extend(fallback.entries);
                 unresolved_retired_changes.extend(fallback.unresolved);
@@ -1324,12 +1773,13 @@ fn checkpoint_head_fallback_entries(
     checkpoint_commit: &str,
     head_commit: &str,
     limits: &VerificationLimits,
-    blob_loader: &mut BlobLoader,
+    context: &mut ReviewAnalysisContext,
 ) -> Result<CheckpointHeadFallback> {
     ensure!(
         !paths.is_empty(),
         "checkpoint fallback has no unassociated path"
     );
+    context.consume_file_visits(paths.len())?;
 
     let mut entries = Vec::new();
     let mut unresolved = Vec::new();
@@ -1373,7 +1823,8 @@ fn checkpoint_head_fallback_entries(
             before_blob,
             after_blob,
         };
-        let mut file = analyze_change(repository, change, limits, blob_loader)?;
+        context.reserve_sources(repository, std::iter::once(&change), limits)?;
+        let mut file = context.analyze_change(repository, change, limits)?;
         file.checkpoint_state = Some(CheckpointState::NeedsReviewNow);
         file.reason.push_str(
             "; the reviewed change no longer has a current PR identity and could not be rebased exactly, so this conservative checkpoint-to-head fallback may include upstream edits",
@@ -1398,6 +1849,7 @@ fn reconstructed_delta_entry(
     reconstruction: ReconstructedReviewBaseline,
     head_commit: &str,
     limits: &VerificationLimits,
+    retain_source_override: bool,
 ) -> Result<ReviewDeltaFile> {
     let path = current_change
         .after_path
@@ -1454,10 +1906,10 @@ fn reconstructed_delta_entry(
         baseline_hash == reconstruction.evidence.reconstructed_blake3,
         "reconstructed review baseline digest changed"
     );
-    let sources = ReviewFileSources {
+    let source_override = retain_source_override.then_some(ReviewFileSources {
         before: reconstruction.baseline,
         after: reconstruction.current_after,
-    };
+    });
     Ok(ReviewDeltaFile {
         file,
         baseline_basis: ReviewDeltaBaselineBasis::ReconstructedReviewBaseline,
@@ -1472,7 +1924,7 @@ fn reconstructed_delta_entry(
         },
         baseline_reconstruction: Some(reconstruction.evidence),
         fallback_reason: None,
-        source_override: Some(sources),
+        source_override,
     })
 }
 
@@ -1650,12 +2102,13 @@ fn unique_merge_base(
     Ok(merge_base)
 }
 
-fn discover_git_changes(
+fn discover_git_change_output(
     repository: &Path,
     base_commit: &str,
     head_commit: &str,
-) -> Result<Vec<GitChange>> {
-    let diff = git_output_bounded(
+    max_stdout_bytes: usize,
+) -> Result<CapturedGitOutput> {
+    git_output_bounded_capture(
         repository,
         &[
             "diff",
@@ -1670,14 +2123,28 @@ fn discover_git_changes(
             head_commit,
             "--",
         ],
-        16 * 1024 * 1024,
-    )?;
+        max_stdout_bytes,
+    )
+}
+
+fn parse_git_change_output(diff: CapturedGitOutput) -> Result<Vec<GitChange>> {
     ensure!(
-        allowed_raw_diff_diagnostics(&diff.stderr),
-        "git diff produced diagnostics: {}",
-        String::from_utf8_lossy(&diff.stderr).trim()
+        !diff.stderr_exceeded,
+        "git diagnostics exceed the 65536 byte limit"
     );
-    let changes = parse_raw_diff(&diff.stdout, MAX_REVIEW_FILES * 2)?;
+    if !diff.output.status.success() {
+        bail!(
+            "git diff failed with {}: {}",
+            diff.output.status,
+            String::from_utf8_lossy(&diff.output.stderr).trim()
+        );
+    }
+    ensure!(
+        allowed_raw_diff_diagnostics(&diff.output.stderr),
+        "git diff produced diagnostics: {}",
+        String::from_utf8_lossy(&diff.output.stderr).trim()
+    );
+    let changes = parse_raw_diff(&diff.output.stdout, MAX_REVIEW_FILES * 2)?;
     let mut changes = pair_unique_exact_relocations(changes);
     ensure!(
         changes.len() <= MAX_REVIEW_FILES,
@@ -1741,10 +2208,10 @@ fn independent_four_way_replay_matches(
     checkpoint: &GitChange,
     current: &GitChange,
     limits: &VerificationLimits,
-    blob_loader: &mut BlobLoader,
+    context: &mut ReviewAnalysisContext,
 ) -> Result<bool> {
     Ok(
-        match reconstruct_review_baseline(repository, checkpoint, current, limits, blob_loader)? {
+        match context.reconstruct_review_baseline(repository, checkpoint, current, limits)? {
             BaselineReconstructionOutcome::Reconstructed(reconstruction) => {
                 reconstruction.baseline == reconstruction.current_after
             }
@@ -3386,6 +3853,37 @@ fn git_output_bounded(
     arguments: &[&str],
     max_stdout_bytes: usize,
 ) -> Result<Output> {
+    let captured = git_output_bounded_capture(repository, arguments, max_stdout_bytes)?;
+    ensure!(
+        !captured.stdout_exceeded,
+        "git raw diff exceeds the {max_stdout_bytes} byte metadata limit"
+    );
+    ensure!(
+        !captured.stderr_exceeded,
+        "git diagnostics exceed the 65536 byte limit"
+    );
+    if !captured.output.status.success() {
+        bail!(
+            "git {} failed with {}: {}",
+            arguments.join(" "),
+            captured.output.status,
+            String::from_utf8_lossy(&captured.output.stderr).trim()
+        );
+    }
+    Ok(captured.output)
+}
+
+struct CapturedGitOutput {
+    output: Output,
+    stdout_exceeded: bool,
+    stderr_exceeded: bool,
+}
+
+fn git_output_bounded_capture(
+    repository: &Path,
+    arguments: &[&str],
+    max_stdout_bytes: usize,
+) -> Result<CapturedGitOutput> {
     let mut child = isolated_git_command(repository)
         .args(arguments)
         .stdout(Stdio::piped())
@@ -3414,26 +3912,14 @@ fn git_output_bounded(
     let (stderr, stderr_exceeded) = stderr_reader
         .join()
         .map_err(|_| anyhow::anyhow!("git stderr reader panicked"))??;
-    ensure!(
-        !stdout_exceeded,
-        "git raw diff exceeds the {max_stdout_bytes} byte metadata limit"
-    );
-    ensure!(
-        !stderr_exceeded,
-        "git diagnostics exceed the 65536 byte limit"
-    );
-    if !status.success() {
-        bail!(
-            "git {} failed with {}: {}",
-            arguments.join(" "),
+    Ok(CapturedGitOutput {
+        output: Output {
             status,
-            String::from_utf8_lossy(&stderr).trim()
-        );
-    }
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
+            stdout,
+            stderr,
+        },
+        stdout_exceeded,
+        stderr_exceeded,
     })
 }
 
@@ -3502,14 +3988,97 @@ fn null_device() -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path, process::Command};
+
     use crate::{ByteEdit, LosslessPatch};
 
     use super::{
-        FileStatus, GitChange, GitChangeIdentity, GitPath, MAX_REVIEW_MARKDOWN_BYTES, PathEncoding,
-        RepositoryReview, ReviewFile, ReviewLane, ReviewPriority, ReviewSummary,
-        allowed_raw_diff_diagnostics, line_changes, markdown_cell, markdown_code, markdown_report,
-        pair_unique_exact_relocations, parse_raw_diff, patches_interact, read_bounded,
+        BaselineReconstructionOutcome, FileStatus, GitChange, GitChangeIdentity, GitPath,
+        MAX_REVIEW_MARKDOWN_BYTES, PathEncoding, RepositoryReview, ReviewAnalysisBudgetExceeded,
+        ReviewAnalysisContext, ReviewDeltaBaselineBasis, ReviewFile, ReviewLane, ReviewPriority,
+        ReviewSummary, allowed_raw_diff_diagnostics, line_changes, markdown_cell, markdown_code,
+        markdown_report, pair_unique_exact_relocations, parse_raw_diff, patches_interact,
+        read_bounded, review_git_range_with_analysis, review_git_resume_delta_with_analysis,
     };
+
+    fn git(repository: &Path, arguments: &[&str]) -> String {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repository)
+            .args(arguments)
+            .env("LC_ALL", "C")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {} failed: {}",
+            arguments.join(" "),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    fn commit(repository: &Path, message: &str) -> String {
+        git(repository, &["add", "--all"]);
+        git(repository, &["commit", "--quiet", "-m", message]);
+        git(repository, &["rev-parse", "HEAD"])
+    }
+
+    fn repository_with_one_change(
+        before: &[u8],
+        after: &[u8],
+    ) -> (tempfile::TempDir, String, String) {
+        let directory = tempfile::tempdir().unwrap();
+        git(directory.path(), &["init", "--quiet"]);
+        git(
+            directory.path(),
+            &["config", "user.name", "StrataDiff Test"],
+        );
+        git(
+            directory.path(),
+            &["config", "user.email", "stratadiff@example.test"],
+        );
+        fs::write(directory.path().join("change.txt"), before).unwrap();
+        let base = commit(directory.path(), "base");
+        fs::write(directory.path().join("change.txt"), after).unwrap();
+        let head = commit(directory.path(), "head");
+        (directory, base, head)
+    }
+
+    fn replay_history() -> (tempfile::TempDir, String, String, String) {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        git(root, &["init", "--quiet"]);
+        git(root, &["config", "user.name", "StrataDiff Test"]);
+        git(root, &["config", "user.email", "stratadiff@example.test"]);
+        let padding = "x".repeat(4 * 1024);
+        fs::write(
+            root.join("shared.py"),
+            format!("title = 'old'\nstable = '{padding}'\nreviewed = 0\nfollowup = 0\n"),
+        )
+        .unwrap();
+        let original_base = commit(root, "original base");
+        fs::write(
+            root.join("shared.py"),
+            format!("title = 'old'\nstable = '{padding}'\nreviewed = 1\nfollowup = 0\n"),
+        )
+        .unwrap();
+        let checkpoint = commit(root, "reviewed checkpoint");
+        git(root, &["checkout", "--quiet", &original_base]);
+        fs::write(
+            root.join("shared.py"),
+            format!("title = 'new'\nstable = '{padding}'\nreviewed = 0\nfollowup = 0\n"),
+        )
+        .unwrap();
+        let current_base = commit(root, "advanced base");
+        fs::write(
+            root.join("shared.py"),
+            format!("title = 'new'\nstable = '{padding}'\nreviewed = 1\nfollowup = 1\n"),
+        )
+        .unwrap();
+        let head = commit(root, "rebased head");
+        (directory, current_base, checkpoint, head)
+    }
 
     #[test]
     fn parses_modified_added_deleted_and_renamed_records() {
@@ -3760,6 +4329,277 @@ mod tests {
         };
         assert!(patches_interact(&patch(1, 4), &patch(4, 7)));
         assert!(!patches_interact(&patch(1, 3), &patch(4, 7)));
+    }
+
+    #[test]
+    fn bounded_context_rejects_the_6001st_file_visit_before_blob_analysis() {
+        let (directory, base, head) = repository_with_one_change(b"before\n", b"after\n");
+        let mut context = ReviewAnalysisContext::bounded(6_000, 1024 * 1024);
+        context.consume_file_visits(6_000).unwrap();
+
+        let error =
+            review_git_range_with_analysis(directory.path(), &base, &head, None, &mut context)
+                .unwrap_err();
+
+        assert!(
+            error
+                .downcast_ref::<ReviewAnalysisBudgetExceeded>()
+                .is_some()
+        );
+        assert!(error.to_string().contains("file visit"));
+        assert!(context.blob_loader.bytes.is_empty());
+        assert!(context.analyzed_files.is_empty());
+    }
+
+    #[test]
+    fn source_byte_limit_fails_before_blob_content_is_read() {
+        let before = vec![b'a'; 8 * 1024];
+        let after = vec![b'b'; 8 * 1024];
+        let (directory, base, head) = repository_with_one_change(&before, &after);
+        let mut context = ReviewAnalysisContext::bounded(10, before.len() + after.len() - 1);
+
+        let error =
+            review_git_range_with_analysis(directory.path(), &base, &head, None, &mut context)
+                .unwrap_err();
+
+        assert!(error.to_string().contains("source byte budget exceeded"));
+        assert!(context.blob_loader.bytes.is_empty());
+        assert!(context.analyzed_files.is_empty());
+    }
+
+    #[test]
+    fn processed_source_budget_counts_same_oids_for_distinct_paths() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        git(root, &["init", "--quiet"]);
+        git(root, &["config", "user.name", "StrataDiff Test"]);
+        git(root, &["config", "user.email", "stratadiff@example.test"]);
+        let before = vec![b'a'; 8 * 1024];
+        let after = vec![b'b'; 8 * 1024];
+        fs::write(root.join("a.txt"), &before).unwrap();
+        fs::write(root.join("b.txt"), &before).unwrap();
+        let base = commit(root, "base");
+        fs::write(root.join("a.txt"), &after).unwrap();
+        fs::write(root.join("b.txt"), &after).unwrap();
+        let head = commit(root, "head");
+        let per_identity = before.len() + after.len();
+        let mut context = ReviewAnalysisContext::bounded(10, per_identity);
+
+        let error =
+            review_git_range_with_analysis(root, &base, &head, None, &mut context).unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("processed source byte budget exceeded")
+        );
+        assert_eq!(context.source_oids.len(), 2);
+        assert_eq!(context.analyzed_files.len(), 1);
+        assert_eq!(context.processed_source_bytes, per_identity);
+    }
+
+    #[test]
+    fn repeated_unavailable_diffs_consume_the_query_budget() {
+        let (directory, base, _) = repository_with_one_change(b"before\n", b"after\n");
+        let missing = "f".repeat(40);
+        let mut context = ReviewAnalysisContext::bounded(2, 1024 * 1024);
+
+        for _ in 0..2 {
+            let error = context
+                .discover_changes(directory.path(), &base, &missing)
+                .unwrap_err();
+            assert!(
+                error
+                    .downcast_ref::<ReviewAnalysisBudgetExceeded>()
+                    .is_none()
+            );
+        }
+        let error = context
+            .discover_changes(directory.path(), &base, &missing)
+            .unwrap_err();
+        assert!(
+            error
+                .downcast_ref::<ReviewAnalysisBudgetExceeded>()
+                .is_some()
+        );
+        assert!(error.to_string().contains("diff query budget exceeded"));
+        assert_eq!(context.diff_queries, 2);
+    }
+
+    #[test]
+    fn repeated_reconstruction_counts_source_bytes_by_occurrence() {
+        let path = GitPath {
+            display: "shared.py".to_owned(),
+            encoding: PathEncoding::Utf8,
+        };
+        let checkpoint = GitChange {
+            status: FileStatus::Modified,
+            similarity_percent: None,
+            before_path: Some(path.clone()),
+            after_path: Some(path.clone()),
+            before_mode: Some("100644".to_owned()),
+            after_mode: Some("100644".to_owned()),
+            before_blob: Some("1".repeat(40)),
+            after_blob: Some("2".repeat(40)),
+        };
+        let current = GitChange {
+            before_blob: Some("3".repeat(40)),
+            after_blob: Some("4".repeat(40)),
+            ..checkpoint.clone()
+        };
+        let sources = [
+            (
+                "1".repeat(40),
+                b"title = 'old'\nstable = 0\nreviewed = 0\n".to_vec(),
+            ),
+            (
+                "2".repeat(40),
+                b"title = 'old'\nstable = 0\nreviewed = 1\n".to_vec(),
+            ),
+            (
+                "3".repeat(40),
+                b"title = 'new'\nstable = 0\nreviewed = 0\n".to_vec(),
+            ),
+            (
+                "4".repeat(40),
+                b"title = 'new'\nstable = 0\nreviewed = 1\n".to_vec(),
+            ),
+        ];
+        let work_bytes = sources.iter().map(|(_, bytes)| bytes.len()).sum();
+        let mut context = ReviewAnalysisContext::bounded(10, work_bytes);
+        for (object_id, bytes) in sources {
+            context
+                .blob_loader
+                .sizes
+                .insert(object_id.clone(), bytes.len());
+            context.blob_loader.bytes.insert(object_id, bytes);
+        }
+
+        assert!(matches!(
+            context
+                .reconstruct_review_baseline(
+                    Path::new("/unused-cached-repository"),
+                    &checkpoint,
+                    &current,
+                    &crate::VerificationLimits::default(),
+                )
+                .unwrap(),
+            BaselineReconstructionOutcome::Reconstructed(_)
+        ));
+        let error = match context.reconstruct_review_baseline(
+            Path::new("/unused-cached-repository"),
+            &checkpoint,
+            &current,
+            &crate::VerificationLimits::default(),
+        ) {
+            Ok(_) => panic!("second reconstruction unexpectedly fit the work budget"),
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .to_string()
+                .contains("processed source byte budget exceeded")
+        );
+        assert_eq!(context.processed_source_bytes, work_bytes);
+    }
+
+    #[test]
+    fn replay_budget_error_is_not_downgraded_to_needs_review() {
+        let (directory, current_base, checkpoint, head) = replay_history();
+        let root = directory.path();
+        let commits = [&checkpoint, &current_base, &head];
+        let mut object_ids = commits
+            .iter()
+            .map(|commit| git(root, &["rev-parse", &format!("{commit}:shared.py")]))
+            .collect::<Vec<_>>();
+        let original_base = git(root, &["merge-base", &checkpoint, &current_base]);
+        object_ids.push(git(
+            root,
+            &["rev-parse", &format!("{original_base}:shared.py")],
+        ));
+        object_ids.sort();
+        object_ids.dedup();
+        let source_bytes = object_ids
+            .iter()
+            .map(|object_id| {
+                git(root, &["cat-file", "-s", object_id])
+                    .parse::<usize>()
+                    .unwrap()
+            })
+            .sum();
+        let mut context = ReviewAnalysisContext::bounded(10, source_bytes);
+        context.consume_processed_source_bytes(1).unwrap();
+
+        let error = review_git_range_with_analysis(
+            root,
+            &current_base,
+            &head,
+            Some(&checkpoint),
+            &mut context,
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .downcast_ref::<ReviewAnalysisBudgetExceeded>()
+                .is_some()
+        );
+        assert!(
+            error
+                .to_string()
+                .contains("processed source byte budget exceeded")
+        );
+        assert!(context.analyzed_files.is_empty());
+        assert!(context.blob_loader.bytes.is_empty());
+    }
+
+    #[test]
+    fn bounded_resume_reuses_caches_and_does_not_retain_reconstructed_sources() {
+        let (directory, current_base, checkpoint, head) = replay_history();
+        let root = directory.path();
+        let mut context = ReviewAnalysisContext::bounded(100, 1024 * 1024);
+        let review = review_git_range_with_analysis(
+            root,
+            &current_base,
+            &head,
+            Some(&checkpoint),
+            &mut context,
+        )
+        .unwrap();
+        let cache_sizes = (
+            context.changes.len(),
+            context.analyzed_files.len(),
+            context.blob_loader.bytes.len(),
+            context.source_oids.len(),
+        );
+        let repeated = review_git_range_with_analysis(
+            root,
+            &current_base,
+            &head,
+            Some(&checkpoint),
+            &mut context,
+        )
+        .unwrap();
+        assert_eq!(repeated.files, review.files);
+        assert_eq!(
+            (
+                context.changes.len(),
+                context.analyzed_files.len(),
+                context.blob_loader.bytes.len(),
+                context.source_oids.len(),
+            ),
+            cache_sizes
+        );
+
+        let delta = review_git_resume_delta_with_analysis(root, &review, &mut context).unwrap();
+        let reconstructed = delta
+            .entries
+            .iter()
+            .find(|entry| {
+                entry.baseline_basis == ReviewDeltaBaselineBasis::ReconstructedReviewBaseline
+            })
+            .unwrap();
+        assert!(reconstructed.source_override.is_none());
     }
 
     #[test]

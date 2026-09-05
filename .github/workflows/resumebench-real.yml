@@ -24,7 +24,7 @@ jobs:
           python3 tools/resumebench-real/resumebench_real.py materialize \
             --manifest benchmarks/resumebench-real-v0/manifest.json \
             --output "$RUNNER_TEMP/resumebench-real-v0"
-      - run: cargo build --locked --release --bin stratadiff
+      - run: scripts/build-release.sh --bin stratadiff
       - name: Verify independent oracles
         run: |
           python3 tools/resumebench-real/resumebench_real.py verify \

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+printf 'gh' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+printf ' %s' "$@" >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
+
+base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+checkpoint=cccccccccccccccccccccccccccccccccccccccc
+
+case "${1:-} ${2:-}" in
+  "repo view")
+    [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
+    printf 'acme/widget\thttps://github.com/acme/widget\n'
+    ;;
+  "pr view")
+    [[ " $* " == *" --repo github.com/acme/widget "* ]]
+    count=0
+    if [[ -f "${GH_STUB_STATE}/pr-count" ]]; then
+      read -r count < "${GH_STUB_STATE}/pr-count"
+    fi
+    count=$((count + 1))
+    printf '%s\n' "${count}" > "${GH_STUB_STATE}/pr-count"
+    if [[ "${GH_STUB_HEAD_MOVES:-false}" == true && "${count}" -gt 1 ]]; then
+      printf '17\t%s\t%s\n' "${base}" dddddddddddddddddddddddddddddddddddddddd
+    else
+      printf '17\t%s\t%s\n' "${base}" "${head}"
+    fi
+    ;;
+  "auth token")
+    printf 'stub-github-token\n'
+    ;;
+  "api --hostname"|"api --include")
+    arguments=" $* "
+    if [[ "${arguments}" == *" user "* ]]; then
+      printf 'alice\n'
+    elif [[ "${arguments}" == *"/pulls/17/reviews?per_page=100&page=1 "* ]]; then
+      [[ "${arguments}" == *" --include "* ]]
+      if [[ "${GH_STUB_REVIEWS_API_FAIL:-false}" == true ]]; then
+        exit 1
+      fi
+      printf 'HTTP/2.0 200 OK\n'
+      printf 'Content-Type: application/json; charset=utf-8\r\n'
+      if [[ "${GH_STUB_TOO_MANY_REVIEWS:-false}" == true ]]; then
+        printf 'Link: <https://api.github.com/repos/acme/widget/pulls/17/reviews?per_page=100&page=2>; rel="next"\r\n'
+      fi
+      printf '\r\n'
+      printf '%s\n' '[{"id":101,"user":{"login":"alice","type":"User"},"state":"APPROVED","html_url":"https://github.com/acme/widget/pull/17#pullrequestreview-101","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"},{"id":102,"user":{"login":"alice","type":"User"},"state":"APPROVED","html_url":"https://github.com/acme/widget/pull/17#pullrequestreview-102","commit_id":"cccccccccccccccccccccccccccccccccccccccc","submitted_at":"2026-09-04T19:10:09Z","author_association":"MEMBER"}]'
+    elif [[ "${arguments}" == *"/git/commits/"* ]]; then
+      object_id=${arguments##*/git/commits/}
+      object_id=${object_id%% *}
+      if [[ "${GH_STUB_PROVIDER_MISSING:-false}" == true && "${object_id}" == "${checkpoint}" ]]; then
+        exit 1
+      fi
+      printf '{"sha":"%s"}\n' "${object_id}"
+    else
+      printf 'unexpected gh api invocation: %s\n' "$*" >&2
+      exit 70
+    fi
+    ;;
+  *)
+    printf 'unexpected gh invocation: %s\n' "$*" >&2
+    exit 70
+    ;;
+esac

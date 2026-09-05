@@ -99,6 +99,107 @@ fn github_checkpoint_json_exposes_the_selection_boundary() {
 }
 
 #[test]
+fn github_checkpoint_flattens_gh_slurp_review_pages_before_selection() {
+    let directory = tempfile::tempdir().unwrap();
+    let reviews = directory.path().join("review-pages.json");
+    fs::write(
+        &reviews,
+        br#"[[{
+          "id": 201,
+          "user": {"login": "alice", "type": "User"},
+          "state": "APPROVED",
+          "html_url": "https://github.com/example/project/pull/7#pullrequestreview-201",
+          "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "submitted_at": "2026-09-04T17:10:09Z",
+          "author_association": "MEMBER"
+        }],[{
+          "id": 202,
+          "user": {"login": "alice", "type": "User"},
+          "state": "CHANGES_REQUESTED",
+          "html_url": "https://github.com/example/project/pull/7#pullrequestreview-202",
+          "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "submitted_at": "2026-09-04T19:10:09Z",
+          "author_association": "MEMBER"
+        }]]"#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("github-checkpoint")
+        .arg(&reviews)
+        .arg("--reviewer")
+        .arg("alice")
+        .arg("--gh-slurp-pages")
+        .arg("--format")
+        .arg("json")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["observed_reviews"], 2);
+    assert_eq!(value["eligible_reviews"], 2);
+    assert_eq!(value["checkpoint"]["review_id"], 202);
+    assert_eq!(value["checkpoint"]["commit_id"], "b".repeat(40));
+}
+
+#[test]
+fn github_checkpoint_decodes_one_bounded_gh_included_response() {
+    let directory = reviews_fixture();
+    let body = fs::read(directory.path().join("reviews.json")).unwrap();
+    let response = directory.path().join("reviews-response.txt");
+    let mut included =
+        b"HTTP/2.0 200 OK\nContent-Type: application/json; charset=utf-8\r\nEtag: \"snapshot\"\r\n\r\n"
+            .to_vec();
+    included.extend_from_slice(&body);
+    fs::write(&response, included).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("github-checkpoint")
+        .arg(&response)
+        .arg("--reviewer")
+        .arg("alice")
+        .arg("--gh-included-response")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, format!("{}\n", "b".repeat(40)).as_bytes());
+}
+
+#[test]
+fn github_checkpoint_included_response_rejects_pagination_before_selection() {
+    let directory = tempfile::tempdir().unwrap();
+    let response = directory.path().join("reviews-response.txt");
+    fs::write(
+        &response,
+        b"HTTP/2.0 200 OK\nContent-Type: application/json\r\nLink: <https://api.github.example/reviews?page=2>; rel=\"next\"\r\n\r\n[]",
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("github-checkpoint")
+        .arg(&response)
+        .arg("--reviewer")
+        .arg("alice")
+        .arg("--gh-included-response")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("observed at least 101, limit 100"));
+    assert!(output.stdout.is_empty());
+}
+
+#[test]
 fn github_checkpoint_returns_no_sha_when_the_reviewer_has_no_completed_review() {
     let directory = reviews_fixture();
     let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))

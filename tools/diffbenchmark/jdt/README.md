@@ -48,7 +48,8 @@ and 10,000,000 `NODE` records, and terminates enumeration after 300 seconds. Its
 uses a 128 MiB heap cap, 64 KiB limits for each output stream, and a 10-second timeout.
 
 ```console
-cargo run --release --bin stratadiff-evaluate -- \
+scripts/build-release.sh --bin stratadiff-evaluate
+target/release/stratadiff-evaluate \
   /absolute/path/to/DiffBenchmark /absolute/path/to/materialized \
   --jdt-cache /absolute/path/to/jdt-cache \
   --java-executable /trusted/absolute/path/to/jdk-17/bin/java \

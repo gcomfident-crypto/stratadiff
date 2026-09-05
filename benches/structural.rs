@@ -25,7 +25,7 @@ fn duplicate_python_module(functions: usize) -> Vec<u8> {
 
 fn structural_diff(c: &mut Criterion) {
     let mut group = c.benchmark_group("python_structural_diff");
-    for functions in [100, 1_000, 5_000] {
+    for functions in [100, 1_000, 3_000] {
         let before = python_module(functions, None);
         let after = python_module(functions, Some(50));
         group.throughput(Throughput::Bytes((before.len() + after.len()) as u64));

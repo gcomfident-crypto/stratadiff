@@ -31,15 +31,13 @@ The first question is answered losslessly. The second is re-derived by the match
 crate used by `stratadiff verify`. The third never silently turns a heuristic score into a
 historical fact.
 
-> **Project status:** research alpha. Exact Review Resume, strict base-drift replay, the repository
-> review-focus command, patch reconstruction certificates, conservative syntax anchors, bounded all-optima child
-> alignment, duplicate ambiguity handling, deterministic JSON reports, a resource-bounded
-> matcher-free verifier crate, native Tree-sitter adapters, and an explicit Universal byte mode work
-> now. The alpha Action can resolve an explicitly named reviewer's latest completed GitHub review
-> and optionally fail a required check while any exact review-delta item remains, including a
-> dropped or reverted reviewed change that disappeared from the current PR diff. A
-> provenance-complete DiffBenchmark literature-subset evaluation is published below.
-> Binding-aware rename proofs remain on the roadmap.
+> **Project status:** research alpha. The no-admin `gh stratadiff resume <PR>` path, exact
+> base-drift replay, Review Resume Workbench, webhook review ledger, exact-base CODEOWNERS and
+> permission snapshots, receiver-signed review-coverage Passport, offline verification, and
+> deterministic Check Run request generation work now. The implementation remains local tooling,
+> not a hosted GitHub App: durable latest-root storage, live permission collection, Check Run
+> publication, and measured human time/recall outcomes are still missing. The structural diff and
+> provenance-complete benchmark layers remain available underneath the review-memory product.
 
 ## Why another code diff?
 
@@ -113,6 +111,11 @@ contains 1,838 paths—1,815 outside the current PR—and still omits 24 current
 purposefully selected correctness cases with no human-priority ground truth, not prevalence,
 time-saving, or safety evidence.
 
+The derived [Reviewer Value v1](benchmarks/reviewer-value-v1/README.md) artifact independently
+recomputes those file-level surface counts. A separate
+[prospective Reviewer Study v1](benchmarks/reviewer-study-v1/PROTOCOL.md) preregisters the human
+go/no experiment; no observed reviewer dataset or performance result is checked in.
+
 The [Review Delta v1 controlled benchmark](benchmarks/review-delta-v1/README.md) adds thirteen
 network-free five-snapshot histories for the exact resume queue. It independently checks raw Git
 identity, the CLI gate, and the bytes served by both Workbench scopes, including dropped work and
@@ -126,7 +129,7 @@ Rust 1.90 or newer is required. The repository includes the compiled Evidence Wo
 frontend requires Node.js 24 and npm 11.
 
 ```console
-cargo build --release
+scripts/build-release.sh --bin stratadiff
 target/release/stratadiff build-info
 target/release/stratadiff review origin/main HEAD
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
@@ -141,6 +144,29 @@ target/release/stratadiff apply change.axd examples/demo/before.py \
   --output rebuilt.py
 cmp rebuilt.py examples/demo/after.py
 ```
+
+The release wrapper uses stable Rust path remapping so binaries do not retain local checkout or
+Cargo-home paths. Plain `cargo build` remains available for development and crates.io builds. See
+the [release procedure](docs/releasing.md) for package verification, publication order, and the
+remaining binary-distribution notice requirement.
+
+### Resume your own GitHub review
+
+The repository includes a no-admin GitHub CLI extension prototype. After building StrataDiff,
+install the local extension and run it from the pull request's checkout:
+
+```console
+cd extensions/gh-stratadiff
+gh extension install .
+export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
+gh stratadiff resume 123
+```
+
+It resolves the authenticated user's exact completed-review checkpoint, verifies that commit with
+GitHub, and opens Review Resume against the PR's current base and head. Missing historical objects
+fail explicitly; the extension never substitutes the current head, a branch tip, or another
+checkpoint. See the [extension guide](extensions/gh-stratadiff/README.md) for options and trust
+boundaries.
 
 ### See the review-coverage gate on a real rebase
 
@@ -163,6 +189,31 @@ python3 scripts/demo_review_coverage.py --offline --open
 The demo deliberately exits successfully after verifying that the inner required check exits 1;
 that red check is the expected product result, not a failed benchmark. With `--open`, the local
 Workbench keeps running until you press Ctrl+C.
+
+### Inspect a signed review-coverage Passport
+
+The separate `review-coverage-v1` artifact records reviewer × CODEOWNERS × file coverage for
+one exact base and head. Build it from a receiver-attested ledger and an exact-base ownership
+snapshot, then verify it against an offline Git object store before opening the local viewer:
+
+```console
+export STRATADIFF_RECEIPT_SIGNING_KEY=YOUR_64_HEX_ED25519_SIGNING_KEY
+target/release/stratadiff review-coverage "$BASE_SHA" "$HEAD_SHA" \
+  --repo "$REPOSITORY" --ledger review-ledger.json --ownership ownership.json \
+  --output review-coverage.json --fail-on-missing-coverage
+target/release/stratadiff review-coverage-verify review-coverage.json \
+  --repo "$REPOSITORY" --trusted-receiver-public-key "$RECEIVER_PUBLIC_KEY"
+target/release/stratadiff review-coverage-view review-coverage.json \
+  --repo "$REPOSITORY" --trusted-receiver-public-key "$RECEIVER_PUBLIC_KEY"
+```
+
+![Signed review-coverage Passport in the local Workbench](docs/assets/review-coverage-passport.png)
+
+The viewer exposes the signed Passport for download and shows covered, needs-review, and blocked
+owner requirements. Verification requires the trusted receiver public key and the exact Git objects;
+the JSON alone is not a proof of freshness. A valid older signed snapshot can still be replayed
+unless a deployment anchors the latest ledger revision or root in trusted durable storage. The
+alpha does not restore GitHub approvals or prove that carried code is semantically safe.
 
 ### Repository review focus
 
@@ -209,8 +260,10 @@ shown as author work. Unsupported or interacting changes are labeled fallbacks. 
 retains reviewed changes that were later dropped or reverted, even when the current `C → D` PR diff
 is empty. Its summary distinguishes displayable rows from unresolved retired changes and makes the
 gate result explicit. A reconstructed baseline is identified by BLAKE3 rather than represented as
-a Git object. This v1 artifact is producer-attested; a self-contained offline-verifiable Change
-Passport remains future work.
+a Git object. This v1 artifact is producer-attested and does not embed a self-contained Change
+Passport. The separate receiver-signed `review-coverage-v1` Passport can be offline recomputed
+against exact Git objects, but it still depends on an externally trusted receiver key and freshness
+anchor.
 
 Every changed file is retained and placed in one of four lanes:
 
@@ -233,7 +286,10 @@ the narrow class of same-file changes that pass non-interacting four-way byte re
 `APPROVED` or `CHANGES_REQUESTED` review from GitHub's list-reviews JSON. It ignores comments, bots,
 pending reviews, deleted users, and dismissed reviews. This resolves a historical commit; it does
 not prove reviewer authority, preserve partial-file state, or restore a GitHub approval. A GitHub
-App and CODEOWNERS-aware multi-reviewer policy remain future work.
+webhook ledger, exact-base CODEOWNERS and identity snapshots, and reviewer × owner × file policy
+now produce the separate signed coverage Passport. Publishing its deterministic Check Run request
+still requires an operator-owned GitHub App, and production rollback protection requires trusted
+durable latest-root storage; neither is supplied by the local alpha.
 
 Repository discovery disables Git's heuristic rename/copy prepass so oversized or adversarial blobs
 cannot consume unbounded work before StrataDiff's limits apply. A unique delete/add pair with the
@@ -530,6 +586,11 @@ representation and re-derives the report's claims.
 
 ## License
 
-StrataDiff is licensed under the MIT License. The bundled Evidence Workbench includes
-`@pierre/diffs`, `@pierre/theme`, and `@pierre/theming` under Apache-2.0; their shared license and
-the original `@pierre/theme` notice are preserved in [third_party/pierre](third_party/pierre).
+StrataDiff is licensed under the MIT License. The bundled Evidence Workbench includes production
+dependencies under Apache-2.0, BSD-3-Clause, ISC, and MIT terms. Their exact package versions,
+license texts, and upstream notices are recorded in
+[`web/public/THIRD_PARTY_NOTICES.txt`](web/public/THIRD_PARTY_NOTICES.txt), copied into `web/dist`
+by the production build, and embedded in the StrataDiff binary. Regenerate the file with
+`npm --prefix web run notices:generate`; CI checks it against `package-lock.json` and the installed
+package license files without network access. The original `@pierre/theme` notice also remains in
+[third_party/pierre](third_party/pierre).

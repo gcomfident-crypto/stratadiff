@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/github-ownership-snapshot-v1.schema.json",
+  "title": "StrataDiff GitHub ownership snapshot v1",
+  "description": "An exact-base observation of GitHub user/team identity, repository permission, visibility, and membership facts. It is an input to a receiver-attested coverage passport, not a GitHub-signed statement.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "provider_url",
+    "repository_id",
+    "base_commit",
+    "api_version",
+    "observed_at",
+    "users",
+    "teams"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/github-ownership-snapshot-v1.schema.json"
+    },
+    "provider_url": { "type": "string", "pattern": "^https://[^/]+$", "maxLength": 2048 },
+    "repository_id": { "$ref": "#/$defs/positive_id" },
+    "base_commit": { "$ref": "#/$defs/object_id" },
+    "api_version": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "observed_at": { "$ref": "#/$defs/timestamp" },
+    "users": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/user" }
+    },
+    "teams": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": { "$ref": "#/$defs/team" }
+    }
+  },
+  "$defs": {
+    "positive_id": { "type": "integer", "minimum": 1 },
+    "object_id": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "identity": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "pattern": "^[^@/\\s\\u0000-\\u001f\\u007f]+$"
+    },
+    "permission": { "enum": ["read", "triage", "write", "maintain", "admin"] },
+    "user": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "login", "repository_permission"],
+      "properties": {
+        "id": { "$ref": "#/$defs/positive_id" },
+        "login": { "$ref": "#/$defs/identity" },
+        "repository_permission": { "$ref": "#/$defs/permission" }
+      }
+    },
+    "membership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_id", "state", "inherited"],
+      "properties": {
+        "user_id": { "$ref": "#/$defs/positive_id" },
+        "state": { "enum": ["active", "pending"] },
+        "inherited": { "type": "boolean" }
+      }
+    },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "organization_login",
+        "slug",
+        "privacy",
+        "repository_permission",
+        "members"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/positive_id" },
+        "organization_login": { "$ref": "#/$defs/identity" },
+        "slug": { "$ref": "#/$defs/identity" },
+        "privacy": { "enum": ["closed", "secret"] },
+        "repository_permission": { "$ref": "#/$defs/permission" },
+        "members": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/membership" }
+        }
+      }
+    }
+  }
+}

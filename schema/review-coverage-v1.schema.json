@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-coverage-v1.schema.json",
+  "title": "StrataDiff review coverage passport v1",
+  "description": "A receiver-signed reviewer/CODEOWNERS coverage decision bound to exact Git objects. Embedded ledger, ownership, and review-delta values are validated through their complete versioned schemas. Offline validators must register those three sibling schemas by their canonical $id values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "body", "attestation"],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-coverage-v1.schema.json"
+    },
+    "body": { "$ref": "#/$defs/body" },
+    "attestation": { "$ref": "#/$defs/attestation" }
+  },
+  "$defs": {
+    "object_id": { "type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "git_mode": { "type": "string", "pattern": "^[0-7]{6}$" },
+    "path_encoding": { "enum": ["utf8", "git_bytes_percent_encoded"] },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine_version",
+        "protected_base_commit",
+        "merge_base_commit",
+        "head_commit",
+        "ledger",
+        "ownership",
+        "checkpoint_proofs",
+        "files",
+        "unresolved_residue",
+        "summary",
+        "non_claims"
+      ],
+      "properties": {
+        "engine_version": { "type": "string", "minLength": 1 },
+        "protected_base_commit": { "$ref": "#/$defs/object_id" },
+        "merge_base_commit": { "$ref": "#/$defs/object_id" },
+        "head_commit": { "$ref": "#/$defs/object_id" },
+        "codeowners_source": { "$ref": "#/$defs/codeowners_source" },
+        "ledger": {
+          "$ref": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/github-review-ledger-v1.schema.json"
+        },
+        "ownership": {
+          "$ref": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/github-ownership-snapshot-v1.schema.json"
+        },
+        "checkpoint_proofs": {
+          "type": "array",
+          "maxItems": 64,
+          "description": "At most 64 unique checkpoints are analyzed. The producer also rejects more than 6000 retained carried-change, review-delta entry, and unresolved-delta records across all proofs.",
+          "items": { "$ref": "#/$defs/checkpoint_proof" }
+        },
+        "files": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/file_coverage" }
+        },
+        "unresolved_residue": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/unresolved_coverage" }
+        },
+        "summary": { "$ref": "#/$defs/summary" },
+        "non_claims": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "body_sha256", "signature"],
+      "properties": {
+        "algorithm": { "const": "ed25519" },
+        "key_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "body_sha256": { "$ref": "#/$defs/sha256" },
+        "signature": { "type": "string", "pattern": "^[0-9a-f]{128}$" }
+      }
+    },
+    "codeowners_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["base_commit", "path", "blob_oid", "byte_len", "blake3"],
+      "properties": {
+        "base_commit": { "$ref": "#/$defs/object_id" },
+        "path": { "enum": [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"] },
+        "blob_oid": { "$ref": "#/$defs/object_id" },
+        "byte_len": { "type": "integer", "minimum": 0, "exclusiveMaximum": 3145728 },
+        "blake3": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "checkpoint_proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint_commit", "review_ids", "reviewer_ids", "result"],
+      "properties": {
+        "checkpoint_commit": { "$ref": "#/$defs/object_id" },
+        "review_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "reviewer_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "result": {
+          "oneOf": [
+            { "$ref": "#/$defs/verified_proof" },
+            { "$ref": "#/$defs/unavailable_proof" }
+          ]
+        }
+      }
+    },
+    "verified_proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "carried_changes", "review_delta"],
+      "properties": {
+        "state": { "const": "verified" },
+        "carried_changes": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/carried_change" }
+        },
+        "review_delta": {
+          "$ref": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-delta-v1.schema.json"
+        }
+      }
+    },
+    "unavailable_proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason"],
+      "properties": {
+        "state": { "const": "unavailable" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "carried_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["change", "basis"],
+      "properties": {
+        "change": { "$ref": "#/$defs/change_identity" },
+        "basis": {
+          "enum": ["exact_git_change_identity", "exact_noninteracting_four_way_byte_replay"]
+        }
+      }
+    },
+    "change_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": { "enum": ["added", "copied", "deleted", "modified", "renamed", "type_changed"] },
+        "similarity_percent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "before_path": { "type": "string", "minLength": 1 },
+        "before_path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "after_path": { "type": "string", "minLength": 1 },
+        "after_path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "before_mode": { "$ref": "#/$defs/git_mode" },
+        "after_mode": { "$ref": "#/$defs/git_mode" },
+        "before_blob": { "$ref": "#/$defs/object_id" },
+        "after_blob": { "$ref": "#/$defs/object_id" }
+      }
+    },
+    "owner": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "login"],
+          "properties": {
+            "kind": { "const": "user" },
+            "login": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "organization", "slug"],
+          "properties": {
+            "kind": { "const": "team" },
+            "organization": { "type": "string", "minLength": 1 },
+            "slug": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "address"],
+          "properties": {
+            "kind": { "const": "email" },
+            "address": { "type": "string", "minLength": 3 }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["line", "pattern", "owner_alternatives"],
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "pattern": { "type": "string", "minLength": 1 },
+        "owner_alternatives": {
+          "type": "array",
+          "maxItems": 100,
+          "description": "Duplicate owner tokens count toward the per-rule limit.",
+          "items": { "$ref": "#/$defs/owner" }
+        }
+      }
+    },
+    "owner_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "eligible_reviewer_ids",
+        "active_review_ids",
+        "covering_review_ids",
+        "blockers"
+      ],
+      "properties": {
+        "owner": { "$ref": "#/$defs/owner" },
+        "eligible_reviewer_ids": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "active_review_ids": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "covering_review_ids": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "blockers": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "file_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "change",
+        "path",
+        "path_encoding",
+        "owner_alternatives",
+        "state",
+        "reason"
+      ],
+      "properties": {
+        "scope": { "enum": ["current_change", "retired_residue"] },
+        "change": { "$ref": "#/$defs/change_identity" },
+        "path": { "type": "string", "minLength": 1 },
+        "path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "matching_rule": { "$ref": "#/$defs/rule" },
+        "owner_alternatives": {
+          "type": "array",
+          "maxItems": 100,
+          "description": "One coverage cell per owner token on the bounded winning rule.",
+          "items": { "$ref": "#/$defs/owner_coverage" }
+        },
+        "state": { "enum": ["covered", "needs_review", "blocked"] },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "unresolved_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkpoint_commit", "path", "path_encoding", "reason"],
+      "properties": {
+        "checkpoint_commit": { "$ref": "#/$defs/object_id" },
+        "path": { "type": "string", "minLength": 1 },
+        "path_encoding": { "$ref": "#/$defs/path_encoding" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current_files",
+        "retired_residue_files",
+        "unresolved_residue",
+        "total_requirements",
+        "covered_files",
+        "needs_review_files",
+        "blocked_files",
+        "active_review_receipts",
+        "unique_checkpoint_proofs",
+        "gate_passed"
+      ],
+      "properties": {
+        "current_files": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "retired_residue_files": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "unresolved_residue": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "total_requirements": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "covered_files": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "needs_review_files": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "blocked_files": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "active_review_receipts": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "unique_checkpoint_proofs": { "type": "integer", "minimum": 0, "maximum": 64 },
+        "gate_passed": { "type": "boolean" }
+      }
+    }
+  }
+}

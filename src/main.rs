@@ -9,10 +9,24 @@ use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
-use stratadiff::github::{
-    MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES, resolve_github_review_checkpoint,
-    verify_github_commit_object,
+use stratadiff::coverage::{
+    MAX_REVIEW_COVERAGE_BYTES, ReviewCoveragePassport, build_review_coverage_passport,
+    verify_review_coverage_passport,
 };
+use stratadiff::github::{
+    MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
+    MAX_GITHUB_REVIEWS_INCLUDED_RESPONSE_BYTES, resolve_github_review_checkpoint,
+    resolve_github_review_checkpoint_included_response,
+    resolve_github_review_checkpoint_slurp_pages, verify_github_commit_object,
+};
+use stratadiff::github_check::{
+    MAX_GITHUB_CHECK_RUN_PAYLOAD_BYTES, build_github_check_run_payload,
+};
+use stratadiff::ledger::{
+    GithubReviewLedger, GithubWebhookIngest, IngestOutcome, MAX_GITHUB_LEDGER_BYTES,
+    MAX_GITHUB_WEBHOOK_BYTES, decode_ed25519_signing_key, ingest_github_webhook,
+};
+use stratadiff::ownership::{GithubOwnershipSnapshot, MAX_OWNERSHIP_SNAPSHOT_BYTES};
 use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
     review_git_range_with_checkpoint, review_git_resume_delta,
@@ -53,6 +67,12 @@ enum Command {
         /// Exact GitHub login whose review history should be resumed.
         #[arg(long)]
         reviewer: String,
+        /// Decode the nested page array emitted by `gh api --paginate --slurp`.
+        #[arg(long, conflicts_with = "gh_included_response")]
+        gh_slurp_pages: bool,
+        /// Decode the status, headers, and JSON body emitted by `gh api --include`.
+        #[arg(long, conflicts_with = "gh_slurp_pages")]
+        gh_included_response: bool,
         /// Print only the commit ID or the complete selection record.
         #[arg(long, value_enum, default_value_t = GithubCheckpointOutput::Sha)]
         format: GithubCheckpointOutput,
@@ -67,6 +87,111 @@ enum Command {
         /// Full commit ID selected from the pull request's review records.
         #[arg(long)]
         expected: String,
+    },
+    /// Verify and append one GitHub review event to an immutable-fact ledger.
+    GithubLedgerIngest {
+        /// Raw GitHub webhook request body.
+        payload: PathBuf,
+        /// Existing ledger to extend. Omit only for the first delivery.
+        #[arg(long)]
+        ledger: Option<PathBuf>,
+        /// Exact X-GitHub-Event header value.
+        #[arg(long)]
+        event: String,
+        /// Exact X-GitHub-Delivery header value.
+        #[arg(long)]
+        delivery_id: String,
+        /// Receiver observation time in UTC, with second precision.
+        #[arg(long)]
+        received_at: String,
+        /// Exact X-Hub-Signature-256 header value.
+        #[arg(long)]
+        signature: String,
+        /// Canonical GitHub or GitHub Enterprise Server URL.
+        #[arg(long)]
+        provider_url: String,
+        /// Stable identifier for the receiver key attesting accepted deliveries.
+        #[arg(long)]
+        receiver_key_id: String,
+        /// Destination for the deterministic ledger JSON.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Build a signed reviewer × CODEOWNERS coverage passport for one exact PR head.
+    ReviewCoverage {
+        /// Exact protected-branch base commit containing the authoritative CODEOWNERS file.
+        base: String,
+        /// Exact pull request head commit to gate.
+        head: String,
+        /// Git worktree or repository directory containing every required object.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// HMAC-verified, receiver-attested GitHub review ledger.
+        #[arg(long)]
+        ledger: PathBuf,
+        /// Exact-base GitHub identity, permission, team, and membership snapshot.
+        #[arg(long)]
+        ownership: PathBuf,
+        /// Destination for the signed review-coverage passport.
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Exit unsuccessfully after writing the passport if any required owner coverage is open.
+        #[arg(long)]
+        fail_on_missing_coverage: bool,
+    },
+    /// Verify a signed coverage passport and recompute it from exact offline Git objects.
+    ReviewCoverageVerify {
+        /// Signed review-coverage passport.
+        passport: PathBuf,
+        /// Offline Git object store or worktree.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Trusted receiver Ed25519 public key as 64 lowercase hexadecimal characters.
+        #[arg(long)]
+        trusted_receiver_public_key: String,
+    },
+    /// Open an offline-verified review coverage passport in the local workbench.
+    ReviewCoverageView {
+        /// Signed review-coverage passport.
+        passport: PathBuf,
+        /// Offline Git object store or worktree used to recompute the coverage decision.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Trusted receiver Ed25519 public key as 64 lowercase hexadecimal characters.
+        #[arg(long)]
+        trusted_receiver_public_key: String,
+        /// Loopback port to listen on. Zero asks the operating system to choose one.
+        #[arg(long, default_value_t = 0)]
+        port: u16,
+        /// Print the workbench URL without opening a browser.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Build an offline-verified GitHub App Check Run request body without publishing it.
+    ///
+    /// GitHub grants Check Run write access only to GitHub Apps. This command writes JSON;
+    /// an ordinary personal access token cannot publish it as a Check Run.
+    GithubCheckRun {
+        /// Signed review-coverage passport.
+        passport: PathBuf,
+        /// Offline Git object store or worktree used to recompute the passport.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Trusted receiver Ed25519 public key as 64 lowercase hexadecimal characters.
+        #[arg(long)]
+        trusted_receiver_public_key: String,
+        /// Live pull-request base SHA observed immediately before publishing.
+        #[arg(long)]
+        expected_base: String,
+        /// Live pull-request head SHA observed immediately before publishing.
+        #[arg(long)]
+        expected_head: String,
+        /// Optional safe HTTPS page containing the complete review queue.
+        #[arg(long)]
+        details_url: Option<String>,
+        /// Destination for the deterministic create-check-run JSON request body.
+        #[arg(short, long)]
+        output: PathBuf,
     },
     /// Compare two source files and produce a structural report.
     Diff {
@@ -234,15 +359,28 @@ fn run(command: Command) -> Result<()> {
         Command::GithubCheckpoint {
             reviews,
             reviewer,
+            gh_slurp_pages,
+            gh_included_response,
             format,
             output,
         } => {
+            let review_bytes_limit = if gh_included_response {
+                MAX_GITHUB_REVIEWS_INCLUDED_RESPONSE_BYTES
+            } else {
+                MAX_GITHUB_REVIEWS_BYTES
+            };
             let review_bytes = read_bounded(
                 &reviews,
-                MAX_GITHUB_REVIEWS_BYTES,
+                review_bytes_limit,
                 "GitHub pull request reviews bytes",
             )?;
-            let resolution = resolve_github_review_checkpoint(&review_bytes, &reviewer)?;
+            let resolution = if gh_included_response {
+                resolve_github_review_checkpoint_included_response(&review_bytes, &reviewer)?
+            } else if gh_slurp_pages {
+                resolve_github_review_checkpoint_slurp_pages(&review_bytes, &reviewer)?
+            } else {
+                resolve_github_review_checkpoint(&review_bytes, &reviewer)?
+            };
             let encoded = match format {
                 GithubCheckpointOutput::Sha => resolution
                     .checkpoint
@@ -270,6 +408,200 @@ fn run(command: Command) -> Result<()> {
             let mut stdout = std::io::stdout().lock();
             stdout.write_all(expected.as_bytes())?;
             stdout.write_all(b"\n")?;
+        }
+        Command::GithubLedgerIngest {
+            payload,
+            ledger,
+            event,
+            delivery_id,
+            received_at,
+            signature,
+            provider_url,
+            receiver_key_id,
+            output,
+        } => {
+            let payload_bytes = read_bounded(
+                &payload,
+                MAX_GITHUB_WEBHOOK_BYTES,
+                "GitHub webhook payload bytes",
+            )?;
+            let ledger = ledger
+                .map(|path| -> Result<GithubReviewLedger> {
+                    let bytes =
+                        read_bounded(&path, MAX_GITHUB_LEDGER_BYTES, "GitHub review ledger bytes")?;
+                    serde_json::from_slice(&bytes).with_context(|| {
+                        format!(
+                            "failed to decode GitHub review ledger {}",
+                            display_path(&path)
+                        )
+                    })
+                })
+                .transpose()?;
+            let secret = std::env::var("STRATADIFF_GITHUB_WEBHOOK_SECRET")
+                .context("github-ledger-ingest requires STRATADIFF_GITHUB_WEBHOOK_SECRET")?;
+            let signing_key = std::env::var("STRATADIFF_RECEIPT_SIGNING_KEY")
+                .context("github-ledger-ingest requires STRATADIFF_RECEIPT_SIGNING_KEY")?;
+            let signing_key = decode_ed25519_signing_key(&signing_key)?;
+            let (ledger, outcome) = ingest_github_webhook(
+                ledger,
+                GithubWebhookIngest {
+                    provider_url: &provider_url,
+                    event_name: &event,
+                    delivery_id: &delivery_id,
+                    received_at: &received_at,
+                    signature_header: &signature,
+                    secret: secret.as_bytes(),
+                    receiver_key_id: &receiver_key_id,
+                    receiver_signing_key: &signing_key,
+                    payload: &payload_bytes,
+                },
+            )?;
+            let encoded = serde_json::to_vec(&ledger)?;
+            ensure!(
+                encoded.len() <= MAX_GITHUB_LEDGER_BYTES,
+                "generated GitHub review ledger exceeds the byte limit"
+            );
+            std::fs::write(&output, encoded)
+                .with_context(|| format!("failed to write {}", display_path(&output)))?;
+            let label = match outcome {
+                IngestOutcome::Applied => "applied",
+                IngestOutcome::Duplicate => "duplicate",
+            };
+            eprintln!(
+                "{label} GitHub delivery {}; wrote review ledger to {}",
+                display_text(&delivery_id),
+                display_path(&output)
+            );
+        }
+        Command::ReviewCoverage {
+            base,
+            head,
+            repo,
+            ledger,
+            ownership,
+            output,
+            fail_on_missing_coverage,
+        } => {
+            let ledger_bytes = read_bounded(
+                &ledger,
+                MAX_GITHUB_LEDGER_BYTES,
+                "GitHub review ledger bytes",
+            )?;
+            let ledger: GithubReviewLedger = serde_json::from_slice(&ledger_bytes)
+                .with_context(|| format!("failed to decode {}", display_path(&ledger)))?;
+            let ownership_bytes = read_bounded(
+                &ownership,
+                MAX_OWNERSHIP_SNAPSHOT_BYTES,
+                "GitHub ownership snapshot bytes",
+            )?;
+            let ownership: GithubOwnershipSnapshot = serde_json::from_slice(&ownership_bytes)
+                .with_context(|| format!("failed to decode {}", display_path(&ownership)))?;
+            let signing_key = std::env::var("STRATADIFF_RECEIPT_SIGNING_KEY")
+                .context("review-coverage requires STRATADIFF_RECEIPT_SIGNING_KEY")?;
+            let signing_key = decode_ed25519_signing_key(&signing_key)?;
+            let passport = build_review_coverage_passport(
+                &repo,
+                &base,
+                &head,
+                ledger,
+                ownership,
+                &signing_key,
+            )?;
+            let encoded = serde_json::to_vec(&passport)?;
+            ensure!(
+                encoded.len() <= MAX_REVIEW_COVERAGE_BYTES,
+                "generated review coverage passport exceeds the byte limit"
+            );
+            std::fs::write(&output, encoded)
+                .with_context(|| format!("failed to write {}", display_path(&output)))?;
+            eprintln!(
+                "wrote signed coverage passport to {}: {} covered, {} need review, {} blocked",
+                display_path(&output),
+                passport.body.summary.covered_files,
+                passport.body.summary.needs_review_files,
+                passport.body.summary.blocked_files
+            );
+            if fail_on_missing_coverage {
+                ensure!(
+                    passport.body.summary.gate_passed,
+                    "review coverage gate is open: {} file(s) need review and {} file(s) are blocked",
+                    passport.body.summary.needs_review_files,
+                    passport.body.summary.blocked_files
+                );
+            }
+        }
+        Command::ReviewCoverageVerify {
+            passport,
+            repo,
+            trusted_receiver_public_key,
+        } => {
+            let bytes = read_bounded(
+                &passport,
+                MAX_REVIEW_COVERAGE_BYTES,
+                "review coverage passport bytes",
+            )?;
+            let passport: ReviewCoveragePassport = serde_json::from_slice(&bytes)
+                .with_context(|| format!("failed to decode {}", display_path(&passport)))?;
+            verify_review_coverage_passport(&repo, &passport, &trusted_receiver_public_key)?;
+            println!(
+                "verified review coverage passport for {} at {}",
+                display_text(&passport.body.ledger.repository.full_name),
+                passport.body.head_commit
+            );
+        }
+        Command::ReviewCoverageView {
+            passport,
+            repo,
+            trusted_receiver_public_key,
+            port,
+            no_open,
+        } => {
+            let bytes = read_bounded(
+                &passport,
+                MAX_REVIEW_COVERAGE_BYTES,
+                "review coverage passport bytes",
+            )?;
+            let passport: ReviewCoveragePassport = serde_json::from_slice(&bytes)
+                .with_context(|| format!("failed to decode {}", display_path(&passport)))?;
+            verify_review_coverage_passport(&repo, &passport, &trusted_receiver_public_key)?;
+            viewer::serve_review_coverage(passport, bytes, port, !no_open)?;
+        }
+        Command::GithubCheckRun {
+            passport,
+            repo,
+            trusted_receiver_public_key,
+            expected_base,
+            expected_head,
+            details_url,
+            output,
+        } => {
+            let bytes = read_bounded(
+                &passport,
+                MAX_REVIEW_COVERAGE_BYTES,
+                "review coverage passport bytes",
+            )?;
+            let passport: ReviewCoveragePassport = serde_json::from_slice(&bytes)
+                .with_context(|| format!("failed to decode {}", display_path(&passport)))?;
+            let payload = build_github_check_run_payload(
+                &repo,
+                &passport,
+                &trusted_receiver_public_key,
+                &expected_base,
+                &expected_head,
+                details_url.as_deref(),
+            )?;
+            let encoded = serde_json::to_vec(&payload)?;
+            ensure!(
+                encoded.len() <= MAX_GITHUB_CHECK_RUN_PAYLOAD_BYTES,
+                "generated GitHub Check Run payload exceeds the byte limit"
+            );
+            std::fs::write(&output, encoded)
+                .with_context(|| format!("failed to write {}", display_path(&output)))?;
+            eprintln!(
+                "wrote verified GitHub App Check Run payload for {} to {} (not published)",
+                payload.head_sha,
+                display_path(&output)
+            );
         }
         Command::Diff {
             before,

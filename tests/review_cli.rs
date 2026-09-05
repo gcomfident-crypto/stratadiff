@@ -1350,7 +1350,8 @@ fn composite_action_separates_revision_inputs_and_rejects_an_empty_report() {
     assert!(action.contains(
         "bash --noprofile --norc \"${GITHUB_ACTION_PATH}/scripts/github_action_review.sh\""
     ));
-    assert!(script.contains("cd -- \"${GITHUB_ACTION_PATH}\""));
+    assert!(script.contains("\"${GITHUB_ACTION_PATH}/scripts/build-release.sh\""));
+    assert!(script.contains("--target-dir \"${target_directory}\""));
     assert!(script.contains("\"--repo=${STRATADIFF_REPOSITORY}\""));
     assert!(script.contains("github-checkpoint \"${reviews_path}\" --reviewer"));
     assert!(script.contains("! \"${resolved_checkpoint}\" =~ ^[0-9a-f]{40}$"));

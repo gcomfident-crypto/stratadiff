@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "notices:generate": "node scripts/generate-third-party-notices.mjs --write",
+    "notices:check": "node scripts/generate-third-party-notices.mjs --check",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview"

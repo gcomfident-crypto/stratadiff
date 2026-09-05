@@ -1,10 +1,15 @@
+pub mod codeowners;
+pub mod coverage;
 pub mod diffbenchmark;
 pub mod diffbenchmark_case;
 pub mod diffbenchmark_eval;
 pub mod diffbenchmark_materialization;
 pub mod diffbenchmark_prediction;
 pub mod github;
+pub mod github_check;
+pub mod ledger;
 mod matcher;
+pub mod ownership;
 mod patch;
 pub mod review;
 

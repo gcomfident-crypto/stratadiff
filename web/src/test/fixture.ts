@@ -1,4 +1,4 @@
-import type { FileSessionPayload, NodeRef, RepositorySessionPayload, ReviewFile } from '../types'
+import type { FileSessionPayload, NodeRef, RepositorySessionPayload, ReviewCoverageSessionPayload, ReviewFile } from '../types'
 
 const digest = 'a'.repeat(64)
 
@@ -209,6 +209,139 @@ export function repositorySessionFixture(): RepositorySessionPayload {
       status: 'producer_attested',
       basis: 'exact_git_change_identity',
       message: 'Checkpoint carry-forward is exact but does not establish semantic safety.',
+    },
+  }
+}
+
+export function reviewCoverageSessionFixture(): ReviewCoverageSessionPayload {
+  const base = '0'.repeat(40)
+  const head = '1'.repeat(40)
+  return {
+    kind: 'review_coverage_passport',
+    verification: {
+      verified: true,
+      message: 'The signature and coverage decision were recomputed from exact offline Git objects.',
+    },
+    passport: {
+      schema: 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-coverage-v1.schema.json',
+      body: {
+        engine_version: '0.3.0',
+        protected_base_commit: base,
+        merge_base_commit: base,
+        head_commit: head,
+        codeowners_source: {
+          base_commit: base,
+          path: '.github/CODEOWNERS',
+          blob_oid: '2'.repeat(40),
+          byte_len: 72,
+          blake3: digest,
+        },
+        ledger: {
+          provider_url: 'https://github.com',
+          repository: { id: 1, node_id: 'R_1', full_name: 'acme/payments' },
+          pull_request: { id: 2, node_id: 'PR_2', number: 42 },
+          receiver: { algorithm: 'ed25519', key_id: 'receiver-1', public_key: digest },
+          review_receipts: [{ review_id: 101 }, { review_id: 102 }],
+          dismissals: [],
+        },
+        ownership: {
+          provider_url: 'https://github.com',
+          repository_id: 1,
+          base_commit: base,
+          observed_at: '2026-09-05T12:00:00Z',
+        },
+        checkpoint_proofs: [{ checkpoint_commit: '3'.repeat(40) }],
+        files: [
+          {
+            scope: 'current_change',
+            change: { status: 'modified', before_path: 'payments/charge.ts', after_path: 'payments/charge.ts' },
+            path: 'payments/charge.ts',
+            path_encoding: 'utf8',
+            matching_rule: {
+              line: 2,
+              pattern: '/payments/',
+              owner_alternatives: [{ kind: 'team', organization: 'acme', slug: 'payments' }],
+            },
+            owner_alternatives: [{
+              owner: { kind: 'team', organization: 'acme', slug: 'payments' },
+              eligible_reviewer_ids: [11],
+              active_review_ids: [101],
+              covering_review_ids: [],
+              blockers: [],
+            }],
+            state: 'needs_review',
+            reason: 'The current Payments change differs from its reviewed checkpoint.',
+          },
+          {
+            scope: 'current_change',
+            change: { status: 'modified', before_path: 'security/policy.ts', after_path: 'security/policy.ts' },
+            path: 'security/policy.ts',
+            path_encoding: 'utf8',
+            matching_rule: {
+              line: 3,
+              pattern: '/security/',
+              owner_alternatives: [{ kind: 'team', organization: 'acme', slug: 'security' }],
+            },
+            owner_alternatives: [{
+              owner: { kind: 'team', organization: 'acme', slug: 'security' },
+              eligible_reviewer_ids: [12],
+              active_review_ids: [102],
+              covering_review_ids: [102],
+              blockers: [],
+            }],
+            state: 'covered',
+            reason: 'The complete Git change identity is covered by review 102.',
+          },
+          {
+            scope: 'retired_residue',
+            change: { status: 'modified', before_path: 'legacy/removed.ts', after_path: 'legacy/removed.ts' },
+            path: 'legacy/removed.ts',
+            path_encoding: 'utf8',
+            matching_rule: {
+              line: 4,
+              pattern: '/legacy/',
+              owner_alternatives: [{ kind: 'user', login: 'maintainer' }],
+            },
+            owner_alternatives: [{
+              owner: { kind: 'user', login: 'maintainer' },
+              eligible_reviewer_ids: [],
+              active_review_ids: [],
+              covering_review_ids: [],
+              blockers: ['CODEOWNER @maintainer does not have write permission at the protected base.'],
+            }],
+            state: 'blocked',
+            reason: 'A reviewed change disappeared, but its required owner identity cannot be authorized.',
+          },
+        ],
+        unresolved_residue: [{
+          checkpoint_commit: '4'.repeat(40),
+          path: 'git-bytes:%FF.ts',
+          path_encoding: 'git_bytes_percent_encoded',
+          reason: 'non_utf8_git_path',
+        }],
+        summary: {
+          current_files: 2,
+          retired_residue_files: 1,
+          unresolved_residue: 1,
+          total_requirements: 4,
+          covered_files: 1,
+          needs_review_files: 1,
+          blocked_files: 2,
+          active_review_receipts: 2,
+          unique_checkpoint_proofs: 1,
+          gate_passed: false,
+        },
+        non_claims: [
+          'This passport does not create or restore a GitHub approval.',
+          'Coverage is not a claim of semantic safety or absence of bugs.',
+        ],
+      },
+      attestation: {
+        algorithm: 'ed25519',
+        key_id: 'receiver-1',
+        body_sha256: '5'.repeat(64),
+        signature: '6'.repeat(128),
+      },
     },
   }
 }

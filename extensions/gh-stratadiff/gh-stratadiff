@@ -1,0 +1,501 @@
+#!/usr/bin/env bash
+
+set +x
+set -euo pipefail
+umask 077
+
+usage() {
+  cat <<'EOF'
+Usage: gh stratadiff resume <PR> [options]
+
+Resume your latest completed review from exact Git evidence.
+
+Options:
+  --reviewer LOGIN   Reviewer login (default: the authenticated gh user)
+  -R, --repo REPO    GitHub repository in OWNER/REPO form
+  --repo-dir PATH    Local Git worktree or repository (default: current repository)
+  --port PORT        Local workbench port; 0 selects an available port (default: 0)
+  --no-open          Print the workbench URL without opening a browser
+  -h, --help         Show this help
+
+This command never creates or restores a GitHub approval. It refuses to replace a
+missing review checkpoint with the PR head, a branch tip, or another review.
+EOF
+}
+
+die() {
+  printf 'gh stratadiff: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command is not available: $1"
+}
+
+require_value() {
+  [[ $# -ge 2 && -n "$2" ]] || die "$1 requires a value"
+}
+
+is_object_id() {
+  [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]
+}
+
+local_commit() {
+  local repository=$1
+  local object_id=$2
+  "${clean_git_environment[@]}" \
+    git -C "${repository}" cat-file -e "${object_id}^{commit}" 2>/dev/null
+}
+
+verify_local_commit() {
+  local repository=$1
+  local object_id=$2
+  local label=$3
+  local resolved
+  if ! local_commit "${repository}" "${object_id}"; then
+    die "${label} ${object_id} is not present as a commit in ${repository}; materialize that exact object and retry"
+  fi
+  resolved="$(
+    "${clean_git_environment[@]}" \
+      git -C "${repository}" rev-parse --verify "${object_id}^{commit}"
+  )"
+  [[ "${resolved}" == "${object_id}" ]] || die "${label} resolved to ${resolved}, expected ${object_id}"
+}
+
+read_pr_coordinates() {
+  local pull_request=$1
+  local github_repository=$2
+  gh pr view "${pull_request}" \
+    --repo "${github_repository}" \
+    --json number,baseRefOid,headRefOid \
+    --jq '[.number, .baseRefOid, .headRefOid] | @tsv'
+}
+
+verify_provider_commit() {
+  local object_id=$1
+  local label=$2
+  local ref_name=$3
+  local commit_object_path=${temporary_directory}/${ref_name}-commit.json
+  local verified_commit
+
+  if ! gh api \
+    --hostname "${github_host}" \
+    "repos/${github_repository}/git/commits/${object_id}" \
+    > "${commit_object_path}"
+  then
+    die "GitHub no longer exposes exact ${label} ${object_id}; the provider cannot materialize that commit"
+  fi
+  verified_commit="$(
+    "${stratadiff}" github-commit-object "${commit_object_path}" --expected "${object_id}"
+  )"
+  [[ "${verified_commit}" == "${object_id}" ]] || die "provider verification returned an unexpected ${label}"
+}
+
+initialize_provider_repository() {
+  if [[ -n "${provider_repository}" ]]; then
+    return 0
+  fi
+  provider_repository=${temporary_directory}/provider.git
+  provider_home=${temporary_directory}/provider-home
+  mkdir -m 700 "${provider_home}"
+  "${clean_git_environment[@]}" \
+    HOME="${provider_home}" \
+    XDG_CONFIG_HOME="${provider_home}" \
+    git init --bare --quiet "${provider_repository}"
+}
+
+load_fetch_credential() {
+  if [[ -n "${git_authorization}" ]]; then
+    return 0
+  fi
+  require_command base64
+  github_token="$(gh auth token --hostname "${github_host}")" || die "could not read a GitHub token for ${github_host}"
+  [[ -n "${github_token}" ]] || die "the authenticated GitHub token is empty"
+  if [[ "${github_token}" == *$'\n'* || "${github_token}" == *$'\r'* ]]; then
+    die "the authenticated GitHub token contains a line break"
+  fi
+  git_authorization="$(printf 'x-access-token:%s' "${github_token}" | base64 | tr -d '\n')"
+  [[ -n "${git_authorization}" ]] || die "could not encode the GitHub fetch credential"
+}
+
+materialize_provider_commit() {
+  local object_id=$1
+  local label=$2
+  local ref_name=$3
+  local provider_ref
+  local imported_ref
+  local resolved
+  local effective_local_url
+  local fetched_ref_record
+
+  initialize_provider_repository
+  load_fetch_credential
+  provider_ref="refs/stratadiff/provider/${ref_name}-${object_id}"
+  if ! "${clean_git_environment[@]}" \
+    HOME="${provider_home}" \
+    XDG_CONFIG_HOME="${provider_home}" \
+    GIT_CONFIG_COUNT=10 \
+    GIT_CONFIG_KEY_0=http.extraHeader \
+    GIT_CONFIG_VALUE_0='' \
+    GIT_CONFIG_KEY_1=http.extraHeader \
+    GIT_CONFIG_VALUE_1="AUTHORIZATION: basic ${git_authorization}" \
+    GIT_CONFIG_KEY_2=http.followRedirects \
+    GIT_CONFIG_VALUE_2=false \
+    GIT_CONFIG_KEY_3=http.sslVerify \
+    GIT_CONFIG_VALUE_3=true \
+    GIT_CONFIG_KEY_4=credential.helper \
+    GIT_CONFIG_VALUE_4='' \
+    GIT_CONFIG_KEY_5=protocol.allow \
+    GIT_CONFIG_VALUE_5=never \
+    GIT_CONFIG_KEY_6=protocol.https.allow \
+    GIT_CONFIG_VALUE_6=always \
+    GIT_CONFIG_KEY_7=protocol.file.allow \
+    GIT_CONFIG_VALUE_7=never \
+    GIT_CONFIG_KEY_8=http.proxy \
+    GIT_CONFIG_VALUE_8='' \
+    GIT_CONFIG_KEY_9=fetch.fsckObjects \
+    GIT_CONFIG_VALUE_9=true \
+    GIT_TRACE=0 \
+    GIT_TRACE_CURL=0 \
+    GIT_TRACE_PACKET=0 \
+    GIT_TRACE_REDACT=1 \
+    git --git-dir="${provider_repository}" fetch \
+      --quiet \
+      --no-tags \
+      --no-recurse-submodules \
+      "${provider_repository_url}" \
+      "${object_id}:${provider_ref}"
+  then
+    git_authorization=
+    github_token=
+    die "GitHub verified ${label} ${object_id}, but no longer serves that exact commit over Git HTTPS"
+  fi
+
+  resolved="$(
+    "${clean_git_environment[@]}" \
+      HOME="${provider_home}" \
+      XDG_CONFIG_HOME="${provider_home}" \
+      git --git-dir="${provider_repository}" rev-parse --verify "${provider_ref}^{commit}"
+  )"
+  [[ "${resolved}" == "${object_id}" ]] || die "provider fetch resolved ${label} to ${resolved}, expected ${object_id}"
+
+  imported_ref="refs/stratadiff/resume/${resume_session}/${ref_name}"
+  if "${clean_git_environment[@]}" \
+    git -C "${repository_directory}" show-ref --verify --quiet "${imported_ref}"
+  then
+    die "temporary StrataDiff ref already exists: ${imported_ref}"
+  fi
+  effective_local_url="$(
+    "${clean_git_environment[@]}" \
+      HOME="${provider_home}" \
+      XDG_CONFIG_HOME="${provider_home}" \
+      git -C "${repository_directory}" ls-remote --get-url "${provider_repository}"
+  )"
+  [[ "${effective_local_url}" == "${provider_repository}" ]] || die "repository Git configuration rewrites the isolated commit source"
+
+  if ! fetched_ref_record="$(
+    "${clean_git_environment[@]}" \
+      HOME="${provider_home}" \
+      XDG_CONFIG_HOME="${provider_home}" \
+      GIT_CONFIG_COUNT=7 \
+      GIT_CONFIG_KEY_0=http.extraHeader \
+      GIT_CONFIG_VALUE_0='' \
+      GIT_CONFIG_KEY_1=credential.helper \
+      GIT_CONFIG_VALUE_1='' \
+      GIT_CONFIG_KEY_2=protocol.allow \
+      GIT_CONFIG_VALUE_2=never \
+      GIT_CONFIG_KEY_3=protocol.file.allow \
+      GIT_CONFIG_VALUE_3=always \
+      GIT_CONFIG_KEY_4=protocol.https.allow \
+      GIT_CONFIG_VALUE_4=never \
+      GIT_CONFIG_KEY_5=fetch.fsckObjects \
+      GIT_CONFIG_VALUE_5=true \
+      GIT_CONFIG_KEY_6=transfer.fsckObjects \
+      GIT_CONFIG_VALUE_6=true \
+      git -C "${repository_directory}" fetch-pack \
+        --no-progress \
+        "${provider_repository}" \
+        "${provider_ref}"
+  )"
+  then
+    die "failed to import verified ${label} ${object_id} into the local Git object store"
+  fi
+  [[ ${#fetched_ref_record} -le 256 ]] || die "local import returned an oversized ref record"
+  [[ "${fetched_ref_record}" == "${object_id} ${provider_ref}" ]] || die \
+    "local import did not return the exact verified ${label} ref"
+
+  if ! "${clean_git_environment[@]}" \
+    git -C "${repository_directory}" update-ref --no-deref \
+      "${imported_ref}" "${object_id}" ''
+  then
+    die "temporary StrataDiff ref already exists or changed concurrently: ${imported_ref}"
+  fi
+  temporary_refs+=("${imported_ref}")
+  temporary_ref_commits+=("${object_id}")
+
+  resolved="$(
+    "${clean_git_environment[@]}" \
+      git -C "${repository_directory}" rev-parse --verify "${imported_ref}^{commit}"
+  )"
+  [[ "${resolved}" == "${object_id}" ]] || die "imported ${label} resolved to ${resolved}, expected ${object_id}"
+  verify_local_commit "${repository_directory}" "${object_id}" "${label}"
+}
+
+ensure_local_commit() {
+  local object_id=$1
+  local label=$2
+  local ref_name=$3
+  local provider_verified=${4:-false}
+
+  if local_commit "${repository_directory}" "${object_id}"; then
+    verify_local_commit "${repository_directory}" "${object_id}" "${label}"
+    return 0
+  fi
+  if [[ "${provider_verified}" != true ]]; then
+    verify_provider_commit "${object_id}" "${label}" "${ref_name}"
+  fi
+  materialize_provider_commit "${object_id}" "${label}" "${ref_name}"
+}
+
+[[ $# -gt 0 ]] || {
+  usage >&2
+  exit 2
+}
+
+subcommand=$1
+shift
+case "${subcommand}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  resume) ;;
+  *)
+    usage >&2
+    die "unsupported command: ${subcommand}"
+    ;;
+esac
+
+pull_request=
+reviewer=
+requested_repository=
+repository_directory=.
+port=0
+no_open=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --reviewer)
+      require_value "$1" "${2:-}"
+      reviewer=$2
+      shift 2
+      ;;
+    -R|--repo)
+      require_value "$1" "${2:-}"
+      requested_repository=$2
+      shift 2
+      ;;
+    --repo-dir)
+      require_value "$1" "${2:-}"
+      repository_directory=$2
+      shift 2
+      ;;
+    --port)
+      require_value "$1" "${2:-}"
+      port=$2
+      shift 2
+      ;;
+    --no-open)
+      no_open=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      [[ $# -eq 1 && -z "${pull_request}" ]] || die "expected exactly one pull request"
+      pull_request=$1
+      shift
+      ;;
+    -*) die "unknown option: $1" ;;
+    *)
+      [[ -z "${pull_request}" ]] || die "expected exactly one pull request"
+      pull_request=$1
+      shift
+      ;;
+  esac
+done
+
+[[ -n "${pull_request}" ]] || die "resume requires a pull request number, URL, or branch"
+[[ "${port}" =~ ^[0-9]+$ && "${port}" -le 65535 ]] || die "--port must be an integer from 0 through 65535"
+
+require_command gh
+require_command git
+require_command env
+stratadiff=${STRATADIFF_BIN:-stratadiff}
+require_command "${stratadiff}"
+
+clean_git_environment=(
+  env
+  -u GH_TOKEN
+  -u GITHUB_TOKEN
+  -u GH_ENTERPRISE_TOKEN
+  -u STRATADIFF_GITHUB_TOKEN
+  -u github_token
+  -u git_authorization
+)
+while IFS= read -r environment_name; do
+  case "${environment_name}" in
+    GIT_*) clean_git_environment+=(-u "${environment_name}") ;;
+    HTTP_PROXY|HTTPS_PROXY|ALL_PROXY|FTP_PROXY|NO_PROXY|http_proxy|https_proxy|all_proxy|ftp_proxy|no_proxy|CURL_CA_BUNDLE|SSL_CERT_FILE|SSL_CERT_DIR)
+      clean_git_environment+=(-u "${environment_name}")
+      ;;
+  esac
+done < <(compgen -e)
+clean_git_environment+=(
+  GIT_CONFIG_NOSYSTEM=1
+  GIT_CONFIG_GLOBAL=/dev/null
+  GIT_TERMINAL_PROMPT=0
+  GIT_ASKPASS=/bin/false
+  GIT_NO_LAZY_FETCH=1
+  GIT_NO_REPLACE_OBJECTS=1
+)
+
+viewer_environment=(env -i)
+for environment_name in \
+  PATH HOME \
+  DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XAUTHORITY \
+  LANG LANGUAGE LC_ALL LC_ADDRESS LC_COLLATE LC_CTYPE LC_IDENTIFICATION \
+  LC_MEASUREMENT LC_MESSAGES LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER \
+  LC_TELEPHONE LC_TIME
+do
+  if [[ -v "${environment_name}" ]]; then
+    viewer_environment+=("${environment_name}=${!environment_name}")
+  fi
+done
+viewer_environment+=(
+  GIT_CONFIG_NOSYSTEM=1
+  GIT_CONFIG_GLOBAL=/dev/null
+  GIT_TERMINAL_PROMPT=0
+  GIT_ASKPASS=/bin/false
+  GIT_NO_LAZY_FETCH=1
+  GIT_NO_REPLACE_OBJECTS=1
+)
+
+repository_directory="$(
+  "${clean_git_environment[@]}" \
+    git -C "${repository_directory}" rev-parse --show-toplevel
+)" || die "--repo-dir is not inside a Git repository"
+
+repo_view_arguments=(repo view)
+if [[ -n "${requested_repository}" ]]; then
+  repo_view_arguments+=("${requested_repository}")
+fi
+repo_record="$(
+  cd -- "${repository_directory}"
+  gh "${repo_view_arguments[@]}" --json nameWithOwner,url --jq '[.nameWithOwner, .url] | @tsv'
+)"
+IFS=$'\t' read -r github_repository repository_url extra <<< "${repo_record}"
+[[ -n "${github_repository}" && -n "${repository_url}" && -z "${extra:-}" ]] || die "GitHub repository metadata is incomplete"
+[[ "${github_repository}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "GitHub repository is not a valid OWNER/REPO name"
+[[ "${repository_url}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "GitHub repository URL is not a canonical HTTPS repository URL"
+host_and_path=${repository_url#https://}
+github_host=${host_and_path%%/*}
+[[ -n "${github_host}" && "${github_host}" != *'@'* && "${github_host}" != *:* ]] || die "GitHub repository URL has an unsupported host"
+[[ "${repository_url}" == "https://${github_host}/${github_repository}" ]] || die "GitHub repository URL does not match ${github_repository}"
+github_repository_selector=${github_host}/${github_repository}
+provider_repository_url=${repository_url}.git
+
+if [[ -z "${reviewer}" ]]; then
+  reviewer="$(gh api --hostname "${github_host}" user --jq '.login')"
+fi
+[[ -n "${reviewer}" && "${reviewer}" != *[[:space:]]* ]] || die "reviewer login is empty or contains whitespace"
+
+coordinates="$(read_pr_coordinates "${pull_request}" "${github_repository_selector}")"
+IFS=$'\t' read -r pull_request_number base_commit head_commit extra <<< "${coordinates}"
+[[ "${pull_request_number}" =~ ^[1-9][0-9]*$ && -z "${extra:-}" ]] || die "pull request metadata is incomplete"
+is_object_id "${base_commit}" || die "pull request base is not a full lowercase Git object ID"
+is_object_id "${head_commit}" || die "pull request head is not a full lowercase Git object ID"
+
+temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/gh-stratadiff-resume-XXXXXX")"
+resume_session=${temporary_directory##*/}
+provider_repository=
+provider_home=
+github_token=
+git_authorization=
+export -n github_token git_authorization
+temporary_refs=()
+temporary_ref_commits=()
+cleanup() {
+  local cleanup_status=$?
+  local index
+  trap - EXIT
+  for ((index = ${#temporary_refs[@]} - 1; index >= 0; index--)); do
+    if ! "${clean_git_environment[@]}" \
+      git -C "${repository_directory}" update-ref --no-deref -d \
+        "${temporary_refs[index]}" "${temporary_ref_commits[index]}"
+    then
+      printf 'gh stratadiff: failed to remove temporary ref %s\n' "${temporary_refs[index]}" >&2
+      cleanup_status=1
+    fi
+  done
+  if [[ "${temporary_directory}" != "${TMPDIR:-/tmp}"/gh-stratadiff-resume-* ]]; then
+    printf 'gh stratadiff: refusing to remove unexpected temporary directory %s\n' "${temporary_directory}" >&2
+    cleanup_status=1
+  elif ! rm -rf -- "${temporary_directory}"; then
+    printf 'gh stratadiff: failed to remove temporary directory %s\n' "${temporary_directory}" >&2
+    cleanup_status=1
+  fi
+  exit "${cleanup_status}"
+}
+trap cleanup EXIT
+
+ensure_local_commit "${base_commit}" "pull request base" base
+ensure_local_commit "${head_commit}" "pull request head" head
+
+reviews_path=${temporary_directory}/reviews-response.txt
+if ! gh api \
+  --include \
+  --hostname "${github_host}" \
+  "repos/${github_repository}/pulls/${pull_request_number}/reviews?per_page=100&page=1" \
+  > "${reviews_path}"
+then
+  die "could not load reviews for ${github_repository}#${pull_request_number}"
+fi
+
+checkpoint="$(
+  "${stratadiff}" github-checkpoint "${reviews_path}" \
+    --reviewer "${reviewer}" \
+    --gh-included-response
+)"
+[[ -n "${checkpoint}" ]] || die "@${reviewer} has no eligible completed review on ${github_repository}#${pull_request_number}"
+is_object_id "${checkpoint}" || die "checkpoint resolver returned an invalid Git object ID"
+
+verify_provider_commit "${checkpoint}" "review checkpoint" checkpoint
+ensure_local_commit "${checkpoint}" "review checkpoint" checkpoint true
+unset -v github_token git_authorization
+
+latest_coordinates="$(read_pr_coordinates "${pull_request_number}" "${github_repository_selector}")"
+IFS=$'\t' read -r latest_number latest_base latest_head extra <<< "${latest_coordinates}"
+if [[ "${latest_number}" != "${pull_request_number}" || "${latest_base}" != "${base_commit}" || "${latest_head}" != "${head_commit}" || -n "${extra:-}" ]]; then
+  die "pull request base or head changed while review coverage was being resolved; rerun the command"
+fi
+
+review_arguments=(
+  review
+  "${base_commit}"
+  "${head_commit}"
+  --repo "${repository_directory}"
+  --checkpoint "${checkpoint}"
+  --workbench
+  --port "${port}"
+)
+if [[ "${no_open}" == true ]]; then
+  review_arguments+=(--no-open)
+fi
+
+printf 'Resuming @%s review of %s#%s at exact checkpoint %s.\n' \
+  "${reviewer}" "${github_repository}" "${pull_request_number}" "${checkpoint}" >&2
+"${viewer_environment[@]}" "${stratadiff}" "${review_arguments[@]}"

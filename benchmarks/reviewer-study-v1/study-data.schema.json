@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/reviewer-study-v1/study-data.schema.json",
+  "title": "StrataDiff prospective reviewer study data v1",
+  "description": "Privacy-minimized paired outcome counts. No direct identity, repository, pull-request, code, issue-text, comment, or absolute-timestamp fields are permitted.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "study_id",
+    "protocol_version",
+    "preregistration_sha256",
+    "synthetic",
+    "collection_status",
+    "participants",
+    "paired_observations"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/benchmarks/reviewer-study-v1/study-data.schema.json"
+    },
+    "study_id": {
+      "type": "string",
+      "pattern": "^study_[a-z0-9][a-z0-9_-]{2,63}$"
+    },
+    "protocol_version": { "const": "1.0.0" },
+    "preregistration_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "synthetic": { "type": "boolean" },
+    "collection_status": { "enum": ["open", "locked"] },
+    "participants": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/participant" }
+    },
+    "paired_observations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/paired_observation" }
+    }
+  },
+  "$defs": {
+    "participant_id": {
+      "type": "string",
+      "pattern": "^p_[0-9a-f]{12}$"
+    },
+    "pair_id": {
+      "type": "string",
+      "pattern": "^pair_[0-9a-f]{12}$"
+    },
+    "task_family_id": {
+      "type": "string",
+      "pattern": "^task_[0-9a-f]{12}$",
+      "description": "Opaque ID for an isomorphic A/B task family. Families are reused across participants but must not repeat for one participant."
+    },
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participant_id", "repeat_use"],
+      "properties": {
+        "participant_id": { "$ref": "#/$defs/participant_id" },
+        "repeat_use": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["invited_again", "follow_up_complete", "used_within_28_days"],
+          "properties": {
+            "invited_again": { "type": "boolean" },
+            "follow_up_complete": { "type": "boolean" },
+            "used_within_28_days": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "arm_measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "completion_seconds",
+        "issues_found",
+        "seeded_issues",
+        "reopened_files",
+        "reopened_lines"
+      ],
+      "properties": {
+        "completion_seconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "issues_found": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "seeded_issues": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "reopened_files": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "reopened_lines": { "type": "integer", "minimum": 0, "maximum": 100000000 }
+      }
+    },
+    "false_carry_adjudication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "unit",
+        "carried_units",
+        "adjudicated_units",
+        "confirmed_false_carries",
+        "adjudicator_count",
+        "all_disagreements_resolved"
+      ],
+      "properties": {
+        "unit": { "const": "carried_file_change" },
+        "carried_units": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "adjudicated_units": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "confirmed_false_carries": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "adjudicator_count": { "type": "integer", "minimum": 2, "maximum": 20 },
+        "all_disagreements_resolved": { "const": true }
+      }
+    },
+    "paired_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pair_id",
+        "participant_id",
+        "task_family_id",
+        "assignment_order",
+        "baseline_variant",
+        "resume_variant",
+        "baseline",
+        "resume",
+        "false_carry_adjudication"
+      ],
+      "properties": {
+        "pair_id": { "$ref": "#/$defs/pair_id" },
+        "participant_id": { "$ref": "#/$defs/participant_id" },
+        "task_family_id": { "$ref": "#/$defs/task_family_id" },
+        "assignment_order": { "enum": ["baseline_then_resume", "resume_then_baseline"] },
+        "baseline_variant": { "enum": ["a", "b"] },
+        "resume_variant": { "enum": ["a", "b"] },
+        "baseline": { "$ref": "#/$defs/arm_measurement" },
+        "resume": { "$ref": "#/$defs/arm_measurement" },
+        "false_carry_adjudication": { "$ref": "#/$defs/false_carry_adjudication" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "baseline_variant": { "const": "a" } },
+            "required": ["baseline_variant"]
+          },
+          "then": { "properties": { "resume_variant": { "const": "b" } } }
+        },
+        {
+          "if": {
+            "properties": { "baseline_variant": { "const": "b" } },
+            "required": ["baseline_variant"]
+          },
+          "then": { "properties": { "resume_variant": { "const": "a" } } }
+        }
+      ]
+    }
+  }
+}
