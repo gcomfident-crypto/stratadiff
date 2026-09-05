@@ -15,6 +15,7 @@ printf ' %s' "$@" >> "${STRATADIFF_EXTENSION_TEST_LOG}"
 printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
 
 checkpoint=cccccccccccccccccccccccccccccccccccccccc
+base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 case "${1:-}" in
   github-checkpoint)
     reviews_path=$2
@@ -44,6 +45,47 @@ case "${1:-}" in
       shift
     done
     exit 70
+    ;;
+  github-ownership-snapshot)
+    [[ "${2:-}" == "${base}" ]]
+    repository=
+    github_repository=
+    provider_url=
+    output=
+    shift 2
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --repo)
+          repository=$2
+          shift 2
+          ;;
+        --github-repository)
+          github_repository=$2
+          shift 2
+          ;;
+        --provider-url)
+          provider_url=$2
+          shift 2
+          ;;
+        --output)
+          output=$2
+          shift 2
+          ;;
+        *) exit 70 ;;
+      esac
+    done
+    [[ "${repository}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
+    [[ "${github_repository}" == acme/widget ]]
+    if [[ "${GH_STUB_ENTERPRISE:-false}" == true ]]; then
+      [[ "${provider_url}" == https://ghe.example ]]
+    else
+      [[ "${provider_url}" == https://github.com ]]
+    fi
+    [[ -n "${output}" ]]
+    if [[ "${GH_STUB_OWNERSHIP_FAIL:-false}" == true ]]; then
+      exit 1
+    fi
+    printf '{"base_commit":"%s"}\n' "${base}" > "${output}"
     ;;
   *)
     printf 'unexpected stratadiff invocation: %s\n' "$*" >&2

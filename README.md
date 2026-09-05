@@ -35,7 +35,7 @@ historical fact.
 > base-drift replay, Review Resume Workbench, webhook review ledger, exact-base CODEOWNERS and
 > permission snapshots, receiver-signed review-coverage Passport, offline verification, and
 > deterministic Check Run request generation work now. The implementation remains local tooling,
-> not a hosted GitHub App: durable latest-root storage, live permission collection, Check Run
+> not a hosted GitHub App: installation-token issuance, durable latest-root storage, Check Run
 > publication, and measured human time/recall outcomes are still missing. The structural diff and
 > provenance-complete benchmark layers remain available underneath the review-memory product.
 
@@ -189,6 +189,40 @@ python3 scripts/demo_review_coverage.py --offline --open
 The demo deliberately exits successfully after verifying that the inner required check exits 1;
 that red check is the expected product result, not a failed benchmark. With `--open`, the local
 Workbench keeps running until you press Ctrl+C.
+
+### Collect the exact-base ownership snapshot
+
+The team workflow can collect its ownership input through the same authenticated `gh` session.
+`BASE_SHA` must be a full object ID exposed by the selected GitHub repository. The extension uses
+the local object when present; otherwise it verifies and fetches that exact object without changing
+the worktree:
+
+```console
+gh stratadiff ownership-snapshot "$BASE_SHA" \
+  --repo-dir "$REPOSITORY" -R HOST/OWNER/REPO --output ownership.json
+```
+
+The collector reads CODEOWNERS from that exact commit, then observes repository identity, the base
+commit, effective permissions for only the referenced users and team members, team visibility, the
+team's permission on this repository, and active direct/inherited membership twice. It sorts by
+stable GitHub IDs and writes only when the two complete observations agree. The destination is
+created privately and replaced atomically with mode `0600`. Within the core ownership collector,
+pagination links, response bytes, API calls, owners, teams, memberships, each `gh api` runtime, and
+the total 10-minute collection window are bounded. The extension's preliminary provider-commit
+check and exact Git fetch still rely on the configured `gh` and Git transport timeouts.
+
+This is intentionally fail-closed. Email owners, secret or inaccessible teams, HTTP errors,
+unsupported permissions, missing `role` or `inherited` member fields, old GHES response shapes, and
+facts that change between observations produce no new snapshot. For least-privilege automation, use
+a GitHub App installation token with repository `Contents: read` and `Metadata: read`, plus
+organization `Members: read` when CODEOWNERS names teams; no administration or write permission is
+required. Inject it through `GH_TOKEN` on GitHub.com or `GH_ENTERPRISE_TOKEN` on GHES. The built-in
+Actions `GITHUB_TOKEN` cannot generally read organization teams. Each referenced principal requires
+one permission request in each observation, so large organizations may hit the 5,000-request safety
+budget and fail without replacing the old output. The members endpoint exposes active users, so
+pending invitations are not asserted. Run collection immediately before signing a Passport: the
+JSON is a receiver observation, not a GitHub signature or a transactional or indefinitely fresh
+permission proof.
 
 ### Inspect a signed review-coverage Passport
 

@@ -1654,6 +1654,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hmac",
  "jsonschema",
+ "libc",
  "proptest",
  "rust-embed",
  "serde",

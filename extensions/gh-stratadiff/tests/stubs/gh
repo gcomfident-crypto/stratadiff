@@ -13,7 +13,12 @@ checkpoint=cccccccccccccccccccccccccccccccccccccccc
 case "${1:-} ${2:-}" in
   "repo view")
     [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
-    printf 'acme/widget\thttps://github.com/acme/widget\n'
+    if [[ "${GH_STUB_ENTERPRISE:-false}" == true ]]; then
+      [[ " $* " == *" ghe.example/acme/widget "* ]]
+      printf 'acme/widget\thttps://ghe.example/acme/widget\n'
+    else
+      printf 'acme/widget\thttps://github.com/acme/widget\n'
+    fi
     ;;
   "pr view")
     [[ " $* " == *" --repo github.com/acme/widget "* ]]
@@ -51,7 +56,9 @@ case "${1:-} ${2:-}" in
     elif [[ "${arguments}" == *"/git/commits/"* ]]; then
       object_id=${arguments##*/git/commits/}
       object_id=${object_id%% *}
-      if [[ "${GH_STUB_PROVIDER_MISSING:-false}" == true && "${object_id}" == "${checkpoint}" ]]; then
+      if [[ "${GH_STUB_PROVIDER_MISSING:-false}" == true && "${object_id}" == "${checkpoint}" ]] || \
+        [[ "${GH_STUB_PROVIDER_MISSING_BASE:-false}" == true && "${object_id}" == "${base}" ]]
+      then
         exit 1
       fi
       printf '{"sha":"%s"}\n' "${object_id}"

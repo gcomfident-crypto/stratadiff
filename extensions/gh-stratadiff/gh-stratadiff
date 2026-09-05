@@ -6,13 +6,25 @@ umask 077
 
 usage() {
   cat <<'EOF'
+Usage: gh stratadiff <command> [options]
+
+Commands:
+  resume <PR>                Resume your latest completed review
+  ownership-snapshot <BASE> Collect exact-base CODEOWNERS identities and permissions
+
+Run `gh stratadiff <command> --help` for command-specific options.
+EOF
+}
+
+resume_usage() {
+  cat <<'EOF'
 Usage: gh stratadiff resume <PR> [options]
 
 Resume your latest completed review from exact Git evidence.
 
 Options:
   --reviewer LOGIN   Reviewer login (default: the authenticated gh user)
-  -R, --repo REPO    GitHub repository in OWNER/REPO form
+  -R, --repo REPO    GitHub repository in [HOST/]OWNER/REPO form
   --repo-dir PATH    Local Git worktree or repository (default: current repository)
   --port PORT        Local workbench port; 0 selects an available port (default: 0)
   --no-open          Print the workbench URL without opening a browser
@@ -20,6 +32,24 @@ Options:
 
 This command never creates or restores a GitHub approval. It refuses to replace a
 missing review checkpoint with the PR head, a branch tip, or another review.
+EOF
+}
+
+ownership_snapshot_usage() {
+  cat <<'EOF'
+Usage: gh stratadiff ownership-snapshot <BASE> --output PATH [options]
+
+Collect the exact-base GitHub identities, repository permissions, teams, and
+memberships required by CODEOWNERS.
+
+Options:
+  -R, --repo REPO    GitHub repository in [HOST/]OWNER/REPO form
+  --repo-dir PATH    Local Git worktree or repository (default: current repository)
+  --output PATH      Write the ownership snapshot to PATH
+  -h, --help         Show this help
+
+The base must be a full lowercase Git object ID. The command verifies that exact
+commit with the selected GitHub host before using the local object or fetching it.
 EOF
 }
 
@@ -179,7 +209,7 @@ materialize_provider_commit() {
   )"
   [[ "${resolved}" == "${object_id}" ]] || die "provider fetch resolved ${label} to ${resolved}, expected ${object_id}"
 
-  imported_ref="refs/stratadiff/resume/${resume_session}/${ref_name}"
+  imported_ref="refs/stratadiff/${temporary_ref_namespace}/${command_session}/${ref_name}"
   if "${clean_git_environment[@]}" \
     git -C "${repository_directory}" show-ref --verify --quiet "${imported_ref}"
   then
@@ -269,7 +299,7 @@ case "${subcommand}" in
     usage
     exit 0
     ;;
-  resume) ;;
+  resume|ownership-snapshot) ;;
   *)
     usage >&2
     die "unsupported command: ${subcommand}"
@@ -277,59 +307,106 @@ case "${subcommand}" in
 esac
 
 pull_request=
+base_commit=
 reviewer=
 requested_repository=
 repository_directory=.
+output_path=
 port=0
 no_open=false
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --reviewer)
-      require_value "$1" "${2:-}"
-      reviewer=$2
-      shift 2
-      ;;
-    -R|--repo)
-      require_value "$1" "${2:-}"
-      requested_repository=$2
-      shift 2
-      ;;
-    --repo-dir)
-      require_value "$1" "${2:-}"
-      repository_directory=$2
-      shift 2
-      ;;
-    --port)
-      require_value "$1" "${2:-}"
-      port=$2
-      shift 2
-      ;;
-    --no-open)
-      no_open=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --)
-      shift
-      [[ $# -eq 1 && -z "${pull_request}" ]] || die "expected exactly one pull request"
-      pull_request=$1
-      shift
-      ;;
-    -*) die "unknown option: $1" ;;
-    *)
-      [[ -z "${pull_request}" ]] || die "expected exactly one pull request"
-      pull_request=$1
-      shift
-      ;;
-  esac
-done
+case "${subcommand}" in
+  resume)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --reviewer)
+          require_value "$1" "${2:-}"
+          reviewer=$2
+          shift 2
+          ;;
+        -R|--repo)
+          require_value "$1" "${2:-}"
+          requested_repository=$2
+          shift 2
+          ;;
+        --repo-dir)
+          require_value "$1" "${2:-}"
+          repository_directory=$2
+          shift 2
+          ;;
+        --port)
+          require_value "$1" "${2:-}"
+          port=$2
+          shift 2
+          ;;
+        --no-open)
+          no_open=true
+          shift
+          ;;
+        -h|--help)
+          resume_usage
+          exit 0
+          ;;
+        --)
+          shift
+          [[ $# -eq 1 && -z "${pull_request}" ]] || die "expected exactly one pull request"
+          pull_request=$1
+          shift
+          ;;
+        -*) die "unknown option: $1" ;;
+        *)
+          [[ -z "${pull_request}" ]] || die "expected exactly one pull request"
+          pull_request=$1
+          shift
+          ;;
+      esac
+    done
 
-[[ -n "${pull_request}" ]] || die "resume requires a pull request number, URL, or branch"
-[[ "${port}" =~ ^[0-9]+$ && "${port}" -le 65535 ]] || die "--port must be an integer from 0 through 65535"
+    [[ -n "${pull_request}" ]] || die "resume requires a pull request number, URL, or branch"
+    [[ "${port}" =~ ^[0-9]+$ && "${port}" -le 65535 ]] || die "--port must be an integer from 0 through 65535"
+    ;;
+  ownership-snapshot)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -R|--repo)
+          require_value "$1" "${2:-}"
+          requested_repository=$2
+          shift 2
+          ;;
+        --repo-dir)
+          require_value "$1" "${2:-}"
+          repository_directory=$2
+          shift 2
+          ;;
+        --output)
+          require_value "$1" "${2:-}"
+          output_path=$2
+          shift 2
+          ;;
+        -h|--help)
+          ownership_snapshot_usage
+          exit 0
+          ;;
+        --)
+          shift
+          [[ $# -eq 1 && -z "${base_commit}" ]] || die "expected exactly one base commit"
+          base_commit=$1
+          shift
+          ;;
+        -*) die "unknown option: $1" ;;
+        *)
+          [[ -z "${base_commit}" ]] || die "expected exactly one base commit"
+          base_commit=$1
+          shift
+          ;;
+      esac
+    done
+
+    [[ -n "${base_commit}" ]] || die "ownership-snapshot requires a base commit"
+    is_object_id "${base_commit}" || die "ownership-snapshot base must be a full lowercase Git object ID"
+    [[ -n "${output_path}" ]] || die "ownership-snapshot requires --output PATH"
+    ;;
+esac
 
 require_command gh
 require_command git
@@ -405,22 +482,29 @@ host_and_path=${repository_url#https://}
 github_host=${host_and_path%%/*}
 [[ -n "${github_host}" && "${github_host}" != *'@'* && "${github_host}" != *:* ]] || die "GitHub repository URL has an unsupported host"
 [[ "${repository_url}" == "https://${github_host}/${github_repository}" ]] || die "GitHub repository URL does not match ${github_repository}"
+if [[ "${requested_repository}" =~ ^([^/]+)/[^/]+/[^/]+$ ]]; then
+  [[ "${BASH_REMATCH[1]}" == "${github_host}" ]] || die \
+    "GitHub repository host ${github_host} does not match requested host ${BASH_REMATCH[1]}"
+fi
 github_repository_selector=${github_host}/${github_repository}
 provider_repository_url=${repository_url}.git
 
-if [[ -z "${reviewer}" ]]; then
-  reviewer="$(gh api --hostname "${github_host}" user --jq '.login')"
+if [[ "${subcommand}" == resume ]]; then
+  if [[ -z "${reviewer}" ]]; then
+    reviewer="$(gh api --hostname "${github_host}" user --jq '.login')"
+  fi
+  [[ -n "${reviewer}" && "${reviewer}" != *[[:space:]]* ]] || die "reviewer login is empty or contains whitespace"
+
+  coordinates="$(read_pr_coordinates "${pull_request}" "${github_repository_selector}")"
+  IFS=$'\t' read -r pull_request_number base_commit head_commit extra <<< "${coordinates}"
+  [[ "${pull_request_number}" =~ ^[1-9][0-9]*$ && -z "${extra:-}" ]] || die "pull request metadata is incomplete"
+  is_object_id "${base_commit}" || die "pull request base is not a full lowercase Git object ID"
+  is_object_id "${head_commit}" || die "pull request head is not a full lowercase Git object ID"
 fi
-[[ -n "${reviewer}" && "${reviewer}" != *[[:space:]]* ]] || die "reviewer login is empty or contains whitespace"
 
-coordinates="$(read_pr_coordinates "${pull_request}" "${github_repository_selector}")"
-IFS=$'\t' read -r pull_request_number base_commit head_commit extra <<< "${coordinates}"
-[[ "${pull_request_number}" =~ ^[1-9][0-9]*$ && -z "${extra:-}" ]] || die "pull request metadata is incomplete"
-is_object_id "${base_commit}" || die "pull request base is not a full lowercase Git object ID"
-is_object_id "${head_commit}" || die "pull request head is not a full lowercase Git object ID"
-
-temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/gh-stratadiff-resume-XXXXXX")"
-resume_session=${temporary_directory##*/}
+temporary_ref_namespace=${subcommand}
+temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/gh-stratadiff-${temporary_ref_namespace}-XXXXXX")"
+command_session=${temporary_directory##*/}
 provider_repository=
 provider_home=
 github_token=
@@ -441,7 +525,8 @@ cleanup() {
       cleanup_status=1
     fi
   done
-  if [[ "${temporary_directory}" != "${TMPDIR:-/tmp}"/gh-stratadiff-resume-* ]]; then
+  expected_temporary_prefix="${TMPDIR:-/tmp}/gh-stratadiff-${temporary_ref_namespace}-"
+  if [[ "${temporary_directory}" != "${expected_temporary_prefix}"* ]]; then
     printf 'gh stratadiff: refusing to remove unexpected temporary directory %s\n' "${temporary_directory}" >&2
     cleanup_status=1
   elif ! rm -rf -- "${temporary_directory}"; then
@@ -451,6 +536,21 @@ cleanup() {
   exit "${cleanup_status}"
 }
 trap cleanup EXIT
+
+if [[ "${subcommand}" == ownership-snapshot ]]; then
+  verify_provider_commit "${base_commit}" "base commit" base
+  ensure_local_commit "${base_commit}" "base commit" base true
+  unset -v github_token git_authorization
+
+  printf 'Collecting exact-base ownership for %s at %s.\n' \
+    "${github_repository_selector}" "${base_commit}" >&2
+  "${stratadiff}" github-ownership-snapshot "${base_commit}" \
+    --repo "${repository_directory}" \
+    --github-repository "${github_repository}" \
+    --provider-url "https://${github_host}" \
+    --output "${output_path}"
+  exit 0
+fi
 
 ensure_local_commit "${base_commit}" "pull request base" base
 ensure_local_commit "${head_commit}" "pull request head" head
