@@ -394,6 +394,7 @@ run_audit audit-enterprise-all-options GH_STUB_ENTERPRISE=true GH_TEST_AUDIT_ALL
 assert_contains "${CASE_LOG}" 'gh repo view ghe.example/acme/widget --json nameWithOwner,url'
 assert_contains "${CASE_LOG}" "audit-tool audit --repository acme/widget --hostname ghe.example --limit 7 --days 14 --format json --output ${CASE_AUDIT_OUTPUT_PATH} --end-exclusive 2026-09-01T00:00:00Z"
 [[ -f "${CASE_AUDIT_OUTPUT_PATH}" ]]
+assert_contains "$(< "${CASE_AUDIT_OUTPUT_PATH}")" '"schema":"stratadiff-review-memory-audit-v2"'
 assert_contains "$(< "${CASE_AUDIT_OUTPUT_PATH}")" '"status":"affected"'
 assert_discovery_did_not_touch_git_state
 

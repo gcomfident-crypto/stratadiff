@@ -90,6 +90,7 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/github-review-ledger-v1.schema.json"),
         include_str!("../schema/github-ownership-snapshot-v1.schema.json"),
         include_str!("../schema/review-memory-audit-v1.schema.json"),
+        include_str!("../schema/review-memory-audit-v2.schema.json"),
         include_str!("../schema/review-inbox-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
@@ -232,6 +233,144 @@ fn review_memory_audit_schema_accepts_the_v1_contract() {
     let mut unknown_field = instance;
     unknown_field["summary"]["market_claim"] = serde_json::json!(true);
     assert!(!validator.is_valid(&unknown_field));
+}
+
+#[test]
+fn review_memory_audit_schema_accepts_actionable_v2_identity() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-memory-audit-v2.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let metric = |id: &str, numerator: u64, denominator: u64| {
+        let basis_points = (numerator * 10_000 + denominator / 2).checked_div(denominator);
+        let (status, basis_points) = match basis_points {
+            Some(value) => ("defined", serde_json::json!(value)),
+            None => ("undefined", serde_json::Value::Null),
+        };
+        serde_json::json!({
+            "id": id,
+            "numerator": numerator,
+            "denominator": denominator,
+            "status": status,
+            "basis_points": basis_points
+        })
+    };
+    let instance = serde_json::json!({
+        "schema": "stratadiff-review-memory-audit-v2",
+        "tool_version": "1.1.0",
+        "generated_at": "2026-09-05T13:00:00Z",
+        "scope": {
+            "provider_url": "https://github.com",
+            "repository": "acme/widget",
+            "window": {
+                "start": "2026-06-07T13:00:00Z",
+                "end_exclusive": "2026-09-05T13:00:00Z"
+            },
+            "selection": {
+                "method": "latest_merged_at_desc_v1",
+                "requested_limit": 50,
+                "candidate_count": 2,
+                "selected_count": 2,
+                "shortfall": 48
+            }
+        },
+        "collection": {
+            "status": "complete",
+            "graphql_calls": 3,
+            "minimum_rate_limit_remaining": 4997,
+            "last_rate_limit_reset_at": "2026-09-05T14:00:00Z"
+        },
+        "privacy": {
+            "source_collected": false,
+            "pr_text_collected": false,
+            "review_text_collected": false,
+            "commit_messages_collected": false,
+            "logins_persisted": true,
+            "actor_identity": "github_user_node_id_and_login"
+        },
+        "claim_boundary": {
+            "repository_window_description_supported": true,
+            "github_population_estimate_supported": false,
+            "reviewer_time_savings_supported": false,
+            "issue_recall_or_safety_supported": false,
+            "willingness_to_pay_supported": false,
+            "checkpoint_materialization_supported": false
+        },
+        "summary": {
+            "status": "affected",
+            "selected_pull_requests": 2,
+            "formal_peer_reviewed_pull_requests": 1,
+            "completed_reviewed_pull_requests": 1,
+            "completed_reviewer_pairs": 2,
+            "comparable_reviewer_pairs": 1,
+            "unobservable_reviewer_pairs": 1,
+            "drifted_reviewer_pairs": 1,
+            "affected_pull_requests": 1
+        },
+        "descriptive_metrics": [
+            metric("formal_peer_reviewed_pr_rate", 1, 2),
+            metric("completed_review_pr_rate", 1, 2),
+            metric("checkpoint_oid_observability_rate", 1, 2),
+            metric("checkpoint_pair_head_drift_rate", 1, 1),
+            metric("completed_review_pair_post_force_push_rate", 1, 2),
+            metric("checkpoint_pair_drift_without_observed_force_push_rate", 0, 1),
+            metric("stranded_reviewer_pr_rate", 1, 1)
+        ],
+        "findings": [{
+            "number": 17,
+            "url": "https://github.com/acme/widget/pull/17",
+            "merged_at": "2026-09-04T12:00:00Z",
+            "final_head_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "completed_pair_count": 2,
+            "comparable_pair_count": 1,
+            "unobservable_pair_count": 1,
+            "drifted_reviewers": [{
+                "login": "bob",
+                "node_id": "U_kgDOBexample",
+                "checkpoint_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "checkpoint_submitted_at": "2026-09-04T10:00:00Z",
+                "checkpoint_state": "APPROVED",
+                "dismissed": false,
+                "post_completed_review_force_push": true,
+                "post_latest_checkpoint_force_push": true
+            }]
+        }]
+    });
+    let errors: Vec<_> = validator
+        .iter_errors(&instance)
+        .map(|error| error.to_string())
+        .collect();
+    assert!(errors.is_empty(), "schema errors: {errors:#?}");
+
+    let mut wrong_status = instance.clone();
+    wrong_status["summary"]["status"] = serde_json::json!("insufficient_evidence");
+    assert!(!validator.is_valid(&wrong_status));
+
+    let mut no_actionable_finding = instance.clone();
+    no_actionable_finding["findings"][0]["drifted_reviewers"] = serde_json::json!([]);
+    assert!(!validator.is_valid(&no_actionable_finding));
+
+    let mut no_findings = instance.clone();
+    no_findings["findings"] = serde_json::json!([]);
+    assert!(!validator.is_valid(&no_findings));
+
+    let mut non_affected_with_actionable_finding = instance.clone();
+    non_affected_with_actionable_finding["summary"]["status"] =
+        serde_json::json!("no_observed_drift");
+    non_affected_with_actionable_finding["summary"]["drifted_reviewer_pairs"] =
+        serde_json::json!(0);
+    assert!(!validator.is_valid(&non_affected_with_actionable_finding));
+
+    let mut legacy_identity = instance;
+    let reviewer = legacy_identity["findings"][0]["drifted_reviewers"][0]
+        .as_object_mut()
+        .unwrap();
+    reviewer.remove("login");
+    reviewer.remove("node_id");
+    reviewer.insert(
+        "reviewer_key".to_owned(),
+        serde_json::json!("actor-0123456789abcdef01234567"),
+    );
+    assert!(!validator.is_valid(&legacy_identity));
 }
 
 #[test]

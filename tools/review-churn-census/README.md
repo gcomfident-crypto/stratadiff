@@ -51,11 +51,13 @@ python3 tools/review-churn-census/review_churn_census.py audit \
 ```
 
 The default output is Markdown on stdout. Use `--format json` for the strict
-`stratadiff-review-memory-audit-v1` report, or `--output PATH` to write either format atomically
+`stratadiff-review-memory-audit-v2` report, or `--output PATH` to write either format atomically
 with mode `0600`. A supplied `--end-exclusive` makes the half-open scan window reproducible.
 Completed scans exit successfully with one of four report statuses: `no_eligible_reviews`,
 `insufficient_evidence`, `no_observed_drift`, or `affected`. Missing checkpoint evidence is unknown,
-not evidence of no drift.
+not evidence of no drift. Drift findings include the reviewer's GitHub login and immutable user
+node ID so the reviewer is actionable and remains identifiable across pull requests. Missing or
+conflicting reviewer identity fails the audit instead of publishing an ambiguous finding.
 
 The completed public v1 artifacts, observed metrics, signal decisions, and claim boundary are in
 [`../../benchmarks/review-churn-census-v1/`](../../benchmarks/review-churn-census-v1/). They can be

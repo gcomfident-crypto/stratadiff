@@ -31,11 +31,11 @@ SAMPLE_SCHEMA = "stratadiff-review-churn-census-sample-v1"
 CAPTURE_SCHEMA = "stratadiff-review-churn-census-capture-v1"
 MANIFEST_SCHEMA = "stratadiff-review-churn-census-manifest-v1"
 AGGREGATE_SCHEMA = "stratadiff-review-churn-census-aggregate-v1"
-AUDIT_SCHEMA = "stratadiff-review-memory-audit-v1"
+AUDIT_SCHEMA = "stratadiff-review-memory-audit-v2"
 INBOX_SCHEMA = "stratadiff-review-inbox-v1"
 DATASET_VERSION = "1.0.0"
 TOOL_VERSION = "0.2.0"
-AUDIT_TOOL_VERSION = "1.0.0"
+AUDIT_TOOL_VERSION = "1.1.0"
 INBOX_TOOL_VERSION = "1.0.0"
 
 SELECTION_ALGORITHM = "sha256_v1"
@@ -721,6 +721,98 @@ query ReviewChurnTimeline($owner: String!, $name: String!, $number: Int!, $curso
             review {
               id fullDatabaseId state submittedAt
               author { __typename login }
+              commit { oid }
+              comments(first: 1) { totalCount }
+            }
+          }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+AUDIT_CAPTURE_QUERY = """
+query ReviewMemoryAuditCapture($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    id nameWithOwner url
+    pullRequest(number: $number) {
+      id number mergedAt headRefOid
+      commits(last: 1) { totalCount nodes { commit { oid } } }
+      author { __typename login ... on User { id } }
+      reviews(first: 100) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id fullDatabaseId state submittedAt
+          author { __typename login ... on User { id } }
+          commit { oid }
+          comments(first: 1) { totalCount }
+        }
+      }
+      timelineItems(first: 100, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, REVIEW_DISMISSED_EVENT]) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          __typename
+          ... on HeadRefForcePushedEvent {
+            id createdAt beforeCommit { oid } afterCommit { oid }
+          }
+          ... on ReviewDismissedEvent {
+            id createdAt previousReviewState
+            review {
+              id fullDatabaseId state submittedAt
+              author { __typename login ... on User { id } }
+              commit { oid }
+              comments(first: 1) { totalCount }
+            }
+          }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+AUDIT_REVIEWS_PAGE_QUERY = """
+query ReviewMemoryAuditReviews($owner: String!, $name: String!, $number: Int!, $cursor: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviews(first: 100, after: $cursor) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id fullDatabaseId state submittedAt
+          author { __typename login ... on User { id } }
+          commit { oid }
+          comments(first: 1) { totalCount }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+AUDIT_TIMELINE_PAGE_QUERY = """
+query ReviewMemoryAuditTimeline($owner: String!, $name: String!, $number: Int!, $cursor: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      timelineItems(first: 100, after: $cursor, itemTypes: [HEAD_REF_FORCE_PUSHED_EVENT, REVIEW_DISMISSED_EVENT]) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          __typename
+          ... on HeadRefForcePushedEvent {
+            id createdAt beforeCommit { oid } afterCommit { oid }
+          }
+          ... on ReviewDismissedEvent {
+            id createdAt previousReviewState
+            review {
+              id fullDatabaseId state submittedAt
+              author { __typename login ... on User { id } }
               commit { oid }
               comments(first: 1) { totalCount }
             }
@@ -2113,6 +2205,86 @@ def normalize_actor(
     }
 
 
+class AuditIdentityRegistry:
+    def __init__(self) -> None:
+        self._by_case_actor: dict[tuple[str, str], tuple[str, str]] = {}
+        self._node_ids: dict[str, str] = {}
+        self._logins: dict[str, str] = {}
+        self._review_actors: dict[str, tuple[str, str, str | None]] = {}
+
+    def record(
+        self, actor_value: object, label: str, case_id: str
+    ) -> tuple[str, str | None]:
+        if actor_value is None:
+            return "", None
+        actor = require_object(actor_value, label)
+        typename = require_string(actor["__typename"], f"{label}.__typename")
+        require("login" in actor, f"{label}.login is required")
+        login_value = actor["login"]
+        require(
+            login_value is None or isinstance(login_value, str),
+            f"{label}.login must be a string or null",
+        )
+        actor_key = (
+            None
+            if login_value is None or login_value == ""
+            else opaque_actor_key(case_id, login_value)
+        )
+        if typename != "User":
+            return typename, actor_key
+        require("id" in actor, f"{label}.id is required for a GitHub User")
+        login = validate_inbox_login(login_value, f"{label}.login")
+        node_id = validate_inbox_node_id(actor["id"], f"{label}.id")
+        require(actor_key is not None, f"{label} has no stable actor key")
+        case_actor = (case_id, actor_key)
+        if case_actor in self._by_case_actor:
+            known_login, known_node_id = self._by_case_actor[case_actor]
+            require(
+                known_login.casefold() == login.casefold()
+                and known_node_id == node_id,
+                f"{label} conflicts with the previously observed identity for {case_id}",
+            )
+        login_key = login.casefold()
+        if node_id in self._node_ids:
+            require(
+                self._node_ids[node_id] == login_key,
+                f"{label} maps GitHub node ID {node_id} to conflicting logins",
+            )
+        if login_key in self._logins:
+            require(
+                self._logins[login_key] == node_id,
+                f"{label} maps GitHub login {login} to conflicting node IDs",
+            )
+        if case_actor not in self._by_case_actor:
+            self._by_case_actor[case_actor] = (login, node_id)
+        self._node_ids[node_id] = login_key
+        self._logins[login_key] = node_id
+        return typename, actor_key
+
+    def record_review(self, review_value: object, label: str, case_id: str) -> None:
+        review = require_object(review_value, label)
+        review_id = validate_inbox_node_id(review["id"], f"{label}.id")
+        typename, actor_key = self.record(
+            review["author"], f"{label}.author", case_id
+        )
+        binding = (case_id, typename, actor_key)
+        if review_id in self._review_actors:
+            require(
+                self._review_actors[review_id] == binding,
+                f"{label} has a conflicting author identity for review {review_id}",
+            )
+        else:
+            self._review_actors[review_id] = binding
+
+    def resolve(self, case_id: str, actor_key: str) -> tuple[str, str]:
+        case_actor = (case_id, actor_key)
+        require(
+            case_actor in self._by_case_actor,
+            f"reviewer identity is unavailable for {case_id} actor {actor_key}",
+        )
+        return self._by_case_actor[case_actor]
+
+
 def normalize_candidate(raw_value: object, expected_repository: str) -> dict[str, object]:
     raw = require_object(raw_value, "pull request")
     number = require_int(raw["number"], "pull request number", 1)
@@ -2370,6 +2542,26 @@ def normalize_timeline_event(
     return common
 
 
+def record_audit_identities(
+    identities: AuditIdentityRegistry,
+    raw_pull_request: dict[str, object],
+    raw_reviews: list[object],
+    raw_events: list[object],
+    case_id: str,
+) -> None:
+    identities.record(raw_pull_request["author"], "pull request author", case_id)
+    for index, review_value in enumerate(raw_reviews):
+        identities.record_review(review_value, f"reviews[{index}]", case_id)
+    for index, event_value in enumerate(raw_events):
+        event = require_object(event_value, f"timeline_events[{index}]")
+        if event["__typename"] != "ReviewDismissedEvent" or event["review"] is None:
+            continue
+        review = require_object(event["review"], f"timeline_events[{index}].review")
+        identities.record_review(
+            review, f"timeline_events[{index}].review", case_id
+        )
+
+
 def collect_connection(
     api: GithubGraphQL,
     owner: str,
@@ -2430,9 +2622,18 @@ def collect_connection(
     }
 
 
-def capture_pull_request(api: GithubGraphQL, owner: str, name: str, number: int) -> dict[str, object]:
+def capture_pull_request_with_queries(
+    api: GithubGraphQL,
+    owner: str,
+    name: str,
+    number: int,
+    capture_query: str,
+    reviews_page_query: str,
+    timeline_page_query: str,
+    audit_identities: AuditIdentityRegistry | None,
+) -> dict[str, object]:
     case_id = f"github-{owner.casefold()}-{name.casefold()}-pr-{number}"
-    data = api.call(CAPTURE_QUERY, {"owner": owner, "name": name, "number": number})
+    data = api.call(capture_query, {"owner": owner, "name": name, "number": number})
     repository = require_object(data["repository"], f"repository {owner}/{name}")
     require(
         require_string(repository["nameWithOwner"], "repository.nameWithOwner").casefold()
@@ -2443,11 +2644,21 @@ def capture_pull_request(api: GithubGraphQL, owner: str, name: str, number: int)
     reviews_connection = require_object(raw_pull_request["reviews"], "reviews")
     timeline_connection = require_object(raw_pull_request["timelineItems"], "timelineItems")
     raw_reviews, review_pagination = collect_connection(
-        api, owner, name, number, reviews_connection, "reviews", REVIEWS_PAGE_QUERY
+        api, owner, name, number, reviews_connection, "reviews", reviews_page_query
     )
     raw_events, timeline_pagination = collect_connection(
-        api, owner, name, number, timeline_connection, "timelineItems", TIMELINE_PAGE_QUERY
+        api,
+        owner,
+        name,
+        number,
+        timeline_connection,
+        "timelineItems",
+        timeline_page_query,
     )
+    if audit_identities is not None:
+        record_audit_identities(
+            audit_identities, raw_pull_request, raw_reviews, raw_events, case_id
+        )
     pull_request = normalize_captured_pull_request(raw_pull_request, number, case_id)
     reviews = [
         normalize_review(value, f"reviews[{index}]", case_id)
@@ -2478,6 +2689,40 @@ def capture_pull_request(api: GithubGraphQL, owner: str, name: str, number: int)
             "timeline_events": timeline_pagination,
         },
     }
+
+
+def capture_pull_request(
+    api: GithubGraphQL, owner: str, name: str, number: int
+) -> dict[str, object]:
+    return capture_pull_request_with_queries(
+        api,
+        owner,
+        name,
+        number,
+        CAPTURE_QUERY,
+        REVIEWS_PAGE_QUERY,
+        TIMELINE_PAGE_QUERY,
+        None,
+    )
+
+
+def capture_audit_pull_request(
+    api: GithubGraphQL,
+    owner: str,
+    name: str,
+    number: int,
+    identities: AuditIdentityRegistry,
+) -> dict[str, object]:
+    return capture_pull_request_with_queries(
+        api,
+        owner,
+        name,
+        number,
+        AUDIT_CAPTURE_QUERY,
+        AUDIT_REVIEWS_PAGE_QUERY,
+        AUDIT_TIMELINE_PAGE_QUERY,
+        identities,
+    )
 
 
 def validate_sha256(value: object, label: str) -> str:
@@ -3547,7 +3792,10 @@ def audit_metric(cases: list[dict[str, object]], metric_id: str) -> dict[str, ob
 
 
 def audit_finding(
-    case: dict[str, object], hostname: str, repository: str
+    case: dict[str, object],
+    hostname: str,
+    repository: str,
+    identities: AuditIdentityRegistry,
 ) -> dict[str, object] | None:
     pairs = completed_pairs(case)
     comparable = [
@@ -3566,9 +3814,15 @@ def audit_finding(
     reviewers = []
     for pair in drifted:
         checkpoint = pair["latest_completed_checkpoint"]
+        case_id = require_string(case["id"], "audit finding case ID")
+        reviewer_key = require_string(
+            pair["reviewer_key"], "audit finding reviewer key"
+        )
+        login, node_id = identities.resolve(case_id, reviewer_key)
         reviewers.append(
             {
-                "reviewer_key": pair["reviewer_key"],
+                "login": login,
+                "node_id": node_id,
                 "checkpoint_oid": checkpoint["commit_oid"],
                 "checkpoint_submitted_at": checkpoint["submitted_at"],
                 "checkpoint_state": checkpoint["completed_state"],
@@ -3602,6 +3856,7 @@ def build_review_memory_audit(
     requested_limit: int,
     candidate_count: int,
     cases: list[dict[str, object]],
+    identities: AuditIdentityRegistry,
     acquisition_value: object,
     generated_at: str,
 ) -> dict[str, object]:
@@ -3629,7 +3884,7 @@ def build_review_memory_audit(
             str(case["repository"]).casefold() == repository.casefold(),
             "classified audit case belongs to another repository",
         )
-        finding = audit_finding(case, hostname, repository)
+        finding = audit_finding(case, hostname, repository, identities)
         if finding is not None:
             findings.append(finding)
         if any(
@@ -3681,8 +3936,8 @@ def build_review_memory_audit(
             "pr_text_collected": False,
             "review_text_collected": False,
             "commit_messages_collected": False,
-            "logins_persisted": False,
-            "actor_identity": "pr_local_opaque_key",
+            "logins_persisted": True,
+            "actor_identity": "github_user_node_id_and_login",
         },
         "claim_boundary": {
             "repository_window_description_supported": True,
@@ -3724,10 +3979,11 @@ def collect_review_memory_audit(
     candidates = search_repository_candidates(api, owner, name, start, end_exclusive)
     selected = select_latest_candidates(candidates, limit)
     classified_cases = []
+    identities = AuditIdentityRegistry()
     for index, candidate in enumerate(selected, 1):
         number = require_int(candidate["number"], "candidate.number", 1)
         progress(f"auditing {repository}#{number} ({index}/{len(selected)})")
-        captured = capture_pull_request(api, owner, name, number)
+        captured = capture_audit_pull_request(api, owner, name, number, identities)
         pull_request = require_object(captured["pull_request"], "captured pull request")
         require(
             pull_request["node_id"] == candidate["node_id"],
@@ -3746,6 +4002,7 @@ def collect_review_memory_audit(
         limit,
         len(candidates),
         classified_cases,
+        identities,
         api.acquisition(),
         now_timestamp(),
     )
@@ -3822,13 +4079,13 @@ def render_review_memory_audit_markdown(report: dict[str, object]) -> str:
             lines.extend(
                 [
                     "",
-                    "| Reviewer key | Checkpoint | Submitted | State | Dismissed | Post-review force-push | Post-checkpoint force-push |",
+                    "| Reviewer | Checkpoint | Submitted | State | Dismissed | Post-review force-push | Post-checkpoint force-push |",
                     "|---|---|---|---|---|---|---|",
                 ]
             )
             for reviewer in finding["drifted_reviewers"]:
                 lines.append(
-                    f"| `{reviewer['reviewer_key']}` | `{reviewer['checkpoint_oid']}` | `{reviewer['checkpoint_submitted_at']}` | `{reviewer['checkpoint_state']}` | {str(reviewer['dismissed']).lower()} | {str(reviewer['post_completed_review_force_push']).lower()} | {str(reviewer['post_latest_checkpoint_force_push']).lower()} |"
+                    f"| @{reviewer['login']} | `{reviewer['checkpoint_oid']}` | `{reviewer['checkpoint_submitted_at']}` | `{reviewer['checkpoint_state']}` | {str(reviewer['dismissed']).lower()} | {str(reviewer['post_completed_review_force_push']).lower()} | {str(reviewer['post_latest_checkpoint_force_push']).lower()} |"
                 )
         lines.append("")
     if lines[-1] != "":

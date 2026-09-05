@@ -15,7 +15,9 @@ gh stratadiff ownership-snapshot <BASE> --output ownership.json
 checkpoints drifted from the final head. It is the no-checkout discovery path: with `-R`, it runs
 from any directory and does not invoke Git, materialize commits, or create temporary refs. The
 report distinguishes `no_eligible_reviews`, `insufficient_evidence`, `no_observed_drift`, and
-`affected` instead of treating incomplete review data as a clean result.
+`affected` instead of treating incomplete review data as a clean result. Audit v2 findings bind
+each actionable reviewer login to an immutable GitHub user node ID, and identity gaps or conflicts
+fail closed.
 
 `demo` creates a deterministic A/B/C/D Git history entirely in a temporary directory and opens the
 Review Resume Workbench without contacting GitHub. An upstream base edit and a previously reviewed

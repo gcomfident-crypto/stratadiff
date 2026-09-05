@@ -14,7 +14,7 @@ command = arguments[0]
 if "--output" in arguments:
     output_index = arguments.index("--output") + 1
     if command == "audit":
-        output = '{"schema":"stratadiff-review-memory-audit-v1","summary":{"status":"affected"}}\n'
+        output = '{"schema":"stratadiff-review-memory-audit-v2","summary":{"status":"affected"}}\n'
     elif command == "inbox":
         output = '{"schema":"stratadiff-review-inbox-v1","summary":{"status":"actionable"}}\n'
     else:

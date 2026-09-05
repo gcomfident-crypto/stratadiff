@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-memory-audit-v2.schema.json",
+  "title": "StrataDiff Review Memory Audit v2",
+  "description": "A bounded, repository-specific diagnostic of completed human review checkpoints and observed final-head drift. It is not a GitHub-wide estimate, a safety claim, or evidence of reviewer time saved.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "generated_at",
+    "scope",
+    "collection",
+    "privacy",
+    "claim_boundary",
+    "summary",
+    "descriptive_metrics",
+    "findings"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-memory-audit-v2" },
+    "tool_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "privacy": { "$ref": "#/$defs/privacy" },
+    "claim_boundary": { "$ref": "#/$defs/claim_boundary" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "descriptive_metrics": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "formal_peer_reviewed_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "completed_review_pr_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "checkpoint_oid_observability_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "checkpoint_pair_head_drift_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "completed_review_pair_post_force_push_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "checkpoint_pair_drift_without_observed_force_push_rate" } } }] },
+        { "allOf": [{ "$ref": "#/$defs/metric" }, { "properties": { "id": { "const": "stranded_reviewer_pr_rate" } } }] }
+      ],
+      "items": false
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "affected" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "contains": {
+              "type": "object",
+              "properties": {
+                "drifted_reviewers": { "type": "array", "minItems": 1 }
+              },
+              "required": ["drifted_reviewers"]
+            },
+            "minContains": 1
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "findings": {
+            "not": {
+              "contains": {
+                "type": "object",
+                "properties": {
+                  "drifted_reviewers": { "type": "array", "minItems": 1 }
+                },
+                "required": ["drifted_reviewers"]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "github_login": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$",
+      "maxLength": 255
+    },
+    "github_node_id": {
+      "type": "string",
+      "pattern": "^[!-~]{1,256}$",
+      "maxLength": 256
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "nullable_object_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/object_id" },
+        { "type": "null" }
+      ]
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000000
+    },
+    "basis_points": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "nullable_basis_points": {
+      "oneOf": [
+        { "$ref": "#/$defs/basis_points" },
+        { "type": "null" }
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_url", "repository", "window", "selection"],
+      "properties": {
+        "provider_url": {
+          "type": "string",
+          "pattern": "^https://[A-Za-z0-9][A-Za-z0-9.-]*$",
+          "maxLength": 2048
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "maxLength": 202
+        },
+        "window": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start", "end_exclusive"],
+          "properties": {
+            "start": { "$ref": "#/$defs/timestamp" },
+            "end_exclusive": { "$ref": "#/$defs/timestamp" }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "method",
+            "requested_limit",
+            "candidate_count",
+            "selected_count",
+            "shortfall"
+          ],
+          "properties": {
+            "method": { "const": "latest_merged_at_desc_v1" },
+            "requested_limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "candidate_count": { "$ref": "#/$defs/count" },
+            "selected_count": { "type": "integer", "minimum": 0, "maximum": 100 },
+            "shortfall": { "type": "integer", "minimum": 0, "maximum": 100 }
+          }
+        }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "graphql_calls",
+        "minimum_rate_limit_remaining",
+        "last_rate_limit_reset_at"
+      ],
+      "properties": {
+        "status": { "const": "complete" },
+        "graphql_calls": { "$ref": "#/$defs/count" },
+        "minimum_rate_limit_remaining": {
+          "oneOf": [
+            { "$ref": "#/$defs/count" },
+            { "type": "null" }
+          ]
+        },
+        "last_rate_limit_reset_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_collected",
+        "pr_text_collected",
+        "review_text_collected",
+        "commit_messages_collected",
+        "logins_persisted",
+        "actor_identity"
+      ],
+      "properties": {
+        "source_collected": { "const": false },
+        "pr_text_collected": { "const": false },
+        "review_text_collected": { "const": false },
+        "commit_messages_collected": { "const": false },
+        "logins_persisted": { "const": true },
+        "actor_identity": { "const": "github_user_node_id_and_login" }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository_window_description_supported",
+        "github_population_estimate_supported",
+        "reviewer_time_savings_supported",
+        "issue_recall_or_safety_supported",
+        "willingness_to_pay_supported",
+        "checkpoint_materialization_supported"
+      ],
+      "properties": {
+        "repository_window_description_supported": { "const": true },
+        "github_population_estimate_supported": { "const": false },
+        "reviewer_time_savings_supported": { "const": false },
+        "issue_recall_or_safety_supported": { "const": false },
+        "willingness_to_pay_supported": { "const": false },
+        "checkpoint_materialization_supported": { "const": false }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "selected_pull_requests",
+        "formal_peer_reviewed_pull_requests",
+        "completed_reviewed_pull_requests",
+        "completed_reviewer_pairs",
+        "comparable_reviewer_pairs",
+        "unobservable_reviewer_pairs",
+        "drifted_reviewer_pairs",
+        "affected_pull_requests"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "no_eligible_reviews",
+            "insufficient_evidence",
+            "no_observed_drift",
+            "affected"
+          ]
+        },
+        "selected_pull_requests": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "formal_peer_reviewed_pull_requests": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "completed_reviewed_pull_requests": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "completed_reviewer_pairs": { "$ref": "#/$defs/count" },
+        "comparable_reviewer_pairs": { "$ref": "#/$defs/count" },
+        "unobservable_reviewer_pairs": { "$ref": "#/$defs/count" },
+        "drifted_reviewer_pairs": { "$ref": "#/$defs/count" },
+        "affected_pull_requests": { "type": "integer", "minimum": 0, "maximum": 100 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "drifted_reviewer_pairs": { "minimum": 1 } },
+            "required": ["drifted_reviewer_pairs"]
+          },
+          "then": { "properties": { "status": { "const": "affected" } } }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "affected" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": { "drifted_reviewer_pairs": { "minimum": 1 } }
+          }
+        }
+      ]
+    },
+    "metric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "numerator", "denominator", "status", "basis_points"],
+      "properties": {
+        "id": {
+          "enum": [
+            "formal_peer_reviewed_pr_rate",
+            "completed_review_pr_rate",
+            "checkpoint_oid_observability_rate",
+            "checkpoint_pair_head_drift_rate",
+            "completed_review_pair_post_force_push_rate",
+            "checkpoint_pair_drift_without_observed_force_push_rate",
+            "stranded_reviewer_pr_rate"
+          ]
+        },
+        "numerator": { "$ref": "#/$defs/count" },
+        "denominator": { "$ref": "#/$defs/count" },
+        "status": { "enum": ["defined", "undefined"] },
+        "basis_points": { "$ref": "#/$defs/nullable_basis_points" }
+      },
+      "allOf": [{ "$ref": "#/$defs/rate_consistency" }]
+    },
+    "rate_consistency": {
+      "if": {
+        "properties": { "denominator": { "const": 0 } },
+        "required": ["denominator"]
+      },
+      "then": {
+        "properties": {
+          "numerator": { "const": 0 },
+          "status": { "const": "undefined" },
+          "basis_points": { "type": "null" }
+        }
+      },
+      "else": {
+        "properties": {
+          "denominator": { "minimum": 1 },
+          "status": { "const": "defined" },
+          "basis_points": { "$ref": "#/$defs/basis_points" }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "number",
+        "url",
+        "merged_at",
+        "final_head_oid",
+        "completed_pair_count",
+        "comparable_pair_count",
+        "unobservable_pair_count",
+        "drifted_reviewers"
+      ],
+      "properties": {
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "pattern": "^https://[^/]+/[^/]+/[^/]+/pull/[1-9][0-9]*$", "maxLength": 2048 },
+        "merged_at": { "$ref": "#/$defs/timestamp" },
+        "final_head_oid": { "$ref": "#/$defs/nullable_object_id" },
+        "completed_pair_count": { "$ref": "#/$defs/count" },
+        "comparable_pair_count": { "$ref": "#/$defs/count" },
+        "unobservable_pair_count": { "$ref": "#/$defs/count" },
+        "drifted_reviewers": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/drifted_reviewer" }
+        }
+      }
+    },
+    "drifted_reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "login",
+        "node_id",
+        "checkpoint_oid",
+        "checkpoint_submitted_at",
+        "checkpoint_state",
+        "dismissed",
+        "post_completed_review_force_push",
+        "post_latest_checkpoint_force_push"
+      ],
+      "properties": {
+        "login": { "$ref": "#/$defs/github_login" },
+        "node_id": { "$ref": "#/$defs/github_node_id" },
+        "checkpoint_oid": { "$ref": "#/$defs/object_id" },
+        "checkpoint_submitted_at": { "$ref": "#/$defs/timestamp" },
+        "checkpoint_state": { "enum": ["APPROVED", "CHANGES_REQUESTED"] },
+        "dismissed": { "type": "boolean" },
+        "post_completed_review_force_push": { "type": "boolean" },
+        "post_latest_checkpoint_force_push": { "type": "boolean" }
+      }
+    }
+  }
+}
