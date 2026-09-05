@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::env;
 use std::ffi::OsStr;
 use std::fmt;
@@ -373,6 +374,20 @@ impl CodeownersPolicy {
     /// these bytes or retrieve the blob by OID and verify `source.blake3`.
     pub fn contents(&self) -> &[u8] {
         &self.contents
+    }
+
+    /// Return every distinct identity named by the exact-base policy in a
+    /// deterministic order. Collection uses the complete policy rather than
+    /// only the paths changed by one PR so the resulting ownership snapshot
+    /// can be reused for every head derived from the same protected base.
+    pub fn owner_identities(&self) -> Vec<CodeownerIdentity> {
+        self.parsed
+            .rules()
+            .iter()
+            .flat_map(|rule| rule.owners.iter().map(CodeownerIdentity::from))
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     /// Resolve a raw repository-relative Git path. Git permits non-UTF-8

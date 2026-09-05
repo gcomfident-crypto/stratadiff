@@ -430,7 +430,7 @@ fn require(condition: bool, reason: impl Into<String>) -> Result<(), OwnershipBl
     }
 }
 
-fn validate_provider_url(value: &str) -> Result<(), OwnershipBlocker> {
+pub fn github_provider_hostname(value: &str) -> Result<&str, OwnershipBlocker> {
     require(
         !value.is_empty() && value.len() <= MAX_PROVIDER_URL_BYTES,
         "provider_url is empty or exceeds its byte limit",
@@ -449,7 +449,12 @@ fn validate_provider_url(value: &str) -> Result<(), OwnershipBlocker> {
     require(
         value.bytes().all(|byte| !byte.is_ascii_uppercase()),
         "provider_url must be lowercase for deterministic provider binding",
-    )
+    )?;
+    Ok(authority)
+}
+
+fn validate_provider_url(value: &str) -> Result<(), OwnershipBlocker> {
+    github_provider_hostname(value).map(|_| ())
 }
 
 fn validate_identity_component(value: &str, label: &str) -> Result<(), OwnershipBlocker> {

@@ -19,6 +19,10 @@ base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 checkpoint=cccccccccccccccccccccccccccccccccccccccc
 arguments=" $* "
+provider_url=https://github.com/acme/widget.git
+if [[ "${GH_STUB_ENTERPRISE:-false}" == true ]]; then
+  provider_url=https://ghe.example/acme/widget.git
+fi
 
 is_missing_locally() {
   local object_id=$1
@@ -41,7 +45,7 @@ elif [[ "${arguments}" == *" cat-file -e "* ]]; then
   ! is_missing_locally "${object}"
 elif [[ "${arguments}" == *" init --bare --quiet "* ]]; then
   mkdir -p "${!#}"
-elif [[ "${arguments}" == *" fetch "* && "${arguments}" == *" https://github.com/acme/widget.git "* ]]; then
+elif [[ "${arguments}" == *" fetch "* && "${arguments}" == *" ${provider_url} "* ]]; then
   [[ "${HOME}" == */provider-home ]]
   [[ "${GIT_CONFIG_VALUE_1:-}" == "AUTHORIZATION: basic "* ]]
   [[ "${GIT_CONFIG_VALUE_2:-}" == false ]]
@@ -55,7 +59,7 @@ elif [[ "${arguments}" == *" fetch "* && "${arguments}" == *" https://github.com
     exit 1
   fi
   printf '%s\n' "${object}" > "${GH_STUB_STATE}/provider-${object}"
-elif [[ "${arguments}" == *" show-ref --verify --quiet refs/stratadiff/resume/"* ]]; then
+elif [[ "${arguments}" == *" show-ref --verify --quiet refs/stratadiff/"* ]]; then
   exit 1
 elif [[ "${arguments}" == *" ls-remote --get-url "* ]]; then
   printf '%s\n' "${!#}"
@@ -82,7 +86,7 @@ elif [[ "${arguments}" == *" fetch-pack --no-progress "* && "${arguments}" == *"
   else
     printf '%s %s\n' "${object}" "${provider_ref}"
   fi
-elif [[ "${arguments}" == *" update-ref --no-deref refs/stratadiff/resume/"* ]]; then
+elif [[ "${arguments}" == *" update-ref --no-deref refs/stratadiff/"* ]]; then
   imported_ref=$5
   object=$6
   [[ $# -eq 7 && -z "$7" ]]
@@ -92,7 +96,7 @@ elif [[ "${arguments}" == *" update-ref --no-deref refs/stratadiff/resume/"* ]];
   fi
   ref_name=${imported_ref##*/}
   : > "${GH_STUB_STATE}/ref-${ref_name}"
-elif [[ "${arguments}" == *" update-ref --no-deref -d refs/stratadiff/resume/"* ]]; then
+elif [[ "${arguments}" == *" update-ref --no-deref -d refs/stratadiff/"* ]]; then
   imported_ref=$6
   expected=$7
   ref_name=${imported_ref##*/}
@@ -109,7 +113,7 @@ elif [[ "${arguments}" == *" rev-parse --verify "* ]]; then
     provider_name=${object#refs/stratadiff/provider/}
     provider_name=${provider_name%\^\{commit\}}
     printf '%s\n' "${provider_name#*-}"
-  elif [[ "${object}" == refs/stratadiff/resume/* ]]; then
+  elif [[ "${object}" == refs/stratadiff/* ]]; then
     ref_name=${object%\^\{commit\}}
     ref_name=${ref_name##*/}
     [[ -f "${GH_STUB_STATE}/ref-${ref_name}" ]]

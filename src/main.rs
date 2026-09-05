@@ -2,13 +2,21 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
-    process::ExitCode,
+    process::{Command as ProcessCommand, ExitCode, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicU8, Ordering},
+        mpsc,
+    },
+    thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::{Deserialize, Serialize};
+use stratadiff::codeowners::CodeownersPolicy;
 use stratadiff::coverage::{
     MAX_REVIEW_COVERAGE_BYTES, ReviewCoveragePassport, build_review_coverage_passport,
     verify_review_coverage_passport,
@@ -22,11 +30,18 @@ use stratadiff::github::{
 use stratadiff::github_check::{
     MAX_GITHUB_CHECK_RUN_PAYLOAD_BYTES, build_github_check_run_payload,
 };
+use stratadiff::github_ownership::{
+    GITHUB_API_VERSION, GithubOwnershipApi, GithubOwnershipApiResponse, GithubOwnershipMediaType,
+    MAX_GITHUB_OWNERSHIP_API_RESPONSE_BYTES, collect_github_ownership_snapshot,
+    write_github_ownership_snapshot,
+};
 use stratadiff::ledger::{
     GithubReviewLedger, GithubWebhookIngest, IngestOutcome, MAX_GITHUB_LEDGER_BYTES,
     MAX_GITHUB_WEBHOOK_BYTES, decode_ed25519_signing_key, ingest_github_webhook,
 };
-use stratadiff::ownership::{GithubOwnershipSnapshot, MAX_OWNERSHIP_SNAPSHOT_BYTES};
+use stratadiff::ownership::{
+    GithubOwnershipSnapshot, MAX_OWNERSHIP_SNAPSHOT_BYTES, github_provider_hostname,
+};
 use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
     review_git_range_with_checkpoint, review_git_resume_delta,
@@ -46,6 +61,10 @@ const BUILD_GIT_DIRTY: &str = env!("STRATADIFF_BUILD_GIT_DIRTY");
 const BUILD_CARGO_LOCK_SHA256: &str = env!("STRATADIFF_BUILD_CARGO_LOCK_SHA256");
 const BUILD_PROFILE: &str = env!("STRATADIFF_BUILD_PROFILE");
 const BUILD_RUSTC_VERSION: &str = env!("STRATADIFF_BUILD_RUSTC_VERSION");
+const GITHUB_API_HEADER_BYTES: usize = 64 * 1024;
+const GITHUB_API_TIMEOUT: Duration = Duration::from_secs(30);
+const GITHUB_OWNERSHIP_TOTAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const PROCESS_PIPE_CLOSE_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff")]
@@ -87,6 +106,23 @@ enum Command {
         /// Full commit ID selected from the pull request's review records.
         #[arg(long)]
         expected: String,
+    },
+    /// Collect a fail-closed exact-base GitHub ownership snapshot through `gh` authentication.
+    GithubOwnershipSnapshot {
+        /// Full protected-branch base commit containing the authoritative CODEOWNERS file.
+        base: String,
+        /// Git worktree or repository containing the exact base commit.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Canonical GitHub repository in OWNER/REPO form.
+        #[arg(long)]
+        github_repository: String,
+        /// Canonical GitHub or GitHub Enterprise Server origin.
+        #[arg(long)]
+        provider_url: String,
+        /// Destination for the private, atomically replaced snapshot.
+        #[arg(short, long)]
+        output: PathBuf,
     },
     /// Verify and append one GitHub review event to an immutable-fact ledger.
     GithubLedgerIngest {
@@ -408,6 +444,35 @@ fn run(command: Command) -> Result<()> {
             let mut stdout = std::io::stdout().lock();
             stdout.write_all(expected.as_bytes())?;
             stdout.write_all(b"\n")?;
+        }
+        Command::GithubOwnershipSnapshot {
+            base,
+            repo,
+            github_repository,
+            provider_url,
+            output,
+        } => {
+            let policy = CodeownersPolicy::load(&repo, &base)?;
+            let identities = policy.owner_identities();
+            let hostname = github_provider_hostname(&provider_url)?.to_owned();
+            let mut api = GhCliOwnershipApi {
+                hostname,
+                started: Instant::now(),
+            };
+            let snapshot = collect_github_ownership_snapshot(
+                &provider_url,
+                &github_repository,
+                &base,
+                &identities,
+                &mut api,
+            )?;
+            write_github_ownership_snapshot(&output, &snapshot)?;
+            eprintln!(
+                "wrote stable GitHub ownership snapshot to {}: {} users, {} teams",
+                display_path(&output),
+                snapshot.users.len(),
+                snapshot.teams.len()
+            );
         }
         Command::GithubLedgerIngest {
             payload,
@@ -815,6 +880,329 @@ fn run(command: Command) -> Result<()> {
     Ok(())
 }
 
+struct GhCliOwnershipApi {
+    hostname: String,
+    started: Instant,
+}
+
+impl GithubOwnershipApi for GhCliOwnershipApi {
+    fn get(
+        &mut self,
+        endpoint: &str,
+        media_type: GithubOwnershipMediaType,
+    ) -> Result<GithubOwnershipApiResponse> {
+        let remaining = GITHUB_OWNERSHIP_TOTAL_TIMEOUT
+            .checked_sub(self.started.elapsed())
+            .context("GitHub ownership collection exceeded its 10-minute deadline")?;
+        ensure!(
+            !remaining.is_zero(),
+            "GitHub ownership collection exceeded its 10-minute deadline"
+        );
+        let mut command = ProcessCommand::new("gh");
+        command
+            .arg("api")
+            .arg("--include")
+            .arg("--method")
+            .arg("GET")
+            .arg("--hostname")
+            .arg(&self.hostname)
+            .arg("--header")
+            .arg(format!("Accept: {}", media_type.accept_header()))
+            .arg("--header")
+            .arg(format!("X-GitHub-Api-Version: {GITHUB_API_VERSION}"))
+            .arg(endpoint)
+            .env_remove("GH_DEBUG")
+            .env_remove("DEBUG")
+            .env_remove("CLICOLOR")
+            .env_remove("CLICOLOR_FORCE")
+            .env_remove("FORCE_COLOR")
+            .env_remove("GH_FORCE_TTY")
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_PAGER", "cat")
+            .env("NO_COLOR", "1");
+        let output = run_bounded_process(
+            &mut command,
+            MAX_GITHUB_OWNERSHIP_API_RESPONSE_BYTES + GITHUB_API_HEADER_BYTES + 4,
+            64 * 1024,
+            remaining.min(GITHUB_API_TIMEOUT),
+            "gh api",
+        )?;
+        ensure!(
+            output.status.success(),
+            "gh api failed for {endpoint} with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim_end()
+        );
+        parse_gh_included_response(&output.stdout, endpoint)
+    }
+}
+
+fn parse_gh_included_response(
+    included: &[u8],
+    endpoint: &str,
+) -> Result<GithubOwnershipApiResponse> {
+    let (header_end, delimiter_len) = find_header_boundary(included)
+        .context("gh api --include response did not contain a header boundary")?;
+    ensure!(
+        header_end <= GITHUB_API_HEADER_BYTES,
+        "gh api response headers exceeded {GITHUB_API_HEADER_BYTES} bytes"
+    );
+    let header_bytes = &included[..header_end];
+    let body = included[header_end + delimiter_len..].to_vec();
+    ensure!(
+        body.len() <= MAX_GITHUB_OWNERSHIP_API_RESPONSE_BYTES,
+        "gh api response body bytes limit exceeded for {endpoint}: observed {}, limit {MAX_GITHUB_OWNERSHIP_API_RESPONSE_BYTES}",
+        body.len()
+    );
+
+    let headers = std::str::from_utf8(header_bytes)
+        .context("gh api response headers were not valid UTF-8")?;
+    let mut lines = headers.lines();
+    let status_line = lines
+        .next()
+        .context("gh api response status line is missing")?;
+    let mut status_parts = status_line.trim_end_matches('\r').split_ascii_whitespace();
+    let protocol = status_parts.next().unwrap_or_default();
+    let status = status_parts.next().unwrap_or_default();
+    ensure!(
+        protocol.starts_with("HTTP/") && status == "200",
+        "gh api returned malformed or unexpected included status for {endpoint}: {status_line}"
+    );
+
+    let mut content_type = None;
+    let mut link_header = None;
+    let mut selected_api_version = None;
+    for line in lines {
+        let line = line.trim_end_matches('\r');
+        ensure!(
+            !line.is_empty() && !line.starts_with([' ', '\t']),
+            "gh api returned a malformed response header for {endpoint}"
+        );
+        let (name, value) = line
+            .split_once(':')
+            .context("gh api returned a malformed response header")?;
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("content-type") {
+            ensure!(
+                content_type.replace(value).is_none(),
+                "gh api returned duplicate Content-Type headers for {endpoint}"
+            );
+        } else if name.eq_ignore_ascii_case("link") {
+            ensure!(
+                link_header.replace(value.to_owned()).is_none(),
+                "gh api returned duplicate Link headers for {endpoint}"
+            );
+        } else if name.eq_ignore_ascii_case("x-github-api-version-selected") {
+            ensure!(
+                selected_api_version.replace(value).is_none(),
+                "gh api returned duplicate X-GitHub-Api-Version-Selected headers for {endpoint}"
+            );
+        }
+    }
+    let content_type = content_type.context("gh api response is missing Content-Type")?;
+    ensure!(
+        content_type
+            .split(';')
+            .next()
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json")),
+        "gh api returned unsupported Content-Type {content_type} for {endpoint}"
+    );
+    let selected_api_version =
+        selected_api_version.context("gh api response is missing X-GitHub-Api-Version-Selected")?;
+    ensure!(
+        selected_api_version == GITHUB_API_VERSION,
+        "gh api selected version {selected_api_version} for {endpoint}, expected {GITHUB_API_VERSION}"
+    );
+    Ok(GithubOwnershipApiResponse { body, link_header })
+}
+
+fn find_header_boundary(included: &[u8]) -> Option<(usize, usize)> {
+    let crlf = included.windows(4).position(|window| window == b"\r\n\r\n");
+    let lf = included.windows(2).position(|window| window == b"\n\n");
+    match (crlf, lf) {
+        (Some(crlf), Some(lf)) if lf < crlf => Some((lf, 2)),
+        (Some(crlf), _) => Some((crlf, 4)),
+        (None, Some(lf)) => Some((lf, 2)),
+        (None, None) => None,
+    }
+}
+
+#[derive(Debug)]
+struct BoundedProcessOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn run_bounded_process(
+    command: &mut ProcessCommand,
+    stdout_limit: usize,
+    stderr_limit: usize,
+    timeout: Duration,
+    label: &str,
+) -> Result<BoundedProcessOutput> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("failed to start {label}"))?;
+    let stdout = child
+        .stdout
+        .take()
+        .with_context(|| format!("failed to capture {label} stdout"))?;
+    let stderr = child
+        .stderr
+        .take()
+        .with_context(|| format!("failed to capture {label} stderr"))?;
+    let overflow = Arc::new(AtomicU8::new(0));
+    let stdout_overflow = Arc::clone(&overflow);
+    let stderr_overflow = Arc::clone(&overflow);
+    let (stdout_sender, stdout_receiver) = mpsc::sync_channel(1);
+    let (stderr_sender, stderr_receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let _ = stdout_sender.send(read_capped_stream(
+            stdout,
+            stdout_limit,
+            &stdout_overflow,
+            1,
+        ));
+    });
+    thread::spawn(move || {
+        let _ = stderr_sender.send(read_capped_stream(
+            stderr,
+            stderr_limit,
+            &stderr_overflow,
+            2,
+        ));
+    });
+    let started = Instant::now();
+    let mut timed_out = false;
+    let status = loop {
+        if overflow.load(Ordering::Acquire) != 0 {
+            break terminate_child(&mut child, label)?;
+        }
+        if let Some(status) = child
+            .try_wait()
+            .with_context(|| format!("failed to wait for {label}"))?
+        {
+            terminate_remaining_process_group(&child, label)?;
+            break status;
+        }
+        if started.elapsed() >= timeout {
+            timed_out = true;
+            break terminate_child(&mut child, label)?;
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let pipe_deadline = Instant::now() + PROCESS_PIPE_CLOSE_TIMEOUT;
+    let (stdout, stdout_exceeded) =
+        receive_bounded_stream(&stdout_receiver, pipe_deadline, &format!("{label} stdout"))?;
+    let (stderr, stderr_exceeded) =
+        receive_bounded_stream(&stderr_receiver, pipe_deadline, &format!("{label} stderr"))?;
+    ensure!(
+        !stdout_exceeded,
+        "{label} stdout bytes limit exceeded: limit {stdout_limit}"
+    );
+    ensure!(
+        !stderr_exceeded,
+        "{label} stderr bytes limit exceeded: limit {stderr_limit}"
+    );
+    ensure!(
+        !timed_out,
+        "{label} timed out after {} milliseconds",
+        timeout.as_millis()
+    );
+    Ok(BoundedProcessOutput {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn receive_bounded_stream(
+    receiver: &mpsc::Receiver<std::io::Result<(Vec<u8>, bool)>>,
+    deadline: Instant,
+    label: &str,
+) -> Result<(Vec<u8>, bool)> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    receiver
+        .recv_timeout(remaining)
+        .with_context(|| format!("{label} pipe did not close after the child exited"))?
+        .with_context(|| format!("failed to read {label}"))
+}
+
+fn terminate_child(
+    child: &mut std::process::Child,
+    label: &str,
+) -> Result<std::process::ExitStatus> {
+    terminate_remaining_process_group(child, label)?;
+    match child.kill() {
+        Ok(()) => child
+            .wait()
+            .with_context(|| format!("failed to reap {label} after killing it")),
+        Err(kill_error) => match child
+            .try_wait()
+            .with_context(|| format!("failed to inspect {label} after kill failed"))?
+        {
+            Some(status) => Ok(status),
+            None => Err(kill_error).with_context(|| format!("failed to kill {label}")),
+        },
+    }
+}
+
+#[cfg(unix)]
+fn terminate_remaining_process_group(child: &std::process::Child, label: &str) -> Result<()> {
+    let process_group = i32::try_from(child.id()).context("child process ID exceeds i32")?;
+    // The command is spawned as its own process-group leader immediately above.
+    let result = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+    if result == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        Ok(())
+    } else {
+        Err(error).with_context(|| format!("failed to terminate remaining {label} processes"))
+    }
+}
+
+#[cfg(not(unix))]
+fn terminate_remaining_process_group(_child: &std::process::Child, _label: &str) -> Result<()> {
+    Ok(())
+}
+
+fn read_capped_stream(
+    mut reader: impl Read,
+    limit: usize,
+    overflow: &AtomicU8,
+    overflow_bit: u8,
+) -> std::io::Result<(Vec<u8>, bool)> {
+    let mut retained = Vec::new();
+    let mut exceeded = false;
+    let mut buffer = [0_u8; 8 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        let available = limit.saturating_sub(retained.len());
+        let keep = available.min(read);
+        retained.extend_from_slice(&buffer[..keep]);
+        exceeded |= keep < read;
+        if exceeded {
+            overflow.fetch_or(overflow_bit, Ordering::Release);
+        }
+    }
+    Ok((retained, exceeded))
+}
+
 fn select_language(before: &Path, after: &Path, requested: Option<Language>) -> Result<Language> {
     if let Some(language) = requested {
         return Ok(language);
@@ -1071,15 +1459,19 @@ fn push_json_unicode_escape(output: &mut String, character: char) {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{
+        fs,
+        process::Command,
+        time::{Duration, Instant},
+    };
 
     use base64::{Engine, engine::general_purpose::STANDARD};
     use proptest::prelude::*;
     use stratadiff::{ByteEdit, Language, analyze_bytes};
 
     use super::{
-        display_bytes, display_text, escape_terminal_unsafe_json, is_terminal_unsafe, read_bounded,
-        write_exact_byte_edits,
+        display_bytes, display_text, escape_terminal_unsafe_json, is_terminal_unsafe,
+        parse_gh_included_response, read_bounded, run_bounded_process, write_exact_byte_edits,
     };
 
     #[test]
@@ -1094,6 +1486,147 @@ mod tests {
             error.to_string(),
             "test bytes limit exceeded: observed at least 3, limit 2"
         );
+    }
+
+    #[test]
+    fn included_github_response_separates_headers_body_and_link() {
+        let included = concat!(
+            "HTTP/2.0 200 OK\n",
+            "Content-Type: application/json; charset=utf-8\r\n",
+            "X-GitHub-Api-Version-Selected: 2022-11-28\r\n",
+            "Link: <https://api.github.com/items?page=2>; rel=\"next\"\r\n",
+            "\r\n",
+            "{\"ok\":true}"
+        );
+
+        let response = parse_gh_included_response(included.as_bytes(), "items?page=1").unwrap();
+
+        assert_eq!(response.body, br#"{"ok":true}"#);
+        assert_eq!(
+            response.link_header.as_deref(),
+            Some("<https://api.github.com/items?page=2>; rel=\"next\"")
+        );
+    }
+
+    #[test]
+    fn included_github_response_requires_json_content_type() {
+        let included = b"HTTP/2.0 200 OK\r\nContent-Type: text/html\r\n\r\n{}";
+
+        let error = parse_gh_included_response(included, "items").unwrap_err();
+
+        assert!(error.to_string().contains("unsupported Content-Type"));
+    }
+
+    #[test]
+    fn included_github_response_requires_the_selected_api_version() {
+        let included = b"HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n{}";
+
+        let error = parse_gh_included_response(included, "items").unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("missing X-GitHub-Api-Version-Selected")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_process_terminates_after_its_deadline() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "while :; do :; done"]);
+        let started = Instant::now();
+
+        let error = run_bounded_process(
+            &mut command,
+            1024,
+            1024,
+            Duration::from_millis(100),
+            "timeout fixture",
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("timed out after 100 milliseconds")
+        );
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_process_closes_pipes_held_by_descendants() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30 & exit 0"]);
+        let started = Instant::now();
+
+        let output = run_bounded_process(
+            &mut command,
+            1024,
+            1024,
+            Duration::from_secs(5),
+            "descendant fixture",
+        )
+        .unwrap();
+
+        assert!(output.status.success());
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn bounded_process_does_not_wait_forever_for_an_escaped_descendant_pipe() {
+        let directory = tempfile::tempdir().unwrap();
+        let pid_path = directory.path().join("escaped.pid");
+        let mut command = Command::new("sh");
+        command
+            .args([
+                "-c",
+                "setsid sh -c 'printf \"%s\" \"$$\" > \"$ESCAPED_PID_PATH\"; sleep 30' & while [ ! -s \"$ESCAPED_PID_PATH\" ]; do :; done",
+            ])
+            .env("ESCAPED_PID_PATH", &pid_path);
+        let started = Instant::now();
+
+        let error = run_bounded_process(
+            &mut command,
+            1024,
+            1024,
+            Duration::from_secs(5),
+            "escaped descendant fixture",
+        )
+        .unwrap_err();
+        let escaped_pid = fs::read_to_string(pid_path)
+            .unwrap()
+            .parse::<i32>()
+            .unwrap();
+        // The fixture deliberately escapes the managed process group; clean it up explicitly.
+        unsafe {
+            libc::kill(-escaped_pid, libc::SIGKILL);
+        }
+
+        assert!(error.to_string().contains("pipe did not close"));
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn bounded_process_stops_when_output_exceeds_its_limit() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "while :; do printf 0123456789; done"]);
+        let started = Instant::now();
+
+        let error = run_bounded_process(
+            &mut command,
+            1024,
+            1024,
+            Duration::from_secs(5),
+            "output fixture",
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("stdout bytes limit exceeded"));
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

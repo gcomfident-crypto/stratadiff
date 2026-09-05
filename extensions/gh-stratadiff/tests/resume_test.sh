@@ -25,30 +25,48 @@ assert_not_contains() {
   }
 }
 
-run_extension() {
+run_case() {
   local name=$1
-  shift
+  local command=$2
+  shift 2
   local case_directory=${temporary_directory}/${name}
   local fetch_head_existed=true
+  local github_repository=github.com/acme/widget
   local setting
   for setting in "$@"; do
-    if [[ "${setting}" == GH_TEST_FETCH_HEAD_ABSENT=true ]]; then
-      fetch_head_existed=false
-    fi
+    case "${setting}" in
+      GH_TEST_FETCH_HEAD_ABSENT=true) fetch_head_existed=false ;;
+      GH_STUB_ENTERPRISE=true) github_repository=ghe.example/acme/widget ;;
+    esac
   done
   mkdir -p "${case_directory}"
   mkdir -p "${case_directory}/state"
   mkdir -p "${case_directory}/home"
   mkdir -p "${case_directory}/repository"
+  mkdir -p "${case_directory}/tmp"
   : > "${case_directory}/calls.txt"
   if [[ "${fetch_head_existed}" == true ]]; then
     printf 'original fetch head\n' > "${case_directory}/FETCH_HEAD"
   fi
+  local -a command_arguments
+  if [[ "${command}" == resume ]]; then
+    command_arguments=(resume 17 --repo-dir "${case_directory}/repository" --no-open)
+  else
+    command_arguments=(
+      ownership-snapshot
+      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      --repo-dir "${case_directory}/repository"
+      -R "${github_repository}"
+      --output "${case_directory}/ownership.json"
+    )
+  fi
+
   set +e
   CASE_OUTPUT="$(
     env \
       PATH="${stubs}:${PATH}" \
       HOME="${case_directory}/home" \
+      TMPDIR="${case_directory}/tmp" \
       DISPLAY=:99 \
       WAYLAND_DISPLAY=wayland-stratadiff-test \
       XDG_RUNTIME_DIR="${case_directory}/runtime" \
@@ -66,14 +84,14 @@ run_extension() {
       GH_STUB_FETCH_HEAD="${case_directory}/FETCH_HEAD" \
       GH_STUB_REPOSITORY_DIRECTORY="${case_directory}/repository" \
       "$@" \
-      bash "${extension_directory}/gh-stratadiff" resume 17 \
-        --repo-dir "${case_directory}/repository" --no-open 2>&1
+      bash "${extension_directory}/gh-stratadiff" "${command_arguments[@]}" 2>&1
   )"
   CASE_STATUS=$?
   set -e
   CASE_LOG="$(< "${case_directory}/calls.txt")"
   CASE_STATE=${case_directory}/state
   CASE_REPOSITORY=${case_directory}/repository
+  CASE_OUTPUT_PATH=${case_directory}/ownership.json
   CASE_VIEWER_ENVIRONMENT=
   if [[ -f "${case_directory}/home/review-environment.txt" ]]; then
     CASE_LOG+=$'\n'"$(< "${case_directory}/home/review-call.txt")"
@@ -92,6 +110,22 @@ run_extension() {
     printf 'temporary ref state remained for case %s\n' "${name}" >&2
     exit 1
   fi
+  if compgen -G "${case_directory}/tmp/gh-stratadiff-*" >/dev/null; then
+    printf 'temporary directory remained for case %s\n' "${name}" >&2
+    exit 1
+  fi
+}
+
+run_extension() {
+  local name=$1
+  shift
+  run_case "${name}" resume "$@"
+}
+
+run_ownership_snapshot() {
+  local name=$1
+  shift
+  run_case "${name}" ownership-snapshot "$@"
 }
 
 run_extension happy
@@ -199,5 +233,46 @@ assert_not_contains "${CASE_LOG}" 'stratadiff review '
 run_extension absent-fetch-head GH_TEST_FETCH_HEAD_ABSENT=true GH_STUB_MISSING_CHECKPOINT=true
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_LOG}" 'fetch-pack --no-progress'
+
+run_ownership_snapshot ownership-happy
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_OUTPUT}" 'Collecting exact-base ownership for github.com/acme/widget at aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.'
+assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'gh api --hostname github.com repos/acme/widget/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+assert_contains "${CASE_LOG}" 'stratadiff github-commit-object'
+assert_contains "${CASE_LOG}" "stratadiff github-ownership-snapshot aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --repo ${CASE_REPOSITORY} --github-repository acme/widget --provider-url https://github.com --output ${CASE_OUTPUT_PATH}"
+assert_not_contains "${CASE_LOG}" 'gh auth token'
+[[ -f "${CASE_OUTPUT_PATH}" ]]
+[[ "$(stat -c '%a' "${CASE_OUTPUT_PATH}")" == 600 ]]
+assert_contains "$(< "${CASE_OUTPUT_PATH}")" '"base_commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"'
+
+run_ownership_snapshot ownership-missing-base GH_STUB_MISSING_BASE=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'gh api --hostname github.com repos/acme/widget/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+assert_contains "${CASE_LOG}" 'gh auth token --hostname github.com'
+assert_contains "${CASE_LOG}" 'fetch --quiet --no-tags --no-recurse-submodules https://github.com/acme/widget.git aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:refs/stratadiff/provider/base-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+assert_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/ownership-snapshot/'
+assert_contains "${CASE_LOG}" 'update-ref --no-deref -d refs/stratadiff/ownership-snapshot/'
+assert_not_contains "${CASE_LOG}" 'stub-github-token'
+[[ -f "${CASE_OUTPUT_PATH}" ]]
+
+run_ownership_snapshot ownership-enterprise GH_STUB_ENTERPRISE=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'gh repo view ghe.example/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'gh api --hostname ghe.example repos/acme/widget/git/commits/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+assert_contains "${CASE_LOG}" "stratadiff github-ownership-snapshot aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --repo ${CASE_REPOSITORY} --github-repository acme/widget --provider-url https://ghe.example --output ${CASE_OUTPUT_PATH}"
+assert_not_contains "${CASE_LOG}" '--hostname github.com'
+
+run_ownership_snapshot ownership-provider-missing GH_STUB_PROVIDER_MISSING_BASE=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'GitHub no longer exposes exact base commit aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; the provider cannot materialize that commit'
+assert_not_contains "${CASE_LOG}" 'stratadiff github-ownership-snapshot'
+[[ ! -e "${CASE_OUTPUT_PATH}" ]]
+
+run_ownership_snapshot ownership-core-failure GH_STUB_MISSING_BASE=true GH_STUB_OWNERSHIP_FAIL=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_LOG}" 'update-ref --no-deref refs/stratadiff/ownership-snapshot/'
+assert_contains "${CASE_LOG}" 'update-ref --no-deref -d refs/stratadiff/ownership-snapshot/'
+[[ ! -e "${CASE_OUTPUT_PATH}" ]]
 
 printf 'gh-stratadiff resume tests passed\n'

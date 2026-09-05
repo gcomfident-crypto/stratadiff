@@ -1,10 +1,11 @@
 # `gh stratadiff`
 
 This directory contains the first personal, repository-admin-free entry point for StrataDiff.
-It is a GitHub CLI script extension with one command:
+It is a GitHub CLI script extension with two commands:
 
 ```console
 gh stratadiff resume <PR>
+gh stratadiff ownership-snapshot <BASE> --output ownership.json
 ```
 
 `resume` finds the authenticated user's latest eligible completed review, binds it to the pull
@@ -12,6 +13,10 @@ request's exact base and head commits, and opens the existing local Review Resum
 exact commit is absent locally, the extension verifies it through GitHub and imports only that SHA
 as an exact ref over authenticated HTTPS. Git transfers the reachable object closure needed to
 materialize that commit; source analysis remains local.
+
+`ownership-snapshot` loads CODEOWNERS from one exact local base commit, verifies that commit against
+the selected GitHub host, and delegates live identity, team-membership, and repository-permission
+collection to StrataDiff. The resulting private snapshot is ready for `review-coverage`.
 
 ## Install from this checkout
 
@@ -30,6 +35,27 @@ export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadif
 gh stratadiff resume 123
 ```
 
+To collect the ownership input for a coverage Passport:
+
+```console
+gh stratadiff ownership-snapshot "$BASE_SHA" \
+  --repo-dir "$(git rev-parse --show-toplevel)" \
+  -R github.example.com/OWNER/REPOSITORY \
+  --output ownership.json
+```
+
+`-R` accepts either `OWNER/REPO` or the host-qualified `HOST/OWNER/REPO` form. Every provider API
+request remains bound to the canonical host returned for that repository. The base must be a full
+lowercase object ID; a locally present object is still checked against GitHub, while an absent one
+is fetched by exact object ID through the same isolated transport used by `resume`.
+
+For unattended collection, provide a GitHub App installation token through `GH_TOKEN` (GitHub.com)
+or `GH_ENTERPRISE_TOKEN` (GHES). The minimum App permissions are repository `Contents: read` and
+`Metadata: read`, plus organization `Members: read` when CODEOWNERS contains teams. Do not rely on
+the built-in Actions `GITHUB_TOKEN` for team ownership because it cannot generally read organization
+membership. The collector queries effective permission only for referenced principals; it does not
+download the repository's complete collaborator list.
+
 Run the command from a checkout of the pull request's repository. The checkout does not need to be
 on the pull request branch. Missing PR base, current head, and review checkpoint commits are fetched
 by exact object ID without switching branches or changing worktree files. Use `--repo-dir PATH` when
@@ -47,7 +73,7 @@ For a terminal-only session:
 gh stratadiff resume 123 --no-open
 ```
 
-## Trust and failure boundary
+## Resume trust and failure boundary
 
 The extension deliberately performs the following sequence:
 
@@ -70,6 +96,9 @@ worktree file is changed.
 
 If GitHub's API or HTTPS transport no longer serves an exact object, the command stops with that
 SHA. It never substitutes the current head, a moving branch, or another review checkpoint.
+The preliminary provider-commit checks and exact Git fetches currently rely on the configured `gh`
+and Git transport timeouts; the ownership collector's per-call, response-size, and total-window
+limits begin after that materialization step.
 
 The chosen checkpoint is the latest eligible review in the single GitHub response snapshot. A
 review submitted or dismissed after that response can make the snapshot stale; the command does
@@ -102,7 +131,9 @@ explicit ports.
 ## Test
 
 The test suite uses only stubbed `gh`, `git`, and `stratadiff` executables; it needs no token and
-makes no network request:
+makes no network request. It covers both commands, including host-qualified GHES ownership
+collection, provider verification of a locally present base, exact-object recovery, output mode,
+and cleanup on failure:
 
 ```console
 bash tests/resume_test.sh
