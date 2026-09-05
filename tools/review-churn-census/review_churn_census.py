@@ -2052,7 +2052,7 @@ def render_review_inbox_markdown(report: dict[str, object]) -> str:
         lines.extend(
             [
                 "",
-                "Run Resume commands from a checkout of the selected repository; Resume rereads the PR and verifies every exact commit before opening source locally.",
+                "Run Resume commands from any directory. With `-R` and no `--repo-dir`, Resume uses an isolated temporary repository, rereads the PR, and verifies every exact commit before opening source locally.",
             ]
         )
     unobservable = require_array(report["unobservable"], "inbox.unobservable")

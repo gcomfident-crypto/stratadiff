@@ -10,6 +10,14 @@ if [[ "${1:-}" == review ]]; then
   exit 0
 fi
 
+if [[ "${1:-}" == demo ]]; then
+  printf 'stratadiff' > "${HOME}/demo-call.txt"
+  printf ' %s' "$@" >> "${HOME}/demo-call.txt"
+  printf '\n' >> "${HOME}/demo-call.txt"
+  env | LC_ALL=C sort > "${HOME}/demo-environment.txt"
+  exit 0
+fi
+
 printf 'stratadiff' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
 printf ' %s' "$@" >> "${STRATADIFF_EXTENSION_TEST_LOG}"
 printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"

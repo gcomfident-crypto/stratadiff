@@ -1,10 +1,11 @@
 # `gh stratadiff`
 
 This directory contains the first personal, repository-admin-free entry point for StrataDiff.
-It is a GitHub CLI script extension with four commands:
+It is a GitHub CLI script extension with five commands:
 
 ```console
 gh stratadiff audit -R OWNER/REPOSITORY
+gh stratadiff demo
 gh stratadiff inbox -R OWNER/REPOSITORY
 gh stratadiff resume <PR>
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
@@ -15,6 +16,11 @@ checkpoints drifted from the final head. It is the no-checkout discovery path: w
 from any directory and does not invoke Git, materialize commits, or create temporary refs. The
 report distinguishes `no_eligible_reviews`, `insufficient_evidence`, `no_observed_drift`, and
 `affected` instead of treating incomplete review data as a clean result.
+
+`demo` creates a deterministic A/B/C/D Git history entirely in a temporary directory and opens the
+Review Resume Workbench without contacting GitHub. An upstream base edit and a previously reviewed
+author edit are reconstructed, leaving exactly one post-review line in the queue. The temporary
+history is removed when the Workbench stops.
 
 `inbox` is the daily, reviewer-specific path. It finds open pull requests where the authenticated
 GitHub user completed a review and the current head differs from that exact checkpoint. Each
@@ -54,6 +60,7 @@ Point the extension at the binary from this checkout:
 
 ```console
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
+gh stratadiff demo
 gh stratadiff resume 123 -R OWNER/REPOSITORY
 ```
 
@@ -188,6 +195,13 @@ Inbox:
 --output PATH            Write the report to PATH instead of stdout
 ```
 
+Demo:
+
+```text
+--port PORT        Loopback viewer port; 0 chooses an available port
+--no-open          Print the viewer URL without opening a browser
+```
+
 Resume:
 
 ```text
@@ -198,15 +212,16 @@ Resume:
 --no-open          Print the viewer URL without opening a browser
 ```
 
-`resume` and `ownership-snapshot` require Bash, GitHub CLI, Git, `env`, `base64`, and a built
-`stratadiff` executable. GitHub Enterprise hosts without a port in their HTTPS origin are supported
+`demo` requires Bash, Git, `env`, and a built `stratadiff` executable, but it does not require a
+checkout, GitHub authentication, or network access. `resume` and `ownership-snapshot` additionally
+require GitHub CLI and `base64`. GitHub Enterprise hosts without a port in their HTTPS origin are supported
 through the repository URL returned by `gh`; the current prototype does not accept origins with
 embedded credentials or explicit ports.
 
 ## Test
 
 The test suite uses only stubbed GitHub, Git, StrataDiff, and Python backend executables; it needs no
-token and makes no network request. It covers all four commands, including audit and inbox from a
+token and makes no network request. It covers all five commands, including Demo and audit/inbox from a
 non-Git directory, Resume's four explicit repository modes, host-qualified GHES operation, provider
 verification of a locally present base, exact-object recovery, output mode, and cleanup on failure:
 

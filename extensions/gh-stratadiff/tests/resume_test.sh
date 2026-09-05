@@ -68,6 +68,10 @@ run_case() {
   local -a command_arguments
   local command_directory=${case_directory}
   case "${command}" in
+    demo)
+      command_directory=${case_directory}/non-git
+      command_arguments=(demo --port 0 --no-open)
+      ;;
     resume)
       case "${resume_case}" in
         current)
@@ -241,6 +245,9 @@ run_case() {
   if [[ -f "${case_directory}/home/review-environment.txt" ]]; then
     CASE_LOG+=$'\n'"$(< "${case_directory}/home/review-call.txt")"
     CASE_VIEWER_ENVIRONMENT="$(< "${case_directory}/home/review-environment.txt")"
+  elif [[ -f "${case_directory}/home/demo-environment.txt" ]]; then
+    CASE_LOG+=$'\n'"$(< "${case_directory}/home/demo-call.txt")"
+    CASE_VIEWER_ENVIRONMENT="$(< "${case_directory}/home/demo-environment.txt")"
   fi
   if [[ "${fetch_head_existed}" == true ]]; then
     [[ "$(< "${case_directory}/FETCH_HEAD")" == 'original fetch head' ]] || {
@@ -271,6 +278,12 @@ run_extension() {
   run_case "${name}" resume "$@"
 }
 
+run_demo() {
+  local name=$1
+  shift
+  run_case "${name}" demo "$@"
+}
+
 run_ownership_snapshot() {
   local name=$1
   shift
@@ -298,6 +311,20 @@ assert_discovery_did_not_touch_git_state() {
 
 TOP_LEVEL_HELP="$(bash "${extension_directory}/gh-stratadiff" --help)"
 assert_contains "${TOP_LEVEL_HELP}" 'inbox                      Find open PRs that need your review resumed'
+assert_contains "${TOP_LEVEL_HELP}" 'demo                       Open a deterministic offline Review Resume scenario'
+DEMO_HELP="$(bash "${extension_directory}/gh-stratadiff" demo --help)"
+assert_contains "${DEMO_HELP}" 'Usage: gh stratadiff demo [options]'
+assert_contains "${DEMO_HELP}" 'network-free Review Resume scenario'
+set +e
+DEMO_BAD_PORT_OUTPUT="$(bash "${extension_directory}/gh-stratadiff" demo --port 65536 2>&1)"
+DEMO_BAD_PORT_STATUS=$?
+DEMO_POSITIONAL_OUTPUT="$(bash "${extension_directory}/gh-stratadiff" demo unexpected 2>&1)"
+DEMO_POSITIONAL_STATUS=$?
+set -e
+[[ "${DEMO_BAD_PORT_STATUS}" -ne 0 ]]
+assert_contains "${DEMO_BAD_PORT_OUTPUT}" '--port must be an integer from 0 through 65535'
+[[ "${DEMO_POSITIONAL_STATUS}" -ne 0 ]]
+assert_contains "${DEMO_POSITIONAL_OUTPUT}" 'demo does not accept positional arguments'
 INBOX_HELP="$(bash "${extension_directory}/gh-stratadiff" inbox --help)"
 assert_contains "${INBOX_HELP}" 'Usage: gh stratadiff inbox [options]'
 assert_contains "${INBOX_HELP}" '--format markdown|json'
@@ -305,6 +332,21 @@ assert_contains "${INBOX_HELP}" 'works outside a Git checkout'
 RESUME_HELP="$(bash "${extension_directory}/gh-stratadiff" resume --help)"
 assert_contains "${RESUME_HELP}" 'With -R and no --repo-dir'
 assert_contains "${RESUME_HELP}" 'isolated temporary bare'
+
+run_demo demo-default
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'stratadiff demo --port 0 --no-open'
+assert_not_contains "${CASE_LOG}" 'gh '
+assert_not_contains "${CASE_LOG}" 'git '
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'DISPLAY=:99'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'LANG=C.UTF-8'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'GIT_CONFIG_GLOBAL=/dev/null'
+assert_contains "${CASE_VIEWER_ENVIRONMENT}" 'GIT_NO_LAZY_FETCH=1'
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GH_TOKEN='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GITHUB_TOKEN='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'CALLER_SECRET='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'STRATADIFF_EXTENSION_TEST_LOG='
+assert_not_contains "${CASE_VIEWER_ENVIRONMENT}" 'GH_STUB_STATE='
 
 run_audit audit-default
 [[ "${CASE_STATUS}" -eq 0 ]]

@@ -233,6 +233,19 @@ exits. Pass `--repo-dir PATH` to reuse an existing checkout instead. Missing his
 explicitly; the extension never substitutes the current head, a branch tip, or another checkpoint.
 See the [extension guide](extensions/gh-stratadiff/README.md) for options and trust boundaries.
 
+### Try Review Resume without a repository
+
+The deterministic first-run demo needs no checkout, GitHub request, or fixture download. It creates
+an isolated A/B/C/D history in which the base moves, one author edit was already reviewed, and one
+later line still needs attention:
+
+```console
+gh stratadiff demo
+```
+
+The Workbench shows only that one-line post-review delta against the reconstructed review baseline.
+The temporary Git history is removed when the Workbench stops.
+
 ### See the review-coverage gate on a real rebase
 
 From a clean checkout, one command builds StrataDiff, materializes a pinned Gerrit review history,

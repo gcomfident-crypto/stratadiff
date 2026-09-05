@@ -10,11 +10,26 @@ Usage: gh stratadiff <command> [options]
 
 Commands:
   audit                      Audit recent merged PRs for stranded review checkpoints
+  demo                       Open a deterministic offline Review Resume scenario
   inbox                      Find open PRs that need your review resumed
   resume <PR>                Resume your latest completed review
   ownership-snapshot <BASE> Collect exact-base CODEOWNERS identities and permissions
 
 Run `gh stratadiff <command> --help` for command-specific options.
+EOF
+}
+
+demo_usage() {
+  cat <<'EOF'
+Usage: gh stratadiff demo [options]
+
+Open a deterministic, network-free Review Resume scenario. The demo creates an
+isolated temporary Git history and removes it when the Workbench stops.
+
+Options:
+  --port PORT   Local workbench port; 0 selects an available port (default: 0)
+  --no-open     Print the workbench URL without opening a browser
+  -h, --help    Show this help
 EOF
 }
 
@@ -113,6 +128,30 @@ require_value() {
 
 is_object_id() {
   [[ "$1" =~ ^[0-9a-f]{40}$ || "$1" =~ ^[0-9a-f]{64}$ ]]
+}
+
+initialize_viewer_environment() {
+  local environment_name
+  viewer_environment=(env -i)
+  for environment_name in \
+    PATH HOME \
+    DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XAUTHORITY \
+    LANG LANGUAGE LC_ALL LC_ADDRESS LC_COLLATE LC_CTYPE LC_IDENTIFICATION \
+    LC_MEASUREMENT LC_MESSAGES LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER \
+    LC_TELEPHONE LC_TIME
+  do
+    if [[ -n "${!environment_name+x}" ]]; then
+      viewer_environment+=("${environment_name}=${!environment_name}")
+    fi
+  done
+  viewer_environment+=(
+    GIT_CONFIG_NOSYSTEM=1
+    GIT_CONFIG_GLOBAL=/dev/null
+    GIT_TERMINAL_PROMPT=0
+    GIT_ASKPASS=/bin/false
+    GIT_NO_LAZY_FETCH=1
+    GIT_NO_REPLACE_OBJECTS=1
+  )
 }
 
 local_commit() {
@@ -412,7 +451,7 @@ case "${subcommand}" in
     usage
     exit 0
     ;;
-  audit|inbox|resume|ownership-snapshot) ;;
+  audit|demo|inbox|resume|ownership-snapshot) ;;
   *)
     usage >&2
     die "unsupported command: ${subcommand}"
@@ -436,6 +475,34 @@ audit_end_exclusive=
 inbox_format=markdown
 
 case "${subcommand}" in
+  demo)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --port)
+          require_value "$1" "${2:-}"
+          port=$2
+          shift 2
+          ;;
+        --no-open)
+          no_open=true
+          shift
+          ;;
+        -h|--help)
+          demo_usage
+          exit 0
+          ;;
+        --)
+          shift
+          [[ $# -eq 0 ]] || die "demo does not accept positional arguments"
+          ;;
+        -*) die "unknown option: $1" ;;
+        *) die "demo does not accept positional arguments" ;;
+      esac
+    done
+
+    [[ "${port}" =~ ^[0-9]+$ && "${port}" -le 65535 ]] || die \
+      "--port must be an integer from 0 through 65535"
+    ;;
   audit)
     while [[ $# -gt 0 ]]; do
       case "$1" in
@@ -625,6 +692,42 @@ case "${subcommand}" in
     ;;
 esac
 
+if [[ "${subcommand}" == demo ]]; then
+  require_command env
+  stratadiff=${STRATADIFF_BIN:-stratadiff}
+  require_command "${stratadiff}"
+  initialize_viewer_environment
+  demo_temporary_parent="$(cd -P -- "${TMPDIR:-/tmp}" && pwd -P)" || die \
+    "temporary directory parent is unavailable: ${TMPDIR:-/tmp}"
+  demo_temporary_directory="$(mktemp -d "${demo_temporary_parent}/gh-stratadiff-demo-XXXXXX")"
+  cleanup_demo() {
+    local cleanup_status=$?
+    local expected_prefix=${demo_temporary_parent}/gh-stratadiff-demo-
+    trap - EXIT HUP INT TERM
+    if [[ "${demo_temporary_directory}" != "${expected_prefix}"* ]]; then
+      printf 'gh stratadiff: refusing to remove unexpected demo directory %s\n' \
+        "${demo_temporary_directory}" >&2
+      cleanup_status=1
+    elif ! rm -rf -- "${demo_temporary_directory}"; then
+      printf 'gh stratadiff: failed to remove demo directory %s\n' \
+        "${demo_temporary_directory}" >&2
+      cleanup_status=1
+    fi
+    exit "${cleanup_status}"
+  }
+  trap cleanup_demo EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  demo_arguments=(demo --port "${port}")
+  if [[ "${no_open}" == true ]]; then
+    demo_arguments+=(--no-open)
+  fi
+  "${viewer_environment[@]}" TMPDIR="${demo_temporary_directory}" \
+    "${stratadiff}" "${demo_arguments[@]}"
+  exit 0
+fi
+
 require_command gh
 
 if [[ "${subcommand}" == audit || "${subcommand}" == inbox ]]; then
@@ -700,28 +803,10 @@ clean_git_environment+=(
   GIT_NO_REPLACE_OBJECTS=1
 )
 
-viewer_environment=(env -i)
-for environment_name in \
-  PATH HOME \
-  DISPLAY WAYLAND_DISPLAY XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XAUTHORITY \
-  LANG LANGUAGE LC_ALL LC_ADDRESS LC_COLLATE LC_CTYPE LC_IDENTIFICATION \
-  LC_MEASUREMENT LC_MESSAGES LC_MONETARY LC_NAME LC_NUMERIC LC_PAPER \
-  LC_TELEPHONE LC_TIME
-do
-  if [[ -n "${!environment_name+x}" ]]; then
-    viewer_environment+=("${environment_name}=${!environment_name}")
-  fi
-done
-viewer_environment+=(
-  GIT_CONFIG_NOSYSTEM=1
-  GIT_CONFIG_GLOBAL=/dev/null
-  GIT_TERMINAL_PROMPT=0
-  GIT_ASKPASS=/bin/false
-  GIT_NO_LAZY_FETCH=1
-  GIT_NO_REPLACE_OBJECTS=1
-)
+initialize_viewer_environment
 
 temporary_ref_namespace=${subcommand}
+temporary_parent=
 temporary_directory=
 command_session=
 provider_repository=
@@ -754,7 +839,7 @@ cleanup() {
       cleanup_status=1
     fi
   done
-  expected_temporary_prefix="${TMPDIR:-/tmp}/gh-stratadiff-${temporary_ref_namespace}-"
+  expected_temporary_prefix="${temporary_parent}/gh-stratadiff-${temporary_ref_namespace}-"
   if [[ "${temporary_directory}" != "${expected_temporary_prefix}"* ]]; then
     printf 'gh stratadiff: refusing to remove unexpected temporary directory %s\n' "${temporary_directory}" >&2
     cleanup_status=1
@@ -766,7 +851,9 @@ cleanup() {
 }
 
 initialize_command_temporary_directory() {
-  temporary_directory="$(mktemp -d "${TMPDIR:-/tmp}/gh-stratadiff-${temporary_ref_namespace}-XXXXXX")"
+  temporary_parent="$(cd -P -- "${TMPDIR:-/tmp}" && pwd -P)" || die \
+    "temporary directory parent is unavailable: ${TMPDIR:-/tmp}"
+  temporary_directory="$(mktemp -d "${temporary_parent}/gh-stratadiff-${temporary_ref_namespace}-XXXXXX")"
   command_session=${temporary_directory##*/}
   trap cleanup EXIT
 }

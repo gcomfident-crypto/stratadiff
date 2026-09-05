@@ -1534,7 +1534,8 @@ class InboxTest(unittest.TestCase):
             rendered,
         )
         self.assertIn("unknown, not evidence", rendered)
-        self.assertIn("Run Resume commands from a checkout", rendered)
+        self.assertIn("Run Resume commands from any directory", rendered)
+        self.assertIn("isolated temporary repository", rendered)
         self.assertNotIn("review-old", rendered)
 
     def test_markdown_does_not_call_insufficient_evidence_up_to_date(self):
