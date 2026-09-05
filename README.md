@@ -34,7 +34,8 @@ crate used by `stratadiff verify`. The third never silently turns a heuristic sc
 historical fact.
 
 > **Project status:** research alpha. The no-checkout `gh stratadiff audit`, personal
-> `gh stratadiff inbox`, no-admin `gh stratadiff resume <PR>` path, exact base-drift replay, Review
+> `gh stratadiff inbox`, native no-admin `stratadiff resume <PR>` path (also exposed as
+> `gh stratadiff resume <PR>`), exact base-drift replay, Review
 > Resume Workbench, webhook review ledger, exact-base CODEOWNERS and permission snapshots,
 > receiver-signed review-coverage Passport, offline verification, and deterministic Check Run
 > request generation work now. The implementation remains local tooling, not a hosted GitHub App:
@@ -154,6 +155,7 @@ frontend requires Node.js 24 and npm 11.
 ```console
 scripts/build-release.sh --bin stratadiff
 target/release/stratadiff build-info
+target/release/stratadiff resume 123 -R OWNER/REPOSITORY --no-open
 target/release/stratadiff review origin/main HEAD
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA \
@@ -218,21 +220,30 @@ Resume's shared 10,000-review limit.
 
 ### Resume your own GitHub review
 
-After building StrataDiff, run the extension from any directory by naming the repository:
+After building StrataDiff, run native Resume directly or through the thin GitHub CLI extension from
+any directory by naming the repository:
 
 ```console
 cd extensions/gh-stratadiff
 gh extension install .
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
 gh stratadiff resume 123 -R OWNER/REPOSITORY
+# Equivalent native entry point:
+"$STRATADIFF_BIN" resume 123 -R OWNER/REPOSITORY
 ```
 
-It resolves the authenticated user's exact completed-review checkpoint, verifies that commit with
+The extension forwards `resume` arguments and exit status directly to the Rust binary. Native Resume
+resolves the authenticated user's exact completed-review checkpoint, verifies that commit with
 GitHub, materializes the required objects in an isolated temporary bare repository, and opens Review
 Resume against the PR's current base and head. The temporary repository is deleted when the command
-exits. Pass `--repo-dir PATH` to reuse an existing checkout instead. Missing historical objects fail
-explicitly; the extension never substitutes the current head, a branch tip, or another checkpoint.
-See the [extension guide](extensions/gh-stratadiff/README.md) for options and trust boundaries.
+exits. Pass `--repo-dir PATH` to reuse an existing worktree or bare repository instead. Missing
+historical objects fail explicitly; Resume never substitutes the current head, a branch tip, or
+another checkpoint. It rechecks the PR base and head before opening the Workbench, isolates GitHub
+tokens from the Workbench child, and cleans temporary refs plus pack keep files that remain owned by
+its fetch process after normal exit or SIGINT/SIGTERM/SIGHUP. It does not create, restore, dismiss,
+or submit GitHub approval, and review selection is currently login-based rather than bound to an
+immutable user node ID. See the
+[extension guide](extensions/gh-stratadiff/README.md) for options and trust boundaries.
 
 ### Try Review Resume without a repository
 

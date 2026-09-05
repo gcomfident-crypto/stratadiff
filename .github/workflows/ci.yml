@@ -21,6 +21,24 @@ jobs:
       - name: Test extension with system Bash
         run: PATH="/usr/bin:/bin:$PATH" /bin/bash extensions/gh-stratadiff/tests/resume_test.sh
 
+  resume-native-macos:
+    name: Native Resume · macos-latest
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@49fda20b3f489226feadfba7767be1db54e2cee1 # 1.90.0
+        with:
+          components: clippy,rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Test native Resume lifecycle
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: |
+          cargo test --locked --bin stratadiff process::tests -- --test-threads=1
+          cargo test --locked --bin stratadiff resume::tests -- --test-threads=1
+          cargo test --locked --test resume_cli -- --test-threads=1
+
   web:
     name: Web · Node 24
     runs-on: ubuntu-latest

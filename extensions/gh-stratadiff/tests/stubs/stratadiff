@@ -34,6 +34,9 @@ printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
 checkpoint=cccccccccccccccccccccccccccccccccccccccc
 base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 case "${1:-}" in
+  resume)
+    exit "${GH_STUB_RESUME_EXIT_STATUS:-0}"
+    ;;
   github-checkpoint)
     reviews_path=$2
     reviews_payload="$(< "${reviews_path}")"
