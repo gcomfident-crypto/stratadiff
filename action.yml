@@ -48,6 +48,9 @@ outputs:
   checkpoint_source:
     description: explicit, github_review, or none
     value: ${{ steps.review.outputs.checkpoint_source }}
+  checkpoint_record:
+    description: Absolute path to the GitHub checkpoint selection record, or empty when no reviewer was resolved
+    value: ${{ steps.review.outputs.checkpoint_record }}
 
 runs:
   using: composite
