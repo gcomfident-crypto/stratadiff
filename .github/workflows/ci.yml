@@ -52,7 +52,7 @@ jobs:
   rust:
     name: Rust 1.90
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -64,6 +64,8 @@ jobs:
         with:
           components: clippy,rustfmt
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Install pinned license generator
+        run: cargo install cargo-about --version 0.9.2 --locked --features cli
       - run: scripts/ci.sh
 
   review-focus:

@@ -31,9 +31,15 @@ succeeds.
 Build distributable binaries through the path-remapping wrapper and check the result:
 
 ```console
+scripts/generate-third-party-notices.sh
+git diff --exit-code -- THIRD_PARTY_NOTICES.txt
 scripts/build-release.sh --workspace
 scripts/check-release-paths.sh target/release/stratadiff
 ```
 
-The repository does not currently publish binary archives. Before adding them, generate and ship
-third-party notices for the Rust dependency graph in addition to the embedded Workbench notices.
+The notice scripts require exactly `cargo-about 0.9.2`. `THIRD_PARTY_NOTICES.txt` covers the locked
+Rust build graph for the four supported release targets and is embedded in the executable; verify it
+at runtime with `stratadiff licenses`. The Workbench's JavaScript notices remain embedded separately.
+
+The repository does not currently publish binary archives. A release workflow must ship the exact
+checked binary and its checksum or attestation without rebuilding it in a later job.

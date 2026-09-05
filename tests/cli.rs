@@ -28,6 +28,21 @@ fn build_info_is_machine_readable_and_bound_to_the_executable() {
     assert!(rustc_version == "unavailable" || rustc_version.starts_with("rustc "));
 }
 
+#[test]
+fn licenses_are_embedded_verbatim_in_the_executable() {
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("licenses")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    assert_eq!(output.stdout, include_bytes!("../THIRD_PARTY_NOTICES.txt"));
+}
+
 fn assert_apply_rejects(report: &Value, before: &[u8], expected_error: &str) {
     let directory = tempfile::tempdir().unwrap();
     let report_path = directory.path().join("report.json");

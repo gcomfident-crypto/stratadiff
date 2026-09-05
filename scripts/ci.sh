@@ -6,6 +6,7 @@ npm --prefix web run notices:check
 npm --prefix web test
 npm --prefix web run build
 cmp web/public/THIRD_PARTY_NOTICES.txt web/dist/THIRD_PARTY_NOTICES.txt
+scripts/check-third-party-notices.sh
 if [[ -n "$(git status --porcelain --untracked-files=all -- web/dist)" ]]; then
   git status --short --untracked-files=all -- web/dist
   echo "web/dist is not the committed production build" >&2
