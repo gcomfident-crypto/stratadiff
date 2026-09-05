@@ -1,0 +1,79 @@
+{
+  "acceptance_gates": {
+    "actionable_cases": 2,
+    "checkpoint_disagreements": 0,
+    "classification_disagreements": 0,
+    "forbidden_payload_fields": 0,
+    "head_disagreements": 0,
+    "review_history_disagreements": 0,
+    "reviewer_identity_disagreements": 0,
+    "stable_controls": 1
+  },
+  "capture": {
+    "maximum_cross_api_span_seconds": 120,
+    "observations": [
+      {
+        "api": "github_rest_v3",
+        "asset": "rest-observation-v1.json",
+        "role": "independent_metadata_oracle"
+      },
+      {
+        "api": "github_graphql_v4",
+        "asset": "graphql-observation-v1.json",
+        "role": "product_path_representation"
+      }
+    ],
+    "source_kind": "public_pull_request_review_metadata"
+  },
+  "dataset_version": "1.1.0",
+  "limitations": [
+    "The three seed cases were convenience-selected during API feasibility work and are not a holdout or prevalence sample.",
+    "REST v3 and GraphQL v4 are separate representations backed by GitHub, not independent ground-truth providers; agreement detects capture and normalization mistakes but not correlated upstream errors.",
+    "The GraphQL observation reproduces the Inbox fields and reviewer filter, but it is not an authenticated-viewer CLI run because the public reviewers are not the capture account.",
+    "The captures are sequential rather than atomic; the bounded capture span and per-asset timestamps expose but cannot eliminate concurrent pull-request changes.",
+    "The oracle checks metadata classification only; it does not measure Resume correctness, time saved, issue recall, safety, retention, or willingness to pay.",
+    "This seed has no missing-OID or multi-page reviewer-history case; controlled transport tests cover those paths until a prospective real case is frozen.",
+    "Public reviewer logins and immutable user IDs are retained solely to exercise the reviewer identity boundary."
+  ],
+  "normalization": {
+    "classification": {
+      "different_checkpoint_and_head_oid": "actionable",
+      "equal_checkpoint_and_head_oid": "up_to_date",
+      "missing_checkpoint_oid": "unobservable"
+    },
+    "completed_states": [
+      "APPROVED",
+      "CHANGES_REQUESTED"
+    ],
+    "reviewer_identity": {
+      "actor_type": "User",
+      "immutable_database_id_required": true,
+      "login_match": "case_insensitive"
+    },
+    "selection_order": [
+      "submitted_at",
+      "database_id"
+    ]
+  },
+  "schema": "stratadiff-review-inbox-protocol-v1",
+  "selection": {
+    "case_ids": [
+      "github-posthog-posthog-pr-95462-andrewm4894",
+      "github-posthog-posthog-pr-93146-andrewm4894",
+      "github-posthog-posthog-pr-95295-sakce"
+    ],
+    "method": "pilot_informed_real_metadata_seed_v1",
+    "next_prospective_expansion": {
+      "minimum_cases": 30,
+      "required_buckets": [
+        "actionable",
+        "up_to_date",
+        "commented_after_completed",
+        "changes_requested",
+        "missing_oid",
+        "outer_pagination",
+        "review_pagination"
+      ]
+    }
+  }
+}

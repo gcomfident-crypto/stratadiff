@@ -1,0 +1,728 @@
+{
+  "api": {
+    "api_family": "GitHub GraphQL",
+    "api_version": "v4",
+    "endpoint": "https://api.github.com/graphql",
+    "query_name": "ReviewInboxEvidenceCapture",
+    "review_request": "reviews(first: 100, after: $cursor, author: $reviewer) with connection pagination"
+  },
+  "captureCompletedAt": "2026-09-05T14:57:04Z",
+  "captureStartedAt": "2026-09-05T14:56:59Z",
+  "cases": [
+    {
+      "id": "github-posthog-posthog-pr-95462-andrewm4894",
+      "pullRequest": {
+        "headRefOid": "c209bc8884d9921f417b294e8e2b358aefc7f505",
+        "id": "PR_kwDODg-Tdc8AAAABCQbXnA",
+        "isDraft": false,
+        "number": 95462,
+        "reviews": {
+          "nodes": [
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "3c2ad3361a98cd34bcea07a8acba71144b9c86ca"
+              },
+              "fullDatabaseId": "5118260778",
+              "id": "PRR_kwDODg-Tdc8AAAABMRJ2Kg",
+              "state": "APPROVED",
+              "submittedAt": "2026-09-04T22:18:42Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118307733",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMtlQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:37Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118307844",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMuBA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:38Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118307997",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMunQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:39Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308082",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMu8g",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:41Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308201",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMvaQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:42Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308327",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMv5w",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:44Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308447",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMwXw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:45Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308546",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMwwg",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:47Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308659",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMxMw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:48Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308746",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMxig",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:49Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308832",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMx4A",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:50Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "cfcc0071c8f37f69d840937febc2e46f4d0b1354"
+              },
+              "fullDatabaseId": "5118308932",
+              "id": "PRR_kwDODg-Tdc8AAAABMRMyRA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:28:52Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430248",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUMKA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:19Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430360",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUMmA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:20Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430461",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUM_Q",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:22Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430556",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUNXA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:23Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430650",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUNug",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:24Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430741",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUOFQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:26Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430817",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUOYQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:27Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118430927",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUOzw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:28Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431009",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUPIQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:30Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431086",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUPbg",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:31Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431170",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUPwg",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:32Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431243",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUQCw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:33Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431347",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUQcw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:35Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431419",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUQuw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:36Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431509",
+              "id": "PRR_kwDODg-Tdc8AAAABMRURFQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:37Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431618",
+              "id": "PRR_kwDODg-Tdc8AAAABMRURgg",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:39Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431700",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUR1A",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:40Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218"
+              },
+              "fullDatabaseId": "5118431787",
+              "id": "PRR_kwDODg-Tdc8AAAABMRUSKw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T22:53:42Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "fb869b82432bcef5637fa456e7b06b062f54855a"
+              },
+              "fullDatabaseId": "5118533959",
+              "id": "PRR_kwDODg-Tdc8AAAABMRahRw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:12:11Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "fb869b82432bcef5637fa456e7b06b062f54855a"
+              },
+              "fullDatabaseId": "5118534043",
+              "id": "PRR_kwDODg-Tdc8AAAABMRahmw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:12:12Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "fb869b82432bcef5637fa456e7b06b062f54855a"
+              },
+              "fullDatabaseId": "5118534106",
+              "id": "PRR_kwDODg-Tdc8AAAABMRah2g",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:12:13Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "fb869b82432bcef5637fa456e7b06b062f54855a"
+              },
+              "fullDatabaseId": "5118534195",
+              "id": "PRR_kwDODg-Tdc8AAAABMRaiMw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:12:15Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118542924",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbETA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:18Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543038",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbEvg",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:20Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543179",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbFSw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:22Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543256",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbFmA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:23Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543323",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbF2w",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:25Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543405",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbGLQ",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:26Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543532",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbGrA",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:28Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543622",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbHBg",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:29Z"
+            },
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b"
+              },
+              "fullDatabaseId": "5118543715",
+              "id": "PRR_kwDODg-Tdc8AAAABMRbHYw",
+              "state": "COMMENTED",
+              "submittedAt": "2026-09-04T23:14:31Z"
+            }
+          ],
+          "pagesFetched": 1,
+          "terminalPageObserved": true,
+          "totalCount": 44
+        },
+        "state": "OPEN",
+        "updatedAt": "2026-09-05T14:51:50Z",
+        "url": "https://github.com/PostHog/posthog/pull/95462"
+      },
+      "reviewerArgument": "andrewm4894"
+    },
+    {
+      "id": "github-posthog-posthog-pr-93146-andrewm4894",
+      "pullRequest": {
+        "headRefOid": "a082ff535976df52c41cf4a11bb4b88cd3fa2a94",
+        "id": "PR_kwDODg-Tdc8AAAABB4AaVg",
+        "isDraft": false,
+        "number": 93146,
+        "reviews": {
+          "nodes": [
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 2178292,
+                "login": "andrewm4894"
+              },
+              "commit": {
+                "oid": "2d9ca8a970604c110936ee10b790649db5f52f04"
+              },
+              "fullDatabaseId": "5109736683",
+              "id": "PRR_kwDODg-Tdc8AAAABMJBk6w",
+              "state": "APPROVED",
+              "submittedAt": "2026-09-04T06:08:37Z"
+            }
+          ],
+          "pagesFetched": 1,
+          "terminalPageObserved": true,
+          "totalCount": 1
+        },
+        "state": "OPEN",
+        "updatedAt": "2026-09-05T13:07:03Z",
+        "url": "https://github.com/PostHog/posthog/pull/93146"
+      },
+      "reviewerArgument": "andrewm4894"
+    },
+    {
+      "id": "github-posthog-posthog-pr-95295-sakce",
+      "pullRequest": {
+        "headRefOid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+        "id": "PR_kwDODg-Tdc8AAAABCOJC7Q",
+        "isDraft": false,
+        "number": 95295,
+        "reviews": {
+          "nodes": [
+            {
+              "author": {
+                "__typename": "User",
+                "databaseId": 49978945,
+                "login": "sakce"
+              },
+              "commit": {
+                "oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e"
+              },
+              "fullDatabaseId": "5121077003",
+              "id": "PRR_kwDODg-Tdc8AAAABMT1vCw",
+              "state": "APPROVED",
+              "submittedAt": "2026-09-05T11:38:36Z"
+            }
+          ],
+          "pagesFetched": 1,
+          "terminalPageObserved": true,
+          "totalCount": 1
+        },
+        "state": "OPEN",
+        "updatedAt": "2026-09-05T11:38:36Z",
+        "url": "https://github.com/PostHog/posthog/pull/95295"
+      },
+      "reviewerArgument": "sakce"
+    }
+  ],
+  "datasetVersion": "1.1.0",
+  "privacy": {
+    "commit_messages_collected": false,
+    "diffs_or_patches_collected": false,
+    "pr_text_collected": false,
+    "review_text_collected": false,
+    "source_code_collected": false,
+    "tokens_collected": false
+  },
+  "repository": "PostHog/posthog",
+  "schema": "stratadiff-review-inbox-graphql-observation-v1"
+}

@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -675,6 +676,1000 @@ class AuditTest(unittest.TestCase):
             self.assertEqual(call[4], self.end)
 
 
+class InboxTest(unittest.TestCase):
+    reviewer_node_id = "U_alice"
+    acquisition = {
+        "graphql_calls": 4,
+        "minimum_rate_limit_remaining": 4996,
+        "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+    }
+
+    def normalized_review(
+        self,
+        review_id,
+        database_id,
+        state,
+        submitted_at,
+        commit_oid,
+    ):
+        return {
+            "node_id": review_id,
+            "database_id": database_id,
+            "state": state,
+            "submitted_at": submitted_at,
+            "commit_oid": commit_oid,
+        }
+
+    def normalized_pull_request(
+        self,
+        number,
+        updated_at,
+        head_oid,
+        reviews,
+        *,
+        is_draft=False,
+    ):
+        return {
+            "node_id": f"PR_{number}",
+            "number": number,
+            "url": f"https://ghe.example/acme/widgets/pull/{number}",
+            "is_draft": is_draft,
+            "updated_at": updated_at,
+            "head_oid": head_oid,
+            "total_review_count": len(reviews),
+            "reviews": reviews,
+        }
+
+    def build_report(self, pull_requests):
+        eligible = sum(
+            census.latest_inbox_checkpoint(pull_request["reviews"]) is not None
+            for pull_request in pull_requests
+        )
+        return census.build_review_inbox(
+            "acme/widgets",
+            "ghe.example",
+            "alice",
+            self.reviewer_node_id,
+            pull_requests,
+            {
+                "open_pull_request_pages": 1,
+                "review_pages": len(pull_requests) + eligible,
+                "open_pull_request_count": len(pull_requests),
+                "revalidated_review_prs": eligible,
+            },
+            self.acquisition,
+            {
+                "graphql_call_limit": census.MAX_INBOX_GRAPHQL_CALLS,
+                "captured_node_limit": census.MAX_INBOX_CAPTURED_NODES,
+                "response_byte_limit": census.MAX_INBOX_RESPONSE_BYTES,
+                "wall_time_seconds_limit": census.MAX_INBOX_WALL_TIME_SECONDS,
+                "resume_review_limit": census.MAX_RESUME_GITHUB_REVIEWS,
+                "captured_nodes": len(pull_requests),
+                "response_bytes": 1,
+            },
+            "2026-09-05T00:00:00Z",
+            "2026-09-05T00:00:00Z",
+        )
+
+    def raw_review(
+        self,
+        review_id,
+        database_id,
+        state,
+        submitted_at,
+        commit_oid,
+        *,
+        reviewer="alice",
+        reviewer_node_id=None,
+        typename="User",
+    ):
+        if reviewer_node_id is None:
+            reviewer_node_id = f"U_{reviewer}"
+        return {
+            "id": review_id,
+            "fullDatabaseId": database_id,
+            "state": state,
+            "submittedAt": submitted_at,
+            "author": {
+                "__typename": typename,
+                "id": reviewer_node_id,
+                "login": reviewer,
+            },
+            "commit": None if commit_oid is None else {"oid": commit_oid},
+        }
+
+    def raw_pull_request(
+        self,
+        number,
+        head_oid,
+        reviews,
+        *,
+        total_count=None,
+        has_next=False,
+        end_cursor=None,
+        state="OPEN",
+        all_review_count=None,
+    ):
+        review_count = len(reviews) if total_count is None else total_count
+        if all_review_count is None:
+            all_review_count = review_count
+        return {
+            "id": f"PR_{number}",
+            "number": number,
+            "state": state,
+            "url": f"https://ghe.example/acme/widgets/pull/{number}",
+            "isDraft": False,
+            "updatedAt": f"2026-09-{number:02d}T00:00:00Z",
+            "headRefOid": head_oid,
+            "allReviews": {"totalCount": all_review_count},
+            "reviews": {
+                "totalCount": review_count,
+                "pageInfo": {
+                    "hasNextPage": has_next,
+                    "endCursor": end_cursor,
+                },
+                "nodes": reviews,
+            },
+        }
+
+    def repository(self, **extra):
+        return {
+            "id": "R_1",
+            "nameWithOwner": "acme/widgets",
+            "url": "https://ghe.example/acme/widgets",
+            **extra,
+        }
+
+    def test_report_contract_latest_checkpoint_and_sorting(self):
+        older = self.normalized_review(
+            "review-old", 11, "APPROVED", "2026-09-01T00:00:00Z", OID_A
+        )
+        same_time_lower_id = self.normalized_review(
+            "review-low", 12, "APPROVED", "2026-09-02T00:00:00Z", OID_A
+        )
+        latest = self.normalized_review(
+            "review-latest",
+            13,
+            "CHANGES_REQUESTED",
+            "2026-09-02T00:00:00Z",
+            OID_B,
+        )
+        commented = self.normalized_review(
+            "review-commented", 14, "COMMENTED", "2026-09-04T00:00:00Z", OID_C
+        )
+        dismissed = self.normalized_review(
+            "review-dismissed", 15, "DISMISSED", "2026-09-05T00:00:00Z", OID_C
+        )
+        report = self.build_report(
+            [
+                self.normalized_pull_request(
+                    7,
+                    "2026-09-03T00:00:00Z",
+                    OID_C,
+                    [older, same_time_lower_id, latest, commented, dismissed],
+                ),
+                self.normalized_pull_request(
+                    8,
+                    "2026-09-04T00:00:00Z",
+                    OID_B,
+                    [
+                        self.normalized_review(
+                            "review-8", 20, "APPROVED", "2026-09-03T00:00:00Z", OID_A
+                        )
+                    ],
+                    is_draft=True,
+                ),
+            ]
+        )
+        self.assertEqual(
+            set(report),
+            {
+                "schema",
+                "tool_version",
+                "generated_at",
+                "scope",
+                "collection",
+                "privacy",
+                "summary",
+                "actionable",
+                "unobservable",
+            },
+        )
+        self.assertEqual(report["schema"], "stratadiff-review-inbox-v1")
+        self.assertEqual(report["tool_version"], "1.0.0")
+        self.assertEqual(
+            report["scope"],
+            {
+                "provider_url": "https://ghe.example",
+                "repository": "acme/widgets",
+                "reviewer": {
+                    "login": "alice",
+                    "node_id": self.reviewer_node_id,
+                    "source": "authenticated_viewer",
+                },
+            },
+        )
+        self.assertEqual(
+            report["summary"],
+            {
+                "status": "actionable",
+                "open_prs": 2,
+                "eligible_review_prs": 2,
+                "comparable_review_prs": 2,
+                "up_to_date_prs": 0,
+                "resume_available_prs": 2,
+                "unobservable_review_prs": 0,
+            },
+        )
+        self.assertEqual(
+            [item["number"] for item in report["actionable"]], [8, 7]
+        )
+        item = report["actionable"][1]
+        self.assertEqual(
+            item["checkpoint"],
+            {
+                "oid": OID_B,
+                "submitted_at": "2026-09-02T00:00:00Z",
+                "state": "CHANGES_REQUESTED",
+            },
+        )
+        self.assertEqual(
+            item["resume_argv"],
+            [
+                "gh",
+                "stratadiff",
+                "resume",
+                "7",
+                "-R",
+                "ghe.example/acme/widgets",
+                "--reviewer",
+                "alice",
+            ],
+        )
+        self.assertEqual(
+            report["privacy"],
+            {
+                "source_collected": False,
+                "pr_text_collected": False,
+                "review_text_collected": False,
+                "commit_messages_collected": False,
+                "logins_persisted": True,
+                "actor_identity": "authenticated_viewer_node_id_and_login",
+            },
+        )
+
+    def test_latest_eligible_missing_oid_is_unobservable_without_fallback(self):
+        report = self.build_report(
+            [
+                self.normalized_pull_request(
+                    7,
+                    "2026-09-03T00:00:00Z",
+                    OID_C,
+                    [
+                        self.normalized_review(
+                            "older", 1, "APPROVED", "2026-09-01T00:00:00Z", OID_A
+                        ),
+                        self.normalized_review(
+                            "latest",
+                            2,
+                            "CHANGES_REQUESTED",
+                            "2026-09-02T00:00:00Z",
+                            None,
+                        ),
+                    ],
+                )
+            ]
+        )
+        self.assertEqual(report["summary"]["status"], "insufficient_evidence")
+        self.assertEqual(report["summary"]["comparable_review_prs"], 0)
+        self.assertEqual(report["actionable"], [])
+        self.assertEqual(report["unobservable"][0]["checkpoint"]["oid"], None)
+        self.assertEqual(
+            report["unobservable"][0]["reason"], "checkpoint_oid_unavailable"
+        )
+
+    def test_fractional_timestamp_orders_the_same_second_exactly(self):
+        whole_second = self.normalized_review(
+            "whole", 9, "APPROVED", "2026-09-01T00:00:00Z", OID_A
+        )
+        fractional = self.normalized_review(
+            "fractional",
+            1,
+            "CHANGES_REQUESTED",
+            "2026-09-01T00:00:00.000000001Z",
+            OID_B,
+        )
+        checkpoint = census.latest_inbox_checkpoint([whole_second, fractional])
+        self.assertIsNotNone(checkpoint)
+        self.assertEqual(checkpoint["node_id"], "fractional")
+
+        fractional["submitted_at"] = "2026-09-01T00:00:00.0000000001Z"
+        with self.assertRaisesRegex(census.CensusError, "RFC3339 UTC timestamp"):
+            census.latest_inbox_checkpoint([fractional])
+
+    def test_resume_limit_never_emits_a_command_that_resume_will_reject(self):
+        schema = json.loads(
+            (census.ROOT / "schema" / "review-inbox-v1.schema.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            schema["$defs"]["collection"]["properties"]["resource_budget"][
+                "properties"
+            ]["resume_review_limit"]["const"],
+            census.MAX_RESUME_GITHUB_REVIEWS,
+        )
+        pull_request = self.normalized_pull_request(
+            7,
+            "2026-09-03T00:00:00Z",
+            OID_C,
+            [
+                self.normalized_review(
+                    "review", 1, "APPROVED", "2026-09-01T00:00:00Z", OID_A
+                )
+            ],
+        )
+        pull_request["total_review_count"] = census.MAX_RESUME_GITHUB_REVIEWS + 1
+        report = self.build_report([pull_request])
+        self.assertEqual(report["actionable"], [])
+        self.assertEqual(report["summary"]["status"], "insufficient_evidence")
+        self.assertEqual(report["summary"]["comparable_review_prs"], 1)
+        self.assertEqual(
+            report["unobservable"][0]["reason"],
+            "resume_review_limit_exceeded",
+        )
+
+    def test_resume_limit_does_not_hide_a_provably_up_to_date_checkpoint(self):
+        pull_request = self.normalized_pull_request(
+            7,
+            "2026-09-03T00:00:00Z",
+            OID_A,
+            [
+                self.normalized_review(
+                    "review", 1, "APPROVED", "2026-09-01T00:00:00Z", OID_A
+                )
+            ],
+        )
+        pull_request["total_review_count"] = census.MAX_RESUME_GITHUB_REVIEWS + 1
+        report = self.build_report([pull_request])
+        self.assertEqual(report["summary"]["status"], "up_to_date")
+        self.assertEqual(report["summary"]["comparable_review_prs"], 1)
+        self.assertEqual(report["summary"]["up_to_date_prs"], 1)
+        self.assertEqual(report["actionable"], [])
+        self.assertEqual(report["unobservable"], [])
+
+    def test_status_precedence_and_all_statuses(self):
+        no_eligible = self.build_report(
+            [
+                self.normalized_pull_request(
+                    1,
+                    "2026-09-01T00:00:00Z",
+                    OID_A,
+                    [
+                        self.normalized_review(
+                            "comment", 1, "COMMENTED", "2026-08-01T00:00:00Z", OID_A
+                        )
+                    ],
+                )
+            ]
+        )
+        up_to_date = self.build_report(
+            [
+                self.normalized_pull_request(
+                    2,
+                    "2026-09-02T00:00:00Z",
+                    OID_A,
+                    [
+                        self.normalized_review(
+                            "approved", 2, "APPROVED", "2026-08-02T00:00:00Z", OID_A
+                        )
+                    ],
+                )
+            ]
+        )
+        mixed = self.build_report(
+            [
+                self.normalized_pull_request(
+                    3,
+                    "2026-09-03T00:00:00Z",
+                    OID_C,
+                    [
+                        self.normalized_review(
+                            "drifted", 3, "APPROVED", "2026-08-03T00:00:00Z", OID_A
+                        )
+                    ],
+                ),
+                self.normalized_pull_request(
+                    4,
+                    "2026-09-04T00:00:00Z",
+                    OID_C,
+                    [
+                        self.normalized_review(
+                            "unknown", 4, "APPROVED", "2026-08-04T00:00:00Z", None
+                        )
+                    ],
+                ),
+            ]
+        )
+        self.assertEqual(no_eligible["summary"]["status"], "no_eligible_reviews")
+        self.assertEqual(up_to_date["summary"]["status"], "up_to_date")
+        self.assertEqual(mixed["summary"]["status"], "actionable")
+        self.assertEqual(mixed["summary"]["unobservable_review_prs"], 1)
+
+    def test_collection_pages_all_open_prs_and_each_viewer_review_connection(self):
+        first_review = self.raw_review(
+            "RVR_1", "1", "APPROVED", "2026-08-01T00:00:00Z", OID_A
+        )
+        later_comment = self.raw_review(
+            "RVR_2", "2", "COMMENTED", "2026-08-02T00:00:00Z", OID_B
+        )
+        first_pr = self.raw_pull_request(
+            1,
+            OID_B,
+            [first_review],
+            total_count=2,
+            has_next=True,
+            end_cursor="reviews-1",
+        )
+        second_pr = self.raw_pull_request(2, OID_C, [])
+        revalidated_first_pr = self.raw_pull_request(
+            1, OID_B, [first_review, later_comment]
+        )
+        viewer = {"id": self.reviewer_node_id, "login": "alice"}
+        responses = [
+            {
+                "viewer": viewer,
+                "repository": self.repository(pullRequests={"totalCount": 2}),
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(
+                    pullRequests={
+                        "totalCount": 2,
+                        "pageInfo": {"hasNextPage": True, "endCursor": "prs-1"},
+                        "nodes": [first_pr],
+                    }
+                )
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(
+                    pullRequest={
+                        "id": "PR_1",
+                        "number": 1,
+                        "state": "OPEN",
+                        "headRefOid": OID_B,
+                        "allReviews": {"totalCount": 2},
+                        "reviews": {
+                            "totalCount": 2,
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [later_comment],
+                        },
+                    }
+                )
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(
+                    pullRequests={
+                        "totalCount": 2,
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": [second_pr],
+                    }
+                )
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(pullRequest=revalidated_first_pr),
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(pullRequests={"totalCount": 2}),
+            },
+        ]
+
+        class FakeApi:
+            def __init__(self, values):
+                self.values = values
+                self.calls = []
+                self.last_response_bytes = 0
+
+            def call(self, query, variables):
+                self.calls.append((query, variables))
+                value = self.values.pop(0)
+                self.last_response_bytes = len(census.canonical_json(value))
+                return value
+
+            def acquisition(self):
+                return {
+                    "graphql_calls": len(self.calls),
+                    "minimum_rate_limit_remaining": 4996,
+                    "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+                }
+
+        api = FakeApi(responses)
+        with mock.patch.object(
+            census, "now_timestamp", return_value="2026-09-05T00:00:00Z"
+        ):
+            report = census.collect_review_inbox(
+                api, "acme/widgets", "ghe.example"
+            )
+        self.assertEqual(api.values, [])
+        self.assertEqual(report["summary"]["open_prs"], 2)
+        self.assertEqual(report["summary"]["resume_available_prs"], 1)
+        self.assertEqual(report["collection"]["open_pull_request_pages"], 2)
+        self.assertEqual(report["collection"]["review_pages"], 4)
+        self.assertEqual(report["collection"]["revalidated_review_prs"], 1)
+        self.assertEqual(api.calls[1][1]["viewer"], "alice")
+        self.assertIsNone(api.calls[1][1]["cursor"])
+        self.assertEqual(api.calls[2][1]["cursor"], "reviews-1")
+        self.assertEqual(api.calls[3][1]["cursor"], "prs-1")
+        self.assertIn("states: [OPEN]", census.INBOX_PULL_REQUESTS_QUERY)
+        self.assertIn(
+            "orderBy: {field: CREATED_AT, direction: DESC}",
+            census.INBOX_PULL_REQUESTS_QUERY,
+        )
+        for query in (
+            census.INBOX_PULL_REQUESTS_QUERY,
+            census.INBOX_REVIEWS_PAGE_QUERY,
+            census.INBOX_REVALIDATE_QUERY,
+        ):
+            self.assertIn("author: $viewer", query)
+            self.assertIn("author { __typename login ... on User { id } }", query)
+            self.assertIn("allReviews: reviews { totalCount }", query)
+            self.assertIsNone(
+                re.search(r"\b(?:title|body|comments|diff|source)\b", query)
+            )
+
+    def test_incomplete_pull_request_or_review_pagination_fails_closed(self):
+        class FakeApi:
+            def __init__(self, response):
+                self.response = response
+                self.calls = 0
+                self.last_response_bytes = 0
+
+            def call(self, _query, _variables):
+                self.calls += 1
+                self.last_response_bytes = len(census.canonical_json(self.response))
+                return self.response
+
+            def acquisition(self):
+                return {
+                    "graphql_calls": self.calls,
+                    "minimum_rate_limit_remaining": 4999,
+                    "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+                }
+
+        incomplete_prs = self.repository(
+            pullRequests={
+                "totalCount": 2,
+                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                "nodes": [self.raw_pull_request(1, OID_B, [])],
+            }
+        )
+        with self.assertRaisesRegex(census.CensusError, "pagination incomplete"):
+            census.collect_inbox_pull_requests(
+                census.InboxResourceBudget(
+                    FakeApi(
+                        {
+                            "viewer": {"id": self.reviewer_node_id, "login": "alice"},
+                            "repository": incomplete_prs,
+                        }
+                    )
+                ),
+                "acme",
+                "widgets",
+                "ghe.example",
+                "R_1",
+                "alice",
+                self.reviewer_node_id,
+            )
+
+        incomplete_reviews = self.raw_pull_request(
+            1,
+            OID_B,
+            [
+                self.raw_review(
+                    "RVR_1", "1", "APPROVED", "2026-08-01T00:00:00Z", OID_A
+                )
+            ],
+            total_count=2,
+        )
+        normalized, connection = census.normalize_inbox_pull_request(
+            incomplete_reviews, "acme/widgets", "ghe.example"
+        )
+        with self.assertRaisesRegex(census.CensusError, "pagination incomplete"):
+            census.collect_inbox_reviews(
+                census.InboxResourceBudget(FakeApi({})),
+                "acme",
+                "widgets",
+                "ghe.example",
+                "R_1",
+                "alice",
+                self.reviewer_node_id,
+                normalized,
+                connection,
+            )
+
+    def test_candidate_head_change_during_revalidation_fails_closed(self):
+        review = self.raw_review(
+            "RVR_1", "1", "APPROVED", "2026-08-01T00:00:00Z", OID_A
+        )
+        initial = self.raw_pull_request(1, OID_B, [review])
+        changed = self.raw_pull_request(1, OID_C, [review])
+        viewer = {"id": self.reviewer_node_id, "login": "alice"}
+        responses = [
+            {
+                "viewer": viewer,
+                "repository": self.repository(pullRequests={"totalCount": 1}),
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(
+                    pullRequests={
+                        "totalCount": 1,
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": [initial],
+                    }
+                ),
+            },
+            {
+                "viewer": viewer,
+                "repository": self.repository(pullRequest=changed),
+            },
+        ]
+
+        class FakeApi:
+            def __init__(self, values):
+                self.values = values
+                self.calls = 0
+                self.last_response_bytes = 0
+
+            def call(self, _query, _variables):
+                self.calls += 1
+                value = self.values.pop(0)
+                self.last_response_bytes = len(census.canonical_json(value))
+                return value
+
+            def acquisition(self):
+                return {
+                    "graphql_calls": self.calls,
+                    "minimum_rate_limit_remaining": 4997,
+                    "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+                }
+
+        with self.assertRaisesRegex(census.CensusError, "changed while.*revalidated"):
+            census.collect_review_inbox(
+                FakeApi(responses), "acme/widgets", "ghe.example"
+            )
+
+    def test_viewer_node_id_change_at_final_context_fails_closed(self):
+        responses = [
+            {
+                "viewer": {"id": self.reviewer_node_id, "login": "alice"},
+                "repository": self.repository(pullRequests={"totalCount": 0}),
+            },
+            {
+                "viewer": {"id": self.reviewer_node_id, "login": "alice"},
+                "repository": self.repository(
+                    pullRequests={
+                        "totalCount": 0,
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": [],
+                    }
+                ),
+            },
+            {
+                "viewer": {"id": "U_different", "login": "alice"},
+                "repository": self.repository(pullRequests={"totalCount": 0}),
+            },
+        ]
+
+        class FakeApi:
+            def __init__(self, values):
+                self.values = values
+                self.calls = 0
+                self.last_response_bytes = 0
+
+            def call(self, _query, _variables):
+                self.calls += 1
+                value = self.values.pop(0)
+                self.last_response_bytes = len(census.canonical_json(value))
+                return value
+
+            def acquisition(self):
+                return {
+                    "graphql_calls": self.calls,
+                    "minimum_rate_limit_remaining": 4997,
+                    "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+                }
+
+        with self.assertRaisesRegex(census.CensusError, "viewer identity changed"):
+            census.collect_review_inbox(
+                FakeApi(responses), "acme/widgets", "ghe.example"
+            )
+
+    def test_global_inbox_resource_budgets_fail_closed(self):
+        class FakeApi:
+            def __init__(self, response_bytes=19):
+                self.calls = 0
+                self.response_bytes = response_bytes
+                self.last_response_bytes = 0
+
+            def call(self, _query, _variables):
+                self.calls += 1
+                self.last_response_bytes = self.response_bytes
+                return {"value": "bounded"}
+
+            def acquisition(self):
+                return {
+                    "graphql_calls": self.calls,
+                    "minimum_rate_limit_remaining": 4999,
+                    "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+                }
+
+        with mock.patch.object(census, "MAX_INBOX_GRAPHQL_CALLS", 1):
+            budget = census.InboxResourceBudget(FakeApi())
+            budget.call("query", {})
+            with self.assertRaisesRegex(census.CensusError, "1-call"):
+                budget.call("query", {})
+
+        with mock.patch.object(census, "MAX_INBOX_CAPTURED_NODES", 1):
+            budget = census.InboxResourceBudget(FakeApi())
+            with self.assertRaisesRegex(census.CensusError, "1-node"):
+                budget.consume_nodes(2)
+
+        with mock.patch.object(census, "MAX_INBOX_RESPONSE_BYTES", 1):
+            budget = census.InboxResourceBudget(FakeApi())
+            with self.assertRaisesRegex(census.CensusError, "1-byte"):
+                budget.call("query", {})
+
+        with mock.patch.object(census, "MAX_INBOX_RESPONSE_BYTES", 10):
+            budget = census.InboxResourceBudget(FakeApi(response_bytes=6))
+            budget.call("query", {})
+            with self.assertRaisesRegex(census.CensusError, "10-byte"):
+                budget.call("query", {})
+
+        with mock.patch.object(
+            census.time, "monotonic", side_effect=[0.0, 601.0]
+        ):
+            budget = census.InboxResourceBudget(FakeApi())
+            with self.assertRaisesRegex(census.CensusError, "600-second"):
+                budget.call("query", {})
+
+    def test_schema_and_checkpoint_ordering_fail_closed(self):
+        self.assertEqual(
+            census.validate_inbox_login("alice_example", "reviewer"),
+            "alice_example",
+        )
+        with self.assertRaisesRegex(census.CensusError, "accepted by Review Resume"):
+            census.validate_inbox_oid("a" * 64, "checkpoint")
+        missing_field = self.raw_pull_request(1, OID_A, [])
+        del missing_field["headRefOid"]
+        with self.assertRaisesRegex(census.CensusError, "missing=.*headRefOid"):
+            census.normalize_inbox_pull_request(
+                missing_field, "acme/widgets", "ghe.example"
+            )
+        closed = self.raw_pull_request(1, OID_A, [], state="CLOSED")
+        with self.assertRaisesRegex(census.CensusError, "non-open"):
+            census.normalize_inbox_pull_request(
+                closed, "acme/widgets", "ghe.example"
+            )
+        missing_database_id = self.raw_review(
+            "RVR_1", None, "APPROVED", "2026-08-01T00:00:00Z", OID_A
+        )
+        with self.assertRaisesRegex(census.CensusError, "must be present"):
+            census.normalize_inbox_review(
+                missing_database_id, "review", "alice", self.reviewer_node_id
+            )
+
+        wrong_reviewer = self.raw_review(
+            "RVR_2",
+            "2",
+            "APPROVED",
+            "2026-08-01T00:00:00Z",
+            OID_A,
+            reviewer="mallory",
+        )
+        with self.assertRaisesRegex(census.CensusError, "authenticated viewer"):
+            census.normalize_inbox_review(
+                wrong_reviewer, "review", "alice", self.reviewer_node_id
+            )
+
+        wrong_identity = self.raw_review(
+            "RVR_2",
+            "2",
+            "APPROVED",
+            "2026-08-01T00:00:00Z",
+            OID_A,
+            reviewer_node_id="U_different",
+        )
+        with self.assertRaisesRegex(census.CensusError, "author identity"):
+            census.normalize_inbox_review(
+                wrong_identity, "review", "alice", self.reviewer_node_id
+            )
+
+        bot_reviewer = self.raw_review(
+            "RVR_3",
+            "3",
+            "APPROVED",
+            "2026-08-01T00:00:00Z",
+            OID_A,
+            typename="Bot",
+        )
+        with self.assertRaisesRegex(census.CensusError, "GitHub User"):
+            census.normalize_inbox_review(
+                bot_reviewer, "review", "alice", self.reviewer_node_id
+            )
+
+    def test_markdown_contains_copyable_resume_and_unknown_warning(self):
+        report = self.build_report(
+            [
+                self.normalized_pull_request(
+                    7,
+                    "2026-09-03T00:00:00Z",
+                    OID_C,
+                    [
+                        self.normalized_review(
+                            "drift", 1, "APPROVED", "2026-08-01T00:00:00Z", OID_A
+                        )
+                    ],
+                ),
+                self.normalized_pull_request(
+                    8,
+                    "2026-09-04T00:00:00Z",
+                    OID_C,
+                    [
+                        self.normalized_review(
+                            "unknown", 2, "APPROVED", "2026-08-02T00:00:00Z", None
+                        )
+                    ],
+                ),
+            ]
+        )
+        rendered = census.render_review_inbox_markdown(report)
+        self.assertIn("# StrataDiff Review Inbox", rendered)
+        self.assertIn(
+            "gh stratadiff resume 7 -R ghe.example/acme/widgets --reviewer alice",
+            rendered,
+        )
+        self.assertIn("unknown, not evidence", rendered)
+        self.assertIn("Run Resume commands from a checkout", rendered)
+        self.assertNotIn("review-old", rendered)
+
+    def test_markdown_does_not_call_insufficient_evidence_up_to_date(self):
+        report = self.build_report(
+            [
+                self.normalized_pull_request(
+                    8,
+                    "2026-09-04T00:00:00Z",
+                    OID_C,
+                    [
+                        self.normalized_review(
+                            "unknown", 2, "APPROVED", "2026-08-02T00:00:00Z", None
+                        )
+                    ],
+                )
+            ]
+        )
+        rendered = census.render_review_inbox_markdown(report)
+        self.assertIn(
+            "The available evidence cannot establish that every review is current",
+            rendered,
+        )
+        self.assertNotIn("No exact review resume is currently required", rendered)
+
+    def test_public_metadata_seed_matches_product_classification(self):
+        oracle_path = (
+            Path(__file__).resolve().parents[2]
+            / "benchmarks"
+            / "review-inbox-v1"
+            / "oracle-v1.json"
+        )
+        oracle = json.loads(oracle_path.read_text(encoding="utf-8"))
+        for case in oracle["cases"]:
+            with self.subTest(case=case["id"]):
+                checkpoint = case["selected_checkpoint"]
+                reviews = [
+                    self.normalized_review(
+                        f"review-{case['number']}-checkpoint",
+                        int(checkpoint["database_id"]),
+                        checkpoint["state"],
+                        checkpoint["submitted_at"],
+                        checkpoint["oid"],
+                    )
+                ]
+                for index in range(case["later_non_completed_review_count"]):
+                    reviews.append(
+                        self.normalized_review(
+                            f"review-{case['number']}-comment-{index}",
+                            int(checkpoint["database_id"]) + index + 1,
+                            "COMMENTED",
+                            f"2026-09-05T00:00:{index:02d}Z",
+                            case["head_oid"],
+                        )
+                    )
+                pull_request = {
+                    "node_id": f"PR_{case['number']}",
+                    "number": case["number"],
+                    "url": case["url"],
+                    "is_draft": case["is_draft"],
+                    "updated_at": case["updated_at"],
+                    "head_oid": case["head_oid"],
+                    "total_review_count": len(reviews),
+                    "reviews": reviews,
+                }
+                report = census.build_review_inbox(
+                    case["repository"],
+                    "github.com",
+                    case["reviewer"],
+                    "U_oracle_reviewer",
+                    [pull_request],
+                    {
+                        "open_pull_request_pages": 1,
+                        "review_pages": 2,
+                        "open_pull_request_count": 1,
+                        "revalidated_review_prs": 1,
+                    },
+                    self.acquisition,
+                    {
+                        "graphql_call_limit": census.MAX_INBOX_GRAPHQL_CALLS,
+                        "captured_node_limit": census.MAX_INBOX_CAPTURED_NODES,
+                        "response_byte_limit": census.MAX_INBOX_RESPONSE_BYTES,
+                        "wall_time_seconds_limit": census.MAX_INBOX_WALL_TIME_SECONDS,
+                        "resume_review_limit": census.MAX_RESUME_GITHUB_REVIEWS,
+                        "captured_nodes": 1,
+                        "response_bytes": 1,
+                    },
+                    oracle["captured_at"],
+                    oracle["captured_at"],
+                )
+                self.assertEqual(report["summary"]["status"], case["expected"])
+                if case["expected"] == "actionable":
+                    self.assertEqual(
+                        report["actionable"][0]["checkpoint"]["oid"],
+                        checkpoint["oid"],
+                    )
+                else:
+                    self.assertEqual(report["actionable"], [])
+
+    def test_inbox_argument_defaults_validation_and_private_output(self):
+        arguments = census.parse_arguments(["inbox", "-R", "acme/widgets"])
+        self.assertEqual(arguments.repository, "acme/widgets")
+        self.assertEqual(arguments.hostname, "github.com")
+        self.assertEqual(arguments.format, "markdown")
+        for extra in (
+            ["-R", "three/part/name"],
+            ["-R", "acme/widgets", "--hostname", "https://github.com"],
+            ["-R", "acme/widgets", "--format", "yaml"],
+        ):
+            with self.subTest(extra=extra), mock.patch(
+                "sys.stderr", new=io.StringIO()
+            ):
+                with self.assertRaises(SystemExit) as raised:
+                    census.parse_arguments(["inbox", *extra])
+                self.assertEqual(raised.exception.code, 2)
+
+        report = self.build_report([])
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "inbox.json"
+            command_arguments = census.argparse.Namespace(
+                repository="acme/widgets",
+                hostname="ghe.example",
+                format="json",
+                output=output,
+                gh="custom-gh",
+            )
+            with mock.patch.object(
+                census, "collect_review_inbox", return_value=report
+            ) as collect:
+                census.command_inbox(command_arguments)
+            self.assertEqual(output.read_bytes(), census.canonical_json(report))
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(collect.call_args.args[0].executable, "custom-gh")
+            self.assertEqual(collect.call_args.args[0].hostname, "ghe.example")
+
+
 class AggregateTest(unittest.TestCase):
     def test_wilson_interval_contains_point_and_zero_is_undefined(self):
         observed = census.ratio(20, 100)
@@ -894,6 +1889,15 @@ class CaptureContractTest(unittest.TestCase):
 
 
 class GraphQLTest(unittest.TestCase):
+    @staticmethod
+    def completed_run(stdout_bytes, stderr_bytes=b"", returncode=0):
+        def run(arguments, **keywords):
+            keywords["stdout"].write(stdout_bytes)
+            keywords["stderr"].write(stderr_bytes)
+            return subprocess.CompletedProcess(arguments, returncode)
+
+        return run
+
     def test_graphql_uses_explicit_hostname_and_scrubs_debug_environment(self):
         response = {
             "data": {
@@ -905,12 +1909,13 @@ class GraphQLTest(unittest.TestCase):
                 },
             }
         }
-        completed = subprocess.CompletedProcess(
-            ["custom-gh"], 0, stdout=json.dumps(response).encode(), stderr=b""
-        )
         with mock.patch.dict(
             os.environ, {"GH_DEBUG": "api", "GH_TRACE": "1"}, clear=False
-        ), mock.patch.object(census.subprocess, "run", return_value=completed) as run:
+        ), mock.patch.object(
+            census.subprocess,
+            "run",
+            side_effect=self.completed_run(json.dumps(response).encode()),
+        ) as run:
             result = census.GithubGraphQL("custom-gh", "ghe.example").call(
                 "query { viewer { login } }", {}
             )
@@ -931,15 +1936,72 @@ class GraphQLTest(unittest.TestCase):
         self.assertNotIn("GH_DEBUG", keywords["env"])
         self.assertNotIn("GH_TRACE", keywords["env"])
         self.assertEqual(keywords["env"]["GH_PROMPT_DISABLED"], "1")
+        self.assertIsNot(keywords["stdout"], subprocess.PIPE)
+        self.assertIsNot(keywords["stderr"], subprocess.PIPE)
 
     def test_graphql_errors_are_not_hidden(self):
         response = {
             "data": {"rateLimit": {"cost": 1, "remaining": 99, "resetAt": "2026-09-05T00:00:00Z"}},
             "errors": [{"message": "boom"}],
         }
-        completed = subprocess.CompletedProcess(["gh"], 0, stdout=json.dumps(response).encode(), stderr=b"")
-        with mock.patch.object(census.subprocess, "run", return_value=completed):
+        with mock.patch.object(
+            census.subprocess,
+            "run",
+            side_effect=self.completed_run(json.dumps(response).encode()),
+        ):
             with self.assertRaisesRegex(census.CensusError, "boom"):
+                census.GithubGraphQL().call("query { viewer { login } }", {})
+
+    def test_inbox_budget_counts_the_raw_graphql_envelope(self):
+        response = {
+            "data": {
+                "rateLimit": {
+                    "cost": 1,
+                    "remaining": 99,
+                    "resetAt": "2026-09-05T00:00:00Z",
+                }
+            },
+            "ignoredEnvelopePadding": "x" * 1024,
+        }
+        response_bytes = json.dumps(response).encode()
+        api = census.GithubGraphQL()
+        with mock.patch.object(
+            census.subprocess,
+            "run",
+            side_effect=self.completed_run(response_bytes),
+        ), mock.patch.object(
+            census, "MAX_INBOX_RESPONSE_BYTES", len(response_bytes) - 1
+        ):
+            budget = census.InboxResourceBudget(api)
+            with self.assertRaisesRegex(census.CensusError, "response budget"):
+                budget.call("query { rateLimit { remaining } }", {})
+        self.assertEqual(api.last_response_bytes, len(response_bytes))
+
+    def test_graphql_transport_and_json_failures_are_clear(self):
+        with mock.patch.object(
+            census.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(["gh"], 120),
+        ):
+            with self.assertRaisesRegex(census.CensusError, "timed out after 120"):
+                census.GithubGraphQL().call("query { viewer { login } }", {})
+
+        with mock.patch.object(
+            census.subprocess,
+            "run",
+            side_effect=self.completed_run(b"not-json"),
+        ):
+            with self.assertRaisesRegex(census.CensusError, "invalid JSON"):
+                census.GithubGraphQL().call("query { viewer { login } }", {})
+
+        with mock.patch.object(
+            census, "MAX_GRAPHQL_RESPONSE_BYTES", 4
+        ), mock.patch.object(
+            census.subprocess,
+            "run",
+            side_effect=self.completed_run(b"12345"),
+        ):
+            with self.assertRaisesRegex(census.CensusError, "exceeds 4 bytes"):
                 census.GithubGraphQL().call("query { viewer { login } }", {})
 
     def test_atomic_write_leaves_canonical_complete_file(self):

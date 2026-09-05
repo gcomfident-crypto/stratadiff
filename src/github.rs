@@ -1,9 +1,11 @@
-use anyhow::{Context, Result, ensure};
+use std::cmp::Ordering;
+
+use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 pub const GITHUB_CHECKPOINT_SCHEMA: &str = "stratadiff-github-review-checkpoint-v1";
-pub const MAX_GITHUB_REVIEWS: usize = 100;
-pub const MAX_GITHUB_REVIEWS_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_GITHUB_REVIEWS: usize = 10_000;
+pub const MAX_GITHUB_REVIEWS_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_GITHUB_RESPONSE_HEADERS_BYTES: usize = 64 * 1024;
 pub const MAX_GITHUB_REVIEWS_INCLUDED_RESPONSE_BYTES: usize =
     MAX_GITHUB_RESPONSE_HEADERS_BYTES + MAX_GITHUB_REVIEWS_BYTES;
@@ -99,6 +101,11 @@ pub fn resolve_github_review_checkpoint_slurp_pages(
     review_pages_json: &[u8],
     reviewer: &str,
 ) -> Result<GithubCheckpointResolution> {
+    ensure!(
+        review_pages_json.len() <= MAX_GITHUB_REVIEWS_BYTES,
+        "GitHub pull request reviews bytes limit exceeded: observed {}, limit {MAX_GITHUB_REVIEWS_BYTES}",
+        review_pages_json.len()
+    );
     let pages: Vec<Vec<GithubReview>> = serde_json::from_slice(review_pages_json)
         .context("failed to decode gh api --paginate --slurp review pages")?;
     let mut reviews = Vec::new();
@@ -151,7 +158,10 @@ fn resolve_github_reviews(
             continue;
         }
         let NullableString::String(submitted_at) = review.submitted_at else {
-            continue;
+            bail!(
+                "GitHub completed review {} is missing its submitted_at timestamp",
+                review.id
+            );
         };
         ensure!(
             valid_github_timestamp(&submitted_at),
@@ -182,7 +192,9 @@ fn resolve_github_reviews(
             },
         ));
     }
-    eligible.sort_by(|left, right| (left.0.as_str(), left.1).cmp(&(right.0.as_str(), right.1)));
+    eligible.sort_by(|left, right| {
+        compare_github_timestamps(&left.0, &right.0).then_with(|| left.1.cmp(&right.1))
+    });
     let eligible_reviews = eligible.len();
     let checkpoint = eligible.pop().map(|(_, _, checkpoint)| checkpoint);
 
@@ -235,7 +247,7 @@ fn github_json_response_body(response: &[u8]) -> Result<&[u8]> {
         );
         ensure!(
             !name.eq_ignore_ascii_case(b"link"),
-            "GitHub review count limit exceeded: observed at least 101, limit {MAX_GITHUB_REVIEWS} (pagination Link header present)"
+            "GitHub review pagination is incomplete: Link header present; use gh api --paginate --slurp"
         );
         if name.eq_ignore_ascii_case(b"content-type") {
             ensure!(
@@ -372,16 +384,54 @@ fn is_sha1(value: &str) -> bool {
 
 fn valid_github_timestamp(value: &str) -> bool {
     let bytes = value.as_bytes();
-    bytes.len() == 20
-        && bytes[4] == b'-'
+    if bytes.len() < 20 {
+        return false;
+    }
+    let valid_base = bytes[4] == b'-'
         && bytes[7] == b'-'
         && bytes[10] == b'T'
         && bytes[13] == b':'
         && bytes[16] == b':'
-        && bytes[19] == b'Z'
-        && bytes.iter().enumerate().all(|(index, byte)| {
-            matches!(index, 4 | 7 | 10 | 13 | 16 | 19) || byte.is_ascii_digit()
+        && bytes[..19]
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| matches!(index, 4 | 7 | 10 | 13 | 16) || byte.is_ascii_digit());
+    if !valid_base {
+        return false;
+    }
+    if bytes.len() == 20 {
+        return bytes[19] == b'Z';
+    }
+    let fraction_digits = bytes.len() - 21;
+    (1..=9).contains(&fraction_digits)
+        && bytes[19] == b'.'
+        && bytes[bytes.len() - 1] == b'Z'
+        && bytes[20..bytes.len() - 1].iter().all(u8::is_ascii_digit)
+}
+
+fn compare_github_timestamps(left: &str, right: &str) -> Ordering {
+    let base = left[..19].cmp(&right[..19]);
+    if base != Ordering::Equal {
+        return base;
+    }
+    let left_fraction = if left.len() == 20 {
+        &[][..]
+    } else {
+        &left.as_bytes()[20..left.len() - 1]
+    };
+    let right_fraction = if right.len() == 20 {
+        &[][..]
+    } else {
+        &right.as_bytes()[20..right.len() - 1]
+    };
+    (0..9)
+        .map(|index| {
+            let left_digit = left_fraction.get(index).copied().unwrap_or(b'0');
+            let right_digit = right_fraction.get(index).copied().unwrap_or(b'0');
+            left_digit.cmp(&right_digit)
         })
+        .find(|ordering| *ordering != Ordering::Equal)
+        .unwrap_or(Ordering::Equal)
 }
 
 #[cfg(test)]
@@ -460,6 +510,35 @@ mod tests {
     }
 
     #[test]
+    fn fractional_timestamp_orders_the_same_second_before_the_id_tiebreaker() {
+        let reviews = br#"[
+          {
+            "id": 9,
+            "user": {"login": "reviewer", "type": "User"},
+            "state": "APPROVED",
+            "html_url": "https://github.example/review/9",
+            "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "submitted_at": "2026-09-04T17:10:09Z",
+            "author_association": "MEMBER"
+          },
+          {
+            "id": 1,
+            "user": {"login": "reviewer", "type": "User"},
+            "state": "CHANGES_REQUESTED",
+            "html_url": "https://github.example/review/1",
+            "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "submitted_at": "2026-09-04T17:10:09.000000001Z",
+            "author_association": "MEMBER"
+          }
+        ]"#;
+
+        let resolution = resolve_github_review_checkpoint(reviews, "reviewer").unwrap();
+        assert_eq!(resolution.checkpoint.unwrap().review_id, 1);
+        assert!(valid_github_timestamp("2026-09-04T17:10:09.123456789Z"));
+        assert!(!valid_github_timestamp("2026-09-04T17:10:09.1234567890Z"));
+    }
+
+    #[test]
     fn included_response_accepts_gh_mixed_line_endings_and_ignores_body_header_text() {
         let response = included_response(b"Etag: \"review-snapshot\"\r\n", INCLUDED_REVIEW_BODY);
         let resolution =
@@ -479,7 +558,9 @@ mod tests {
             let response = included_response(&headers, b"not json");
             let error = resolve_github_review_checkpoint_included_response(&response, "reviewer")
                 .unwrap_err();
-            assert!(error.to_string().contains("observed at least 101"));
+            assert!(error.to_string().contains("pagination is incomplete"));
+            assert!(error.to_string().contains("--paginate --slurp"));
+            assert!(!error.to_string().contains("count limit exceeded"));
         }
     }
 
@@ -521,6 +602,13 @@ mod tests {
         );
 
         let oversized_body = vec![b' '; MAX_GITHUB_REVIEWS_BYTES + 1];
+        let slurp_error =
+            resolve_github_review_checkpoint_slurp_pages(&oversized_body, "reviewer").unwrap_err();
+        assert!(
+            slurp_error
+                .to_string()
+                .contains("reviews bytes limit exceeded")
+        );
         let response = included_response(b"", &oversized_body);
         let body_error =
             resolve_github_review_checkpoint_included_response(&response, "reviewer").unwrap_err();
@@ -532,8 +620,8 @@ mod tests {
     }
 
     #[test]
-    fn included_response_accepts_exactly_one_hundred_reviews_without_a_link() {
-        let reviews = (1..=MAX_GITHUB_REVIEWS)
+    fn included_response_accepts_one_full_review_page_without_a_link() {
+        let reviews = (1..=100)
             .map(|id| {
                 format!(
                     r#"{{"id":{id},"user":{{"login":"reviewer","type":"User"}},"state":"APPROVED","html_url":"https://github.example/review/{id}","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}}"#
@@ -545,7 +633,7 @@ mod tests {
         let resolution =
             resolve_github_review_checkpoint_included_response(&response, "reviewer").unwrap();
 
-        assert_eq!(resolution.observed_reviews, MAX_GITHUB_REVIEWS);
+        assert_eq!(resolution.observed_reviews, 100);
     }
 
     #[test]
@@ -632,5 +720,32 @@ mod tests {
         assert_eq!(resolution.observed_reviews, 5);
         assert_eq!(resolution.eligible_reviews, 0);
         assert_eq!(resolution.checkpoint, None);
+    }
+
+    #[test]
+    fn matching_completed_review_without_a_timestamp_fails_closed() {
+        let reviews = br#"[
+          {
+            "id": 1,
+            "user": {"login": "reviewer", "type": "User"},
+            "state": "APPROVED",
+            "html_url": "https://github.example/review/1",
+            "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "submitted_at": "2026-09-04T17:10:09Z",
+            "author_association": "MEMBER"
+          },
+          {
+            "id": 2,
+            "user": {"login": "reviewer", "type": "User"},
+            "state": "CHANGES_REQUESTED",
+            "html_url": "https://github.example/review/2",
+            "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "submitted_at": null,
+            "author_association": "MEMBER"
+          }
+        ]"#;
+
+        let error = resolve_github_review_checkpoint(reviews, "reviewer").unwrap_err();
+        assert!(error.to_string().contains("missing its submitted_at"));
     }
 }

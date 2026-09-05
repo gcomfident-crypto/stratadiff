@@ -1,10 +1,11 @@
 # `gh stratadiff`
 
 This directory contains the first personal, repository-admin-free entry point for StrataDiff.
-It is a GitHub CLI script extension with three commands:
+It is a GitHub CLI script extension with four commands:
 
 ```console
 gh stratadiff audit -R OWNER/REPOSITORY
+gh stratadiff inbox -R OWNER/REPOSITORY
 gh stratadiff resume <PR>
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
 ```
@@ -14,6 +15,19 @@ checkpoints drifted from the final head. It is the no-checkout discovery path: w
 from any directory and does not invoke Git, materialize commits, or create temporary refs. The
 report distinguishes `no_eligible_reviews`, `insufficient_evidence`, `no_observed_drift`, and
 `affected` instead of treating incomplete review data as a clean result.
+
+`inbox` is the daily, reviewer-specific path. It finds open pull requests where the authenticated
+GitHub user completed a review and the current head differs from that exact checkpoint. Each
+actionable item carries the exact `gh stratadiff resume` invocation needed to continue. With `-R`,
+it also runs outside a Git checkout and does not invoke Git, materialize commits, or require a local
+`stratadiff` binary. It requests no source, diff, title, body, review text, comment text, or commit
+message; incomplete pagination and missing or inconsistent identities fail closed.
+The viewer and review authors are bound by immutable GitHub node ID as well as login. Every
+eligible candidate is fetched again before output, and total API calls, captured nodes, response
+bytes, and wall time are bounded. GitHub does not provide one atomic repository-wide snapshot, so
+changes to otherwise ineligible PRs during the recorded observation window may appear on the next
+run. The unfiltered PR review count is checked separately, so Inbox never emits a command that
+would exceed Resume's shared 10,000-review limit.
 
 `resume` finds the authenticated user's latest eligible completed review, binds it to the pull
 request's exact base and head commits, and opens the existing local Review Resume Workbench. If an
@@ -53,6 +67,18 @@ gh stratadiff audit -R HOST/OWNER/REPOSITORY \
 Omit `-R` to let `gh repo view` infer the repository from the current directory. Use
 `--end-exclusive RFC3339` to make the half-open audit window reproducible. Audit requires only
 Bash, Python 3, GitHub CLI, and authenticated read access to the selected repository.
+
+To inspect your current review-resume queue:
+
+```console
+gh stratadiff inbox -R OWNER/REPOSITORY
+gh stratadiff inbox -R HOST/OWNER/REPOSITORY \
+  --format json --output review-inbox.json
+```
+
+Omit `-R` to let `gh repo view` infer the repository. Like `audit`, `inbox` can run from a non-Git
+directory when the repository is explicit. The authenticated `gh` user defines whose completed
+reviews are examined.
 
 To collect the ownership input for a coverage Passport:
 
@@ -98,8 +124,8 @@ The extension deliberately performs the following sequence:
 
 1. Read the PR's exact base and head SHAs. For either missing object, verify the exact SHA through
    GitHub's commit API before fetching it from that repository's canonical HTTPS URL.
-2. Fetch one response containing at most the first 100 reviews. The status, headers, and JSON body
-   are parsed together; any pagination `Link` header fails closed before checkpoint selection.
+2. Fetch every review page with `gh api --paginate --slurp`. The resolver accepts at most 10,000
+   reviews and 32 MiB of page JSON; either limit fails closed before checkpoint selection.
 3. Resolve one checkpoint with `stratadiff github-checkpoint`.
 4. Ask GitHub for that exact checkpoint object and validate it with
    `stratadiff github-commit-object`; fetch the same exact SHA when it is absent locally.
@@ -119,9 +145,10 @@ The preliminary provider-commit checks and exact Git fetches currently rely on t
 and Git transport timeouts; the ownership collector's per-call, response-size, and total-window
 limits begin after that materialization step.
 
-The chosen checkpoint is the latest eligible review in the single GitHub response snapshot. A
-review submitted or dismissed after that response can make the snapshot stale; the command does
-not claim that review history remains unchanged while the local Workbench is open.
+The chosen checkpoint is the latest eligible review in the complete bounded, paginated GitHub
+response (up to 10,000 reviews and 32 MiB). A review submitted or dismissed after that response can
+make the snapshot stale; the command does not claim that review history remains unchanged while the
+local Workbench is open.
 
 The Workbench is review assistance, not a native approval: this command does not submit, restore,
 dismiss, or otherwise modify a GitHub review.
@@ -145,6 +172,14 @@ Audit:
 --end-exclusive RFC3339  Fixed UTC end of the half-open audit window
 ```
 
+Inbox:
+
+```text
+-R, --repo REPO          GitHub repository in [HOST/]OWNER/REPO form
+--format markdown|json   Report format; defaults to markdown
+--output PATH            Write the report to PATH instead of stdout
+```
+
 Resume:
 
 ```text
@@ -162,9 +197,9 @@ embedded credentials or explicit ports.
 
 ## Test
 
-The test suite uses only stubbed GitHub, Git, StrataDiff, and audit executables; it needs no token
-and makes no network request. It covers all three commands, including audit from a non-Git
-directory, host-qualified GHES operation, provider verification of a locally present base,
+The test suite uses only stubbed GitHub, Git, StrataDiff, and Python backend executables; it needs no
+token and makes no network request. It covers all four commands, including audit and inbox from a
+non-Git directory, host-qualified GHES operation, provider verification of a locally present base,
 exact-object recovery, output mode, and cleanup on failure:
 
 ```console
@@ -177,3 +212,5 @@ fetch-pack output and ref-collision failures, a PR head changing during resoluti
 eligible review, bounded single-response review retrieval, and the final Workbench environment
 allowlist. Audit-specific cases verify option forwarding, repository inference, backend status
 propagation, input validation, and the absence of Git or temporary-ref activity.
+Inbox-specific cases verify explicit and inferred repositories, backend output and status
+propagation, strict argument validation, and the same no-Git/no-StrataDiff boundary.

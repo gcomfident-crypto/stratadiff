@@ -1,0 +1,649 @@
+{
+  "api": {
+    "api_family": "GitHub REST",
+    "api_version": "2022-11-28",
+    "base_url": "https://api.github.com",
+    "pull_request_request": "GET /repos/{owner}/{repo}/pulls/{number}",
+    "review_request": "GET /repos/{owner}/{repo}/pulls/{number}/reviews?per_page=100 with Link pagination",
+    "reviewer_reduction": "Fetch every review page, then retain case-insensitive login matches and require one immutable User database ID"
+  },
+  "capture_completed_at": "2026-09-05T14:56:59Z",
+  "capture_started_at": "2026-09-05T14:56:48Z",
+  "cases": [
+    {
+      "id": "github-posthog-posthog-pr-95462-andrewm4894",
+      "pull_request": {
+        "draft": false,
+        "head_sha": "c209bc8884d9921f417b294e8e2b358aefc7f505",
+        "html_url": "https://github.com/PostHog/posthog/pull/95462",
+        "number": 95462,
+        "state": "open",
+        "updated_at": "2026-09-05T14:51:50Z"
+      },
+      "requested_reviewer": {
+        "database_id": 2178292,
+        "login": "andrewm4894",
+        "type": "User"
+      },
+      "review_observation": {
+        "endpoint_review_count": 75,
+        "matching_review_count": 44,
+        "pages_fetched": 1,
+        "reviews": [
+          {
+            "commit_id": "3c2ad3361a98cd34bcea07a8acba71144b9c86ca",
+            "id": 5118260778,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRJ2Kg",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-04T22:18:42Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118307733,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMtlQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:37Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118307844,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMuBA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:38Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118307997,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMunQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:39Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308082,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMu8g",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:41Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308201,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMvaQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:42Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308327,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMv5w",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:44Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308447,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMwXw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:45Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308546,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMwwg",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:47Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308659,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMxMw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:48Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308746,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMxig",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:49Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308832,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMx4A",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:50Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "cfcc0071c8f37f69d840937febc2e46f4d0b1354",
+            "id": 5118308932,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRMyRA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:28:52Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430248,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUMKA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:19Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430360,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUMmA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:20Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430461,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUM_Q",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:22Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430556,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUNXA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:23Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430650,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUNug",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:24Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430741,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUOFQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:26Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430817,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUOYQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:27Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118430927,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUOzw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:28Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431009,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUPIQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:30Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431086,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUPbg",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:31Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431170,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUPwg",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:32Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431243,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUQCw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:33Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431347,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUQcw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:35Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431419,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUQuw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:36Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431509,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRURFQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:37Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431618,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRURgg",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:39Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431700,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUR1A",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:40Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "62769bf3a4f3c7db6104bc7d1bfdaeefc37de218",
+            "id": 5118431787,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRUSKw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T22:53:42Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "fb869b82432bcef5637fa456e7b06b062f54855a",
+            "id": 5118533959,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRahRw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:12:11Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "fb869b82432bcef5637fa456e7b06b062f54855a",
+            "id": 5118534043,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRahmw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:12:12Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "fb869b82432bcef5637fa456e7b06b062f54855a",
+            "id": 5118534106,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRah2g",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:12:13Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "fb869b82432bcef5637fa456e7b06b062f54855a",
+            "id": 5118534195,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRaiMw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:12:15Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118542924,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbETA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:18Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543038,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbEvg",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:20Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543179,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbFSw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:22Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543256,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbFmA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:23Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543323,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbF2w",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:25Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543405,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbGLQ",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:26Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543532,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbGrA",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:28Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543622,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbHBg",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:29Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          },
+          {
+            "commit_id": "b3e9a5e10b102ef3a712deff3ddd591c3ab4c75b",
+            "id": 5118543715,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMRbHYw",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-04T23:14:31Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          }
+        ],
+        "terminal_page_observed": true
+      }
+    },
+    {
+      "id": "github-posthog-posthog-pr-93146-andrewm4894",
+      "pull_request": {
+        "draft": false,
+        "head_sha": "a082ff535976df52c41cf4a11bb4b88cd3fa2a94",
+        "html_url": "https://github.com/PostHog/posthog/pull/93146",
+        "number": 93146,
+        "state": "open",
+        "updated_at": "2026-09-05T13:07:03Z"
+      },
+      "requested_reviewer": {
+        "database_id": 2178292,
+        "login": "andrewm4894",
+        "type": "User"
+      },
+      "review_observation": {
+        "endpoint_review_count": 26,
+        "matching_review_count": 1,
+        "pages_fetched": 1,
+        "reviews": [
+          {
+            "commit_id": "2d9ca8a970604c110936ee10b790649db5f52f04",
+            "id": 5109736683,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMJBk6w",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-04T06:08:37Z",
+            "user": {
+              "database_id": 2178292,
+              "login": "andrewm4894",
+              "type": "User"
+            }
+          }
+        ],
+        "terminal_page_observed": true
+      }
+    },
+    {
+      "id": "github-posthog-posthog-pr-95295-sakce",
+      "pull_request": {
+        "draft": false,
+        "head_sha": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+        "html_url": "https://github.com/PostHog/posthog/pull/95295",
+        "number": 95295,
+        "state": "open",
+        "updated_at": "2026-09-05T11:38:36Z"
+      },
+      "requested_reviewer": {
+        "database_id": 49978945,
+        "login": "sakce",
+        "type": "User"
+      },
+      "review_observation": {
+        "endpoint_review_count": 3,
+        "matching_review_count": 1,
+        "pages_fetched": 1,
+        "reviews": [
+          {
+            "commit_id": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+            "id": 5121077003,
+            "node_id": "PRR_kwDODg-Tdc8AAAABMT1vCw",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-05T11:38:36Z",
+            "user": {
+              "database_id": 49978945,
+              "login": "sakce",
+              "type": "User"
+            }
+          }
+        ],
+        "terminal_page_observed": true
+      }
+    }
+  ],
+  "dataset_version": "1.1.0",
+  "privacy": {
+    "commit_messages_collected": false,
+    "diffs_or_patches_collected": false,
+    "pr_text_collected": false,
+    "review_text_collected": false,
+    "source_code_collected": false,
+    "tokens_collected": false
+  },
+  "repository": "PostHog/posthog",
+  "schema": "stratadiff-review-inbox-rest-observation-v1"
+}

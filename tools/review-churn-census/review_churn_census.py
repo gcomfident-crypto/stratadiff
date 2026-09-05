@@ -11,9 +11,11 @@ import math
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
+import time
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,9 +32,11 @@ CAPTURE_SCHEMA = "stratadiff-review-churn-census-capture-v1"
 MANIFEST_SCHEMA = "stratadiff-review-churn-census-manifest-v1"
 AGGREGATE_SCHEMA = "stratadiff-review-churn-census-aggregate-v1"
 AUDIT_SCHEMA = "stratadiff-review-memory-audit-v1"
+INBOX_SCHEMA = "stratadiff-review-inbox-v1"
 DATASET_VERSION = "1.0.0"
 TOOL_VERSION = "0.2.0"
 AUDIT_TOOL_VERSION = "1.0.0"
+INBOX_TOOL_VERSION = "1.0.0"
 
 SELECTION_ALGORITHM = "sha256_v1"
 SELECTION_ALGORITHM_VERSION = "1"
@@ -52,12 +56,24 @@ FROZEN_REPOSITORIES = (
 )
 MAX_JSON_BYTES = 128 * 1024 * 1024
 MAX_GRAPHQL_RESPONSE_BYTES = 32 * 1024 * 1024
+MAX_GRAPHQL_DIAGNOSTIC_BYTES = 1024 * 1024
 GRAPHQL_TIMEOUT_SECONDS = 120
 MAX_SEARCH_RESULTS_PER_SHARD = 1_000
 MAX_CONNECTION_PAGES = 100
+MAX_INBOX_CONNECTION_NODES = 10_000
+MAX_INBOX_GRAPHQL_CALLS = 1_000
+MAX_INBOX_CAPTURED_NODES = 100_000
+MAX_INBOX_RESPONSE_BYTES = 256 * 1024 * 1024
+MAX_INBOX_WALL_TIME_SECONDS = 10 * 60
+MAX_RESUME_GITHUB_REVIEWS = 10_000
 OID_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+INBOX_OID_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+INBOX_LOGIN_PATTERN = re.compile(
+    r"^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$"
+)
+INBOX_NODE_ID_PATTERN = re.compile(r"^[!-~]{1,256}$")
 TIMESTAMP_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$"
 )
 REPOSITORY_COMPONENT_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
 
@@ -717,6 +733,111 @@ query ReviewChurnTimeline($owner: String!, $name: String!, $number: Int!, $curso
 }
 """
 
+INBOX_CONTEXT_QUERY = """
+query ReviewInboxContext($owner: String!, $name: String!) {
+  viewer { id login }
+  repository(owner: $owner, name: $name) {
+    id nameWithOwner url
+    pullRequests(states: [OPEN]) { totalCount }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+INBOX_PULL_REQUESTS_QUERY = """
+query ReviewInboxPullRequests(
+  $owner: String!
+  $name: String!
+  $viewer: String!
+  $cursor: String
+) {
+  viewer { id login }
+  repository(owner: $owner, name: $name) {
+    id nameWithOwner url
+    pullRequests(
+      states: [OPEN]
+      first: 100
+      after: $cursor
+      orderBy: {field: CREATED_AT, direction: DESC}
+    ) {
+      totalCount
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id number state url isDraft updatedAt headRefOid
+        allReviews: reviews { totalCount }
+        reviews(first: 100, author: $viewer) {
+          totalCount
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id fullDatabaseId state submittedAt
+            author { __typename login ... on User { id } }
+            commit { oid }
+          }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+INBOX_REVIEWS_PAGE_QUERY = """
+query ReviewInboxReviews(
+  $owner: String!
+  $name: String!
+  $number: Int!
+  $viewer: String!
+  $cursor: String!
+) {
+  viewer { id login }
+  repository(owner: $owner, name: $name) {
+    id nameWithOwner url
+    pullRequest(number: $number) {
+      id number state headRefOid
+      allReviews: reviews { totalCount }
+      reviews(first: 100, after: $cursor, author: $viewer) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id fullDatabaseId state submittedAt
+          author { __typename login ... on User { id } }
+          commit { oid }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
+INBOX_REVALIDATE_QUERY = """
+query ReviewInboxRevalidate(
+  $owner: String!
+  $name: String!
+  $number: Int!
+  $viewer: String!
+) {
+  viewer { id login }
+  repository(owner: $owner, name: $name) {
+    id nameWithOwner url
+    pullRequest(number: $number) {
+      id number state url isDraft updatedAt headRefOid
+      allReviews: reviews { totalCount }
+      reviews(first: 100, author: $viewer) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id fullDatabaseId state submittedAt
+          author { __typename login ... on User { id } }
+          commit { oid }
+        }
+      }
+    }
+  }
+  rateLimit { cost remaining resetAt }
+}
+"""
+
 
 class GithubGraphQL:
     def __init__(self, executable: str = "gh", hostname: str = "github.com") -> None:
@@ -725,6 +846,7 @@ class GithubGraphQL:
         self.calls = 0
         self.minimum_remaining: int | None = None
         self.last_reset_at: str | None = None
+        self.last_response_bytes = 0
 
     def call(self, query: str, variables: dict[str, object]) -> dict[str, object]:
         request = canonical_json({"query": query, "variables": variables})
@@ -736,36 +858,56 @@ class GithubGraphQL:
         environment["PAGER"] = "cat"
         environment["NO_COLOR"] = "1"
         environment["LC_ALL"] = "C"
-        result = subprocess.run(
-            [
-                self.executable,
-                "api",
-                "--hostname",
-                self.hostname,
-                "graphql",
-                "--input",
-                "-",
-            ],
-            input=request,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=False,
-            timeout=GRAPHQL_TIMEOUT_SECONDS,
-            env=environment,
-        )
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            try:
+                result = subprocess.run(
+                    [
+                        self.executable,
+                        "api",
+                        "--hostname",
+                        self.hostname,
+                        "graphql",
+                        "--input",
+                        "-",
+                    ],
+                    input=request,
+                    stdout=stdout,
+                    stderr=stderr,
+                    check=False,
+                    timeout=GRAPHQL_TIMEOUT_SECONDS,
+                    env=environment,
+                )
+            except subprocess.TimeoutExpired as error:
+                raise CensusError(
+                    f"gh api graphql timed out after {GRAPHQL_TIMEOUT_SECONDS} seconds"
+                ) from error
+            stdout_bytes = stdout.tell()
+            stderr_bytes = stderr.tell()
+            require(
+                stdout_bytes <= MAX_GRAPHQL_RESPONSE_BYTES,
+                f"GraphQL response exceeds {MAX_GRAPHQL_RESPONSE_BYTES} bytes",
+            )
+            require(
+                stderr_bytes <= MAX_GRAPHQL_DIAGNOSTIC_BYTES,
+                f"gh api graphql diagnostic exceeds {MAX_GRAPHQL_DIAGNOSTIC_BYTES} bytes",
+            )
+            stdout.seek(0)
+            stderr.seek(0)
+            response = stdout.read()
+            diagnostic_bytes = stderr.read()
+        self.last_response_bytes = stdout_bytes
         self.calls += 1
         if result.returncode != 0:
-            diagnostic = result.stderr.decode("utf-8", errors="replace").strip()
+            diagnostic = diagnostic_bytes.decode("utf-8", errors="replace").strip()
             if not diagnostic:
-                diagnostic = result.stdout.decode("utf-8", errors="replace").strip()
+                diagnostic = response.decode("utf-8", errors="replace").strip()
             raise CensusError(
                 f"gh api graphql failed with exit status {result.returncode}: {diagnostic}"
             )
-        require(
-            len(result.stdout) <= MAX_GRAPHQL_RESPONSE_BYTES,
-            f"GraphQL response exceeds {MAX_GRAPHQL_RESPONSE_BYTES} bytes",
-        )
-        envelope = json.loads(result.stdout, object_pairs_hook=unique_json_object)
+        try:
+            envelope = json.loads(response, object_pairs_hook=unique_json_object)
+        except json.JSONDecodeError as error:
+            raise CensusError("GitHub GraphQL returned invalid JSON") from error
         envelope_object = require_object(envelope, "GraphQL response")
         if "errors" in envelope_object:
             raise CensusError(
@@ -789,6 +931,1158 @@ class GithubGraphQL:
             "minimum_rate_limit_remaining": self.minimum_remaining,
             "last_rate_limit_reset_at": self.last_reset_at,
         }
+
+
+class InboxResourceBudget:
+    def __init__(self, api: object) -> None:
+        self.api = api
+        self.started = time.monotonic()
+        self.calls = 0
+        self.captured_nodes = 0
+        self.response_bytes = 0
+
+    def check_time(self) -> None:
+        elapsed = time.monotonic() - self.started
+        require(
+            elapsed <= MAX_INBOX_WALL_TIME_SECONDS,
+            f"review inbox exceeded its {MAX_INBOX_WALL_TIME_SECONDS}-second wall-time budget",
+        )
+
+    def call(self, query: str, variables: dict[str, object]) -> dict[str, object]:
+        self.check_time()
+        require(
+            self.calls < MAX_INBOX_GRAPHQL_CALLS,
+            f"review inbox exceeds its {MAX_INBOX_GRAPHQL_CALLS}-call GraphQL budget",
+        )
+        data = self.api.call(query, variables)
+        self.calls += 1
+        response_bytes = require_int(
+            self.api.last_response_bytes, "GraphQL transport response bytes"
+        )
+        require(response_bytes >= 0, "GraphQL transport response bytes must be nonnegative")
+        self.response_bytes += response_bytes
+        require(
+            self.response_bytes <= MAX_INBOX_RESPONSE_BYTES,
+            f"review inbox exceeds its {MAX_INBOX_RESPONSE_BYTES}-byte response budget",
+        )
+        self.check_time()
+        return data
+
+    def consume_nodes(self, count: int) -> None:
+        require(count >= 0, "review inbox captured node count must be nonnegative")
+        self.captured_nodes += count
+        require(
+            self.captured_nodes <= MAX_INBOX_CAPTURED_NODES,
+            f"review inbox exceeds its {MAX_INBOX_CAPTURED_NODES}-node capture budget",
+        )
+
+    def acquisition(self) -> dict[str, object]:
+        acquisition = validate_acquisition(
+            self.api.acquisition(), "review inbox acquisition"
+        )
+        require(
+            acquisition["graphql_calls"] == self.calls,
+            "review inbox GraphQL call accounting differs from the transport",
+        )
+        return acquisition
+
+    def limits(self) -> dict[str, int]:
+        return {
+            "graphql_call_limit": MAX_INBOX_GRAPHQL_CALLS,
+            "captured_node_limit": MAX_INBOX_CAPTURED_NODES,
+            "response_byte_limit": MAX_INBOX_RESPONSE_BYTES,
+            "wall_time_seconds_limit": MAX_INBOX_WALL_TIME_SECONDS,
+            "resume_review_limit": MAX_RESUME_GITHUB_REVIEWS,
+            "captured_nodes": self.captured_nodes,
+            "response_bytes": self.response_bytes,
+        }
+
+
+def validate_inbox_repository_identity(
+    value: object,
+    expected_repository: str,
+    hostname: str,
+    label: str,
+) -> tuple[str, str, str]:
+    repository = require_object(value, label)
+    node_id = validate_inbox_node_id(repository["id"], f"{label}.id")
+    name_with_owner = require_string(
+        repository["nameWithOwner"], f"{label}.nameWithOwner"
+    )
+    require(
+        name_with_owner.casefold() == expected_repository.casefold(),
+        f"{label} differs from requested repository {expected_repository}",
+    )
+    url = require_string(repository["url"], f"{label}.url")
+    require(
+        url == f"https://{hostname}/{name_with_owner}",
+        f"{label}.url is not the canonical repository URL",
+    )
+    return node_id, name_with_owner, url
+
+
+def validate_inbox_login(value: object, label: str) -> str:
+    login = require_string(value, label)
+    require(
+        INBOX_LOGIN_PATTERN.fullmatch(login) is not None,
+        f"{label} is not a canonical GitHub login",
+    )
+    return login
+
+
+def validate_inbox_node_id(value: object, label: str) -> str:
+    node_id = require_string(value, label)
+    require(
+        INBOX_NODE_ID_PATTERN.fullmatch(node_id) is not None,
+        f"{label} is not a bounded GitHub node ID",
+    )
+    return node_id
+
+
+def validate_inbox_viewer(
+    value: object,
+    *,
+    expected_login: str | None = None,
+    expected_node_id: str | None = None,
+) -> tuple[str, str]:
+    viewer = require_object(value, "authenticated viewer")
+    require_exact_keys(viewer, {"id", "login"}, "authenticated viewer")
+    login = validate_inbox_login(viewer["login"], "authenticated viewer.login")
+    node_id = validate_inbox_node_id(viewer["id"], "authenticated viewer.id")
+    if expected_login is not None:
+        require(
+            login.casefold() == expected_login.casefold(),
+            "authenticated viewer login changed while collecting the review inbox",
+        )
+    if expected_node_id is not None:
+        require(
+            node_id == expected_node_id,
+            "authenticated viewer identity changed while collecting the review inbox",
+        )
+    return login, node_id
+
+
+def validate_inbox_oid(
+    value: object, label: str, *, nullable: bool = False
+) -> str | None:
+    if nullable and value is None:
+        return None
+    oid = require_string(value, label)
+    require(
+        INBOX_OID_PATTERN.fullmatch(oid) is not None,
+        f"{label} must be a lowercase SHA-1 object ID accepted by Review Resume",
+    )
+    return oid
+
+
+def inbox_database_id(value: object, label: str, *, required: bool) -> int | None:
+    if value is None:
+        require(not required, f"{label} must be present for a completed review")
+        return None
+    if type(value) is int:
+        require(value > 0, f"{label} must be positive")
+        return value
+    text = require_string(value, label)
+    require(
+        text.isascii() and text.isdecimal() and not text.startswith("0"),
+        f"{label} must be a positive canonical decimal",
+    )
+    return int(text)
+
+
+def normalize_inbox_review(
+    value: object,
+    label: str,
+    expected_reviewer: str,
+    expected_reviewer_node_id: str,
+) -> dict[str, object]:
+    review = require_object(value, label)
+    require_exact_keys(
+        review,
+        {"id", "fullDatabaseId", "state", "submittedAt", "author", "commit"},
+        label,
+    )
+    author = require_object(review["author"], f"{label}.author")
+    require_exact_keys(author, {"__typename", "id", "login"}, f"{label}.author")
+    require(author["__typename"] == "User", f"{label}.author must be a GitHub User")
+    author_login = validate_inbox_login(author["login"], f"{label}.author.login")
+    author_node_id = validate_inbox_node_id(author["id"], f"{label}.author.id")
+    require(
+        author_login.casefold() == expected_reviewer.casefold(),
+        f"{label}.author differs from the authenticated viewer",
+    )
+    require(
+        author_node_id == expected_reviewer_node_id,
+        f"{label}.author identity differs from the authenticated viewer",
+    )
+    node_id = validate_inbox_node_id(review["id"], f"{label}.id")
+    state = require_string(review["state"], f"{label}.state")
+    require(state in REVIEW_STATES, f"{label}.state is unsupported: {state}")
+    completed = state in FORMAL_STATES
+    submitted_at = review["submittedAt"]
+    if completed:
+        parse_utc_timestamp(submitted_at, f"{label}.submittedAt")
+    else:
+        require(
+            submitted_at is None or isinstance(submitted_at, str),
+            f"{label}.submittedAt must be a string or null",
+        )
+        if submitted_at is not None:
+            parse_utc_timestamp(submitted_at, f"{label}.submittedAt")
+    database_id = inbox_database_id(
+        review["fullDatabaseId"], f"{label}.fullDatabaseId", required=completed
+    )
+    commit_value = review["commit"]
+    if commit_value is None:
+        commit_oid = None
+    else:
+        commit = require_object(commit_value, f"{label}.commit")
+        require_exact_keys(commit, {"oid"}, f"{label}.commit")
+        commit_oid = validate_inbox_oid(commit["oid"], f"{label}.commit.oid")
+    return {
+        "node_id": node_id,
+        "database_id": database_id,
+        "state": state,
+        "submitted_at": submitted_at,
+        "commit_oid": commit_oid,
+    }
+
+
+def inbox_review_sort_key(review: dict[str, object]) -> tuple[str, str, int]:
+    require(review["state"] in FORMAL_STATES, "inbox checkpoint is not a completed review")
+    submitted_at = require_string(
+        review["submitted_at"], "inbox checkpoint submitted_at"
+    )
+    parse_utc_timestamp(submitted_at, "inbox checkpoint submitted_at")
+    fraction = "" if submitted_at[19] == "Z" else submitted_at[20:-1]
+    database_id = require_int(
+        review["database_id"], "inbox checkpoint database_id", 1
+    )
+    return submitted_at[:19], fraction.ljust(9, "0"), database_id
+
+
+def latest_inbox_checkpoint(
+    reviews: list[dict[str, object]],
+) -> dict[str, object] | None:
+    eligible = [review for review in reviews if review["state"] in FORMAL_STATES]
+    if not eligible:
+        return None
+    return max(eligible, key=inbox_review_sort_key)
+
+
+def normalize_inbox_pull_request(
+    value: object,
+    expected_repository: str,
+    hostname: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    pull_request = require_object(value, "inbox pull request")
+    require_exact_keys(
+        pull_request,
+        {
+            "id",
+            "number",
+            "state",
+            "url",
+            "isDraft",
+            "updatedAt",
+            "headRefOid",
+            "allReviews",
+            "reviews",
+        },
+        "inbox pull request",
+    )
+    number = require_int(pull_request["number"], "inbox pull request.number", 1)
+    require(
+        pull_request["state"] == "OPEN",
+        f"inbox query returned non-open pull request #{number}",
+    )
+    url = require_string(pull_request["url"], f"pull request #{number}.url")
+    require(
+        url == f"https://{hostname}/{expected_repository}/pull/{number}",
+        f"pull request #{number}.url is not canonical",
+    )
+    updated_at = require_string(
+        pull_request["updatedAt"], f"pull request #{number}.updatedAt"
+    )
+    parse_utc_timestamp(updated_at, f"pull request #{number}.updatedAt")
+    all_reviews = require_object(
+        pull_request["allReviews"], f"pull request #{number}.allReviews"
+    )
+    require_exact_keys(
+        all_reviews, {"totalCount"}, f"pull request #{number}.allReviews"
+    )
+    total_review_count = require_int(
+        all_reviews["totalCount"], f"pull request #{number}.allReviews.totalCount"
+    )
+    normalized = {
+        "node_id": validate_inbox_node_id(
+            pull_request["id"], f"pull request #{number}.id"
+        ),
+        "number": number,
+        "url": url,
+        "is_draft": require_bool(
+            pull_request["isDraft"], f"pull request #{number}.isDraft"
+        ),
+        "updated_at": updated_at,
+        "head_oid": validate_inbox_oid(
+            pull_request["headRefOid"],
+            f"pull request #{number}.headRefOid",
+            nullable=True,
+        ),
+        "total_review_count": total_review_count,
+    }
+    return normalized, require_object(
+        pull_request["reviews"], f"pull request #{number}.reviews"
+    )
+
+
+def collect_inbox_reviews(
+    api: InboxResourceBudget,
+    owner: str,
+    name: str,
+    hostname: str,
+    repository_node_id: str,
+    reviewer: str,
+    reviewer_node_id: str,
+    pull_request: dict[str, object],
+    initial: dict[str, object],
+) -> tuple[list[dict[str, object]], int]:
+    number = require_int(pull_request["number"], "inbox pull request.number", 1)
+    expected_repository = f"{owner}/{name}"
+    connection = initial
+    require_exact_keys(
+        connection, {"totalCount", "pageInfo", "nodes"}, f"PR #{number} reviews"
+    )
+    total_count = require_int(
+        connection["totalCount"], f"PR #{number} reviews.totalCount"
+    )
+    require(
+        total_count <= MAX_INBOX_CONNECTION_NODES,
+        f"PR #{number} reviews exceed {MAX_INBOX_CONNECTION_NODES} nodes",
+    )
+    raw_reviews = list(
+        require_array(connection["nodes"], f"PR #{number} reviews.nodes")
+    )
+    require(len(raw_reviews) <= 100, f"PR #{number} reviews page exceeds 100 nodes")
+    api.consume_nodes(len(raw_reviews))
+    page_info = require_object(
+        connection["pageInfo"], f"PR #{number} reviews.pageInfo"
+    )
+    require_exact_keys(
+        page_info,
+        {"hasNextPage", "endCursor"},
+        f"PR #{number} reviews.pageInfo",
+    )
+    pages = 1
+    cursor: str | None = None
+    while require_bool(
+        page_info["hasNextPage"], f"PR #{number} reviews.pageInfo.hasNextPage"
+    ):
+        cursor = require_string(
+            page_info["endCursor"], f"PR #{number} reviews.pageInfo.endCursor"
+        )
+        data = api.call(
+            INBOX_REVIEWS_PAGE_QUERY,
+            {
+                "owner": owner,
+                "name": name,
+                "number": number,
+                "viewer": reviewer,
+                "cursor": cursor,
+            },
+        )
+        require("viewer" in data, "inbox review page omitted authenticated viewer")
+        validate_inbox_viewer(
+            data["viewer"],
+            expected_login=reviewer,
+            expected_node_id=reviewer_node_id,
+        )
+        require("repository" in data, "inbox review page omitted repository")
+        repository = require_object(data["repository"], expected_repository)
+        require_exact_keys(
+            repository,
+            {"id", "nameWithOwner", "url", "pullRequest"},
+            expected_repository,
+        )
+        observed_node_id, _, _ = validate_inbox_repository_identity(
+            repository, expected_repository, hostname, expected_repository
+        )
+        require(
+            observed_node_id == repository_node_id,
+            "repository identity changed while paginating inbox reviews",
+        )
+        raw_pull_request = require_object(
+            repository["pullRequest"], f"{expected_repository}#{number}"
+        )
+        require_exact_keys(
+            raw_pull_request,
+            {"id", "number", "state", "headRefOid", "allReviews", "reviews"},
+            f"{expected_repository}#{number}",
+        )
+        observed_pull_request_id = require_string(
+            raw_pull_request["id"], f"{expected_repository}#{number}.id"
+        )
+        observed_number = require_int(
+            raw_pull_request["number"],
+            f"{expected_repository}#{number}.number",
+            1,
+        )
+        require(
+            observed_pull_request_id == pull_request["node_id"]
+            and observed_number == number,
+            f"pull request identity changed while paginating #{number} reviews",
+        )
+        require(
+            raw_pull_request["state"] == "OPEN",
+            f"pull request #{number} closed while its reviews were paginated",
+        )
+        observed_head = validate_inbox_oid(
+            raw_pull_request["headRefOid"],
+            f"pull request #{number}.headRefOid",
+            nullable=True,
+        )
+        require(
+            observed_head == pull_request["head_oid"],
+            f"pull request #{number} head changed while its reviews were paginated",
+        )
+        all_reviews = require_object(
+            raw_pull_request["allReviews"], f"pull request #{number}.allReviews"
+        )
+        require_exact_keys(
+            all_reviews, {"totalCount"}, f"pull request #{number}.allReviews"
+        )
+        observed_total_review_count = require_int(
+            all_reviews["totalCount"],
+            f"pull request #{number}.allReviews.totalCount",
+        )
+        require(
+            observed_total_review_count == pull_request["total_review_count"],
+            f"pull request #{number} total review count changed while its reviews were paginated",
+        )
+        connection = require_object(
+            raw_pull_request["reviews"], f"PR #{number} reviews"
+        )
+        require_exact_keys(
+            connection,
+            {"totalCount", "pageInfo", "nodes"},
+            f"PR #{number} reviews",
+        )
+        observed_total_count = require_int(
+            connection["totalCount"], f"PR #{number} reviews.totalCount"
+        )
+        require(
+            observed_total_count == total_count,
+            f"PR #{number} reviews.totalCount changed while paginating",
+        )
+        page_nodes = require_array(connection["nodes"], f"PR #{number} reviews.nodes")
+        require(len(page_nodes) <= 100, f"PR #{number} reviews page exceeds 100 nodes")
+        api.consume_nodes(len(page_nodes))
+        raw_reviews.extend(page_nodes)
+        next_page_info = require_object(
+            connection["pageInfo"], f"PR #{number} reviews.pageInfo"
+        )
+        require_exact_keys(
+            next_page_info,
+            {"hasNextPage", "endCursor"},
+            f"PR #{number} reviews.pageInfo",
+        )
+        if require_bool(
+            next_page_info["hasNextPage"],
+            f"PR #{number} reviews.pageInfo.hasNextPage",
+        ):
+            next_cursor = require_string(
+                next_page_info["endCursor"],
+                f"PR #{number} reviews.pageInfo.endCursor",
+            )
+            require(
+                next_cursor != cursor,
+                f"PR #{number} reviews pagination cursor did not advance",
+            )
+        page_info = next_page_info
+        pages += 1
+        require(
+            pages <= MAX_CONNECTION_PAGES,
+            f"PR #{number} reviews exceed {MAX_CONNECTION_PAGES} pages",
+        )
+    require(
+        len(raw_reviews) == total_count,
+        f"PR #{number} reviews pagination incomplete: expected {total_count}, captured {len(raw_reviews)}",
+    )
+    reviews = [
+        normalize_inbox_review(
+            value,
+            f"PR #{number} reviews[{index}]",
+            reviewer,
+            reviewer_node_id,
+        )
+        for index, value in enumerate(raw_reviews)
+    ]
+    node_ids = [str(review["node_id"]) for review in reviews]
+    require(
+        len(node_ids) == len(set(node_ids)),
+        f"PR #{number} reviews contain duplicate nodes",
+    )
+    completed_database_ids = [
+        int(review["database_id"])
+        for review in reviews
+        if review["state"] in FORMAL_STATES
+    ]
+    require(
+        len(completed_database_ids) == len(set(completed_database_ids)),
+        f"PR #{number} completed reviews contain duplicate database IDs",
+    )
+    return reviews, pages
+
+
+def collect_inbox_pull_requests(
+    api: InboxResourceBudget,
+    owner: str,
+    name: str,
+    hostname: str,
+    repository_node_id: str,
+    reviewer: str,
+    reviewer_node_id: str,
+) -> tuple[list[dict[str, object]], dict[str, int]]:
+    expected_repository = f"{owner}/{name}"
+    pull_requests: list[dict[str, object]] = []
+    total_count: int | None = None
+    cursor: str | None = None
+    pages = 0
+    review_pages = 0
+    while True:
+        data = api.call(
+            INBOX_PULL_REQUESTS_QUERY,
+            {
+                "owner": owner,
+                "name": name,
+                "viewer": reviewer,
+                "cursor": cursor,
+            },
+        )
+        require("viewer" in data, "inbox pull request page omitted authenticated viewer")
+        validate_inbox_viewer(
+            data["viewer"],
+            expected_login=reviewer,
+            expected_node_id=reviewer_node_id,
+        )
+        require("repository" in data, "inbox pull request page omitted repository")
+        repository = require_object(data["repository"], expected_repository)
+        require_exact_keys(
+            repository,
+            {"id", "nameWithOwner", "url", "pullRequests"},
+            expected_repository,
+        )
+        observed_node_id, _, _ = validate_inbox_repository_identity(
+            repository, expected_repository, hostname, expected_repository
+        )
+        require(
+            observed_node_id == repository_node_id,
+            "repository identity changed while paginating open pull requests",
+        )
+        connection = require_object(
+            repository["pullRequests"], "open pull requests"
+        )
+        require_exact_keys(
+            connection,
+            {"totalCount", "pageInfo", "nodes"},
+            "open pull requests",
+        )
+        observed_total = require_int(
+            connection["totalCount"], "open pull requests.totalCount"
+        )
+        require(
+            observed_total <= MAX_INBOX_CONNECTION_NODES,
+            f"open pull requests exceed {MAX_INBOX_CONNECTION_NODES} nodes",
+        )
+        if total_count is None:
+            total_count = observed_total
+        else:
+            require(
+                observed_total == total_count,
+                "open pull request totalCount changed while paginating",
+            )
+        raw_nodes = require_array(
+            connection["nodes"], "open pull requests.nodes"
+        )
+        require(len(raw_nodes) <= 100, "open pull request page exceeds 100 nodes")
+        api.consume_nodes(len(raw_nodes))
+        for raw_pull_request in raw_nodes:
+            pull_request, reviews_connection = normalize_inbox_pull_request(
+                raw_pull_request, expected_repository, hostname
+            )
+            reviews, captured_pages = collect_inbox_reviews(
+                api,
+                owner,
+                name,
+                hostname,
+                repository_node_id,
+                reviewer,
+                reviewer_node_id,
+                pull_request,
+                reviews_connection,
+            )
+            pull_request["reviews"] = reviews
+            pull_requests.append(pull_request)
+            review_pages += captured_pages
+        page_info = require_object(
+            connection["pageInfo"], "open pull requests.pageInfo"
+        )
+        require_exact_keys(
+            page_info,
+            {"hasNextPage", "endCursor"},
+            "open pull requests.pageInfo",
+        )
+        pages += 1
+        require(
+            pages <= MAX_CONNECTION_PAGES,
+            f"open pull requests exceed {MAX_CONNECTION_PAGES} pages",
+        )
+        if not require_bool(
+            page_info["hasNextPage"], "open pull requests.pageInfo.hasNextPage"
+        ):
+            break
+        next_cursor = require_string(
+            page_info["endCursor"], "open pull requests.pageInfo.endCursor"
+        )
+        require(
+            next_cursor != cursor,
+            "open pull request pagination cursor did not advance",
+        )
+        cursor = next_cursor
+    require(total_count is not None, "open pull request count was not observed")
+    require(
+        len(pull_requests) == total_count,
+        f"open pull request pagination incomplete: expected {total_count}, captured {len(pull_requests)}",
+    )
+    node_ids = [str(pull_request["node_id"]) for pull_request in pull_requests]
+    numbers = [int(pull_request["number"]) for pull_request in pull_requests]
+    require(
+        len(node_ids) == len(set(node_ids)) and len(numbers) == len(set(numbers)),
+        "open pull request pagination contains duplicates",
+    )
+    return pull_requests, {
+        "open_pull_request_pages": pages,
+        "review_pages": review_pages,
+        "open_pull_request_count": total_count,
+    }
+
+
+def revalidate_inbox_candidates(
+    api: InboxResourceBudget,
+    owner: str,
+    name: str,
+    hostname: str,
+    repository_node_id: str,
+    reviewer: str,
+    reviewer_node_id: str,
+    pull_requests: list[dict[str, object]],
+) -> tuple[int, int]:
+    expected_repository = f"{owner}/{name}"
+    revalidated = 0
+    review_pages = 0
+    for pull_request in pull_requests:
+        reviews = [
+            require_object(review, "inbox review")
+            for review in require_array(
+                pull_request["reviews"], "inbox pull request.reviews"
+            )
+        ]
+        if latest_inbox_checkpoint(reviews) is None:
+            continue
+        number = require_int(pull_request["number"], "inbox pull request.number", 1)
+        data = api.call(
+            INBOX_REVALIDATE_QUERY,
+            {
+                "owner": owner,
+                "name": name,
+                "number": number,
+                "viewer": reviewer,
+            },
+        )
+        require("viewer" in data, "inbox revalidation omitted authenticated viewer")
+        validate_inbox_viewer(
+            data["viewer"],
+            expected_login=reviewer,
+            expected_node_id=reviewer_node_id,
+        )
+        require("repository" in data, "inbox revalidation omitted repository")
+        repository = require_object(data["repository"], expected_repository)
+        require_exact_keys(
+            repository,
+            {"id", "nameWithOwner", "url", "pullRequest"},
+            expected_repository,
+        )
+        observed_repository_node_id, _, _ = validate_inbox_repository_identity(
+            repository, expected_repository, hostname, expected_repository
+        )
+        require(
+            observed_repository_node_id == repository_node_id,
+            "repository identity changed while revalidating inbox candidates",
+        )
+        observed, reviews_connection = normalize_inbox_pull_request(
+            repository["pullRequest"], expected_repository, hostname
+        )
+        observed_reviews, captured_pages = collect_inbox_reviews(
+            api,
+            owner,
+            name,
+            hostname,
+            repository_node_id,
+            reviewer,
+            reviewer_node_id,
+            observed,
+            reviews_connection,
+        )
+        observed["reviews"] = observed_reviews
+        require(
+            exact_json_equal(observed, pull_request),
+            f"pull request #{number} changed while its review inbox action was revalidated; rerun the command",
+        )
+        revalidated += 1
+        review_pages += captured_pages
+    return revalidated, review_pages
+
+
+def inbox_item_sort_key(item: dict[str, object]) -> tuple[datetime, int]:
+    return (
+        parse_utc_timestamp(item["updated_at"], "inbox item.updated_at"),
+        require_int(item["number"], "inbox item.number", 1),
+    )
+
+
+def build_review_inbox(
+    repository: str,
+    hostname: str,
+    reviewer: str,
+    reviewer_node_id: str,
+    pull_requests: list[dict[str, object]],
+    pagination: dict[str, int],
+    acquisition_value: object,
+    resource_limits: dict[str, int],
+    observation_started_at: str,
+    generated_at: str,
+) -> dict[str, object]:
+    observation_started = parse_utc_timestamp(
+        observation_started_at, "inbox observation_started_at"
+    )
+    observation_completed = parse_utc_timestamp(generated_at, "inbox.generated_at")
+    require(
+        observation_started <= observation_completed,
+        "inbox observation window ends before it starts",
+    )
+    validate_inbox_login(reviewer, "inbox reviewer")
+    validate_inbox_node_id(reviewer_node_id, "inbox reviewer node ID")
+    acquisition = validate_acquisition(acquisition_value, "inbox acquisition")
+    open_pull_request_pages = require_int(
+        pagination["open_pull_request_pages"],
+        "inbox pagination.open_pull_request_pages",
+        1,
+    )
+    review_pages = require_int(
+        pagination["review_pages"], "inbox pagination.review_pages"
+    )
+    revalidated_review_prs = require_int(
+        pagination["revalidated_review_prs"],
+        "inbox pagination.revalidated_review_prs",
+    )
+    open_pull_request_count = require_int(
+        pagination["open_pull_request_count"],
+        "inbox pagination.open_pull_request_count",
+    )
+    require(
+        open_pull_request_count == len(pull_requests),
+        "inbox open pull request count differs from collected items",
+    )
+    require(
+        review_pages >= len(pull_requests),
+        "inbox review page count is smaller than the open pull request count",
+    )
+    require_exact_keys(
+        resource_limits,
+        {
+            "graphql_call_limit",
+            "captured_node_limit",
+            "response_byte_limit",
+            "wall_time_seconds_limit",
+            "resume_review_limit",
+            "captured_nodes",
+            "response_bytes",
+        },
+        "inbox resource budget",
+    )
+    for key in resource_limits:
+        require_int(resource_limits[key], f"inbox resource budget.{key}")
+    require(
+        resource_limits["graphql_call_limit"] == MAX_INBOX_GRAPHQL_CALLS
+        and resource_limits["captured_node_limit"] == MAX_INBOX_CAPTURED_NODES
+        and resource_limits["response_byte_limit"] == MAX_INBOX_RESPONSE_BYTES
+        and resource_limits["wall_time_seconds_limit"]
+        == MAX_INBOX_WALL_TIME_SECONDS
+        and resource_limits["resume_review_limit"] == MAX_RESUME_GITHUB_REVIEWS,
+        "inbox resource budget limits differ from the collector",
+    )
+    require(
+        resource_limits["captured_nodes"] <= resource_limits["captured_node_limit"]
+        and resource_limits["response_bytes"]
+        <= resource_limits["response_byte_limit"],
+        "inbox resource budget observations exceed their limits",
+    )
+    actionable = []
+    unobservable = []
+    eligible_review_prs = 0
+    comparable_review_prs = 0
+    up_to_date_prs = 0
+    resume_repository = f"{hostname}/{repository}"
+    for pull_request in pull_requests:
+        reviews = [
+            require_object(review, "inbox review")
+            for review in require_array(
+                pull_request["reviews"], "inbox pull request.reviews"
+            )
+        ]
+        checkpoint = latest_inbox_checkpoint(reviews)
+        if checkpoint is None:
+            continue
+        eligible_review_prs += 1
+        checkpoint_oid = checkpoint["commit_oid"]
+        head_oid = pull_request["head_oid"]
+        item = {
+            "number": pull_request["number"],
+            "url": pull_request["url"],
+            "is_draft": pull_request["is_draft"],
+            "updated_at": pull_request["updated_at"],
+            "head_oid": head_oid,
+            "total_review_count": pull_request["total_review_count"],
+            "checkpoint": {
+                "oid": checkpoint_oid,
+                "submitted_at": checkpoint["submitted_at"],
+                "state": checkpoint["state"],
+            },
+        }
+        if checkpoint_oid is None or head_oid is None:
+            if checkpoint_oid is None and head_oid is None:
+                reason = "checkpoint_and_head_oid_unavailable"
+            elif checkpoint_oid is None:
+                reason = "checkpoint_oid_unavailable"
+            else:
+                reason = "head_oid_unavailable"
+            unobservable.append({**item, "reason": reason})
+            continue
+        comparable_review_prs += 1
+        if checkpoint_oid == head_oid:
+            up_to_date_prs += 1
+            continue
+        if pull_request["total_review_count"] > MAX_RESUME_GITHUB_REVIEWS:
+            unobservable.append(
+                {**item, "reason": "resume_review_limit_exceeded"}
+            )
+            continue
+        actionable.append(
+            {
+                **item,
+                "resume_argv": [
+                    "gh",
+                    "stratadiff",
+                    "resume",
+                    str(pull_request["number"]),
+                    "-R",
+                    resume_repository,
+                    "--reviewer",
+                    reviewer,
+                ],
+            }
+        )
+    actionable.sort(key=inbox_item_sort_key, reverse=True)
+    unobservable.sort(key=inbox_item_sort_key, reverse=True)
+    require(
+        revalidated_review_prs == eligible_review_prs,
+        "inbox did not revalidate every eligible review candidate",
+    )
+    if actionable:
+        status = "actionable"
+    elif unobservable:
+        status = "insufficient_evidence"
+    elif eligible_review_prs > 0:
+        status = "up_to_date"
+    else:
+        status = "no_eligible_reviews"
+    return {
+        "schema": INBOX_SCHEMA,
+        "tool_version": INBOX_TOOL_VERSION,
+        "generated_at": generated_at,
+        "scope": {
+            "provider_url": f"https://{hostname}",
+            "repository": repository,
+            "reviewer": {
+                "login": reviewer,
+                "node_id": reviewer_node_id,
+                "source": "authenticated_viewer",
+            },
+        },
+        "collection": {
+            "status": "complete",
+            "pagination_complete": True,
+            "temporal_consistency": "eligible_candidates_revalidated_non_atomic",
+            "observation_started_at": observation_started_at,
+            "observation_completed_at": generated_at,
+            "open_pull_request_pages": open_pull_request_pages,
+            "review_pages": review_pages,
+            "revalidated_review_prs": revalidated_review_prs,
+            "graphql_calls": acquisition["graphql_calls"],
+            "minimum_rate_limit_remaining": acquisition[
+                "minimum_rate_limit_remaining"
+            ],
+            "last_rate_limit_reset_at": acquisition["last_rate_limit_reset_at"],
+            "resource_budget": resource_limits,
+        },
+        "privacy": {
+            "source_collected": False,
+            "pr_text_collected": False,
+            "review_text_collected": False,
+            "commit_messages_collected": False,
+            "logins_persisted": True,
+            "actor_identity": "authenticated_viewer_node_id_and_login",
+        },
+        "summary": {
+            "status": status,
+            "open_prs": len(pull_requests),
+            "eligible_review_prs": eligible_review_prs,
+            "comparable_review_prs": comparable_review_prs,
+            "up_to_date_prs": up_to_date_prs,
+            "resume_available_prs": len(actionable),
+            "unobservable_review_prs": len(unobservable),
+        },
+        "actionable": actionable,
+        "unobservable": unobservable,
+    }
+
+
+def validate_inbox_context(
+    data: dict[str, object],
+    repository: str,
+    hostname: str,
+    *,
+    expected_reviewer: str | None = None,
+    expected_reviewer_node_id: str | None = None,
+    expected_repository_node_id: str | None = None,
+) -> tuple[str, str, str, str, int]:
+    require("viewer" in data, "inbox context omitted authenticated viewer")
+    require("repository" in data, "inbox context omitted repository")
+    reviewer, reviewer_node_id = validate_inbox_viewer(
+        data["viewer"],
+        expected_login=expected_reviewer,
+        expected_node_id=expected_reviewer_node_id,
+    )
+    raw_repository = require_object(data["repository"], repository)
+    require_exact_keys(
+        raw_repository,
+        {"id", "nameWithOwner", "url", "pullRequests"},
+        repository,
+    )
+    repository_node_id, canonical_repository, _ = validate_inbox_repository_identity(
+        raw_repository, repository, hostname, repository
+    )
+    if expected_repository_node_id is not None:
+        require(
+            repository_node_id == expected_repository_node_id,
+            "repository identity changed while collecting the review inbox",
+        )
+    pull_requests = require_object(
+        raw_repository["pullRequests"], "inbox context open pull requests"
+    )
+    require_exact_keys(
+        pull_requests, {"totalCount"}, "inbox context open pull requests"
+    )
+    total_count = require_int(
+        pull_requests["totalCount"], "inbox context open pull requests.totalCount"
+    )
+    require(
+        total_count <= MAX_INBOX_CONNECTION_NODES,
+        f"open pull requests exceed {MAX_INBOX_CONNECTION_NODES} nodes",
+    )
+    return (
+        reviewer,
+        reviewer_node_id,
+        repository_node_id,
+        canonical_repository,
+        total_count,
+    )
+
+
+def collect_review_inbox(
+    api: GithubGraphQL,
+    repository: str,
+    hostname: str,
+) -> dict[str, object]:
+    owner, name = repository.split("/")
+    observation_started_at = now_timestamp()
+    budget = InboxResourceBudget(api)
+    data = budget.call(INBOX_CONTEXT_QUERY, {"owner": owner, "name": name})
+    (
+        reviewer,
+        reviewer_node_id,
+        repository_node_id,
+        canonical_repository,
+        initial_open_pull_request_count,
+    ) = validate_inbox_context(data, repository, hostname)
+    pull_requests, pagination = collect_inbox_pull_requests(
+        budget,
+        owner,
+        name,
+        hostname,
+        repository_node_id,
+        reviewer,
+        reviewer_node_id,
+    )
+    require(
+        pagination["open_pull_request_count"] == initial_open_pull_request_count,
+        "open pull request count changed after inbox collection started",
+    )
+    revalidated_review_prs, revalidation_review_pages = revalidate_inbox_candidates(
+        budget,
+        owner,
+        name,
+        hostname,
+        repository_node_id,
+        reviewer,
+        reviewer_node_id,
+        pull_requests,
+    )
+    pagination["review_pages"] += revalidation_review_pages
+    pagination["revalidated_review_prs"] = revalidated_review_prs
+    final_context = budget.call(INBOX_CONTEXT_QUERY, {"owner": owner, "name": name})
+    _, _, _, final_repository, final_open_pull_request_count = validate_inbox_context(
+        final_context,
+        repository,
+        hostname,
+        expected_reviewer=reviewer,
+        expected_reviewer_node_id=reviewer_node_id,
+        expected_repository_node_id=repository_node_id,
+    )
+    require(
+        final_repository == canonical_repository,
+        "repository name changed while collecting the review inbox",
+    )
+    require(
+        final_open_pull_request_count == initial_open_pull_request_count,
+        "open pull request count changed while collecting the review inbox",
+    )
+    generated_at = now_timestamp()
+    return build_review_inbox(
+        canonical_repository,
+        hostname,
+        reviewer,
+        reviewer_node_id,
+        pull_requests,
+        pagination,
+        budget.acquisition(),
+        budget.limits(),
+        observation_started_at,
+        generated_at,
+    )
+
+
+def render_review_inbox_markdown(report: dict[str, object]) -> str:
+    scope = require_object(report["scope"], "inbox.scope")
+    reviewer = require_object(scope["reviewer"], "inbox.scope.reviewer")
+    collection = require_object(report["collection"], "inbox.collection")
+    summary = require_object(report["summary"], "inbox.summary")
+    status = require_string(summary["status"], "inbox.summary.status")
+    status_messages = {
+        "actionable": "One or more open pull requests changed after your latest completed review.",
+        "insufficient_evidence": "Completed reviews were found, but one or more exact comparisons or Resume actions are unavailable.",
+        "up_to_date": "Every comparable open pull request is still at your latest completed-review checkpoint.",
+        "no_eligible_reviews": "You have no completed APPROVED or CHANGES_REQUESTED review checkpoint on the open pull requests.",
+    }
+    require(status in status_messages, f"unsupported inbox status: {status}")
+    lines = [
+        "# StrataDiff Review Inbox",
+        "",
+        f"- Repository: [{scope['repository']}]({scope['provider_url']}/{scope['repository']})",
+        f"- Reviewer: `@{reviewer['login']}` (authenticated viewer)",
+        f"- Status: `{status}`",
+        f"- Observation window: `{collection['observation_started_at']}` to `{collection['observation_completed_at']}`",
+        "",
+        status_messages[status],
+        "",
+        "## Summary",
+        "",
+        "| Open PRs | Eligible checkpoints | Comparable | Up to date | Resume available | Unavailable |",
+        "|---:|---:|---:|---:|---:|---:|",
+        f"| {summary['open_prs']} | {summary['eligible_review_prs']} | {summary['comparable_review_prs']} | {summary['up_to_date_prs']} | {summary['resume_available_prs']} | {summary['unobservable_review_prs']} |",
+        "",
+        "## Resume now",
+        "",
+    ]
+    actionable = require_array(report["actionable"], "inbox.actionable")
+    if not actionable:
+        if status == "insufficient_evidence":
+            lines.append(
+                "The available evidence cannot establish that every review is current; no verified Resume action can be generated."
+            )
+        else:
+            lines.append("No exact review resume is currently required.")
+    else:
+        lines.extend(
+            [
+                "| Pull request | Updated | Review checkpoint | Current head | Command |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for item_value in actionable:
+            item = require_object(item_value, "inbox actionable item")
+            checkpoint = require_object(
+                item["checkpoint"], "inbox actionable checkpoint"
+            )
+            argv = [
+                require_string(argument, "inbox resume argument")
+                for argument in require_array(
+                    item["resume_argv"], "inbox actionable resume_argv"
+                )
+            ]
+            lines.append(
+                f"| [#{item['number']}]({item['url']}) | `{item['updated_at']}` | `{checkpoint['oid']}` ({checkpoint['state']}) | `{item['head_oid']}` | `{shlex.join(argv)}` |"
+            )
+        lines.extend(
+            [
+                "",
+                "Run Resume commands from a checkout of the selected repository; Resume rereads the PR and verifies every exact commit before opening source locally.",
+            ]
+        )
+    unobservable = require_array(report["unobservable"], "inbox.unobservable")
+    if unobservable:
+        lines.extend(
+            [
+                "",
+                "## Unavailable checkpoints or actions",
+                "",
+                "Missing-object entries are unknown, not evidence that no review resume is needed. A review-limit entry is known drift that exceeds the bounded Resume resolver.",
+                "",
+                "| Pull request | Updated | Review checkpoint | Current head | Reason |",
+                "|---|---|---|---|---|",
+            ]
+        )
+        for item_value in unobservable:
+            item = require_object(item_value, "inbox unobservable item")
+            checkpoint = require_object(
+                item["checkpoint"], "inbox unobservable checkpoint"
+            )
+            checkpoint_oid = (
+                "unknown" if checkpoint["oid"] is None else str(checkpoint["oid"])
+            )
+            head_oid = "unknown" if item["head_oid"] is None else str(item["head_oid"])
+            lines.append(
+                f"| [#{item['number']}]({item['url']}) | `{item['updated_at']}` | `{checkpoint_oid}` ({checkpoint['state']}) | `{head_oid}` | `{item['reason']}` |"
+            )
+    lines.extend(
+        [
+            "",
+            "Only metadata for open pull requests and the authenticated viewer's review checkpoints was requested; source, diffs, titles, bodies, comments, and commit messages were not collected.",
+            "GitHub does not provide an atomic repository-wide snapshot for this query. Every eligible candidate was revalidated before output; changes elsewhere during the observation window may appear on the next run.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def opaque_actor_key(case_id: str, login: str) -> str:
@@ -2800,6 +4094,21 @@ def load_plan(path: Path) -> tuple[bytes, dict[str, object]]:
     return payload, validate_plan(value)
 
 
+def command_inbox(arguments: argparse.Namespace) -> None:
+    api = GithubGraphQL(arguments.gh, arguments.hostname)
+    report = collect_review_inbox(api, arguments.repository, arguments.hostname)
+    if arguments.format == "json":
+        payload = canonical_json(report)
+    else:
+        require(arguments.format == "markdown", "unsupported inbox output format")
+        payload = render_review_inbox_markdown(report).encode("utf-8")
+    if arguments.output is not None:
+        atomic_write(arguments.output, payload)
+        progress(f"wrote review inbox to {arguments.output}")
+    else:
+        sys.stdout.write(payload.decode("utf-8"))
+
+
 def command_audit(arguments: argparse.Namespace) -> None:
     end_exclusive_text = (
         now_timestamp()
@@ -2922,6 +4231,32 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    inbox = subparsers.add_parser(
+        "inbox", help="find open pull requests changed since your latest completed review"
+    )
+    inbox.add_argument(
+        "-R",
+        "--repository",
+        required=True,
+        type=audit_repository_argument,
+        help="GitHub repository in OWNER/REPO form",
+    )
+    inbox.add_argument(
+        "--hostname",
+        type=audit_hostname_argument,
+        default="github.com",
+        help="GitHub hostname without a scheme or port (default: github.com)",
+    )
+    inbox.add_argument(
+        "--format",
+        choices=("markdown", "json"),
+        default="markdown",
+        help="report format (default: markdown)",
+    )
+    inbox.add_argument("--output", type=Path, help="write the inbox to this path")
+    inbox.add_argument("--gh", default="gh", help="GitHub CLI executable (default: gh)")
+    inbox.set_defaults(function=command_inbox)
+
     audit = subparsers.add_parser(
         "audit", help="audit recent review checkpoints in one repository"
     )
@@ -3010,8 +4345,11 @@ def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main() -> None:
-    arguments = parse_arguments()
-    arguments.function(arguments)
+    try:
+        arguments = parse_arguments()
+        arguments.function(arguments)
+    except CensusError as error:
+        raise SystemExit(f"review-churn-census: {error}") from error
 
 
 if __name__ == "__main__":
