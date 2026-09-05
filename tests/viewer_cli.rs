@@ -551,6 +551,59 @@ fn offline_demo_runs_outside_a_checkout_and_cleans_up_after_ctrl_c() {
 
 #[cfg(unix)]
 #[test]
+fn offline_demo_registers_shutdown_before_publishing_readiness() {
+    for signal in [libc::SIGTERM, libc::SIGHUP] {
+        assert_demo_shutdown_after_readiness(signal);
+    }
+}
+
+#[cfg(unix)]
+fn assert_demo_shutdown_after_readiness(signal: i32) {
+    let sandbox = tempfile::tempdir().unwrap();
+    let runtime = sandbox.path().join("runtime");
+    let non_git = sandbox.path().join("non-git");
+    fs::create_dir(&runtime).unwrap();
+    fs::create_dir(&non_git).unwrap();
+
+    let child = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("demo")
+        .arg("--port")
+        .arg("0")
+        .arg("--no-open")
+        .current_dir(&non_git)
+        .env("TMPDIR", &runtime)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut child = ChildGuard(child);
+    let mut stderr = BufReader::new(child.0.stderr.take().unwrap());
+    let mut first_line = String::new();
+    stderr.read_line(&mut first_line).unwrap();
+    assert!(
+        first_line.starts_with("StrataDiff Review Resume Workbench: http://"),
+        "{first_line}"
+    );
+
+    let signal_result = unsafe { libc::kill(child.0.id() as i32, signal) };
+    assert_eq!(signal_result, 0);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "offline demo did not stop after publishing readiness"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "offline demo exited with {status}");
+    assert_eq!(fs::read_dir(&runtime).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
 fn offline_demo_bounds_shutdown_with_a_stalled_connection_and_cleans_up_after_signals() {
     for signal in [libc::SIGTERM, libc::SIGHUP] {
         assert_stalled_demo_shutdown_cleans_up(signal);
