@@ -33,6 +33,21 @@ This is explicitly a post-outcome regression corpus: the Census results informed
 product direction. It is not independent evidence of generalization or value. Real multi-page API
 history and a repository with no review activity remain prospective coverage gaps.
 
+## Review Inbox v1 public-metadata seed
+
+[`review-inbox-v1/`](review-inbox-v1/) is the first prospective open-PR correctness seed for the
+personal reviewer queue. Separate GitHub REST v3 and GraphQL v4 observation assets retain enough
+metadata to select the reviewer checkpoint independently on each path; a hashed comparison oracle
+then checks reviewer identity, review history, checkpoint, head, and classification agreement. The
+seed contains two actionable reviewer/PR pairs and one stable control. One actionable case retains
+an older approval despite 43 later `COMMENTED` reviews from the same reviewer.
+
+The three cases were convenience-selected during API feasibility work. The two APIs share GitHub as
+their upstream and were captured sequentially, so this is cross-representation agreement rather
+than independent ground truth. It demonstrates a real action shape, not prevalence, time savings,
+retention, safety, or product fit. The frozen protocol requires a later 30-case multi-repository
+expansion before broader claims.
+
 ## Rebase-aware review-delta contract
 
 [`review-delta-v1/`](review-delta-v1/) is a deterministic, network-free suite of thirteen synthetic

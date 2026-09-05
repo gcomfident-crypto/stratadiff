@@ -10,6 +10,7 @@ Usage: gh stratadiff <command> [options]
 
 Commands:
   audit                      Audit recent merged PRs for stranded review checkpoints
+  inbox                      Find open PRs that need your review resumed
   resume <PR>                Resume your latest completed review
   ownership-snapshot <BASE> Collect exact-base CODEOWNERS identities and permissions
 
@@ -32,6 +33,24 @@ Options:
   --output PATH                Write the report to PATH instead of stdout
   --end-exclusive RFC3339      Fixed UTC end of the half-open audit window
   -h, --help                   Show this help
+
+With -R, this command works outside a Git checkout. Without -R, repository
+inference is delegated to `gh repo view` in the current directory.
+EOF
+}
+
+inbox_usage() {
+  cat <<'EOF'
+Usage: gh stratadiff inbox [options]
+
+Find open pull requests where your completed review checkpoint no longer
+matches the current head.
+
+Options:
+  -R, --repo REPO          GitHub repository in [HOST/]OWNER/REPO form
+  --format markdown|json   Report format (default: markdown)
+  --output PATH            Write the report to PATH instead of stdout
+  -h, --help               Show this help
 
 With -R, this command works outside a Git checkout. Without -R, repository
 inference is delegated to `gh repo view` in the current directory.
@@ -321,7 +340,7 @@ case "${subcommand}" in
     usage
     exit 0
     ;;
-  audit|resume|ownership-snapshot) ;;
+  audit|inbox|resume|ownership-snapshot) ;;
   *)
     usage >&2
     die "unsupported command: ${subcommand}"
@@ -340,6 +359,7 @@ audit_limit=50
 audit_days=90
 audit_format=markdown
 audit_end_exclusive=
+inbox_format=markdown
 
 case "${subcommand}" in
   audit)
@@ -393,6 +413,42 @@ case "${subcommand}" in
     [[ "${audit_days}" =~ ^[1-9][0-9]*$ && "${audit_days}" -le 365 ]] || die \
       "--days must be an integer from 1 through 365"
     case "${audit_format}" in
+      markdown|json) ;;
+      *) die "--format must be markdown or json" ;;
+    esac
+    ;;
+  inbox)
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -R|--repo)
+          require_value "$1" "${2:-}"
+          requested_repository=$2
+          shift 2
+          ;;
+        --format)
+          require_value "$1" "${2:-}"
+          inbox_format=$2
+          shift 2
+          ;;
+        --output)
+          require_value "$1" "${2:-}"
+          output_path=$2
+          shift 2
+          ;;
+        -h|--help)
+          inbox_usage
+          exit 0
+          ;;
+        --)
+          shift
+          [[ $# -eq 0 ]] || die "inbox does not accept positional arguments"
+          ;;
+        -*) die "unknown option: $1" ;;
+        *) die "inbox does not accept positional arguments" ;;
+      esac
+    done
+
+    case "${inbox_format}" in
       markdown|json) ;;
       *) die "--format must be markdown or json" ;;
     esac
@@ -491,12 +547,12 @@ esac
 
 require_command gh
 
-if [[ "${subcommand}" == audit ]]; then
+if [[ "${subcommand}" == audit || "${subcommand}" == inbox ]]; then
   require_command python3
   extension_directory="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
   repository_root="$(cd -P -- "${extension_directory}/../.." && pwd -P)"
-  audit_tool=${STRATADIFF_AUDIT_TOOL:-${repository_root}/tools/review-churn-census/review_churn_census.py}
-  [[ -f "${audit_tool}" ]] || die "audit tool is not available: ${audit_tool}"
+  review_memory_tool=${STRATADIFF_AUDIT_TOOL:-${repository_root}/tools/review-churn-census/review_churn_census.py}
+  [[ -f "${review_memory_tool}" ]] || die "review-memory backend is not available: ${review_memory_tool}"
 
   repo_view_arguments=(repo view)
   if [[ -n "${requested_repository}" ]]; then
@@ -518,21 +574,19 @@ if [[ "${subcommand}" == audit ]]; then
       "GitHub repository host ${github_host} does not match requested host ${BASH_REMATCH[1]}"
   fi
 
-  audit_arguments=(
-    audit
-    --repository "${github_repository}"
-    --hostname "${github_host}"
-    --limit "${audit_limit}"
-    --days "${audit_days}"
-    --format "${audit_format}"
-  )
+  backend_arguments=("${subcommand}" --repository "${github_repository}" --hostname "${github_host}")
+  if [[ "${subcommand}" == audit ]]; then
+    backend_arguments+=(--limit "${audit_limit}" --days "${audit_days}" --format "${audit_format}")
+  else
+    backend_arguments+=(--format "${inbox_format}")
+  fi
   if [[ -n "${output_path}" ]]; then
-    audit_arguments+=(--output "${output_path}")
+    backend_arguments+=(--output "${output_path}")
   fi
-  if [[ -n "${audit_end_exclusive}" ]]; then
-    audit_arguments+=(--end-exclusive "${audit_end_exclusive}")
+  if [[ "${subcommand}" == audit && -n "${audit_end_exclusive}" ]]; then
+    backend_arguments+=(--end-exclusive "${audit_end_exclusive}")
   fi
-  exec python3 "${audit_tool}" "${audit_arguments[@]}"
+  exec python3 "${review_memory_tool}" "${backend_arguments[@]}"
 fi
 
 require_command git
@@ -681,11 +735,12 @@ fi
 ensure_local_commit "${base_commit}" "pull request base" base
 ensure_local_commit "${head_commit}" "pull request head" head
 
-reviews_path=${temporary_directory}/reviews-response.txt
+reviews_path=${temporary_directory}/review-pages.json
 if ! gh api \
-  --include \
+  --paginate \
+  --slurp \
   --hostname "${github_host}" \
-  "repos/${github_repository}/pulls/${pull_request_number}/reviews?per_page=100&page=1" \
+  "repos/${github_repository}/pulls/${pull_request_number}/reviews?per_page=100" \
   > "${reviews_path}"
 then
   die "could not load reviews for ${github_repository}#${pull_request_number}"
@@ -694,7 +749,7 @@ fi
 checkpoint="$(
   "${stratadiff}" github-checkpoint "${reviews_path}" \
     --reviewer "${reviewer}" \
-    --gh-included-response
+    --gh-slurp-pages
 )"
 [[ -n "${checkpoint}" ]] || die "@${reviewer} has no eligible completed review on ${github_repository}#${pull_request_number}"
 is_object_id "${checkpoint}" || die "checkpoint resolver returned an invalid Git object ID"

@@ -7,7 +7,9 @@ codemods, and AI-written changes. After a push, rebase, restack, or force-push, 
 reviewed baseline where that can be proved and shows the reviewer only the remaining exact delta.
 A dropped reviewed change stays visible even when it vanished from the current PR diff, and every
 unsupported or ambiguous case fails closed. GitHub remains the source of approval; StrataDiff adds
-an inspectable coverage gate without uploading source code.
+an inspectable coverage gate without uploading source code. A personal Inbox first finds the open
+pull requests whose exact completed-review checkpoint has moved, so Resume is an actionable queue
+rather than a diff tool reviewers must remember to invoke.
 
 The engine first carries exact Git change identities. If the merge base changed, a unique same-path
 regular-file modification may also carry when strict four-way byte replay proves that the reviewed
@@ -31,14 +33,14 @@ The first question is answered losslessly. The second is re-derived by the match
 crate used by `stratadiff verify`. The third never silently turns a heuristic score into a
 historical fact.
 
-> **Project status:** research alpha. The no-checkout `gh stratadiff audit`, no-admin
-> `gh stratadiff resume <PR>` path, exact base-drift replay, Review Resume Workbench, webhook review
-> ledger, exact-base CODEOWNERS and permission snapshots, receiver-signed review-coverage Passport,
-> offline verification, and deterministic Check Run request generation work now. The implementation
-> remains local tooling, not a hosted GitHub App: installation-token issuance, durable latest-root
-> storage, Check Run publication, and measured human time/recall outcomes are still missing. The
-> structural diff and provenance-complete benchmark layers remain available underneath the
-> review-memory product.
+> **Project status:** research alpha. The no-checkout `gh stratadiff audit`, personal
+> `gh stratadiff inbox`, no-admin `gh stratadiff resume <PR>` path, exact base-drift replay, Review
+> Resume Workbench, webhook review ledger, exact-base CODEOWNERS and permission snapshots,
+> receiver-signed review-coverage Passport, offline verification, and deterministic Check Run
+> request generation work now. The implementation remains local tooling, not a hosted GitHub App:
+> installation-token issuance, durable latest-root storage, Check Run publication, and measured
+> human time/recall outcomes are still missing. The structural diff and provenance-complete
+> benchmark layers remain available underneath the review-memory product.
 
 ## Why another code diff?
 
@@ -100,6 +102,12 @@ The [Review Memory Audit v1 regression set](benchmarks/review-memory-audit-v1/RE
 real Census cases across the same ten repositories into a deterministic contract test for the
 repository-level Audit report and replays all 500 classified cases in shadow. This is a
 post-outcome regression set, not a holdout or a new prevalence result.
+
+The prospective [Review Inbox v1 public-metadata seed](benchmarks/review-inbox-v1/README.md) freezes
+two real actionable open reviewer/PR pairs and one stable control, with GraphQL product metadata
+checked against an independent REST oracle. One case preserves an approval checkpoint despite 43
+later `COMMENTED` reviews. This three-case, convenience-selected seed validates the action shape;
+it does not estimate prevalence, usage, time savings, or product-market fit.
 
 See the [complete results and limitations](docs/benchmarks.md), the
 [raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v6.json), and the
@@ -182,6 +190,30 @@ gh stratadiff audit -R HOST/OWNER/REPOSITORY \
 The report distinguishes no eligible reviews, insufficient checkpoint evidence, no observed
 drift, and observed reviewer-checkpoint drift. It never converts missing object IDs or an
 incomplete provider response into a clean percentage.
+
+### Find the open reviews that need to be resumed
+
+The personal Inbox uses the authenticated `gh` user and works without a checkout or the StrataDiff
+binary. It scans every open pull request and the current viewer's review metadata, then prints a
+copyable Resume command only when a completed `APPROVED` or `CHANGES_REQUESTED` checkpoint differs
+from the current head:
+
+```console
+gh stratadiff inbox -R OWNER/REPOSITORY
+gh stratadiff inbox -R HOST/OWNER/REPOSITORY \
+  --format json --output review-inbox.json
+```
+
+Later comments do not replace the latest completed checkpoint. The collector binds the viewer and
+every review author to the same immutable GitHub node ID, revalidates every eligible candidate
+before output, and enforces total call, node, response-byte, and wall-time budgets. Missing object
+IDs, incomplete pagination, changing candidate state, identity mismatches, and API errors fail
+closed. GitHub does not expose an atomic repository-wide snapshot, so the report records a bounded
+observation window and changes elsewhere in that window may appear on the next run. The command
+requests no source, diff, title, body, comment text, review text, or commit message; `resume` then
+rereads the PR, consumes all bounded review pages, and verifies exact commits before opening source
+locally. Inbox also reads the unfiltered review count and withholds commands when the PR exceeds
+Resume's shared 10,000-review limit.
 
 ### Resume your own GitHub review
 
@@ -640,8 +672,10 @@ representation and re-derives the report's claims.
 
 ## Near-term roadmap
 
-- Release the bounded Review Memory Audit and add prospective multi-page and new-window fixtures.
-- Connect an affected Audit finding directly to the reviewer-specific Resume workflow.
+- Expand the prospective Review Inbox seed to at least 30 multi-repository cases, including live
+  pagination, missing-OID, and `CHANGES_REQUESTED` cases.
+- Measure Inbox-to-Resume conversion, repeated weekly use, review time, and issue recall with real
+  reviewers instead of treating metadata drift as product-market fit.
 - Run the preregistered reviewer study before claiming time savings, safety, or product-market fit.
 - If that study passes, package the loop as an informational GitHub App before adding a required
   coverage gate.

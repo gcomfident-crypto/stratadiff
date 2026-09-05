@@ -20,17 +20,18 @@ case "${1:-}" in
   github-checkpoint)
     reviews_path=$2
     reviews_payload="$(< "${reviews_path}")"
-    [[ " $* " == *" --gh-included-response "* ]]
-    [[ "${reviews_payload}" == 'HTTP/2.0 200 OK'* ]]
-    [[ "${reviews_payload}" == *$'Content-Type: application/json; charset=utf-8\r\n'* ]]
-    if [[ "${reviews_payload}" == *$'\nLink:'* ]]; then
-      printf 'Error: GitHub review count limit exceeded: observed at least 101, limit 100 (pagination Link header present)\n' >&2
-      exit 1
+    [[ " $* " == *" --gh-slurp-pages "* ]]
+    [[ " $* " != *" --gh-included-response "* ]]
+    [[ "${reviews_payload}" == \[\[* ]]
+    [[ "${reviews_payload: -2}" == "]]" ]]
+    if [[ "${GH_STUB_MULTI_PAGE_REVIEWS:-false}" == true ]]; then
+      [[ "${reviews_payload}" == *'}],[{'* ]]
+      [[ "${reviews_payload}" == *'"id":100'* ]]
+      [[ "${reviews_payload}" == *'"id":101'* ]]
+    else
+      [[ "${reviews_payload}" == *'"id":101'* ]]
+      [[ "${reviews_payload}" == *'"id":102'* ]]
     fi
-    reviews_payload=${reviews_payload#*$'\r\n\r\n'}
-    [[ "${reviews_payload}" == \[* ]]
-    [[ "${reviews_payload}" == *'"id":101'* ]]
-    [[ "${reviews_payload}" == *'"id":102'* ]]
     if [[ "${GH_STUB_NO_REVIEW:-false}" != true ]]; then
       printf '%s\n' "${checkpoint}"
     fi

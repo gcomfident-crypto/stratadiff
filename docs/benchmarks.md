@@ -79,6 +79,22 @@ tests. Those results establish behavior only for the enumerated histories. A pub
 claim additionally requires a pinned clean release build with `git_dirty=false`; the suite does not
 measure prevalence, semantic safety, defect recall, or reviewer time.
 
+## Review Inbox v1 public-metadata seed
+
+The first prospective open-PR seed freezes three public reviewer/PR pairs captured on 2026-09-05.
+Separate GitHub REST v3 and GraphQL v4 assets retain each target reviewer's metadata history. The
+offline verifier selects the latest completed checkpoint independently from each representation,
+then compares reviewer identity, review history, checkpoint, head, and classification. Both paths
+agreed on two actionable cases and one stable control. One actionable case has 43 later
+`COMMENTED` reviews from the same reviewer; none replaces the earlier `APPROVED` checkpoint.
+
+The verifier binds both observation assets by SHA-256, checks the bounded sequential capture window
+and privacy exclusions, and exercises cross-API tamper controls. REST and GraphQL share GitHub as
+their upstream, so agreement is not independent ground truth. The seed was convenience-selected
+during API feasibility work and therefore supports only the action contract, not prevalence, time
+savings, retention, issue recall, safety, or product-market fit. See the
+[`Review Inbox v1` dataset card](../benchmarks/review-inbox-v1/README.md).
+
 ## DiffBenchmark literature-subset result
 
 The latest provenance-complete Java evaluation was run on 2026-09-04 against the 285-case

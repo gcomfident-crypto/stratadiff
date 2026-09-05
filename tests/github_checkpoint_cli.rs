@@ -1,5 +1,13 @@
 use std::{fs, process::Command};
 
+use stratadiff::github::MAX_GITHUB_REVIEWS;
+
+fn review_json(id: usize, login: &str, state: &str, commit_id: &str, submitted_at: &str) -> String {
+    format!(
+        r#"{{"id":{id},"user":{{"login":"{login}","type":"User"}},"state":"{state}","html_url":"https://github.com/example/project/pull/7#pullrequestreview-{id}","commit_id":"{commit_id}","submitted_at":"{submitted_at}","author_association":"MEMBER"}}"#
+    )
+}
+
 fn reviews_fixture() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
     fs::write(
@@ -99,30 +107,41 @@ fn github_checkpoint_json_exposes_the_selection_boundary() {
 }
 
 #[test]
-fn github_checkpoint_flattens_gh_slurp_review_pages_before_selection() {
+fn github_checkpoint_selects_across_one_hundred_and_one_slurped_reviews() {
     let directory = tempfile::tempdir().unwrap();
     let reviews = directory.path().join("review-pages.json");
-    fs::write(
-        &reviews,
-        br#"[[{
-          "id": 201,
-          "user": {"login": "alice", "type": "User"},
-          "state": "APPROVED",
-          "html_url": "https://github.com/example/project/pull/7#pullrequestreview-201",
-          "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "submitted_at": "2026-09-04T17:10:09Z",
-          "author_association": "MEMBER"
-        }],[{
-          "id": 202,
-          "user": {"login": "alice", "type": "User"},
-          "state": "CHANGES_REQUESTED",
-          "html_url": "https://github.com/example/project/pull/7#pullrequestreview-202",
-          "commit_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "submitted_at": "2026-09-04T19:10:09Z",
-          "author_association": "MEMBER"
-        }]]"#,
-    )
-    .unwrap();
+    let first_commit = "a".repeat(40);
+    let second_commit = "b".repeat(40);
+    let first_page = (1..=100)
+        .map(|id| {
+            if id == 1 {
+                review_json(
+                    id,
+                    "alice",
+                    "APPROVED",
+                    &first_commit,
+                    "2026-09-04T17:10:09Z",
+                )
+            } else {
+                review_json(
+                    id,
+                    "other",
+                    "COMMENTED",
+                    &first_commit,
+                    "2026-09-04T18:10:09Z",
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    let second_page = review_json(
+        101,
+        "alice",
+        "CHANGES_REQUESTED",
+        &second_commit,
+        "2026-09-04T19:10:09Z",
+    );
+    fs::write(&reviews, format!("[[{first_page}],[{second_page}]]")).unwrap();
 
     let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
         .arg("github-checkpoint")
@@ -141,10 +160,42 @@ fn github_checkpoint_flattens_gh_slurp_review_pages_before_selection() {
         String::from_utf8_lossy(&output.stderr)
     );
     let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(value["observed_reviews"], 2);
+    assert_eq!(value["observed_reviews"], 101);
     assert_eq!(value["eligible_reviews"], 2);
-    assert_eq!(value["checkpoint"]["review_id"], 202);
+    assert_eq!(value["checkpoint"]["review_id"], 101);
     assert_eq!(value["checkpoint"]["commit_id"], "b".repeat(40));
+}
+
+#[test]
+fn github_checkpoint_rejects_slurped_reviews_over_the_global_count_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let reviews = directory.path().join("review-pages.json");
+    let commit_id = "a".repeat(40);
+    let records = (1..=MAX_GITHUB_REVIEWS + 1)
+        .map(|id| review_json(id, "other", "COMMENTED", &commit_id, "2026-09-04T18:10:09Z"))
+        .collect::<Vec<_>>();
+    let pages = records
+        .chunks(100)
+        .map(|page| format!("[{}]", page.join(",")))
+        .collect::<Vec<_>>()
+        .join(",");
+    fs::write(&reviews, format!("[{pages}]")).unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .arg("github-checkpoint")
+        .arg(&reviews)
+        .arg("--reviewer")
+        .arg("alice")
+        .arg("--gh-slurp-pages")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("GitHub review count limit exceeded: observed at least 10001, limit 10000")
+    );
 }
 
 #[test]
@@ -195,7 +246,10 @@ fn github_checkpoint_included_response_rejects_pagination_before_selection() {
         .unwrap();
 
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("observed at least 101, limit 100"));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("GitHub review pagination is incomplete")
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--paginate --slurp"));
     assert!(output.stdout.is_empty());
 }
 

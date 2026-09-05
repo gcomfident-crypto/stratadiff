@@ -90,6 +90,7 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/github-review-ledger-v1.schema.json"),
         include_str!("../schema/github-ownership-snapshot-v1.schema.json"),
         include_str!("../schema/review-memory-audit-v1.schema.json"),
+        include_str!("../schema/review-inbox-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
         jsonschema::draft202012::new(&schema).unwrap();
@@ -230,6 +231,142 @@ fn review_memory_audit_schema_accepts_the_v1_contract() {
 
     let mut unknown_field = instance;
     unknown_field["summary"]["market_claim"] = serde_json::json!(true);
+    assert!(!validator.is_valid(&unknown_field));
+}
+
+#[test]
+fn review_inbox_schema_accepts_actions_and_fails_closed_on_unknown_evidence() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-inbox-v1.schema.json")).unwrap();
+    assert_eq!(
+        schema
+            .pointer(
+                "/$defs/collection/properties/resource_budget/properties/resume_review_limit/const"
+            )
+            .and_then(serde_json::Value::as_u64),
+        Some(stratadiff::github::MAX_GITHUB_REVIEWS as u64)
+    );
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let instance = serde_json::json!({
+        "schema": "stratadiff-review-inbox-v1",
+        "tool_version": "1.0.0",
+        "generated_at": "2026-09-05T14:20:00Z",
+        "scope": {
+            "provider_url": "https://github.com",
+            "repository": "PostHog/posthog",
+            "reviewer": {
+                "login": "andrewm4894",
+                "node_id": "U_kgDOBexample",
+                "source": "authenticated_viewer"
+            }
+        },
+        "collection": {
+            "status": "complete",
+            "pagination_complete": true,
+            "temporal_consistency": "eligible_candidates_revalidated_non_atomic",
+            "observation_started_at": "2026-09-05T14:19:00Z",
+            "observation_completed_at": "2026-09-05T14:20:00Z",
+            "open_pull_request_pages": 1,
+            "review_pages": 6,
+            "revalidated_review_prs": 3,
+            "graphql_calls": 7,
+            "minimum_rate_limit_remaining": 4800,
+            "last_rate_limit_reset_at": "2026-09-05T15:00:00Z",
+            "resource_budget": {
+                "graphql_call_limit": 1000,
+                "captured_node_limit": 100000,
+                "response_byte_limit": 268435456,
+                "wall_time_seconds_limit": 600,
+                "resume_review_limit": 10000,
+                "captured_nodes": 9,
+                "response_bytes": 12000
+            }
+        },
+        "privacy": {
+            "source_collected": false,
+            "pr_text_collected": false,
+            "review_text_collected": false,
+            "commit_messages_collected": false,
+            "logins_persisted": true,
+            "actor_identity": "authenticated_viewer_node_id_and_login"
+        },
+        "summary": {
+            "status": "actionable",
+            "open_prs": 3,
+            "eligible_review_prs": 3,
+            "comparable_review_prs": 2,
+            "up_to_date_prs": 1,
+            "resume_available_prs": 1,
+            "unobservable_review_prs": 1
+        },
+        "actionable": [{
+            "number": 95462,
+            "url": "https://github.com/PostHog/posthog/pull/95462",
+            "is_draft": false,
+            "updated_at": "2026-09-05T13:12:02Z",
+            "head_oid": "3e39bb0b87a36b7e000393f446c3042690c943c7",
+            "total_review_count": 75,
+            "checkpoint": {
+                "oid": "3c2ad3361a98cd34bcea07a8acba71144b9c86ca",
+                "submitted_at": "2026-09-04T22:18:42Z",
+                "state": "APPROVED"
+            },
+            "resume_argv": [
+                "gh", "stratadiff", "resume", "95462", "-R",
+                "github.com/PostHog/posthog", "--reviewer", "andrewm4894"
+            ]
+        }],
+        "unobservable": [{
+            "number": 95500,
+            "url": "https://github.com/PostHog/posthog/pull/95500",
+            "is_draft": true,
+            "updated_at": "2026-09-05T13:20:00Z",
+            "head_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "total_review_count": 2,
+            "checkpoint": {
+                "oid": null,
+                "submitted_at": "2026-09-05T13:00:00Z",
+                "state": "CHANGES_REQUESTED"
+            },
+            "reason": "checkpoint_oid_unavailable"
+        }]
+    });
+    let errors: Vec<_> = validator
+        .iter_errors(&instance)
+        .map(|error| error.to_string())
+        .collect();
+    assert!(errors.is_empty(), "schema errors: {errors:#?}");
+
+    let mut unsafe_action = instance.clone();
+    unsafe_action["actionable"][0]["checkpoint"]["oid"] = serde_json::Value::Null;
+    assert!(!validator.is_valid(&unsafe_action));
+
+    let mut partial_pagination = instance.clone();
+    partial_pagination["collection"]["pagination_complete"] = serde_json::json!(false);
+    assert!(!validator.is_valid(&partial_pagination));
+
+    let mut oversized_drift = instance.clone();
+    oversized_drift["unobservable"][0]["total_review_count"] = serde_json::json!(10001);
+    oversized_drift["unobservable"][0]["checkpoint"]["oid"] =
+        serde_json::json!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    oversized_drift["unobservable"][0]["reason"] =
+        serde_json::json!("resume_review_limit_exceeded");
+    assert!(validator.is_valid(&oversized_drift));
+
+    let mut false_review_limit = oversized_drift.clone();
+    false_review_limit["unobservable"][0]["total_review_count"] = serde_json::json!(10000);
+    assert!(!validator.is_valid(&false_review_limit));
+
+    let mut missing_limit_head = oversized_drift.clone();
+    missing_limit_head["unobservable"][0]["head_oid"] = serde_json::Value::Null;
+    assert!(!validator.is_valid(&missing_limit_head));
+
+    let mut missing_limit_checkpoint = oversized_drift;
+    missing_limit_checkpoint["unobservable"][0]["checkpoint"]["oid"] = serde_json::Value::Null;
+    assert!(!validator.is_valid(&missing_limit_checkpoint));
+
+    let mut unknown_field = instance;
+    unknown_field["actionable"][0]["review_is_safe"] = serde_json::json!(true);
     assert!(!validator.is_valid(&unknown_field));
 }
 

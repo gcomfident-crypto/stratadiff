@@ -1,0 +1,492 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-inbox-v1.schema.json",
+  "title": "StrataDiff Review Inbox v1",
+  "description": "A bounded, non-atomic observation of open pull requests where the authenticated reviewer's latest completed checkpoint either matches the current head, needs exact Review Resume, or cannot be compared. Eligible candidates are revalidated before emission. It is an action queue, not an approval, safety, or time-savings claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "generated_at",
+    "scope",
+    "collection",
+    "privacy",
+    "summary",
+    "actionable",
+    "unobservable"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-inbox-v1" },
+    "tool_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "privacy": { "$ref": "#/$defs/privacy" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "actionable": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/actionable_item" }
+    },
+    "unobservable": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/unobservable_item" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "actionable" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "minItems": 1 },
+          "summary": {
+            "properties": { "resume_available_prs": { "minimum": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "insufficient_evidence" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "maxItems": 0 },
+          "unobservable": { "minItems": 1 },
+          "summary": {
+            "properties": {
+              "resume_available_prs": { "const": 0 },
+              "unobservable_review_prs": { "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "up_to_date" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "maxItems": 0 },
+          "unobservable": { "maxItems": 0 },
+          "summary": {
+            "properties": {
+              "eligible_review_prs": { "minimum": 1 },
+              "resume_available_prs": { "const": 0 },
+              "unobservable_review_prs": { "const": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "no_eligible_reviews" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "maxItems": 0 },
+          "unobservable": { "maxItems": 0 },
+          "summary": {
+            "properties": {
+              "eligible_review_prs": { "const": 0 },
+              "comparable_review_prs": { "const": 0 },
+              "up_to_date_prs": { "const": 0 },
+              "resume_available_prs": { "const": 0 },
+              "unobservable_review_prs": { "const": 0 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "nullable_object_id": {
+      "oneOf": [
+        { "$ref": "#/$defs/object_id" },
+        { "type": "null" }
+      ]
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10000
+    },
+    "large_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "login": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$"
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 202,
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_url", "repository", "reviewer"],
+      "properties": {
+        "provider_url": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^https://[A-Za-z0-9][A-Za-z0-9.-]*$"
+        },
+        "repository": { "$ref": "#/$defs/repository" },
+        "reviewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["login", "node_id", "source"],
+          "properties": {
+            "login": { "$ref": "#/$defs/login" },
+            "node_id": { "$ref": "#/$defs/node_id" },
+            "source": { "const": "authenticated_viewer" }
+          }
+        }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "pagination_complete",
+        "temporal_consistency",
+        "observation_started_at",
+        "observation_completed_at",
+        "open_pull_request_pages",
+        "review_pages",
+        "revalidated_review_prs",
+        "graphql_calls",
+        "minimum_rate_limit_remaining",
+        "last_rate_limit_reset_at",
+        "resource_budget"
+      ],
+      "properties": {
+        "status": { "const": "complete" },
+        "pagination_complete": { "const": true },
+        "temporal_consistency": {
+          "const": "eligible_candidates_revalidated_non_atomic"
+        },
+        "observation_started_at": { "$ref": "#/$defs/timestamp" },
+        "observation_completed_at": { "$ref": "#/$defs/timestamp" },
+        "open_pull_request_pages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "review_pages": { "$ref": "#/$defs/large_count" },
+        "revalidated_review_prs": { "$ref": "#/$defs/count" },
+        "graphql_calls": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 1000
+        },
+        "minimum_rate_limit_remaining": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "last_rate_limit_reset_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "resource_budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "graphql_call_limit",
+            "captured_node_limit",
+            "response_byte_limit",
+            "wall_time_seconds_limit",
+            "resume_review_limit",
+            "captured_nodes",
+            "response_bytes"
+          ],
+          "properties": {
+            "graphql_call_limit": { "const": 1000 },
+            "captured_node_limit": { "const": 100000 },
+            "response_byte_limit": { "const": 268435456 },
+            "wall_time_seconds_limit": { "const": 600 },
+            "resume_review_limit": { "const": 10000 },
+            "captured_nodes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000
+            },
+            "response_bytes": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 268435456
+            }
+          }
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_collected",
+        "pr_text_collected",
+        "review_text_collected",
+        "commit_messages_collected",
+        "logins_persisted",
+        "actor_identity"
+      ],
+      "properties": {
+        "source_collected": { "const": false },
+        "pr_text_collected": { "const": false },
+        "review_text_collected": { "const": false },
+        "commit_messages_collected": { "const": false },
+        "logins_persisted": { "const": true },
+        "actor_identity": {
+          "const": "authenticated_viewer_node_id_and_login"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "open_prs",
+        "eligible_review_prs",
+        "comparable_review_prs",
+        "up_to_date_prs",
+        "resume_available_prs",
+        "unobservable_review_prs"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "no_eligible_reviews",
+            "up_to_date",
+            "insufficient_evidence",
+            "actionable"
+          ]
+        },
+        "open_prs": { "$ref": "#/$defs/count" },
+        "eligible_review_prs": { "$ref": "#/$defs/count" },
+        "comparable_review_prs": { "$ref": "#/$defs/count" },
+        "up_to_date_prs": { "$ref": "#/$defs/count" },
+        "resume_available_prs": { "$ref": "#/$defs/count" },
+        "unobservable_review_prs": { "$ref": "#/$defs/count" }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["oid", "submitted_at", "state"],
+      "properties": {
+        "oid": { "$ref": "#/$defs/nullable_object_id" },
+        "submitted_at": { "$ref": "#/$defs/timestamp" },
+        "state": { "enum": ["APPROVED", "CHANGES_REQUESTED"] }
+      }
+    },
+    "pull_request_item": {
+      "type": "object",
+      "required": [
+        "number",
+        "url",
+        "is_draft",
+        "updated_at",
+        "head_oid",
+        "total_review_count",
+        "checkpoint"
+      ],
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^https://[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[1-9][0-9]*$"
+        },
+        "is_draft": { "type": "boolean" },
+        "updated_at": { "$ref": "#/$defs/timestamp" },
+        "head_oid": { "$ref": "#/$defs/nullable_object_id" },
+        "total_review_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "checkpoint": { "$ref": "#/$defs/checkpoint" }
+      }
+    },
+    "resume_argv": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "prefixItems": [
+        { "const": "gh" },
+        { "const": "stratadiff" },
+        { "const": "resume" },
+        { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        { "const": "-R" },
+        {
+          "type": "string",
+          "maxLength": 2304,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+        },
+        { "const": "--reviewer" },
+        { "$ref": "#/$defs/login" }
+      ],
+      "items": false
+    },
+    "actionable_item": {
+      "allOf": [
+        { "$ref": "#/$defs/pull_request_item" },
+        {
+          "type": "object",
+          "required": ["resume_argv"],
+          "properties": {
+            "head_oid": { "$ref": "#/$defs/object_id" },
+            "checkpoint": {
+              "allOf": [
+                { "$ref": "#/$defs/checkpoint" },
+                {
+                  "properties": { "oid": { "$ref": "#/$defs/object_id" } }
+                }
+              ]
+            },
+            "resume_argv": { "$ref": "#/$defs/resume_argv" }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "unobservable_item": {
+      "allOf": [
+        { "$ref": "#/$defs/pull_request_item" },
+        {
+          "type": "object",
+          "required": ["reason"],
+          "properties": {
+            "reason": {
+              "enum": [
+                "checkpoint_oid_unavailable",
+                "head_oid_unavailable",
+                "checkpoint_and_head_oid_unavailable",
+                "resume_review_limit_exceeded"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reason": { "const": "checkpoint_oid_unavailable" } },
+            "required": ["reason"]
+          },
+          "then": {
+            "properties": {
+              "head_oid": { "$ref": "#/$defs/object_id" },
+              "checkpoint": { "properties": { "oid": { "type": "null" } } }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reason": { "const": "head_oid_unavailable" } },
+            "required": ["reason"]
+          },
+          "then": {
+            "properties": {
+              "head_oid": { "type": "null" },
+              "checkpoint": {
+                "properties": { "oid": { "$ref": "#/$defs/object_id" } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "reason": { "const": "checkpoint_and_head_oid_unavailable" }
+            },
+            "required": ["reason"]
+          },
+          "then": {
+            "properties": {
+              "head_oid": { "type": "null" },
+              "checkpoint": { "properties": { "oid": { "type": "null" } } }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "reason": { "const": "resume_review_limit_exceeded" } },
+            "required": ["reason"]
+          },
+          "then": {
+            "properties": {
+              "head_oid": { "$ref": "#/$defs/object_id" },
+              "total_review_count": { "minimum": 10001 },
+              "checkpoint": {
+                "properties": { "oid": { "$ref": "#/$defs/object_id" } }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

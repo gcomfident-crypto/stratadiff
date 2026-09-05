@@ -1,0 +1,213 @@
+{
+  "captured_at": "2026-09-05T14:57:04Z",
+  "cases": [
+    {
+      "agreement": {
+        "checkpoint": true,
+        "classification": true,
+        "head": true,
+        "review_history": true,
+        "reviewer_identity": true
+      },
+      "expected": "actionable",
+      "graphql": {
+        "classification": "actionable",
+        "head_oid": "c209bc8884d9921f417b294e8e2b358aefc7f505",
+        "later_non_completed_review_count": 43,
+        "reviewer": {
+          "database_id": 2178292,
+          "login": "andrewm4894"
+        },
+        "reviewer_review_count": 44,
+        "selected_checkpoint": {
+          "database_id": "5118260778",
+          "node_id": "PRR_kwDODg-Tdc8AAAABMRJ2Kg",
+          "oid": "3c2ad3361a98cd34bcea07a8acba71144b9c86ca",
+          "state": "APPROVED",
+          "submitted_at": "2026-09-04T22:18:42Z"
+        }
+      },
+      "head_oid": "c209bc8884d9921f417b294e8e2b358aefc7f505",
+      "id": "github-posthog-posthog-pr-95462-andrewm4894",
+      "is_draft": false,
+      "later_non_completed_review_count": 43,
+      "number": 95462,
+      "repository": "PostHog/posthog",
+      "rest": {
+        "classification": "actionable",
+        "head_oid": "c209bc8884d9921f417b294e8e2b358aefc7f505",
+        "later_non_completed_review_count": 43,
+        "reviewer": {
+          "database_id": 2178292,
+          "login": "andrewm4894"
+        },
+        "reviewer_review_count": 44,
+        "selected_checkpoint": {
+          "database_id": "5118260778",
+          "node_id": "PRR_kwDODg-Tdc8AAAABMRJ2Kg",
+          "oid": "3c2ad3361a98cd34bcea07a8acba71144b9c86ca",
+          "state": "APPROVED",
+          "submitted_at": "2026-09-04T22:18:42Z"
+        }
+      },
+      "reviewer": "andrewm4894",
+      "reviewer_review_count": 44,
+      "selected_checkpoint": {
+        "database_id": "5118260778",
+        "node_id": "PRR_kwDODg-Tdc8AAAABMRJ2Kg",
+        "oid": "3c2ad3361a98cd34bcea07a8acba71144b9c86ca",
+        "state": "APPROVED",
+        "submitted_at": "2026-09-04T22:18:42Z"
+      },
+      "updated_at": "2026-09-05T14:51:50Z",
+      "url": "https://github.com/PostHog/posthog/pull/95462"
+    },
+    {
+      "agreement": {
+        "checkpoint": true,
+        "classification": true,
+        "head": true,
+        "review_history": true,
+        "reviewer_identity": true
+      },
+      "expected": "actionable",
+      "graphql": {
+        "classification": "actionable",
+        "head_oid": "a082ff535976df52c41cf4a11bb4b88cd3fa2a94",
+        "later_non_completed_review_count": 0,
+        "reviewer": {
+          "database_id": 2178292,
+          "login": "andrewm4894"
+        },
+        "reviewer_review_count": 1,
+        "selected_checkpoint": {
+          "database_id": "5109736683",
+          "node_id": "PRR_kwDODg-Tdc8AAAABMJBk6w",
+          "oid": "2d9ca8a970604c110936ee10b790649db5f52f04",
+          "state": "APPROVED",
+          "submitted_at": "2026-09-04T06:08:37Z"
+        }
+      },
+      "head_oid": "a082ff535976df52c41cf4a11bb4b88cd3fa2a94",
+      "id": "github-posthog-posthog-pr-93146-andrewm4894",
+      "is_draft": false,
+      "later_non_completed_review_count": 0,
+      "number": 93146,
+      "repository": "PostHog/posthog",
+      "rest": {
+        "classification": "actionable",
+        "head_oid": "a082ff535976df52c41cf4a11bb4b88cd3fa2a94",
+        "later_non_completed_review_count": 0,
+        "reviewer": {
+          "database_id": 2178292,
+          "login": "andrewm4894"
+        },
+        "reviewer_review_count": 1,
+        "selected_checkpoint": {
+          "database_id": "5109736683",
+          "node_id": "PRR_kwDODg-Tdc8AAAABMJBk6w",
+          "oid": "2d9ca8a970604c110936ee10b790649db5f52f04",
+          "state": "APPROVED",
+          "submitted_at": "2026-09-04T06:08:37Z"
+        }
+      },
+      "reviewer": "andrewm4894",
+      "reviewer_review_count": 1,
+      "selected_checkpoint": {
+        "database_id": "5109736683",
+        "node_id": "PRR_kwDODg-Tdc8AAAABMJBk6w",
+        "oid": "2d9ca8a970604c110936ee10b790649db5f52f04",
+        "state": "APPROVED",
+        "submitted_at": "2026-09-04T06:08:37Z"
+      },
+      "updated_at": "2026-09-05T13:07:03Z",
+      "url": "https://github.com/PostHog/posthog/pull/93146"
+    },
+    {
+      "agreement": {
+        "checkpoint": true,
+        "classification": true,
+        "head": true,
+        "review_history": true,
+        "reviewer_identity": true
+      },
+      "expected": "up_to_date",
+      "graphql": {
+        "classification": "up_to_date",
+        "head_oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+        "later_non_completed_review_count": 0,
+        "reviewer": {
+          "database_id": 49978945,
+          "login": "sakce"
+        },
+        "reviewer_review_count": 1,
+        "selected_checkpoint": {
+          "database_id": "5121077003",
+          "node_id": "PRR_kwDODg-Tdc8AAAABMT1vCw",
+          "oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+          "state": "APPROVED",
+          "submitted_at": "2026-09-05T11:38:36Z"
+        }
+      },
+      "head_oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+      "id": "github-posthog-posthog-pr-95295-sakce",
+      "is_draft": false,
+      "later_non_completed_review_count": 0,
+      "number": 95295,
+      "repository": "PostHog/posthog",
+      "rest": {
+        "classification": "up_to_date",
+        "head_oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+        "later_non_completed_review_count": 0,
+        "reviewer": {
+          "database_id": 49978945,
+          "login": "sakce"
+        },
+        "reviewer_review_count": 1,
+        "selected_checkpoint": {
+          "database_id": "5121077003",
+          "node_id": "PRR_kwDODg-Tdc8AAAABMT1vCw",
+          "oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+          "state": "APPROVED",
+          "submitted_at": "2026-09-05T11:38:36Z"
+        }
+      },
+      "reviewer": "sakce",
+      "reviewer_review_count": 1,
+      "selected_checkpoint": {
+        "database_id": "5121077003",
+        "node_id": "PRR_kwDODg-Tdc8AAAABMT1vCw",
+        "oid": "370a6649f35c5e7f25a2bdd83f4dc19516895a4e",
+        "state": "APPROVED",
+        "submitted_at": "2026-09-05T11:38:36Z"
+      },
+      "updated_at": "2026-09-05T11:38:36Z",
+      "url": "https://github.com/PostHog/posthog/pull/95295"
+    }
+  ],
+  "dataset_version": "1.1.0",
+  "observations": {
+    "github_graphql_v4": {
+      "path": "graphql-observation-v1.json",
+      "sha256": "fd99c63cd4e556b3c6027712c000d337262e499d32caed2d1bc7e7f87b837c6a"
+    },
+    "github_rest_v3": {
+      "path": "rest-observation-v1.json",
+      "sha256": "27ce95bff0f58f16ea171a8c2248a6e7e417d59559025753607a609b13f3bd76"
+    }
+  },
+  "protocol_sha256": "242330215900efc7529d44a87b8c53350bac29e6c581c92c09d02ff5b2c47bdd",
+  "schema": "stratadiff-review-inbox-dual-oracle-v1",
+  "summary": {
+    "actionable": 2,
+    "cases": 3,
+    "checkpoint_disagreements": 0,
+    "classification_disagreements": 0,
+    "commented_after_completed": 1,
+    "head_disagreements": 0,
+    "review_history_disagreements": 0,
+    "reviewer_identity_disagreements": 0,
+    "unobservable": 0,
+    "up_to_date": 1
+  }
+}

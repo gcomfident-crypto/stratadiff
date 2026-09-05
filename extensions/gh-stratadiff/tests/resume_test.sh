@@ -33,6 +33,7 @@ run_case() {
   local fetch_head_existed=true
   local github_repository=github.com/acme/widget
   local audit_case=default
+  local inbox_case=default
   local setting
   for setting in "$@"; do
     case "${setting}" in
@@ -45,6 +46,11 @@ run_case() {
       GH_TEST_AUDIT_HIGH_LIMIT=true) audit_case=high-limit ;;
       GH_TEST_AUDIT_ZERO_DAYS=true) audit_case=zero-days ;;
       GH_TEST_AUDIT_HIGH_DAYS=true) audit_case=high-days ;;
+      GH_TEST_INBOX_INFER=true) inbox_case=infer ;;
+      GH_TEST_INBOX_ALL_OPTIONS=true) inbox_case=all-options ;;
+      GH_TEST_INBOX_BAD_FORMAT=true) inbox_case=bad-format ;;
+      GH_TEST_INBOX_POSITIONAL=true) inbox_case=positional ;;
+      GH_TEST_INBOX_AUDIT_OPTION=true) inbox_case=audit-option ;;
     esac
   done
   mkdir -p "${case_directory}"
@@ -110,6 +116,35 @@ run_case() {
           ;;
       esac
       ;;
+    inbox)
+      command_directory=${case_directory}/non-git
+      case "${inbox_case}" in
+        default)
+          command_arguments=(inbox -R "${github_repository}")
+          ;;
+        infer)
+          command_directory=${case_directory}/repository
+          command_arguments=(inbox)
+          ;;
+        all-options)
+          command_arguments=(
+            inbox
+            -R "${github_repository}"
+            --format json
+            --output "${case_directory}/inbox.json"
+          )
+          ;;
+        bad-format)
+          command_arguments=(inbox -R "${github_repository}" --format yaml)
+          ;;
+        positional)
+          command_arguments=(inbox -R "${github_repository}" 17)
+          ;;
+        audit-option)
+          command_arguments=(inbox -R "${github_repository}" --limit 7)
+          ;;
+      esac
+      ;;
     *)
       printf 'unknown test command: %s\n' "${command}" >&2
       exit 1
@@ -152,6 +187,7 @@ run_case() {
   CASE_REPOSITORY=${case_directory}/repository
   CASE_OUTPUT_PATH=${case_directory}/ownership.json
   CASE_AUDIT_OUTPUT_PATH=${case_directory}/audit.json
+  CASE_INBOX_OUTPUT_PATH=${case_directory}/inbox.json
   CASE_VIEWER_ENVIRONMENT=
   if [[ -f "${case_directory}/home/review-environment.txt" ]]; then
     CASE_LOG+=$'\n'"$(< "${case_directory}/home/review-call.txt")"
@@ -194,19 +230,32 @@ run_audit() {
   run_case "${name}" audit "$@"
 }
 
-assert_audit_did_not_touch_git_state() {
+run_inbox() {
+  local name=$1
+  shift
+  run_case "${name}" inbox "$@"
+}
+
+assert_discovery_did_not_touch_git_state() {
   assert_not_contains "${CASE_LOG}" 'git '
   assert_not_contains "${CASE_LOG}" 'stratadiff '
   assert_not_contains "${CASE_LOG}" 'gh auth token'
   assert_not_contains "${CASE_LOG}" 'refs/stratadiff'
 }
 
+TOP_LEVEL_HELP="$(bash "${extension_directory}/gh-stratadiff" --help)"
+assert_contains "${TOP_LEVEL_HELP}" 'inbox                      Find open PRs that need your review resumed'
+INBOX_HELP="$(bash "${extension_directory}/gh-stratadiff" inbox --help)"
+assert_contains "${INBOX_HELP}" 'Usage: gh stratadiff inbox [options]'
+assert_contains "${INBOX_HELP}" '--format markdown|json'
+assert_contains "${INBOX_HELP}" 'works outside a Git checkout'
+
 run_audit audit-default
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_OUTPUT}" '# Review Memory Audit'
 assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
 assert_contains "${CASE_LOG}" 'audit-tool audit --repository acme/widget --hostname github.com --limit 50 --days 90 --format markdown'
-assert_audit_did_not_touch_git_state
+assert_discovery_did_not_touch_git_state
 
 run_audit audit-enterprise-all-options GH_STUB_ENTERPRISE=true GH_TEST_AUDIT_ALL_OPTIONS=true
 [[ "${CASE_STATUS}" -eq 0 ]]
@@ -214,23 +263,69 @@ assert_contains "${CASE_LOG}" 'gh repo view ghe.example/acme/widget --json nameW
 assert_contains "${CASE_LOG}" "audit-tool audit --repository acme/widget --hostname ghe.example --limit 7 --days 14 --format json --output ${CASE_AUDIT_OUTPUT_PATH} --end-exclusive 2026-09-01T00:00:00Z"
 [[ -f "${CASE_AUDIT_OUTPUT_PATH}" ]]
 assert_contains "$(< "${CASE_AUDIT_OUTPUT_PATH}")" '"status":"affected"'
-assert_audit_did_not_touch_git_state
+assert_discovery_did_not_touch_git_state
 
 run_audit audit-infer GH_TEST_AUDIT_INFER=true
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_LOG}" 'gh repo view --json nameWithOwner,url'
 assert_contains "${CASE_LOG}" 'audit-tool audit --repository acme/widget --hostname github.com --limit 50 --days 90 --format markdown'
-assert_audit_did_not_touch_git_state
+assert_discovery_did_not_touch_git_state
 
 run_audit audit-backend-failure AUDIT_STUB_EXIT_STATUS=23
 [[ "${CASE_STATUS}" -eq 23 ]]
 assert_contains "${CASE_LOG}" 'audit-tool audit --repository acme/widget --hostname github.com'
-assert_audit_did_not_touch_git_state
+assert_discovery_did_not_touch_git_state
 
 run_audit audit-invalid-format GH_TEST_AUDIT_BAD_FORMAT=true
 [[ "${CASE_STATUS}" -ne 0 ]]
 assert_contains "${CASE_OUTPUT}" '--format must be markdown or json'
 assert_not_contains "${CASE_LOG}" 'audit-tool'
+
+run_inbox inbox-default
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_OUTPUT}" '# StrataDiff Review Inbox'
+assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'audit-tool inbox --repository acme/widget --hostname github.com --format markdown'
+assert_discovery_did_not_touch_git_state
+
+run_inbox inbox-enterprise-json GH_STUB_ENTERPRISE=true GH_TEST_INBOX_ALL_OPTIONS=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'gh repo view ghe.example/acme/widget --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" "audit-tool inbox --repository acme/widget --hostname ghe.example --format json --output ${CASE_INBOX_OUTPUT_PATH}"
+[[ -f "${CASE_INBOX_OUTPUT_PATH}" ]]
+assert_contains "$(< "${CASE_INBOX_OUTPUT_PATH}")" '"schema":"stratadiff-review-inbox-v1"'
+assert_discovery_did_not_touch_git_state
+
+run_inbox inbox-infer GH_TEST_INBOX_INFER=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'gh repo view --json nameWithOwner,url'
+assert_contains "${CASE_LOG}" 'audit-tool inbox --repository acme/widget --hostname github.com --format markdown'
+assert_discovery_did_not_touch_git_state
+
+run_inbox inbox-backend-failure INBOX_STUB_EXIT_STATUS=29
+[[ "${CASE_STATUS}" -eq 29 ]]
+assert_contains "${CASE_OUTPUT}" 'inbox backend stdout'
+assert_contains "${CASE_OUTPUT}" 'inbox backend stderr'
+assert_contains "${CASE_LOG}" 'audit-tool inbox --repository acme/widget --hostname github.com --format markdown'
+assert_discovery_did_not_touch_git_state
+
+run_inbox inbox-invalid-format GH_TEST_INBOX_BAD_FORMAT=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" '--format must be markdown or json'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+assert_discovery_did_not_touch_git_state
+
+run_inbox inbox-positional-rejected GH_TEST_INBOX_POSITIONAL=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'inbox does not accept positional arguments'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+assert_discovery_did_not_touch_git_state
+
+run_inbox inbox-audit-option-rejected GH_TEST_INBOX_AUDIT_OPTION=true
+[[ "${CASE_STATUS}" -ne 0 ]]
+assert_contains "${CASE_OUTPUT}" 'unknown option: --limit'
+assert_not_contains "${CASE_LOG}" 'audit-tool'
+assert_discovery_did_not_touch_git_state
 
 run_audit audit-zero-limit GH_TEST_AUDIT_ZERO_LIMIT=true
 [[ "${CASE_STATUS}" -ne 0 ]]
@@ -255,13 +350,13 @@ assert_not_contains "${CASE_LOG}" 'audit-tool'
 run_extension happy
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_OUTPUT}" 'Resuming @alice review of acme/widget#17 at exact checkpoint cccccccccccccccccccccccccccccccccccccccc.'
-assert_contains "${CASE_LOG}" 'gh api --include --hostname github.com repos/acme/widget/pulls/17/reviews?per_page=100&page=1'
-assert_not_contains "${CASE_LOG}" 'page=101'
-assert_not_contains "${CASE_LOG}" '--paginate'
-assert_not_contains "${CASE_LOG}" '--slurp'
+assert_contains "${CASE_LOG}" 'gh api --paginate --slurp --hostname github.com repos/acme/widget/pulls/17/reviews?per_page=100'
+assert_not_contains "${CASE_LOG}" '&page='
+assert_not_contains "${CASE_LOG}" '--include'
 assert_contains "${CASE_LOG}" 'stratadiff github-checkpoint'
 assert_contains "${CASE_LOG}" '--reviewer alice'
-assert_contains "${CASE_LOG}" '--gh-included-response'
+assert_contains "${CASE_LOG}" '--gh-slurp-pages'
+assert_not_contains "${CASE_LOG}" '--gh-included-response'
 assert_contains "${CASE_LOG}" 'stratadiff github-commit-object'
 assert_contains "${CASE_LOG}" "stratadiff review aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --repo ${CASE_REPOSITORY} --checkpoint cccccccccccccccccccccccccccccccccccccccc --workbench --port 0 --no-open"
 assert_contains "${CASE_LOG}" 'gh pr view 17 --repo github.com/acme/widget'
@@ -324,11 +419,13 @@ run_extension no-review GH_STUB_NO_REVIEW=true
 assert_contains "${CASE_OUTPUT}" '@alice has no eligible completed review on acme/widget#17'
 assert_not_contains "${CASE_LOG}" 'stratadiff review '
 
-run_extension too-many-reviews GH_STUB_TOO_MANY_REVIEWS=true
-[[ "${CASE_STATUS}" -ne 0 ]]
-assert_contains "${CASE_OUTPUT}" 'GitHub review count limit exceeded: observed at least 101, limit 100'
+run_extension multi-page-reviews GH_STUB_MULTI_PAGE_REVIEWS=true
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_OUTPUT}" 'Resuming @alice review of acme/widget#17 at exact checkpoint cccccccccccccccccccccccccccccccccccccccc.'
+assert_contains "${CASE_LOG}" 'gh api --paginate --slurp --hostname github.com repos/acme/widget/pulls/17/reviews?per_page=100'
 assert_contains "${CASE_LOG}" 'stratadiff github-checkpoint'
-assert_not_contains "${CASE_LOG}" 'stratadiff review '
+assert_contains "${CASE_LOG}" '--gh-slurp-pages'
+assert_contains "${CASE_LOG}" 'stratadiff review '
 
 run_extension local-import-failure GH_STUB_MISSING_CHECKPOINT=true GH_STUB_LOCAL_IMPORT_FAIL=true
 [[ "${CASE_STATUS}" -ne 0 ]]
