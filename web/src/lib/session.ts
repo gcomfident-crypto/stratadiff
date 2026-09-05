@@ -55,6 +55,22 @@ function isDeltaSource(value: unknown): value is Record<string, unknown> {
     (value.byte_len === undefined || typeof value.byte_len === 'number')
 }
 
+function isExactSnapshotSource(
+  source: unknown,
+  commit: string,
+  objectId: unknown,
+  byteLen: unknown,
+): boolean {
+  if (!isDeltaSource(source)) return false
+  if (objectId === undefined) return byteLen === undefined && source.kind === 'empty'
+  return typeof objectId === 'string' &&
+    (byteLen === undefined || (typeof byteLen === 'number' && Number.isSafeInteger(byteLen) && byteLen >= 0)) &&
+    source.kind === 'git_object' &&
+    source.commit === commit &&
+    source.object_id === objectId &&
+    source.byte_len === byteLen
+}
+
 function isUnresolvedRetiredChange(value: unknown): value is Record<string, unknown> {
   return isRecord(value) &&
     typeof value.path === 'string' &&
@@ -70,7 +86,7 @@ export function getSessionToken(search: string): string {
   return token
 }
 
-function authenticatedQuery(search: string, file?: number, scope?: 'resume' | 'full'): string {
+function authenticatedQuery(search: string, file?: number, scope?: 'resume' | 'full' | 'base'): string {
   const params = new URLSearchParams({ token: getSessionToken(search) })
   const selectedFile = file ?? (() => {
     const value = new URLSearchParams(search).get('file')
@@ -80,7 +96,7 @@ function authenticatedQuery(search: string, file?: number, scope?: 'resume' | 'f
     if (!Number.isSafeInteger(selectedFile) || selectedFile < 0) throw new Error('Invalid repository file index.')
     params.set('file', String(selectedFile))
     const selectedScope = scope ?? new URLSearchParams(search).get('scope') ?? 'resume'
-    if (selectedScope !== 'resume' && selectedScope !== 'full') throw new Error('Invalid repository review scope.')
+    if (selectedScope !== 'resume' && selectedScope !== 'full' && selectedScope !== 'base') throw new Error('Invalid repository review scope.')
     params.set('scope', selectedScope)
   }
   return params.toString()
@@ -128,7 +144,7 @@ function assertDiffSession(value: unknown): asserts value is FileSessionPayload 
     !isRecord(value.repository_context) ||
     !Number.isSafeInteger(value.repository_context.file_index) ||
     (value.repository_context.file_index as number) < 0 ||
-    !['resume', 'full'].includes(String(value.repository_context.scope)) ||
+    !['resume', 'full', 'base'].includes(String(value.repository_context.scope)) ||
     (value.repository_context.checkpoint_state !== undefined &&
       !['needs_review_now', 'unchanged_since_checkpoint'].includes(String(value.repository_context.checkpoint_state))) ||
     (value.repository_context.checkpoint_match_basis !== undefined &&
@@ -205,6 +221,66 @@ function assertRepositorySession(value: unknown): asserts value is RepositorySes
     (resumeDelta.comparison === 'per_file_review_baseline_to_head' && !baseChanged)
   ) {
     throw new Error('The viewer returned an invalid review-residue scope.')
+  }
+  const baseDrift = value.base_drift
+  if (
+    !isRecord(baseDrift) ||
+    !['not_applicable', 'unavailable', 'available'].includes(String(baseDrift.status)) ||
+    typeof baseDrift.message !== 'string' ||
+    baseDrift.message.length === 0 ||
+    (!baseChanged && baseDrift.status !== 'not_applicable') ||
+    (baseChanged && baseDrift.status === 'not_applicable') ||
+    (baseDrift.status === 'available' && !isRecord(baseDrift.delta)) ||
+    (baseDrift.status !== 'available' && baseDrift.delta !== undefined)
+  ) {
+    throw new Error('The viewer returned invalid base-drift context.')
+  }
+  if (baseDrift.status === 'available') {
+    const delta = baseDrift.delta
+    if (!isRecord(delta)) throw new Error('The viewer returned invalid base-drift context.')
+    const entries = delta.entries
+    if (
+      delta.schema !== reviewDeltaSchema ||
+      delta.engine_version !== review.engine_version ||
+      delta.comparison !== 'checkpoint_to_head' ||
+      delta.old_base_commit !== review.checkpoint.base_commit ||
+      delta.checkpoint_commit !== review.checkpoint.base_commit ||
+      delta.current_base_commit !== review.checkpoint.base_commit ||
+      delta.head_commit !== review.base_commit ||
+      !isRecord(delta.summary) ||
+      !Array.isArray(entries) ||
+      delta.summary.displayable_files !== entries.length ||
+      delta.summary.unresolved_retired_changes !== 0 ||
+      delta.summary.needs_review_files !== entries.length ||
+      delta.summary.gate_passed !== (entries.length === 0) ||
+      !Array.isArray(delta.unresolved_retired_changes) ||
+      delta.unresolved_retired_changes.length !== 0
+    ) {
+      throw new Error('The viewer returned inconsistent base-drift metadata.')
+    }
+    for (const entry of entries) {
+      if (
+        !isRecord(entry) ||
+        !isReviewFile(entry.file) ||
+        entry.baseline_basis !== 'checkpoint_snapshot' ||
+        !isExactSnapshotSource(
+          entry.before_source,
+          review.checkpoint.base_commit,
+          entry.file.before_blob,
+          entry.file.before_bytes,
+        ) ||
+        !isExactSnapshotSource(
+          entry.after_source,
+          review.base_commit,
+          entry.file.after_blob,
+          entry.file.after_bytes,
+        ) ||
+        entry.fallback_reason !== undefined ||
+        entry.baseline_reconstruction !== undefined
+      ) {
+        throw new Error('The viewer returned an invalid base-drift file.')
+      }
+    }
   }
   for (const file of reviewFiles) {
     if (
@@ -473,7 +549,7 @@ export async function fetchSession(search: string, signal?: AbortSignal): Promis
 export async function fetchReviewFileSources(
   search: string,
   index: number,
-  scope: 'resume' | 'full',
+  scope: 'resume' | 'full' | 'base',
   file: ReviewFile,
   signal?: AbortSignal,
 ): Promise<{ before: DecodedArtifact; after: DecodedArtifact }> {

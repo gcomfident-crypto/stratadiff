@@ -1,17 +1,17 @@
-# Product strategy: Audit, personal Inbox, Review Resume, then team coverage
+# Product strategy: Verified Review Delta, proven locally before native distribution
 
-Evidence captured: **2026-09-05**. This is a falsifiable product thesis, not a market-size report or
+Evidence captured: **2026-09-06**. This is a falsifiable product thesis, not a market-size report or
 a claim that the roadmap is already implemented. Prices, install counts, stars, and vendor claims
 are point-in-time observations and must be refreshed before external use.
 
 ## Decision in one sentence
 
-**StrataDiff should ship one product entry: a personal GitHub Review Inbox that finds where the
-authenticated reviewer's completed checkpoint moved and opens a zero-admin, evidence-backed Resume
-of only the changes that still require attention. The source-free repository Audit is a diagnostic
-for finding suitable teams, not a competing workflow. Only after the Inbox-to-Resume loop proves
-human value should the optional team product turn the same evidence into owner-specific coverage,
-a signed Change Passport, and a merge gate.**
+**StrataDiff should become a GitHub-native Verified Review Delta: after an existing human review and
+a later push, its Check proves which byte-level coverage still carries, keeps every unsupported
+case in review, and opens only the remaining residue. Audit and personal Inbox qualify and route
+early users; they are not the product moat. The local CLI must prove human value before the same
+evidence becomes a one-click App, owner-specific coverage, a signed Change Passport, and a merge
+gate.**
 
 This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff's
 wedge is to remove repeated work only when a narrower factual claim can be checked again by an
@@ -20,11 +20,12 @@ daily discovery experience is `gh stratadiff inbox -R OWNER/REPO`; the value exp
 `gh stratadiff resume <PR>`. None requires an administrator install or a new review system, and none
 restores or manufactures a code-host approval.
 
-The user-visible outcome is not “a better diff.” It is: **show my team whether review memory is being
-lost, then take me back to the exact work I have not reviewed.** GitHub remains the place for
-comments and approval. Teams that prove this saves time may opt into durable checkpoints, owner
-routing, and policy enforcement. The product succeeds only if the resume loop reduces repeated
-review work without lowering issue recall.
+The user-visible outcome is not “a better diff.” It is: **after every relevant push, tell me which
+human review still has evidence, show me exactly what remains, and expose any changed base context
+that an empty interdiff would hide.** GitHub remains the place for comments and approval. Teams that
+prove this saves time may opt into durable checkpoints, owner routing, and policy enforcement. The
+product succeeds only if the resume loop reduces repeated review work without lowering issue
+recall.
 
 ### Review Churn Census v1 decision update
 
@@ -61,7 +62,7 @@ make it a weaker default onboarding path. The CLI, Action, schemas, and verifier
 self-hosted and trust path. This separates “prove the job is valuable” from “remove installation
 friction once it is worth scaling.”
 
-### Product boundary: Audit qualifies, Inbox discovers, Resume acts, coverage expands
+### Product boundary: Check answers, Resume acts, Audit and Inbox route
 
 Rebase-safe approval is a real pain but too small a standalone category. Graphite's own
 [`dismiss-stale-approvals`](https://github.com/withgraphite/dismiss-stale-approvals) README says the
@@ -70,12 +71,12 @@ offers the whole-PR compromise “require approval of the most recent reviewable
 can reset approvals only when a [`git patch-id`](https://git-scm.com/docs/git-patch-id) changes.
 Competing on that binary switch alone would make StrataDiff a feature, not a product.
 
-The entry product is a **Review Memory Audit** that requires only existing GitHub read access and no
+The qualification surface is a **Review Memory Audit** that requires only existing GitHub read access and no
 checkout. It reports a bounded repository window, distinguishes missing evidence from a clean
 result, and identifies affected PRs without collecting source, diffs, PR/review text, patches, or
 commit messages. Its purpose is diagnosis and qualification, not a population estimate.
 
-The recurring personal product is a **Review Inbox**. It scans open PR metadata for the
+The personal routing surface is a **Review Inbox**. It scans open PR metadata for the
 authenticated user, selects only the latest non-dismissed `APPROVED` or `CHANGES_REQUESTED`
 checkpoint, and emits a Resume action only when both exact object IDs exist and differ. Later
 comments never become implicit completion; incomplete pagination, missing IDs, or identity drift
@@ -84,13 +85,14 @@ immutable node ID and login, and collection has global resource budgets. GitHub 
 atomic repository-wide snapshot, so Inbox records a bounded advisory observation window; Resume
 rereads the PR, all bounded review pages, and exact commits before opening source locally.
 
-The action product is a **personal Review Resume** that requires no repository administrator and
+The current value surface is a **personal Review Resume** that requires no repository administrator and
 does not replace GitHub's review UI. A reviewer invokes it from an existing checkout, StrataDiff
 resolves that reviewer's checkpoint, and a local workbench shows the exact residue. This is the
 shortest path from diagnosed pain to experienced value and avoids asking a team to trust an App
 before the reviewer has saved any time.
 
-The expansion product is a **review-coverage firewall**. It maintains a SHA-bound ledger for each
+The native destination is a **Verified Review Delta Check**, followed by an optional
+**review-coverage firewall**. It maintains a SHA-bound ledger for each
 required reviewer and CODEOWNERS domain, maps that coverage across ordinary pushes and history
 rewrites, and rejects every file whose carry cannot be proved. GitHub remains the canonical place
 for conversation and approval. The long-term promise is:
@@ -291,8 +293,8 @@ worked on semantic diffing, refactoring analysis, or review workflow.
 | Category | What it already does well | Boundary for StrataDiff |
 |---|---|---|
 | GitHub and GitLab | Canonical conversation, permissions, approvals, viewed state, file navigation, and revision workflow. GitHub exposes the commit attached to each review and can dismiss stale approvals; GitLab can use patch ID and selectively reset changed Code Owner approvals. | Do not claim native hosts lack incremental review or approval gates. Recover an exact reviewer checkpoint across rewrite cases the host cannot explain, bind any dropped residue to that checkpoint, and make each carry independently inspectable. |
-| [Reviewable](https://docs.reviewable.io/files) | Tracks reviewer × file × revision state, pins force-pushed revisions, exposes last-reviewed-to-latest comparisons, folds base-only changes, and groups reverted work. Its rebase ancestry matching uses commit-message heuristics. | Do not claim invention of persistent per-file review memory. Differentiate on staying inside GitHub's review workflow, deterministic four-snapshot evidence, explicit fail-closed states, and offline verification. |
-| [Aviator FlexReview](https://docs.aviator.co/flexreview/concepts/validation-in-flexreview), GitLab, and Gerrit | Selectively retain or invalidate approvals after no-code rebases and file changes; FlexReview can evaluate each approver's owned files and publish a required status check, while Gerrit has explicit vote-copy conditions. | `Coverage Firewall` is an expansion capability, not the primary novelty. The remaining combination is exact residue reconstruction, reviewer-specific dropped-residue evidence, portable verification, and a no-migration local entry. |
+| [Reviewable](https://docs.reviewable.io/files) | Tracks reviewer × file × revision state, pins force-pushed revisions, exposes last-reviewed-to-latest comparisons, folds base-only changes, and groups reverted work. Its rebase ancestry matching uses commit-message heuristics. | Do not claim invention of persistent per-file review memory. Differentiate on staying inside GitHub's review workflow, deterministic four-snapshot evidence, explicit fail-closed states, narrower permissions, and offline verification. |
+| [Aviator FlexReview](https://docs.aviator.co/flexreview/concepts/validation-in-flexreview), GitLab, and Gerrit | Selectively retain or invalidate approvals after no-code rebases and file changes; FlexReview can evaluate each approver's owned files and publish a required status check, while Gerrit has explicit vote-copy conditions. Gerrit also documents [hazardous rebases](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#hazardous-rebases) where a child patch-set comparison can appear empty after parent changes are folded into a stack. | `Coverage Firewall` is an expansion capability, not the primary novelty. The remaining combination is exact residue reconstruction, reviewer-specific dropped-residue evidence, explicit old-base-to-current-base context, portable verification, and a no-migration local entry. |
 | Graphite and stacked-PR tools | Make changes reviewable by splitting, stacking, routing, and tracking PRs. | Stacking changes the presentation and dependency graph; StrataDiff analyzes an arbitrary existing range. The approaches are complementary. |
 | Copilot, CodeRabbit, Graphite AI, and other AI reviewers | Suggest likely bugs, summaries, and fixes across repository context. | Run these tools on the residue if useful. A suggestion is not a verified predicate, so it cannot enter the evidence-backed lane without deterministic support. |
 | SemanticDiff, Difftastic, and Pyor | Provide substantially better structural presentation, moved-code navigation, grouping, or re-review views than line diff. | The overlap is real. Differentiate first on zero-admin checkpoint recovery across force-pushes, then on portable evidence, independent replay, and explicit abstention—not on visual syntax awareness alone. |
@@ -388,6 +390,8 @@ The host-workflow acceptance matrix must include these end-to-end cases:
   evidence basis recorded, without asking the reviewer to locate a commit SHA;
 - adjacent target-branch edits that perturb ordinary patch context: false invalidation remains zero
   whenever strict four-way replay proves non-interaction;
+- stacked parent rewrite or squash: an empty author residue must still expose the exact
+  old-base-to-current-base context instead of presenting the session as an unchanged tree;
 - two independent CODEOWNERS domains: changing one domain invalidates that domain's coverage while
   leaving the other domain's proven coverage intact;
 - unavailable, malformed, ambiguous, or provider-unverifiable checkpoints: the check fails closed

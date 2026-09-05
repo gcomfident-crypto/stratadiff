@@ -32,6 +32,7 @@ evidence selection and verified claim boundaries around that renderer.
 | Collapsed unchanged context | Implemented | The focused view is the default and has a one-click full-file mode. Relation and ambiguity selection expands the full file before an off-screen selected row is revealed. |
 | Long-line handling | Implemented | Reviewers can switch between horizontal scrolling and wrapped lines without recomputing the report. |
 | Persistent file/evidence navigation | Implemented | Search, filters, pagination, and `j`/`k` update the shared selection without forcing the reviewer out of Code. |
+| Review delta, full PR, and base-drift scopes | Implemented | Author residue stays the primary queue. When the merge base moved, an exact old-base-to-current-base context tab prevents an empty residue from concealing inherited stack changes; context never counts as PR residue or silently blocks the gate. |
 | Relationship visualization | Implemented | The dedicated Structure layer uses a before/evidence/after middle column and exposes ambiguity instead of drawing speculative edges. |
 | Minimap and resizable docked panels | Deferred | These are useful for multi-file reports but omitted from the single-pair viewer until they can preserve exact evidence navigation and keyboard access. |
 | Inline editing, merge actions, AI summaries, and review approval | Excluded | This surface verifies evidence; it does not mutate code or infer claims. |

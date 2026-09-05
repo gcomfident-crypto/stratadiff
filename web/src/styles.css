@@ -242,6 +242,7 @@ kbd {
   color: #d7e3de;
   font-size: 12px;
   font-weight: 600;
+  text-decoration: none;
 }
 
 .export-button:hover,
@@ -1251,6 +1252,7 @@ kbd {
 .review-file-row.selected { border-color: #315246; background: #17251f; }
 .review-state-dot { width: 6px; height: 24px; border-radius: 2px; background: var(--coral); }
 .review-state-dot.carried { background: var(--mint); opacity: .7; }
+.review-state-dot.context { background: var(--amber); opacity: .8; }
 .review-file-copy { min-width: 0; }
 .review-file-copy strong,
 .review-file-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

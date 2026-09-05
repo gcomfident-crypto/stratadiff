@@ -205,12 +205,54 @@ export function repositorySessionFixture(): RepositorySessionPayload {
       entries: resumeEntries,
       unresolved_retired_changes: [],
     },
+    base_drift: {
+      status: 'not_applicable',
+      message: 'The checkpoint and current review use the same merge base.',
+    },
     assessment: {
       status: 'producer_attested',
       basis: 'exact_git_change_identity',
       message: 'Checkpoint carry-forward is exact but does not establish semantic safety.',
     },
   }
+}
+
+export function repositoryBaseDriftSessionFixture(): RepositorySessionPayload {
+  const payload = repositorySessionFixture()
+  const oldBase = '3'.repeat(40)
+  payload.review.checkpoint!.base_commit = oldBase
+  payload.review.checkpoint!.match_basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+  payload.resume_delta.comparison = 'per_file_review_baseline_to_head'
+  payload.resume_delta.old_base_commit = oldBase
+  payload.assessment.basis = 'exact_git_change_identity_or_noninteracting_four_way_byte_replay'
+  const baseFile = reviewFile('src/upstream-context.ts')
+  payload.base_drift = {
+    status: 'available',
+    message: 'Exact old-base to current-base context. These upstream changes are context only.',
+    delta: {
+      schema: payload.resume_delta.schema,
+      engine_version: payload.resume_delta.engine_version,
+      comparison: 'checkpoint_to_head',
+      old_base_commit: oldBase,
+      checkpoint_commit: oldBase,
+      current_base_commit: oldBase,
+      head_commit: payload.review.base_commit,
+      summary: {
+        displayable_files: 1,
+        unresolved_retired_changes: 0,
+        needs_review_files: 1,
+        gate_passed: false,
+      },
+      entries: [{
+        file: baseFile,
+        baseline_basis: 'checkpoint_snapshot',
+        before_source: { kind: 'git_object', commit: oldBase, object_id: baseFile.before_blob!, byte_len: baseFile.before_bytes },
+        after_source: { kind: 'git_object', commit: payload.review.base_commit, object_id: baseFile.after_blob!, byte_len: baseFile.after_bytes },
+      }],
+      unresolved_retired_changes: [],
+    },
+  }
+  return payload
 }
 
 export function reviewCoverageSessionFixture(): ReviewCoverageSessionPayload {
