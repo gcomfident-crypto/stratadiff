@@ -1,0 +1,1222 @@
+{
+  "cases": [
+    {
+      "bucket": "missing_oid",
+      "case_id": "github-posthog-posthog-pr-60602",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 1,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 2,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 60602,
+      "repository": "PostHog/posthog",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": null,
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": null,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": true
+          },
+          "reviewer_key": "actor-687e0c5b348c230d6702a0e9"
+        }
+      ],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "missing_oid",
+      "case_id": "github-vercel-next.js-pr-94952",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 2,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 4,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 1,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 94952,
+      "repository": "vercel/next.js",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": null,
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": null,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": true
+          },
+          "reviewer_key": "actor-8e5418a4d344183c5039afb2"
+        }
+      ],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "commented_newer",
+      "case_id": "github-kubernetes-kubernetes-pr-140717",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 1,
+        "commented_only_pairs": 2,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 31,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 20,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 11,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 140717,
+      "repository": "kubernetes/kubernetes",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-268bc7f43193883492785357"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-6c01d7a9d64d880eb568349c"
+        },
+        {
+          "commented_newer_commit_candidate": true,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "9632d1a3655a959229e807aa694c1767a6a71aa6",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": true,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": true
+          },
+          "reviewer_key": "actor-cd8483c43ee4f1d7cbeee942"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "dismissed",
+      "case_id": "github-grafana-grafana-pr-130887",
+      "completed_review_dismissal": true,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 3,
+        "completed_review_pairs": 3,
+        "drift_without_observed_force_push_pairs": 2,
+        "drifted_checkpoint_pairs": 2,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 3,
+        "observed_reviews": 5,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 3,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 2,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 130887,
+      "repository": "grafana/grafana",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "938404f40fc99830ce72418d65de30323e029bcf",
+            "completed_state": "APPROVED",
+            "current_state": "DISMISSED",
+            "differs_from_final_head": true,
+            "dismissed": true,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-13e376db13a2f7958a43fcc5"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "938404f40fc99830ce72418d65de30323e029bcf",
+            "completed_state": "APPROVED",
+            "current_state": "DISMISSED",
+            "differs_from_final_head": true,
+            "dismissed": true,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-b54c28921df7d1a29759ab7f"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "17a7fc224ae34728dc2db12b72537af1e9190d08",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-f53529e59b7e823acc289684"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "dismissed",
+      "case_id": "github-microsoft-vscode-pr-325983",
+      "completed_review_dismissal": true,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 1,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 1,
+        "comparable_checkpoint_pairs": 3,
+        "completed_review_pairs": 3,
+        "drift_without_observed_force_push_pairs": 2,
+        "drifted_checkpoint_pairs": 2,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 3,
+        "observed_reviews": 6,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 5,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 325983,
+      "repository": "microsoft/vscode",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-45094cc1637afd0cb44dee4a"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "93c2bbd3dd939c4d8ac30f47efdb63f200cba22f",
+            "completed_state": "APPROVED",
+            "current_state": "DISMISSED",
+            "differs_from_final_head": true,
+            "dismissed": true,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-5c99749a734c4dd32867dcc9"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 2,
+          "latest_completed_checkpoint": {
+            "commit_oid": "76cffe4c7a2fc297a705aafe93a1953595eb844f",
+            "completed_state": "APPROVED",
+            "current_state": "DISMISSED",
+            "differs_from_final_head": true,
+            "dismissed": true,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-7e9b9ca42ee24bd25a1a345c"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "da823d73316d76c24cdd641c5fb550584d68e914",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-b74010a993ea91e6f760ff6a"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "dismissed",
+      "case_id": "github-home-assistant-core-pr-175203",
+      "completed_review_dismissal": true,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 5,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 2,
+        "completed_review_pairs": 2,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 2,
+        "observed_reviews": 8,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 3,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 175203,
+      "repository": "home-assistant/core",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "8f11d53c1feb1dc8c17ca02b5d2592ed1b7e6698",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-37401511a26ef71cb37a266f"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "4ada6b33e898c9c7b699e881d1c44d53f53411ef",
+            "completed_state": "CHANGES_REQUESTED",
+            "current_state": "DISMISSED",
+            "differs_from_final_head": true,
+            "dismissed": true,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": true
+          },
+          "reviewer_key": "actor-eb4eacb327093d74ed795abd"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "rewrite_heavy",
+      "case_id": "github-kubernetes-kubernetes-pr-129109",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 4,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 27,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 11,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 16,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 129109,
+      "repository": "kubernetes/kubernetes",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-9ea26e09e622a79a72d842fc"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "852983aa50ebbcd852326ef6ba63d3920550e798",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": true,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": true
+          },
+          "reviewer_key": "actor-a04f83b1563cf6331963523a"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-bda491fa5221ee1c2f5f8fbc"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-e2f402c0b7cbe05d705963ee"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-ee731566eb90ac9b1a0847d1"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "rewrite_heavy",
+      "case_id": "github-posthog-posthog-pr-86942",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 1,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 86942,
+      "repository": "PostHog/posthog",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "ae82e0a32e43b57920ad543d33a8fb49f3205f20",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": true,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": true
+          },
+          "reviewer_key": "actor-3f8afbfd05ea996d464fdb0a"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "rewrite_heavy",
+      "case_id": "github-rust-lang-rust-pr-158962",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 1,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 5,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 4,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 1,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 158962,
+      "repository": "rust-lang/rust",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 3,
+          "latest_completed_checkpoint": {
+            "commit_oid": "4bf0b7624a5de623210e2cff810890efb6c3f38a",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": true,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-3e39494d7894a580ee05255a"
+        }
+      ],
+      "stranded_reviewer": false
+    },
+    {
+      "bucket": "rewrite_heavy",
+      "case_id": "github-vercel-next.js-pr-94891",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 1,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 2,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 2,
+        "post_force_push_checkpoint_pairs": 1,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 94891,
+      "repository": "vercel/next.js",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 2,
+          "latest_completed_checkpoint": {
+            "commit_oid": "c37a88e81bf1f36191c9a0a35e23bebd75887b68",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": true,
+            "post_completed_review_force_push": true,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-00bfdc36e00ed660d7a6a4f4"
+        }
+      ],
+      "stranded_reviewer": false
+    },
+    {
+      "bucket": "drift_without_force",
+      "case_id": "github-posthog-posthog-pr-61196",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 3,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 1,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 4,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 61196,
+      "repository": "PostHog/posthog",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "9520ca4394a6bb31e692a2629d5f36327ecefff4",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": true,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-7cd97e9d8dab2cf22b87237c"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "drift_without_force",
+      "case_id": "github-dotnet-runtime-pr-130303",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 1,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 3,
+        "completed_review_pairs": 3,
+        "drift_without_observed_force_push_pairs": 1,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 3,
+        "observed_reviews": 5,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 4,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 130303,
+      "repository": "dotnet/runtime",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 2,
+          "latest_completed_checkpoint": {
+            "commit_oid": "765b8f1dd0d0e6e74d4fdf6adaaf497e46a18f36",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-2e903e83b7c1f506bd80b18d"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "8988a0be5b69cfd69b1ef5501a5cb71fa365fff8",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": true,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-c0aa7b9056b1157e03e3e872"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "765b8f1dd0d0e6e74d4fdf6adaaf497e46a18f36",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-e13db3cd6d12ed26ee1243a0"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "drift_without_force",
+      "case_id": "github-dotnet-runtime-pr-129503",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 4,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 2,
+        "completed_review_pairs": 2,
+        "drift_without_observed_force_push_pairs": 1,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 2,
+        "observed_reviews": 8,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 2,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 2,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 129503,
+      "repository": "dotnet/runtime",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "4e8f7580e6e4a204cd700d0ce83428a0e6029a2d",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-436c92450ea3eec511f03254"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "a5a97e8d89ecb269aa031b3ee45b45416c90784f",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": true,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-7b2c1b2a4de35a8cf5cce420"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "drift_without_force",
+      "case_id": "github-home-assistant-core-pr-171193",
+      "completed_review_dismissal": true,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 7,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 2,
+        "completed_review_pairs": 2,
+        "drift_without_observed_force_push_pairs": 1,
+        "drifted_checkpoint_pairs": 1,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 2,
+        "observed_reviews": 15,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 2,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 6,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": true,
+      "pull_request_number": 171193,
+      "repository": "home-assistant/core",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "1e6ea3b153a4533193b00a5f28ce0135839ea697",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-4da9c642eaaf7f1a9c9db70e"
+        },
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "a10432616e6747666756462da4a99499dcb99802",
+            "completed_state": "CHANGES_REQUESTED",
+            "current_state": "DISMISSED",
+            "differs_from_final_head": true,
+            "dismissed": true,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-79c09c3faac8deac25ce9187"
+        }
+      ],
+      "stranded_reviewer": true
+    },
+    {
+      "bucket": "bot_only",
+      "case_id": "github-posthog-posthog-pr-73272",
+      "completed_review_dismissal": false,
+      "completed_reviewed": false,
+      "counts": {
+        "bot_review_sessions": 2,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 0,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 3,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 0,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 1,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": false,
+      "multi_round_completed_review": false,
+      "pull_request_number": 73272,
+      "repository": "PostHog/posthog",
+      "reviewer_pairs": [],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "bot_only",
+      "case_id": "github-posthog-posthog-pr-68761",
+      "completed_review_dismissal": false,
+      "completed_reviewed": false,
+      "counts": {
+        "bot_review_sessions": 1,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 0,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 1,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 0,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": false,
+      "multi_round_completed_review": false,
+      "pull_request_number": 68761,
+      "repository": "PostHog/posthog",
+      "reviewer_pairs": [],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "zero_review",
+      "case_id": "github-elastic-elasticsearch-pr-153813",
+      "completed_review_dismissal": false,
+      "completed_reviewed": false,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 0,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 0,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 0,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": false,
+      "multi_round_completed_review": false,
+      "pull_request_number": 153813,
+      "repository": "elastic/elasticsearch",
+      "reviewer_pairs": [],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "zero_review",
+      "case_id": "github-rust-lang-rust-pr-160668",
+      "completed_review_dismissal": false,
+      "completed_reviewed": false,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 0,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 0,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 0,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": false,
+      "multi_round_completed_review": false,
+      "pull_request_number": 160668,
+      "repository": "rust-lang/rust",
+      "reviewer_pairs": [],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "zero_review",
+      "case_id": "github-rust-lang-rust-pr-158478",
+      "completed_review_dismissal": false,
+      "completed_reviewed": false,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 0,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 0,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 0,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": false,
+      "multi_round_completed_review": false,
+      "pull_request_number": 158478,
+      "repository": "rust-lang/rust",
+      "reviewer_pairs": [],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "commented_only",
+      "case_id": "github-rust-lang-rust-pr-157382",
+      "completed_review_dismissal": false,
+      "completed_reviewed": false,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 1,
+        "comparable_checkpoint_pairs": 0,
+        "completed_review_pairs": 0,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 0,
+        "observed_reviews": 2,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 1,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 157382,
+      "repository": "rust-lang/rust",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": true,
+          "completed_review_sessions": 0,
+          "latest_completed_checkpoint": null,
+          "reviewer_key": "actor-7eb34b14d39e9a6b397b03e6"
+        }
+      ],
+      "stranded_reviewer": null
+    },
+    {
+      "bucket": "stable",
+      "case_id": "github-github-gh-stack-pr-129",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 1,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 2,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 129,
+      "repository": "github/gh-stack",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "5b307cde4e85e47646a9403d079206e38f495f0b",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-7bc2e147f63275be9f5c8f6b"
+        }
+      ],
+      "stranded_reviewer": false
+    },
+    {
+      "bucket": "stable",
+      "case_id": "github-grafana-grafana-pr-129862",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 2,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 5,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 2,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 129862,
+      "repository": "grafana/grafana",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "a5e0230ce95b117889c68be06d38f6d496dec977",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-d21e9f07b919bbdae6b7d3fd"
+        }
+      ],
+      "stranded_reviewer": false
+    },
+    {
+      "bucket": "stable",
+      "case_id": "github-elastic-elasticsearch-pr-155531",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 0,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 1,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 1,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 155531,
+      "repository": "elastic/elasticsearch",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "6b612751560796034645d7432794be0dfd9bfab6",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-a5b02c1d2b140cb58a6c7de9"
+        }
+      ],
+      "stranded_reviewer": false
+    },
+    {
+      "bucket": "stable",
+      "case_id": "github-home-assistant-core-pr-179487",
+      "completed_review_dismissal": false,
+      "completed_reviewed": true,
+      "counts": {
+        "bot_review_sessions": 2,
+        "commented_newer_commit_candidate_pairs": 0,
+        "commented_only_pairs": 0,
+        "comparable_checkpoint_pairs": 1,
+        "completed_review_pairs": 1,
+        "drift_without_observed_force_push_pairs": 0,
+        "drifted_checkpoint_pairs": 0,
+        "force_push_rereview_pairs": 0,
+        "observable_checkpoint_oid_pairs": 1,
+        "observed_reviews": 7,
+        "other_actor_review_sessions": 0,
+        "peer_human_review_sessions": 5,
+        "post_force_push_checkpoint_pairs": 0,
+        "self_review_sessions": 0,
+        "unknown_review_sessions": 0
+      },
+      "formal_peer_reviewed": true,
+      "multi_round_completed_review": false,
+      "pull_request_number": 179487,
+      "repository": "home-assistant/core",
+      "reviewer_pairs": [
+        {
+          "commented_newer_commit_candidate": false,
+          "commented_only": false,
+          "completed_review_sessions": 1,
+          "latest_completed_checkpoint": {
+            "commit_oid": "479e40ac58f9cbc2dfdc30b1e617b871116bbfa2",
+            "completed_state": "APPROVED",
+            "current_state": "APPROVED",
+            "differs_from_final_head": false,
+            "dismissed": false,
+            "force_push_rereview": false,
+            "post_completed_review_force_push": false,
+            "post_latest_checkpoint_force_push": false
+          },
+          "reviewer_key": "actor-31c5a1082d6b36130ec9d5ad"
+        }
+      ],
+      "stranded_reviewer": false
+    }
+  ],
+  "dataset_version": "1.0.0",
+  "frozen_at": "2026-09-05T13:00:00Z",
+  "schema": "stratadiff-review-memory-audit-regression-golden-v1",
+  "selection": {
+    "algorithm": "bucket_priority_then_sha256_v1",
+    "case_count": 24,
+    "repository_count": 10,
+    "seed": "review-memory-audit-v1-golden"
+  },
+  "source_artifacts": {
+    "capture_path": "benchmarks/review-churn-census-v1/capture.json",
+    "capture_sha256": "b39143303ea88365a53023bd915eb759149ce49424ce64e2c6c7ebe36424142d",
+    "manifest_path": "benchmarks/review-churn-census-v1/manifest.json",
+    "manifest_sha256": "d3cd40040523d5f8ee024efc6f4318937f056665ac714010188e29be76f536c6"
+  }
+}

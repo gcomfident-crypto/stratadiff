@@ -22,7 +22,7 @@ fn assert_git_success(output: &std::process::Output, operation: &str) {
 }
 
 #[test]
-fn gh_extension_resume_contract_passes_with_stubbed_tools() {
+fn gh_extension_contract_passes_with_stubbed_tools() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = Command::new("bash")
         .arg(root.join("extensions/gh-stratadiff/tests/resume_test.sh"))
@@ -37,7 +37,7 @@ fn gh_extension_resume_contract_passes_with_stubbed_tools() {
     );
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "gh-stratadiff resume tests passed\n"
+        "gh-stratadiff tests passed\n"
     );
 }
 

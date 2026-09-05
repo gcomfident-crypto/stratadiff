@@ -31,13 +31,14 @@ The first question is answered losslessly. The second is re-derived by the match
 crate used by `stratadiff verify`. The third never silently turns a heuristic score into a
 historical fact.
 
-> **Project status:** research alpha. The no-admin `gh stratadiff resume <PR>` path, exact
-> base-drift replay, Review Resume Workbench, webhook review ledger, exact-base CODEOWNERS and
-> permission snapshots, receiver-signed review-coverage Passport, offline verification, and
-> deterministic Check Run request generation work now. The implementation remains local tooling,
-> not a hosted GitHub App: installation-token issuance, durable latest-root storage, Check Run
-> publication, and measured human time/recall outcomes are still missing. The structural diff and
-> provenance-complete benchmark layers remain available underneath the review-memory product.
+> **Project status:** research alpha. The no-checkout `gh stratadiff audit`, no-admin
+> `gh stratadiff resume <PR>` path, exact base-drift replay, Review Resume Workbench, webhook review
+> ledger, exact-base CODEOWNERS and permission snapshots, receiver-signed review-coverage Passport,
+> offline verification, and deterministic Check Run request generation work now. The implementation
+> remains local tooling, not a hosted GitHub App: installation-token issuance, durable latest-root
+> storage, Check Run publication, and measured human time/recall outcomes are still missing. The
+> structural diff and provenance-complete benchmark layers remain available underneath the
+> review-memory product.
 
 ## Why another code diff?
 
@@ -94,6 +95,11 @@ The precommitted force-push acquisition signal was inconclusive at 43/490 pairs 
 interval 6.58–11.62%), and the broader no-observed-force-push and COMMENTED-candidate thresholds
 failed. These results justify testing an opt-in Resume workflow in rewrite-heavy segments; they do
 not validate a universal pain, time savings, safety, willingness to pay, or product-market fit.
+
+The [Review Memory Audit v1 regression set](benchmarks/review-memory-audit-v1/README.md) turns 24
+real Census cases across the same ten repositories into a deterministic contract test for the
+repository-level Audit report and replays all 500 classified cases in shadow. This is a
+post-outcome regression set, not a holdout or a new prevalence result.
 
 See the [complete results and limitations](docs/benchmarks.md), the
 [raw evaluation report](benchmarks/diffbenchmark-literature-evaluation-v6.json), and the
@@ -159,10 +165,27 @@ Cargo-home paths. Plain `cargo build` remains available for development and crat
 the [release procedure](docs/releasing.md) for package verification, publication order, and the
 remaining binary-distribution notice requirement.
 
+### Audit a repository's review memory
+
+The GitHub CLI extension can inspect a recent repository window from any directory. It does not
+need a checkout or the StrataDiff binary, and it does not request source, diffs, PR/review text,
+patches, or commit messages:
+
+```console
+cd extensions/gh-stratadiff
+gh extension install .
+gh stratadiff audit -R OWNER/REPOSITORY
+gh stratadiff audit -R HOST/OWNER/REPOSITORY \
+  --limit 100 --days 180 --format json --output review-memory-audit.json
+```
+
+The report distinguishes no eligible reviews, insufficient checkpoint evidence, no observed
+drift, and observed reviewer-checkpoint drift. It never converts missing object IDs or an
+incomplete provider response into a clean percentage.
+
 ### Resume your own GitHub review
 
-The repository includes a no-admin GitHub CLI extension prototype. After building StrataDiff,
-install the local extension and run it from the pull request's checkout:
+After building StrataDiff, run the extension from the pull request's checkout:
 
 ```console
 cd extensions/gh-stratadiff
@@ -617,6 +640,11 @@ representation and re-derives the report's claims.
 
 ## Near-term roadmap
 
+- Release the bounded Review Memory Audit and add prospective multi-page and new-window fixtures.
+- Connect an affected Audit finding directly to the reviewer-specific Resume workflow.
+- Run the preregistered reviewer study before claiming time savings, safety, or product-market fit.
+- If that study passes, package the loop as an informational GitHub App before adding a required
+  coverage gate.
 - Binding-aware alpha equivalence and no-capture rename certificates.
 - More compact correspondence proof objects for cheaper independent verification.
 - Repository mode with conservative file pairing and parallel parsing.

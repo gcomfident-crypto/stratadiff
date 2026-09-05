@@ -2,7 +2,9 @@
 
 from datetime import datetime, timezone
 import importlib.util
+import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -43,9 +45,17 @@ def review(review_id, database_id, state, submitted_at, author, commit_oid, comm
     }
 
 
-def capture_case(reviews, events, *, pr_author="alice", head_oid=OID_C):
+def capture_case(
+    reviews,
+    events,
+    *,
+    pr_author="alice",
+    head_oid=OID_C,
+    number=7,
+    merged_at="2026-08-01T06:00:00Z",
+):
     return {
-        "id": "github-acme-widgets-pr-7",
+        "id": f"github-acme-widgets-pr-{number}",
         "repository": {
             "node_id": "R_1",
             "owner": "acme",
@@ -54,9 +64,9 @@ def capture_case(reviews, events, *, pr_author="alice", head_oid=OID_C):
             "url": "https://github.com/acme/widgets",
         },
         "pull_request": {
-            "node_id": "PR_7",
-            "number": 7,
-            "merged_at": "2026-08-01T06:00:00Z",
+            "node_id": f"PR_{number}",
+            "number": number,
+            "merged_at": merged_at,
             "head_oid": head_oid,
             "last_commit_oid": head_oid,
             "commit_count": 3,
@@ -356,6 +366,285 @@ class ClassificationTest(unittest.TestCase):
         self.assertEqual(result["counts"]["unknown_review_sessions"], 1)
 
 
+class AuditTest(unittest.TestCase):
+    start = datetime(2026, 6, 3, tzinfo=timezone.utc)
+    end = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    acquisition = {
+        "graphql_calls": 3,
+        "minimum_rate_limit_remaining": 4997,
+        "last_rate_limit_reset_at": "2026-09-05T01:00:00Z",
+    }
+
+    def build_report(self, cases):
+        return census.build_review_memory_audit(
+            "acme/widgets",
+            "ghe.example",
+            self.start,
+            self.end,
+            50,
+            len(cases),
+            cases,
+            self.acquisition,
+            "2026-09-05T00:00:00Z",
+        )
+
+    def classified(self, checkpoint_oid=OID_A, *, head_oid=OID_C):
+        return census.classify_case(
+            capture_case(
+                [
+                    review(
+                        "review-1",
+                        1,
+                        "APPROVED",
+                        "2026-08-01T01:00:00Z",
+                        actor("User", "bob"),
+                        checkpoint_oid,
+                    )
+                ],
+                [],
+                head_oid=head_oid,
+            )
+        )
+
+    def test_latest_selection_orders_by_merge_time_then_number(self):
+        candidates = [
+            {"node_id": "PR_3", "number": 3, "merged_at": "2026-08-03T00:00:00Z"},
+            {"node_id": "PR_9", "number": 9, "merged_at": "2026-08-04T00:00:00Z"},
+            {"node_id": "PR_7", "number": 7, "merged_at": "2026-08-04T00:00:00Z"},
+            {"node_id": "PR_8", "number": 8, "merged_at": "2026-08-02T00:00:00Z"},
+        ]
+        selected = census.select_latest_candidates(candidates, 3)
+        self.assertEqual([candidate["number"] for candidate in selected], [9, 7, 3])
+
+    def test_collection_captures_only_newest_candidates_in_order(self):
+        candidates = [
+            {"node_id": "PR_3", "number": 3, "merged_at": "2026-08-03T00:00:00Z"},
+            {"node_id": "PR_9", "number": 9, "merged_at": "2026-08-04T00:00:00Z"},
+            {"node_id": "PR_7", "number": 7, "merged_at": "2026-08-04T00:00:00Z"},
+        ]
+
+        class FakeApi:
+            def acquisition(self):
+                return AuditTest.acquisition
+
+        def captured(_api, _owner, _name, number):
+            merged_at = next(
+                candidate["merged_at"]
+                for candidate in candidates
+                if candidate["number"] == number
+            )
+            return capture_case([], [], number=number, merged_at=merged_at)
+
+        with mock.patch.object(
+            census, "search_repository_candidates", return_value=candidates
+        ), mock.patch.object(census, "capture_pull_request", side_effect=captured) as capture:
+            report = census.collect_review_memory_audit(
+                FakeApi(),
+                "acme/widgets",
+                "github.com",
+                self.start,
+                self.end,
+                2,
+            )
+        self.assertEqual(
+            [call.args[3] for call in capture.call_args_list],
+            [9, 7],
+        )
+        self.assertEqual(report["scope"]["selection"]["candidate_count"], 3)
+        self.assertEqual(report["scope"]["selection"]["selected_count"], 2)
+        self.assertEqual(report["scope"]["selection"]["shortfall"], 0)
+
+    def test_collection_does_not_publish_a_partial_report(self):
+        candidates = [
+            {"node_id": "PR_7", "number": 7, "merged_at": "2026-08-04T00:00:00Z"}
+        ]
+
+        class FakeApi:
+            def acquisition(self):
+                return AuditTest.acquisition
+
+        with mock.patch.object(
+            census, "search_repository_candidates", return_value=candidates
+        ), mock.patch.object(
+            census,
+            "capture_pull_request",
+            side_effect=census.CensusError("capture failed"),
+        ):
+            with self.assertRaisesRegex(census.CensusError, "capture failed"):
+                census.collect_review_memory_audit(
+                    FakeApi(),
+                    "acme/widgets",
+                    "github.com",
+                    self.start,
+                    self.end,
+                    1,
+                )
+
+    def test_report_contract_metrics_findings_and_privacy(self):
+        report = self.build_report([self.classified()])
+        self.assertEqual(
+            set(report),
+            {
+                "schema",
+                "tool_version",
+                "generated_at",
+                "scope",
+                "collection",
+                "privacy",
+                "claim_boundary",
+                "summary",
+                "descriptive_metrics",
+                "findings",
+            },
+        )
+        self.assertEqual(report["schema"], "stratadiff-review-memory-audit-v1")
+        self.assertEqual(
+            report["scope"]["selection"],
+            {
+                "method": "latest_merged_at_desc_v1",
+                "requested_limit": 50,
+                "candidate_count": 1,
+                "selected_count": 1,
+                "shortfall": 49,
+            },
+        )
+        self.assertEqual(report["summary"]["status"], "affected")
+        self.assertEqual(report["summary"]["drifted_reviewer_pairs"], 1)
+        self.assertEqual(len(report["descriptive_metrics"]), 7)
+        self.assertEqual(
+            [metric["id"] for metric in report["descriptive_metrics"]],
+            list(census.METRIC_IDS[:7]),
+        )
+        for metric in report["descriptive_metrics"]:
+            self.assertEqual(
+                set(metric), {"id", "numerator", "denominator", "status", "basis_points"}
+            )
+        finding = report["findings"][0]
+        self.assertEqual(finding["url"], "https://ghe.example/acme/widgets/pull/7")
+        self.assertEqual(len(finding["drifted_reviewers"]), 1)
+        self.assertEqual(
+            finding["drifted_reviewers"][0]["reviewer_key"],
+            actor("User", "bob")["actor_key"],
+        )
+        encoded = census.canonical_json(report).decode("utf-8")
+        self.assertNotIn("bob", encoded)
+        self.assertNotIn("review-1", encoded)
+        self.assertEqual(
+            report["privacy"],
+            {
+                "source_collected": False,
+                "pr_text_collected": False,
+                "review_text_collected": False,
+                "commit_messages_collected": False,
+                "logins_persisted": False,
+                "actor_identity": "pr_local_opaque_key",
+            },
+        )
+
+    def test_all_complete_audit_statuses(self):
+        no_eligible = self.build_report([census.classify_case(capture_case([], []))])
+        insufficient = self.build_report([self.classified(None)])
+        no_drift = self.build_report([self.classified(OID_C)])
+        affected = self.build_report([self.classified(OID_A)])
+        self.assertEqual(no_eligible["summary"]["status"], "no_eligible_reviews")
+        self.assertEqual(insufficient["summary"]["status"], "insufficient_evidence")
+        self.assertEqual(no_drift["summary"]["status"], "no_observed_drift")
+        self.assertEqual(affected["summary"]["status"], "affected")
+        self.assertEqual(insufficient["findings"][0]["drifted_reviewers"], [])
+        self.assertEqual(insufficient["findings"][0]["unobservable_pair_count"], 1)
+
+        ninety_percent = self.build_report(
+            [
+                census.classify_case(
+                    capture_case(
+                        [
+                            review(
+                                f"review-{index}",
+                                index,
+                                "APPROVED",
+                                "2026-08-01T01:00:00Z",
+                                actor("User", f"reviewer-{index}"),
+                                None if index == 10 else OID_C,
+                            )
+                            for index in range(1, 11)
+                        ],
+                        [],
+                    )
+                )
+            ]
+        )
+        self.assertEqual(ninety_percent["summary"]["status"], "no_observed_drift")
+        self.assertEqual(ninety_percent["summary"]["unobservable_reviewer_pairs"], 1)
+
+    def test_markdown_is_derived_from_report_and_calls_unknown_out(self):
+        report = self.build_report([self.classified(None)])
+        rendered = census.render_review_memory_audit_markdown(report)
+        self.assertIn("# StrataDiff Review Memory Audit", rendered)
+        self.assertIn("`insufficient_evidence`", rendered)
+        self.assertIn("Unknown evidence is not evidence of no drift.", rendered)
+        self.assertIn("https://ghe.example/acme/widgets/pull/7", rendered)
+        self.assertNotIn("bob", rendered)
+
+    def test_audit_argument_defaults_and_invalid_values(self):
+        arguments = census.parse_arguments(
+            ["audit", "--repository", "acme/widgets", "--hostname", "GHE.EXAMPLE"]
+        )
+        self.assertEqual(arguments.repository, "acme/widgets")
+        self.assertEqual(arguments.hostname, "ghe.example")
+        self.assertEqual(arguments.limit, 50)
+        self.assertEqual(arguments.days, 90)
+        self.assertEqual(arguments.format, "markdown")
+        invalid = (
+            ["--limit", "0"],
+            ["--limit", "101"],
+            ["--days", "0"],
+            ["--days", "366"],
+            ["--repository", "three/part/name"],
+            ["--hostname", "https://github.com"],
+            ["--end-exclusive", "2026-09-01"],
+            ["--format", "yaml"],
+        )
+        for extra in invalid:
+            argv = [
+                "audit",
+                "--repository",
+                "acme/widgets",
+                "--hostname",
+                "github.com",
+                *extra,
+            ]
+            with self.subTest(extra=extra), mock.patch("sys.stderr", new=io.StringIO()):
+                with self.assertRaises(SystemExit) as raised:
+                    census.parse_arguments(argv)
+                self.assertEqual(raised.exception.code, 2)
+
+    def test_command_writes_canonical_private_json(self):
+        report = self.build_report([self.classified()])
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "audit.json"
+            arguments = census.argparse.Namespace(
+                repository="acme/widgets",
+                hostname="github.com",
+                limit=50,
+                days=90,
+                end_exclusive="2026-09-01T00:00:00Z",
+                format="json",
+                output=output,
+                gh="custom-gh",
+            )
+            with mock.patch.object(
+                census, "collect_review_memory_audit", return_value=report
+            ) as collect:
+                census.command_audit(arguments)
+            self.assertEqual(output.read_bytes(), census.canonical_json(report))
+            self.assertEqual(output.stat().st_mode & 0o777, 0o600)
+            call = collect.call_args.args
+            self.assertEqual(call[0].executable, "custom-gh")
+            self.assertEqual(call[0].hostname, "github.com")
+            self.assertEqual(call[3], self.start)
+            self.assertEqual(call[4], self.end)
+
+
 class AggregateTest(unittest.TestCase):
     def test_wilson_interval_contains_point_and_zero_is_undefined(self):
         observed = census.ratio(20, 100)
@@ -575,6 +864,44 @@ class CaptureContractTest(unittest.TestCase):
 
 
 class GraphQLTest(unittest.TestCase):
+    def test_graphql_uses_explicit_hostname_and_scrubs_debug_environment(self):
+        response = {
+            "data": {
+                "viewer": {"login": "alice"},
+                "rateLimit": {
+                    "cost": 1,
+                    "remaining": 99,
+                    "resetAt": "2026-09-05T00:00:00Z",
+                },
+            }
+        }
+        completed = subprocess.CompletedProcess(
+            ["custom-gh"], 0, stdout=json.dumps(response).encode(), stderr=b""
+        )
+        with mock.patch.dict(
+            os.environ, {"GH_DEBUG": "api", "GH_TRACE": "1"}, clear=False
+        ), mock.patch.object(census.subprocess, "run", return_value=completed) as run:
+            result = census.GithubGraphQL("custom-gh", "ghe.example").call(
+                "query { viewer { login } }", {}
+            )
+        self.assertEqual(result["viewer"]["login"], "alice")
+        arguments, keywords = run.call_args
+        self.assertEqual(
+            arguments[0],
+            [
+                "custom-gh",
+                "api",
+                "--hostname",
+                "ghe.example",
+                "graphql",
+                "--input",
+                "-",
+            ],
+        )
+        self.assertNotIn("GH_DEBUG", keywords["env"])
+        self.assertNotIn("GH_TRACE", keywords["env"])
+        self.assertEqual(keywords["env"]["GH_PROMPT_DISABLED"], "1")
+
     def test_graphql_errors_are_not_hidden(self):
         response = {
             "data": {"rateLimit": {"cost": 1, "remaining": 99, "resetAt": "2026-09-05T00:00:00Z"}},
@@ -590,6 +917,7 @@ class GraphQLTest(unittest.TestCase):
             path = Path(directory) / "nested" / "result.json"
             census.write_json(path, {"z": 1, "a": 2})
             self.assertEqual(path.read_bytes(), b'{\n  "a": 2,\n  "z": 1\n}\n')
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(list(path.parent.glob(".*.tmp")), [])
 
 

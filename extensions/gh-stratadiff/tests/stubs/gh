@@ -12,7 +12,19 @@ checkpoint=cccccccccccccccccccccccccccccccccccccccc
 
 case "${1:-} ${2:-}" in
   "repo view")
-    [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
+    if [[ "${GH_STUB_COMMAND:-}" == audit ]]; then
+      [[ "${PWD}" == "${GH_STUB_AUDIT_CWD}" ]]
+      if [[ "${GH_TEST_AUDIT_INFER:-false}" == true ]]; then
+        [[ " $* " != *" github.com/acme/widget "* ]]
+        [[ " $* " != *" ghe.example/acme/widget "* ]]
+      elif [[ "${GH_STUB_ENTERPRISE:-false}" == true ]]; then
+        [[ " $* " == *" ghe.example/acme/widget "* ]]
+      else
+        [[ " $* " == *" github.com/acme/widget "* ]]
+      fi
+    else
+      [[ "${PWD}" == "${GH_STUB_REPOSITORY_DIRECTORY}" ]]
+    fi
     if [[ "${GH_STUB_ENTERPRISE:-false}" == true ]]; then
       [[ " $* " == *" ghe.example/acme/widget "* ]]
       printf 'acme/widget\thttps://ghe.example/acme/widget\n'

@@ -1,4 +1,4 @@
-# Product strategy: Review Resume first, proof-carrying team expansion
+# Product strategy: Audit, Review Resume, then proof-carrying team expansion
 
 Evidence captured: **2026-09-05**. This is a falsifiable product thesis, not a market-size report or
 a claim that the roadmap is already implemented. Prices, install counts, stars, and vendor claims
@@ -6,20 +6,23 @@ are point-in-time observations and must be refreshed before external use.
 
 ## Decision in one sentence
 
-**StrataDiff should become GitHub's force-push-proof Review Resume: with one zero-admin command, a
-reviewer should recover the latest usable checkpoint after a rebase, restack, amend, or force-push
-and see only the changes that still require attention. The optional team product turns the same
-evidence into owner-specific coverage, a signed Change Passport, and a merge gate.**
+**StrataDiff should become GitHub's review-memory layer. A source-free repository Audit first finds
+where completed reviewer checkpoints drift from the final head. One zero-admin Review Resume then
+recovers a specific reviewer's latest usable checkpoint after a rebase, restack, amend, or
+force-push and shows only the changes that still require attention. Only after that loop proves
+human value should the optional team product turn the same evidence into owner-specific coverage,
+a signed Change Passport, and a merge gate.**
 
 This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff's
 wedge is to remove repeated work only when a narrower factual claim can be checked again by an
-independent verifier. The first experience must be `gh stratadiff resume <PR>`, not an administrator
-install or a new review system. It does not restore or manufacture a code-host approval.
+independent verifier. The discovery experience is `gh stratadiff audit -R OWNER/REPO`; the value
+experience is `gh stratadiff resume <PR>`. Neither requires an administrator install or a new review
+system, and neither restores or manufactures a code-host approval.
 
-The user-visible outcome is not “a better diff.” It is: **I already reviewed this PR once; after its
-history was rewritten, take me back to the exact work I have not reviewed.** GitHub remains the
-place for comments and approval. Teams that prove this saves time may opt into durable checkpoints,
-owner routing, and policy enforcement. The product succeeds only if the resume loop reduces repeated
+The user-visible outcome is not “a better diff.” It is: **show my team whether review memory is being
+lost, then take me back to the exact work I have not reviewed.** GitHub remains the place for
+comments and approval. Teams that prove this saves time may opt into durable checkpoints, owner
+routing, and policy enforcement. The product succeeds only if the resume loop reduces repeated
 review work without lowering issue recall.
 
 ### Review Churn Census v1 decision update
@@ -56,7 +59,7 @@ make it a weaker default onboarding path. The CLI, Action, schemas, and verifier
 self-hosted and trust path. This separates “prove the job is valuable” from “remove installation
 friction once it is worth scaling.”
 
-### Product boundary: Review Resume first, coverage firewall second
+### Product boundary: Audit discovers, Resume acts, coverage firewall expands
 
 Rebase-safe approval is a real pain but too small a standalone category. Graphite's own
 [`dismiss-stale-approvals`](https://github.com/withgraphite/dismiss-stale-approvals) README says the
@@ -65,10 +68,15 @@ offers the whole-PR compromise “require approval of the most recent reviewable
 can reset approvals only when a [`git patch-id`](https://git-scm.com/docs/git-patch-id) changes.
 Competing on that binary switch alone would make StrataDiff a feature, not a product.
 
-The initial product is a **personal Review Resume** that requires no repository administrator and
+The entry product is a **Review Memory Audit** that requires only existing GitHub read access and no
+checkout. It reports a bounded repository window, distinguishes missing evidence from a clean
+result, and identifies affected PRs without collecting source, diffs, PR/review text, patches, or
+commit messages. Its purpose is diagnosis and qualification, not a population estimate.
+
+The action product is a **personal Review Resume** that requires no repository administrator and
 does not replace GitHub's review UI. A reviewer invokes it from an existing checkout, StrataDiff
 resolves that reviewer's checkpoint, and a local workbench shows the exact residue. This is the
-shortest path from a visible pain to experienced value and avoids asking a team to trust an App
+shortest path from diagnosed pain to experienced value and avoids asking a team to trust an App
 before the reviewer has saved any time.
 
 The expansion product is a **review-coverage firewall**. It maintains a SHA-bound ledger for each
@@ -78,13 +86,13 @@ for conversation and approval. The long-term promise is:
 
 > Never re-review code we can prove unchanged. Never inherit an unproven approval.
 
-The alpha now implements the underlying file-level vertical slice: the existing single-reviewer
-Action, HMAC-authenticated webhook ingestion, an append-only review ledger, exact-base CODEOWNERS
-resolution, user and team permission snapshots, reviewer × owner × file coverage, a signed Passport,
-offline recomputation, a local Passport viewer, and deterministic Check Run request JSON. It does
-not yet provide a hosted webhook receiver, durable production storage, live permission collection,
-actual Check Run publication, partial-file review state, or evidence that the workflow saves human
-time. Those gaps must remain visible in every launch claim.
+The alpha now implements the repository Audit and the underlying file-level vertical slice: the
+existing single-reviewer Action, HMAC-authenticated webhook ingestion, an append-only review ledger,
+exact-base CODEOWNERS resolution, user and team permission snapshots, reviewer × owner × file
+coverage, a signed Passport, offline recomputation, a local Passport viewer, and deterministic Check
+Run request JSON. It does not yet provide a hosted webhook receiver, durable production storage,
+live permission collection, actual Check Run publication, partial-file review state, or evidence
+that the workflow saves human time. Those gaps must remain visible in every launch claim.
 
 The alpha gate now derives a separate `review-delta-v1` queue from five snapshots: old base `A`,
 reviewed checkpoint `B`, current base `C`, current head `D`, and reconstructed reviewed baseline
@@ -377,11 +385,12 @@ The host-workflow acceptance matrix must include these end-to-end cases:
 
 ### P0: prove the wedge
 
-1. Productize a one-repository Review Memory Audit from the census machinery. It must use the
-   caller's existing GitHub authentication, scan a bounded recent window, report exact eligible
-   PRs and reviewer-checkpoint drift without collecting source or review text, and explicitly say
-   when the repository does not exhibit the problem. Its result is a prospect-specific diagnostic,
-   not a GitHub-wide prevalence estimate or a substitute for the human study.
+1. Stabilize and distribute the implemented one-repository Review Memory Audit. It uses the
+   caller's existing GitHub authentication, scans a bounded recent window, reports exact eligible
+   PRs and reviewer-checkpoint drift without collecting source or review text, and explicitly says
+   when the repository does not exhibit the problem. Complete prospective multi-page and new-window
+   validation before making generalization claims; the result remains a repository diagnostic, not
+   a GitHub-wide prevalence estimate or a substitute for the human study.
 2. Ship `gh stratadiff resume <PR>` as the default path. It must use the caller's existing GitHub CLI
    authentication, resolve the current reviewer and PR revisions, recover the exact reviewed commit
    when the provider still serves it, and open the local Workbench. Missing, ambiguous, paginated,
@@ -528,6 +537,7 @@ The next milestone is not “GitHub parity.” It is one end-to-end proof:
 
 ```text
 large PR at reviewed checkpoint R
+  -> repository Audit identifies checkpoint drift
   -> rewritten, rebased, or incrementally updated head H
   -> exact identity, then strict four-way replay where eligible
   -> conflicts and ambiguities fail closed

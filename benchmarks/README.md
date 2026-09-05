@@ -21,6 +21,18 @@ recall, semantic safety, willingness to pay, or product-market fit. See the data
 complete 13-metric result, per-repository estimates, disclosed pilot evidence, frozen thresholds,
 missing-data policy, and exact offline verification commands.
 
+## Review Memory Audit regression v1
+
+[`review-memory-audit-v1/`](review-memory-audit-v1/) derives a deterministic 24-case fast regression
+suite from the frozen Census and retains a 500-case shadow replay as a release gate. Its nine
+mutually exclusive buckets exercise stable and drifted checkpoints, post-review force-pushes,
+same-reviewer re-review, missing OIDs, qualifying dismissals, COMMENTED-only attention, bot-only
+activity, and PRs with no review objects. All ten Census repositories are represented.
+
+This is explicitly a post-outcome regression corpus: the Census results informed the buckets and
+product direction. It is not independent evidence of generalization or value. Real multi-page API
+history and a repository with no review activity remain prospective coverage gaps.
+
 ## Rebase-aware review-delta contract
 
 [`review-delta-v1/`](review-delta-v1/) is a deterministic, network-free suite of thirteen synthetic

@@ -1,0 +1,72 @@
+{
+  "dataset_version": "1.0.0",
+  "designation": "post_outcome_regression_not_confirmatory",
+  "frozen_at": "2026-09-05T13:00:00Z",
+  "known_gaps": [
+    "The frozen 500-PR capture contains no review or filtered-timeline connection requiring more than one page, so multi-page transport behavior remains synthetic.",
+    "The source panel contains individual PRs with no review objects but no repository selected for having no review activity at all.",
+    "The same observed Census informed the product direction and these coverage buckets; no accuracy, prevalence, time-saving, safety, retention, or market claim may use this regression set as independent evidence."
+  ],
+  "release_gates": {
+    "expected_cases": 24,
+    "expected_repositories": 10,
+    "full_500_shadow_replay_required": true,
+    "privacy_forbidden_field_matches_allowed": 0,
+    "prospective_holdout_required_for_generalization_claim": true,
+    "real_multi_page_case_required": false,
+    "semantic_oracle_mismatches_allowed": 0,
+    "source_hash_mismatches_allowed": 0
+  },
+  "schema": "stratadiff-review-memory-audit-regression-protocol-v1",
+  "selection": {
+    "algorithm": "bucket_priority_then_sha256_v1",
+    "bucket_order": [
+      "missing_oid",
+      "commented_newer",
+      "dismissed",
+      "rewrite_heavy",
+      "drift_without_force",
+      "bot_only",
+      "zero_review",
+      "commented_only",
+      "stable"
+    ],
+    "bucket_quotas": {
+      "bot_only": 2,
+      "commented_newer": 1,
+      "commented_only": 1,
+      "dismissed": 3,
+      "drift_without_force": 4,
+      "missing_oid": 2,
+      "rewrite_heavy": 4,
+      "stable": 4,
+      "zero_review": 3
+    },
+    "required_repository_coverage": [
+      "dotnet/runtime",
+      "elastic/elasticsearch",
+      "github/gh-stack",
+      "grafana/grafana",
+      "home-assistant/core",
+      "kubernetes/kubernetes",
+      "microsoft/vscode",
+      "PostHog/posthog",
+      "rust-lang/rust",
+      "vercel/next.js"
+    ],
+    "rewrite_heavy_repositories": [
+      "kubernetes/kubernetes",
+      "PostHog/posthog",
+      "rust-lang/rust",
+      "vercel/next.js"
+    ],
+    "seed": "review-memory-audit-v1-golden",
+    "selection_note": "Buckets are assigned in the frozen order, so a case selected for an earlier bucket cannot be selected again. Rewrite-heavy takes one post-force-push case per named repository, preferring a same-reviewer completed re-review before hash rank. Stable cases first cover repositories not yet represented, then fill by hash rank. Outcomes informed every bucket; this is regression coverage, not a holdout."
+  },
+  "source_artifacts": {
+    "capture_path": "benchmarks/review-churn-census-v1/capture.json",
+    "capture_sha256": "b39143303ea88365a53023bd915eb759149ce49424ce64e2c6c7ebe36424142d",
+    "manifest_path": "benchmarks/review-churn-census-v1/manifest.json",
+    "manifest_sha256": "d3cd40040523d5f8ee024efc6f4318937f056665ac714010188e29be76f536c6"
+  }
+}
