@@ -186,4 +186,6 @@ then
   exit 1
 fi
 
+"${stratadiff_script_directory}/test-install-release.sh"
+
 printf 'release packaging self-test passed\n'

@@ -1,7 +1,10 @@
-# Structured code differencing survey
+# Structured code differencing and review-memory survey
 
-Survey date: 2026-09-05. This document distinguishes mapping accuracy, edit-script size,
-human-readable presentation, and replayability; they are different objectives.
+Engine survey date: 2026-09-05. Review-workflow competitor snapshot: 2026-09-06. This document
+distinguishes mapping accuracy, edit-script size, human-readable presentation, persistent review
+state, approval policy, and replayability; they are different objectives. Prices and product
+behavior below are point-in-time vendor or platform documentation, not independent adoption or
+accuracy evidence, and must be refreshed before external use.
 
 ## Executive finding
 
@@ -20,11 +23,11 @@ The strongest practical direction is therefore evidence-bearing and abstention-a
 
 ## Review memory and base drift
 
-Incremental review is established product territory. GitHub, Graphite, and Reviewable already show
-changes across revisions, and Git provides [`range-diff`](https://git-scm.com/docs/git-range-diff)
-for patch-series comparison. The open problem for StrataDiff is narrower: carry human review state
-only when a host-neutral proof survives push, force-push, rebase, or base drift, then fail closed on
-everything else.
+Incremental review is established product territory. GitHub, GitLab, Gerrit, Graphite, and
+Reviewable already preserve review state or show changes across revisions, and Git provides
+[`range-diff`](https://git-scm.com/docs/git-range-diff) for patch-series comparison. The open problem
+for StrataDiff is narrower: carry human review state only when a host-neutral proof survives push,
+force-push, rebase, restack, or base drift, then fail closed on everything else.
 
 Public reports captured on 2026-09-05 show why a direct checkpoint-to-head diff is insufficient:
 
@@ -50,6 +53,75 @@ Public reports captured on 2026-09-05 show why a direct checkpoint-to-head diff 
 - Graphite's [stack-review guidance](https://graphite.com/docs/best-practices-for-reviewing-stacks)
   recommends disabling stale-approval dismissal and latest-push approval requirements for smoother
   stacks. This makes the unresolved tradeoff explicit: avoid repeated work or retain a strict gate.
+
+### Documented capability snapshot
+
+The following comparison uses official product or platform documentation captured on 2026-09-06.
+“Not documented” means no claim was found in the cited material; it does not prove that an internal,
+preview, or later capability is absent.
+
+| System | Documented review-memory or re-review behavior | Rewrite and approval boundary | Activation or commercial friction at capture |
+|---|---|---|---|
+| GitHub | Files can be marked Viewed and are unmarked when that file changes ([reviewing proposed changes](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/reviewing-changes-in-pull-requests/reviewing-proposed-changes-in-a-pull-request#marking-a-file-as-viewed)). | GitHub can dismiss stale approvals when its recorded PR diff changes, including through base movement, or require approval of the most recent reviewable push ([protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)). These are whole-review merge controls, not per-change carry certificates. | Native review requires no third-party installation. Plan and repository visibility affect availability of protected-branch features; no pricing inference is needed for the technical comparison. |
+| GitLab | Each push creates one retained MR diff version; users can compare prior versions. Per-user Viewed files remain hidden until their contents change ([versions](https://docs.gitlab.com/user/project/merge_requests/versions/), [Viewed files](https://docs.gitlab.com/user/project/merge_requests/changes/#mark-files-as-viewed)). | Approval reset evaluates `git patch-id` so rebases or target merges that preserve the patch can avoid unnecessary reset; projects can instead retain all approvals or remove only affected Code Owner approvals ([approval settings](https://docs.gitlab.com/user/project/merge_requests/approvals/settings/)). Patch ID is described by GitLab as reasonably stable; it is not reviewer × change byte provenance. | Diff versions and Viewed state are documented across Free, Premium, and Ultimate. Required approval rules and Code Owner enforcement have separate tier/configuration requirements. |
+| Gerrit | Changes retain patch sets, reviewers can compare patch set A to B, and private reviewed flags are keyed by patch set, file, and user ([review UI](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#patch-sets), [reviewed flags](https://gerrit-review.googlesource.com/Documentation/config-accounts.html#reviewed-flags)). | Gerrit maps and colors rebase edits, can omit files changed only by rebase, and copies votes when an administrator-defined `copyCondition` matches change kinds such as `NO_CHANGE`, `NO_CODE_CHANGE`, or `TRIVIAL_REBASE` ([rebase edits](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#normal-and-rebase-edits), [copy conditions](https://gerrit-review.googlesource.com/Documentation/config-labels.html#label_copyCondition)). Its documentation also shows a [hazardous stacked squash](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#hazardous-rebases) whose A-to-B diff is empty while parent content enters implicitly. | Gerrit is open source, but adopting it means operating a review server; the official installation path requires Java, a WAR, site initialization, and daemon operations ([installation](https://gerrit-review.googlesource.com/Documentation/install.html)). |
+| Reviewable | Tracks reviewed state for each file at each revision for each reviewer, exposes that reviewer's last-reviewed revision to latest, retains immutable force-pushed revisions, and heuristically matches rebased commits ([files](https://docs.reviewable.io/files)). | This is the closest persistent review-state incumbent, but the cited documentation does not claim a byte-level, independently replayable carry certificate for a human checkpoint. | GitHub registration uses OAuth; private repository access requires the broad `repo` scope, and organization OAuth policy can block it ([registration](https://docs.reviewable.io/registration)). Team and Business list prices were $8 and $16 per contributor per month ([pricing](https://www.reviewable.io/pricing/)). |
+| Graphite | `gt submit` creates PR versions; after a user reviews and the PR changes, Hide reviewed changes compares that user's last-reviewed version with the latest ([PR versions](https://graphite.com/docs/pull-request-versions)). It also provides native stack navigation and restacking. | Version interdiff and stack navigation are documented; reviewer × file proof and safe carry across rewritten identity are not. Graphite's own [stack-review guidance](https://graphite.com/docs/best-practices-for-reviewing-stacks) recommends disabling GitHub stale-approval dismissal and latest-push approval requirements for smoother stacks. | New organization setup requires its GitHub App and organization-owner approval, plus personal authorization; the CLI has a separate install/activation path ([App authentication](https://graphite.com/docs/authenticate-with-github-app), [CLI install](https://graphite.com/docs/install-the-cli)). Starter and Team were $20 and $40 per seat per month billed annually ([billing](https://graphite.com/docs/billing-plans)). |
+| CodeRabbit | A new PR receives full analysis; later pushes default to incremental reviews focused on commits added since its previous review. Automatic incremental review defaults on, pauses after five reviewed commits by default, and manual commands choose incremental or full review ([review overview](https://docs.coderabbit.ai/overview/pull-request-review), [automatic review](https://docs.coderabbit.ai/configuration/auto-review)). | This is continuity of the bot's analysis, not evidence that a named human review still covers unchanged bytes. The cited material does not document dropped-reviewed-edit or four-snapshot base-drift proof. | GitHub organization installation requires an organization owner and repository authorization ([GitHub setup](https://docs.coderabbit.ai/platforms/github-com)). Essentials was $24 annually/$30 monthly, Team $48/$60, Advanced $90 monthly, with rolling per-developer review limits ([plans](https://docs.coderabbit.ai/management/plans)). |
+| GitHub Copilot code review | Automatic review can optionally run on every new push; otherwise later changes require a manual re-request. GitHub warns a re-review may repeat comments already resolved or downvoted ([usage](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review)). | Reviews are Comments by default. Copilot approvals are a public preview that can satisfy required approvals only when explicitly enabled; a later commit dismisses that Copilot approval. Neither behavior proves continuity of an earlier human review. | Organization policy must enable code review. Reviews consume both AI credits and GitHub Actions minutes; current plan and credit prices are documented separately ([concept](https://docs.github.com/en/copilot/concepts/agents/code-review), [plans](https://docs.github.com/en/copilot/get-started/plans)). |
+
+This snapshot rules out two broad positions. StrataDiff is not a generic interdiff: Reviewable,
+Graphite, GitLab, and Gerrit already retain revisions or show last-reviewed-to-latest changes, and
+Gerrit already separates many rebase edits. It is also not another AI reviewer: CodeRabbit and
+Copilot already regenerate findings on later pushes. The remaining testable boundary is narrower:
+start from an exact human checkpoint; distinguish current author residue, dropped reviewed edits,
+and old-base-to-current-base influx; carry only a named deterministic relation; expose all
+unsupported cases; and let another implementation verify the evidence offline.
+
+### Public demand signals and their limits
+
+In addition to the GitHub and `gh-stack` reports above, the following GitLab work items were
+captured on 2026-09-06:
+
+- [#25559](https://gitlab.com/gitlab-org/gitlab/-/work_items/25559), opened in 2018, asks GitLab to
+  remember each reviewer's last-reviewed version rather than requiring manual timestamp/version
+  matching; it displayed 69 upvotes and 14 notes at capture.
+- [#241509](https://gitlab.com/gitlab-org/gitlab/-/work_items/241509) reports that a force-push can
+  remove useful comparison context; it displayed 9 upvotes at capture.
+- [#442454](https://gitlab.com/gitlab-org/gitlab/-/work_items/442454), closed at capture, reports
+  target-branch noise in rebase comparison and proposes a `range-diff`-style view.
+
+These are self-selected requests, not a prevalence sample, revenue evidence, or a promise that the
+platforms will not close the gaps. They support testing rewrite-heavy reviewers as an initial
+segment; they do not support claiming that most PRs need StrataDiff. The repository's completed
+Review Churn Census remains the bounded incidence evidence for the selected public panel.
+
+### Activation implication
+
+The competitor snapshot also shows that capability and activation are separate. Native hosts have
+zero incremental install cost; Reviewable needs broad OAuth access for private-repository use,
+Graphite and CodeRabbit require organization-owner App approval for organization deployment, and
+Gerrit requires operating a different review system. A local, no-admin entry is valuable only if it
+is genuinely easier than those paths.
+
+At this repository snapshot, [`resume`](../src/resume.rs) contains canonical PR-URL repository
+inference and bounded temporary Git storage. That source-level path and its repository-local tests
+are necessary but do not establish distributable activation: the [release procedure](releasing.md)
+explicitly distinguishes release infrastructure from an actually published, installed artifact.
+The highest-leverage acceptance test is therefore:
+
+```text
+fresh environment with Git + authenticated gh
+  -> install a verified prebuilt StrataDiff release
+  -> run stratadiff resume with one canonical GitHub PR URL
+  -> infer host/repository/reviewer with no checkout, -R, or SHA
+  -> fetch only the exact bounded object closure into temporary storage
+  -> open the first verified residue, or fail closed with an actionable reason
+```
+
+Measure activation success and time to first residue before adding more classifiers or a hosted
+control plane. A source build, pre-cloned repository, hand-selected checkpoint, or organization
+administrator install does not satisfy this activation contract.
 
 StrataDiff therefore treats the current PR range, not the raw checkpoint-to-head snapshot delta, as
 the source of the residue after a base change. It tries complete Git identity first. A unique

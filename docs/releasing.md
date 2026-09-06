@@ -94,6 +94,40 @@ before rerunning. A previously published release is never overwritten by this wo
 
 ## Install and verify a released binary
 
+The normal user path downloads the installer from the same immutable version tag, then lets it
+select and verify the platform asset:
+
+```bash
+(
+  set -e
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  gh api -H 'Accept: application/vnd.github.raw+json' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.3.0' \
+    > "$installer"
+  test -s "$installer"
+  bash "$installer" v0.3.0
+)
+```
+
+After that block succeeds:
+
+```console
+export PATH="$HOME/.local/bin:$PATH"
+stratadiff build-info
+stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
+```
+
+Use the actual immutable release tag instead of copying the example blindly. The bootstrap step
+trusts GitHub's authenticated contents response for that protected tag and downloads it completely
+before execution; the binary verification does not retroactively attest the installer itself. The
+installer accepts only stable semantic-version tags, fixes the release repository and signer
+workflow, fully dereferences the tag before download and again before installation, verifies the
+checksum and bundled GitHub attestation, checks the binary's reported version, and installs through
+a same-directory atomic rename. An existing binary is left untouched on every validation failure.
+`scripts/test-install-release.sh` exercises the four platform mappings and principal failure modes;
+the release-contract CI job runs it under both Ubuntu and macOS system tooling.
+
 Select the asset for the current kernel and CPU, then download the binary, checksum, and provenance
 bundle. For example, on Linux x86-64:
 

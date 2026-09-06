@@ -37,6 +37,8 @@ const FETCH_PACK_PROTOCOL_LIMIT: usize = 256;
 const LOCAL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const REMOTE_FETCH_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const VIEWER_SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
+const CANONICAL_PULL_REQUEST_URL_ERROR: &str =
+    "pull request URL must be exactly https://HOST/OWNER/REPO/pull/NUMBER";
 
 const VIEWER_ENVIRONMENT_ALLOWLIST: &[&str] = &[
     "PATH",
@@ -88,7 +90,7 @@ const GIT_ENVIRONMENT_DENYLIST: &[&str] = &[
 
 #[derive(Debug, Args)]
 pub(crate) struct ResumeArgs {
-    /// Pull request number, URL, or branch accepted by `gh pr view`.
+    /// Pull request number, branch, or canonical HTTPS pull request URL.
     pub(crate) pull_request: String,
     /// Exact reviewer login; defaults to the authenticated `gh` user.
     #[arg(long)]
@@ -142,6 +144,13 @@ struct RepositoryIdentity {
     full_name: String,
     url: String,
     host: String,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct CanonicalPullRequestUrl {
+    host: String,
+    repository: String,
+    number: u64,
 }
 
 impl RepositoryIdentity {
@@ -206,12 +215,16 @@ impl<'a> ResumeSession<'a> {
             .expect("resume repository is selected before object resolution")
     }
 
-    fn select_repository(&mut self, args: &ResumeArgs) -> Result<()> {
-        let repository = match (&args.repository, &args.repo_dir) {
+    fn select_repository(
+        &mut self,
+        requested_repository: Option<&str>,
+        repo_dir: Option<&Path>,
+    ) -> Result<()> {
+        let repository = match (requested_repository, repo_dir) {
             (None, None) => canonicalize_git_repository(
                 Path::new("."),
                 self.signals,
-                "current directory is not inside a Git repository; use -R HOST/OWNER/REPO to run without a checkout",
+                "current directory is not inside a Git repository; use -R HOST/OWNER/REPO, --repo-dir PATH, or a canonical github.com pull request URL",
             )?,
             (None, Some(repo_dir)) | (Some(_), Some(repo_dir)) => canonicalize_git_repository(
                 repo_dir,
@@ -946,20 +959,36 @@ pub(crate) fn run(args: ResumeArgs) -> Result<()> {
 }
 
 fn run_with_session(args: &ResumeArgs, session: &mut ResumeSession<'_>) -> Result<()> {
-    session.select_repository(args)?;
-    let identity = resolve_repository_identity(
-        session.repository(),
-        args.repository.as_deref(),
-        session.signals,
-    )?;
+    let pull_request_url = parse_pull_request_url(&args.pull_request)?;
+    let inferred_repository = pull_request_url
+        .as_ref()
+        .filter(|url| {
+            args.repository.is_none()
+                && args.repo_dir.is_none()
+                && url.host.eq_ignore_ascii_case("github.com")
+        })
+        .map(|url| url.repository.as_str());
+    let requested_repository = args.repository.as_deref().or(inferred_repository);
+    session.select_repository(requested_repository, args.repo_dir.as_deref())?;
+    let identity =
+        resolve_repository_identity(session.repository(), requested_repository, session.signals)?;
+    if let Some(url) = &pull_request_url {
+        ensure!(
+            url.repository.eq_ignore_ascii_case(&identity.selector()),
+            "pull request URL does not match the selected repository"
+        );
+    }
     let reviewer = match &args.reviewer {
         Some(reviewer) => reviewer.clone(),
         None => resolve_authenticated_reviewer(&identity.host, session.signals)?,
     };
     validate_reviewer(&reviewer)?;
 
+    let pull_request_number = pull_request_url.as_ref().map(|url| url.number.to_string());
+    let pull_request = pull_request_number.as_deref().unwrap_or(&args.pull_request);
+
     let first = read_pull_request_coordinates(
-        &args.pull_request,
+        pull_request,
         &identity.selector(),
         session.repository(),
         session.signals,
@@ -1463,6 +1492,49 @@ fn requested_repository_host(repository: &str) -> Option<&str> {
     parts.next().is_none().then_some(host)
 }
 
+fn parse_pull_request_url(pull_request: &str) -> Result<Option<CanonicalPullRequestUrl>> {
+    let lowercase = pull_request.to_ascii_lowercase();
+    let looks_like_url = lowercase.starts_with("http:")
+        || lowercase.starts_with("https:")
+        || pull_request.starts_with("//")
+        || pull_request.contains("://");
+    if !looks_like_url {
+        return Ok(None);
+    }
+
+    let Some(remainder) = pull_request.strip_prefix("https://") else {
+        bail!(CANONICAL_PULL_REQUEST_URL_ERROR);
+    };
+    let mut parts = remainder.split('/');
+    let host = parts.next().unwrap_or_default();
+    let owner = parts.next().unwrap_or_default();
+    let name = parts.next().unwrap_or_default();
+    let kind = parts.next().unwrap_or_default();
+    let number_text = parts.next().unwrap_or_default();
+    let number = number_text
+        .parse::<u64>()
+        .map_err(|_| anyhow!(CANONICAL_PULL_REQUEST_URL_ERROR))?;
+    ensure!(
+        kind == "pull"
+            && parts.next().is_none()
+            && number > 0
+            && number_text == number.to_string()
+            && validate_host(host).is_ok()
+            && validate_owner_repository(&format!("{owner}/{name}")).is_ok(),
+        CANONICAL_PULL_REQUEST_URL_ERROR
+    );
+    let repository = format!("{host}/{owner}/{name}");
+    ensure!(
+        pull_request == format!("https://{repository}/pull/{number}"),
+        CANONICAL_PULL_REQUEST_URL_ERROR
+    );
+    Ok(Some(CanonicalPullRequestUrl {
+        host: host.to_owned(),
+        repository,
+        number,
+    }))
+}
+
 fn is_sha1(value: &str) -> bool {
     value.len() == 40
         && value
@@ -1540,8 +1612,8 @@ mod tests {
     use super::{
         PullRequestCoordinates, RepositoryRecord, ResumeSession, SignalState,
         is_git_environment_name, is_object_id, is_sha1, list_pack_keep_files, pack_keep_has_owner,
-        requested_repository_host, should_remove_from_git_environment, validate_owner_repository,
-        validate_pull_request_coordinates, validate_reviewer,
+        parse_pull_request_url, requested_repository_host, should_remove_from_git_environment,
+        validate_owner_repository, validate_pull_request_coordinates, validate_reviewer,
     };
 
     fn repository_with_commit() -> (tempfile::TempDir, String) {
@@ -1608,6 +1680,33 @@ mod tests {
         );
         assert_eq!(requested_repository_host("owner/repo"), None);
         assert_eq!(requested_repository_host("a/b/c/d"), None);
+    }
+
+    #[test]
+    fn pull_request_url_parser_accepts_only_the_canonical_form() {
+        let parsed = parse_pull_request_url("https://ghe.example/owner/repo/pull/17")
+            .unwrap()
+            .unwrap();
+        assert_eq!(parsed.host, "ghe.example");
+        assert_eq!(parsed.repository, "ghe.example/owner/repo");
+        assert_eq!(parsed.number, 17);
+        for input in ["17", "feature/review"] {
+            assert_eq!(parse_pull_request_url(input).unwrap(), None, "{input}");
+        }
+        for input in [
+            "http://ghe.example/owner/repo/pull/17",
+            "HTTPS://ghe.example/owner/repo/pull/17",
+            "https:/ghe.example/owner/repo/pull/17",
+            "ftp://ghe.example/owner/repo/pull/17",
+            "https://ghe.example/owner/repo/pull/0",
+            "https://ghe.example/owner/repo/pull/017",
+            "https://ghe.example/owner/repo/pull/17/",
+            "https://ghe.example/owner/repo/issues/17",
+            "https://ghe.example/owner/repo/pull/17?view=files",
+            "https://ghe.example/owner/repo/extra/pull/17",
+        ] {
+            assert!(parse_pull_request_url(input).is_err(), "{input}");
+        }
     }
 
     #[test]

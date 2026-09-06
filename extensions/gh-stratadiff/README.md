@@ -8,7 +8,7 @@ extension passes its arguments and exit status through unchanged:
 gh stratadiff audit -R OWNER/REPOSITORY
 gh stratadiff demo
 gh stratadiff inbox -R OWNER/REPOSITORY
-gh stratadiff resume <PR>
+gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
 ```
 
@@ -64,7 +64,7 @@ Point the extension at the binary from this checkout:
 ```console
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
 gh stratadiff demo
-gh stratadiff resume 123 -R OWNER/REPOSITORY
+gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 ```
 
 To audit the most recent 50 merged pull requests in a 90-day window:
@@ -112,17 +112,25 @@ the built-in Actions `GITHUB_TOKEN` for team ownership because it cannot general
 membership. The collector queries effective permission only for referenced principals; it does not
 download the repository's complete collaborator list.
 
-Resume selects its repository mode only from the presence of `-R` and `--repo-dir`:
+Resume selects its repository mode from the PR selector and explicit repository options:
 
-| `-R` | `--repo-dir` | Repository behavior |
-| --- | --- | --- |
-| omitted | omitted | Use the current Git worktree or bare repository and let `gh repo view` infer GitHub coordinates. |
-| omitted | set | Use that local Git worktree or bare repository and infer GitHub coordinates from it. |
-| set | omitted | Create an isolated temporary bare repository and use the explicit GitHub coordinates. |
-| set | set | Use that local Git worktree or bare repository and the explicit GitHub coordinates. |
+| PR selector | `-R` | `--repo-dir` | Repository behavior |
+| --- | --- | --- | --- |
+| canonical `https://github.com/OWNER/REPO/pull/N` | omitted | omitted | Infer the GitHub.com repository, then create an isolated temporary bare repository. |
+| number or branch | omitted | omitted | Use the current Git worktree or bare repository and let `gh repo view` infer GitHub coordinates. |
+| any accepted selector | omitted | set | Use that local Git worktree or bare repository and infer GitHub coordinates from it. |
+| any accepted selector | set | omitted | Create an isolated temporary bare repository and use the explicit GitHub coordinates. |
+| any accepted selector | set | set | Use that local Git worktree or bare repository and the explicit GitHub coordinates. |
 
 There is no fallback between modes: an invalid explicit `--repo-dir` fails, and a non-Git current
-directory fails unless `-R` is supplied. `--repo-dir` accepts either a worktree or a bare Git
+directory requires either `-R` or an exact canonical HTTPS PR URL. A URL that disagrees with an
+explicit or locally resolved repository fails before any object fetch. URL variants with query
+strings, fragments, a trailing slash, a non-HTTPS scheme, or a zero/zero-padded PR number are not
+treated as repository selectors. URL-only inference deliberately accepts only `github.com`; a GHES
+URL requires an explicit trusted `-R HOST/OWNER/REPO` or a matching local repository. Every accepted
+URL is bound locally to the resolved repository before another provider request, and only its PR
+number—not the URL—is passed to `gh pr view`. This prevents a URL host from overriding `--repo` and
+receiving an ambient enterprise token. `--repo-dir` accepts either a worktree or a bare Git
 repository. The local modes do not need to be on the pull request branch. Missing PR base, current
 head, and review checkpoint commits are fetched by exact object ID without switching branches or
 changing worktree files. `--reviewer LOGIN` selects another reviewer when policy permits access to
@@ -134,7 +142,7 @@ silently fall back to `github.com`.
 For a terminal-only session:
 
 ```console
-gh stratadiff resume 123 --no-open
+gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123 --no-open
 ```
 
 ## Resume trust and failure boundary

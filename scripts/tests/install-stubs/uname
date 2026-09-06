@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "${1:-}" in
+  -s)
+    printf '%s\n' "${STRATADIFF_INSTALL_TEST_KERNEL:?}"
+    ;;
+  -m)
+    printf '%s\n' "${STRATADIFF_INSTALL_TEST_MACHINE:?}"
+    ;;
+  *)
+    echo "unexpected uname arguments: $*" >&2
+    exit 2
+    ;;
+esac

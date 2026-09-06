@@ -18,8 +18,13 @@ const PROCESS_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone, Copy, Debug)]
 enum RepositoryMode {
     CurrentWorktree,
+    CurrentWorktreeBranch,
     RepoDir,
     BareRepoDir,
+    PullRequestUrl,
+    PullRequestUrlInCurrentWorktree,
+    PullRequestUrlAndRepository,
+    PullRequestUrlAndRepoDir,
     RepositoryOnly,
     RepositoryAndRepoDir,
 }
@@ -274,10 +279,31 @@ impl Fixture {
     }
 
     fn resume_command(&self, mode: RepositoryMode, default_reviewer: bool) -> Command {
+        let pull_request = match mode {
+            RepositoryMode::CurrentWorktreeBranch => "pull-request".to_owned(),
+            RepositoryMode::PullRequestUrl
+            | RepositoryMode::PullRequestUrlInCurrentWorktree
+            | RepositoryMode::PullRequestUrlAndRepository
+            | RepositoryMode::PullRequestUrlAndRepoDir => {
+                format!("https://{}/acme/widget/pull/17", self.host)
+            }
+            _ => "17".to_owned(),
+        };
+        self.resume_command_with_pull_request(mode, default_reviewer, &pull_request)
+    }
+
+    fn resume_command_with_pull_request(
+        &self,
+        mode: RepositoryMode,
+        default_reviewer: bool,
+        pull_request: &str,
+    ) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_stratadiff"));
-        command.args(["resume", "17"]);
+        command.args(["resume", pull_request]);
         match mode {
-            RepositoryMode::CurrentWorktree => {
+            RepositoryMode::CurrentWorktree
+            | RepositoryMode::CurrentWorktreeBranch
+            | RepositoryMode::PullRequestUrlInCurrentWorktree => {
                 command.current_dir(&self.local);
             }
             RepositoryMode::RepoDir => {
@@ -292,10 +318,19 @@ impl Fixture {
                     .arg("--repo-dir")
                     .arg(&self.bare_local);
             }
-            RepositoryMode::RepositoryOnly => {
+            RepositoryMode::PullRequestUrl => {
+                command.current_dir(&self.outside);
+            }
+            RepositoryMode::PullRequestUrlAndRepository | RepositoryMode::RepositoryOnly => {
                 command
                     .current_dir(&self.outside)
                     .args(["-R", &format!("{}/acme/widget", self.host)]);
+            }
+            RepositoryMode::PullRequestUrlAndRepoDir => {
+                command
+                    .current_dir(&self.outside)
+                    .arg("--repo-dir")
+                    .arg(&self.local);
             }
             RepositoryMode::RepositoryAndRepoDir => {
                 command
@@ -330,7 +365,11 @@ impl Fixture {
             .stderr(Stdio::piped());
         if matches!(
             mode,
-            RepositoryMode::CurrentWorktree | RepositoryMode::RepoDir
+            RepositoryMode::CurrentWorktree
+                | RepositoryMode::CurrentWorktreeBranch
+                | RepositoryMode::PullRequestUrlInCurrentWorktree
+                | RepositoryMode::RepoDir
+                | RepositoryMode::PullRequestUrlAndRepoDir
         ) {
             command.env("GIT_DIR", self.poisoned.join(".git"));
         }
@@ -491,8 +530,25 @@ impl CapturedChild {
 fn resume_scrubs_poisoned_environment_across_repository_modes_and_sigterm_cleanup() {
     let cases = [
         (RepositoryMode::CurrentWorktree, "github.com", false),
+        (RepositoryMode::CurrentWorktreeBranch, "github.com", false),
         (RepositoryMode::RepoDir, "github.com", false),
         (RepositoryMode::BareRepoDir, "github.com", false),
+        (RepositoryMode::PullRequestUrl, "github.com", true),
+        (
+            RepositoryMode::PullRequestUrlInCurrentWorktree,
+            "ghe-current.example",
+            true,
+        ),
+        (
+            RepositoryMode::PullRequestUrlAndRepository,
+            "ghe-explicit.example",
+            true,
+        ),
+        (
+            RepositoryMode::PullRequestUrlAndRepoDir,
+            "ghe-local.example",
+            true,
+        ),
         (RepositoryMode::RepositoryOnly, "github.com", false),
         (RepositoryMode::RepositoryAndRepoDir, "ghe.example", true),
     ];
@@ -534,6 +590,13 @@ fn resume_scrubs_poisoned_environment_across_repository_modes_and_sigterm_cleanu
         assert!(
             calls
                 .lines()
+                .filter(|line| line.contains(" gh pr view "))
+                .all(|line| !line.contains("://")),
+            "a pull request URL reached gh in {mode:?}:\n{calls}"
+        );
+        assert!(
+            calls
+                .lines()
                 .filter(|line| line.starts_with("git "))
                 .all(|line| {
                     line.contains(" secrets=clean")
@@ -560,19 +623,67 @@ fn resume_scrubs_poisoned_environment_across_repository_modes_and_sigterm_cleanu
             .find(|line| line.contains(" gh repo view "))
             .unwrap();
         match mode {
-            RepositoryMode::CurrentWorktree | RepositoryMode::RepoDir => {
+            RepositoryMode::CurrentWorktree
+            | RepositoryMode::CurrentWorktreeBranch
+            | RepositoryMode::PullRequestUrlInCurrentWorktree
+            | RepositoryMode::RepoDir
+            | RepositoryMode::PullRequestUrlAndRepoDir => {
                 assert!(repo_call.starts_with(&format!("cwd={} ", fixture.local.display())));
                 assert!(!repo_call.contains("github.com/acme/widget"));
+                assert!(
+                    !calls.lines().any(|line| {
+                        line.contains(" init --bare --quiet ") && line.contains("/repository.git")
+                    }),
+                    "{mode:?}:\n{calls}"
+                );
+                if matches!(mode, RepositoryMode::CurrentWorktreeBranch) {
+                    assert!(
+                        calls.contains(" gh pr view pull-request --repo github.com/acme/widget "),
+                        "{mode:?}:\n{calls}"
+                    );
+                }
+                if matches!(
+                    mode,
+                    RepositoryMode::PullRequestUrlInCurrentWorktree
+                        | RepositoryMode::PullRequestUrlAndRepoDir
+                ) {
+                    assert!(
+                        calls.contains(&format!(
+                            " gh pr view 17 --repo {}/acme/widget ",
+                            fixture.host
+                        )),
+                        "{mode:?}:\n{calls}"
+                    );
+                }
             }
             RepositoryMode::BareRepoDir => {
                 assert!(repo_call.starts_with(&format!("cwd={} ", fixture.bare_local.display())));
                 assert!(!repo_call.contains("github.com/acme/widget"));
             }
-            RepositoryMode::RepositoryOnly => {
-                assert!(repo_call.contains("github.com/acme/widget"));
+            RepositoryMode::PullRequestUrl
+            | RepositoryMode::PullRequestUrlAndRepository
+            | RepositoryMode::RepositoryOnly => {
+                assert!(repo_call.contains(&format!("{}/acme/widget", fixture.host)));
                 assert!(repo_call.contains("/gh-stratadiff-resume-"));
                 assert!(repo_call.contains("/repository.git gh repo view"));
                 assert!(calls.contains(" init --bare --quiet "));
+                if matches!(
+                    mode,
+                    RepositoryMode::PullRequestUrl | RepositoryMode::PullRequestUrlAndRepository
+                ) {
+                    assert!(
+                        calls.contains(&format!(
+                            " gh pr view 17 --repo {}/acme/widget ",
+                            fixture.host
+                        )),
+                        "{mode:?}:\n{calls}"
+                    );
+                    assert!(calls.contains(&format!(
+                        "gh api --hostname {} user --jq .login",
+                        fixture.host
+                    )));
+                    assert!(result.stderr.contains("Resuming @authenticated-reviewer"));
+                }
             }
             RepositoryMode::RepositoryAndRepoDir => {
                 assert!(repo_call.starts_with(&format!("cwd={} ", fixture.local.display())));
@@ -677,8 +788,9 @@ fn signal_after_fetch_pack_side_effect_removes_the_pid_owned_keep() {
 #[test]
 fn resume_rejects_cross_repository_pull_request_url_before_remote_resolution() {
     let fixture = Fixture::with_cross_repository_pr();
+    let pull_request = "https://github.com/other/widget/pull/17";
     let output = fixture
-        .resume_command(RepositoryMode::RepoDir, false)
+        .resume_command_with_pull_request(RepositoryMode::RepoDir, false, pull_request)
         .output()
         .unwrap();
 
@@ -698,7 +810,13 @@ fn resume_rejects_cross_repository_pull_request_url_before_remote_resolution() {
     fixture.assert_no_pack_keep_files();
     fixture.assert_no_scratch_directories();
 
-    assert_eq!(calls.matches(" gh pr view ").count(), 1, "{calls}");
+    assert_eq!(calls.matches(" gh pr view ").count(), 0, "{calls}");
+    let repo_call = calls
+        .lines()
+        .find(|line| line.contains(" gh repo view "))
+        .unwrap();
+    assert!(repo_call.starts_with(&format!("cwd={} ", fixture.local.display())));
+    assert!(!repo_call.contains("other/widget"));
     for forbidden in [
         "/pulls/17/reviews",
         " gh auth token ",
@@ -710,6 +828,131 @@ fn resume_rejects_cross_repository_pull_request_url_before_remote_resolution() {
             !calls.contains(forbidden),
             "unexpected call containing {forbidden:?}:\n{calls}"
         );
+    }
+}
+
+#[test]
+fn resume_rejects_a_pull_request_url_that_conflicts_with_explicit_repository() {
+    let fixture = Fixture::with_cross_repository_pr();
+    let pull_request = "https://github.com/other/widget/pull/17";
+    let output = fixture
+        .resume_command_with_pull_request(RepositoryMode::RepositoryOnly, false, pull_request)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let calls = fixture.calls();
+    assert!(
+        stderr.contains("pull request URL does not match the selected repository"),
+        "stderr:\n{stderr}\ncalls:\n{calls}"
+    );
+    assert_eq!(calls.matches(" gh pr view ").count(), 0, "{calls}");
+    assert!(
+        calls.contains(" gh repo view github.com/acme/widget "),
+        "{calls}"
+    );
+    for forbidden in [
+        "/pulls/17/reviews",
+        " gh auth token ",
+        "https://github.com/acme/widget.git",
+        " fetch-pack ",
+        " phase=workbench",
+    ] {
+        assert!(
+            !calls.contains(forbidden),
+            "unexpected call containing {forbidden:?}:\n{calls}"
+        );
+    }
+    fixture.assert_fetch_head_unchanged();
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn resume_rejects_cross_host_urls_before_gh_pr_view_with_explicit_repository_inputs() {
+    for mode in [RepositoryMode::RepositoryOnly, RepositoryMode::RepoDir] {
+        let fixture = Fixture::new("github.com", false);
+        let pull_request = "https://credential-probe.invalid/acme/widget/pull/17";
+        let output = fixture
+            .resume_command_with_pull_request(mode, false, pull_request)
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{mode:?}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        let calls = fixture.calls();
+        assert!(
+            stderr.contains("pull request URL does not match the selected repository"),
+            "{mode:?} stderr:\n{stderr}\ncalls:\n{calls}"
+        );
+        assert_eq!(calls.matches(" gh repo view ").count(), 1, "{calls}");
+        assert_eq!(calls.matches(" gh pr view ").count(), 0, "{calls}");
+        assert!(!calls.contains("credential-probe.invalid"), "{calls}");
+        for forbidden in [
+            " gh api ",
+            " gh auth token ",
+            " fetch-pack ",
+            " phase=workbench",
+        ] {
+            assert!(
+                !calls.contains(forbidden),
+                "unexpected call containing {forbidden:?} in {mode:?}:\n{calls}"
+            );
+        }
+        fixture.assert_fetch_head_unchanged();
+        fixture.assert_no_resume_refs();
+        fixture.assert_no_pack_keep_files();
+        fixture.assert_no_scratch_directories();
+    }
+}
+
+#[test]
+fn url_only_ghes_requires_an_explicit_repository_or_local_checkout() {
+    let fixture = Fixture::new("ghe-url.example", false);
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrl, false)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    let calls = fixture.calls();
+    assert!(
+        stderr.contains("canonical github.com pull request URL"),
+        "stderr:\n{stderr}\ncalls:\n{calls}"
+    );
+    assert!(!calls.lines().any(|line| line.contains(" gh ")), "{calls}");
+    fixture.assert_fetch_head_unchanged();
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn malformed_pull_request_urls_fail_before_repository_or_network_resolution() {
+    for pull_request in [
+        "http://github.com/acme/widget/pull/17",
+        "HTTPS://github.com/acme/widget/pull/17",
+        "https:/github.com/acme/widget/pull/17",
+        "https://github.com/acme/widget/pull/17?view=files",
+    ] {
+        let fixture = Fixture::new("github.com", false);
+        let output = fixture
+            .resume_command_with_pull_request(RepositoryMode::RepoDir, false, pull_request)
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{pull_request}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        let calls = fixture.calls();
+        assert!(
+            stderr.contains("pull request URL must be exactly https://HOST/OWNER/REPO/pull/NUMBER"),
+            "{pull_request} stderr:\n{stderr}\ncalls:\n{calls}"
+        );
+        assert!(calls.is_empty(), "{pull_request}:\n{calls}");
+        fixture.assert_no_scratch_directories();
     }
 }
 
@@ -1119,6 +1362,7 @@ case "${{1:-}} ${{2:-}}" in
     printf '{{"nameWithOwner":"acme/widget","url":"https://%s/acme/widget"}}\n' "$host"
     ;;
   "pr view")
+    [[ "${{3:-}}" != *"://"* ]]
     [[ "$arguments" == *" --repo $host/acme/widget "* ]]
     [[ "$arguments" == *" --json number,baseRefOid,headRefOid,url "* ]]
     count=0
