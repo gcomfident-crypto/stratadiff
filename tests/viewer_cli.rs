@@ -695,7 +695,11 @@ fn offline_demo_runs_outside_a_checkout_and_cleans_up_after_ctrl_c() {
     let _reader = thread::spawn(move || {
         let mut stderr = BufReader::new(stderr);
         let mut first_line = String::new();
-        let result = stderr.read_line(&mut first_line).map(|_| first_line);
+        let mut stop_hint = String::new();
+        let result = stderr
+            .read_line(&mut first_line)
+            .and_then(|_| stderr.read_line(&mut stop_hint))
+            .map(|_| first_line);
         let _ = sender.send(result);
     });
     let first_line = receiver
