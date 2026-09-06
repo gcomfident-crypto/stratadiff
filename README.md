@@ -166,13 +166,53 @@ production safety rate or evidence that reviewers save time.
 
 ## Quick start
 
-Rust 1.90 or newer is required. The repository includes the compiled Evidence Workbench in
-`web/dist`, so an ordinary Cargo build does not require Node.js. Rebuilding or verifying the web
-frontend requires Node.js 24 and npm 11.
+From any directory, install the exact `v0.3.0` release through an authenticated GitHub CLI, then
+paste the pull request URL. The installer selects one of the four supported native binaries,
+checks its SHA-256 digest and GitHub build-provenance bundle against the fully dereferenced release
+tag, checks the embedded version, and replaces the destination atomically:
+
+This path becomes available only after `v0.3.0` appears on the repository's Releases page. A 404
+means no verified artifact exists yet; use the development path below instead of bypassing the
+checks.
+
+```bash
+(
+  set -e
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.3.0' \
+    > "$installer"
+  test -s "$installer"
+  bash "$installer" v0.3.0
+)
+```
+
+After that block succeeds:
+
+```console
+export PATH="$HOME/.local/bin:$PATH"
+stratadiff build-info
+stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
+```
+
+The installer requires Bash, an authenticated recent `gh` with `gh attestation verify`, and standard
+Unix utilities; Resume additionally requires Git. It needs no source checkout, Rust toolchain,
+repository flag, commit SHA, workflow YAML, or administrator install. The bootstrap step trusts
+GitHub's authenticated contents response for the protected version tag; it downloads the script
+completely before execution. The script then fails closed if the release, platform, checksum,
+provenance, source commit, or binary version cannot be verified. The macOS binaries are not yet
+Developer ID signed or notarized. A matching public release must exist before the command can
+succeed.
+
+For development from a checkout, Rust 1.90 or newer is required. The repository includes the
+compiled Evidence Workbench in `web/dist`, so an ordinary Cargo build does not require Node.js.
+Rebuilding or verifying the web frontend requires Node.js 24 and npm 11.
 
 ```console
 scripts/build-release.sh --bin stratadiff
 target/release/stratadiff build-info
+target/release/stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123 --no-open
 target/release/stratadiff resume 123 -R OWNER/REPOSITORY --no-open
 target/release/stratadiff review origin/main HEAD
 target/release/stratadiff review origin/main HEAD --checkpoint LAST_REVIEWED_SHA
@@ -190,8 +230,8 @@ cmp rebuilt.py examples/demo/after.py
 
 The release wrapper uses stable Rust path remapping so binaries do not retain local checkout or
 Cargo-home paths. Plain `cargo build` remains available for development and crates.io builds. See
-the [release procedure](docs/releasing.md) for package verification, publication order, and the
-remaining binary-distribution notice requirement.
+the [release procedure](docs/releasing.md) for package verification, publication, installer trust
+boundaries, and platform limitations.
 
 ### Audit a repository's review memory
 
@@ -238,16 +278,22 @@ Resume's shared 10,000-review limit.
 
 ### Resume your own GitHub review
 
-After building StrataDiff, run native Resume directly or through the thin GitHub CLI extension from
-any directory by naming the repository:
+After installing or building StrataDiff, native Resume accepts a canonical PR URL from any
+directory without naming the repository separately:
+
+```console
+stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
+```
+
+The repository also contains a thin, locally installed GitHub CLI extension for development:
 
 ```console
 cd extensions/gh-stratadiff
 gh extension install .
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
-gh stratadiff resume 123 -R OWNER/REPOSITORY
+gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 # Equivalent native entry point:
-"$STRATADIFF_BIN" resume 123 -R OWNER/REPOSITORY
+"$STRATADIFF_BIN" resume https://github.com/OWNER/REPOSITORY/pull/123
 ```
 
 The extension forwards `resume` arguments and exit status directly to the Rust binary. Native Resume
@@ -262,6 +308,11 @@ its fetch process after normal exit or SIGINT/SIGTERM/SIGHUP. It does not create
 or submit GitHub approval, and review selection is currently login-based rather than bound to an
 immutable user node ID. See the
 [extension guide](extensions/gh-stratadiff/README.md) for options and trust boundaries.
+
+URL-only repository inference is intentionally limited to canonical `github.com` URLs. A GitHub
+Enterprise URL requires an explicit trusted `-R HOST/OWNER/REPOSITORY` or a matching
+`--repo-dir`; Resume binds the URL to that resolved repository locally and passes only the PR number
+to `gh`, preventing the URL from redirecting an ambient enterprise token to another host.
 
 ### Try Review Resume without a repository
 

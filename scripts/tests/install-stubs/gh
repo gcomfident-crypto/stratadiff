@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly test_log=${STRATADIFF_INSTALL_TEST_LOG:?}
+readonly test_state=${STRATADIFF_INSTALL_TEST_STATE:?}
+readonly test_fixture=${STRATADIFF_INSTALL_TEST_BINARY:?}
+readonly release_tag=v0.3.0
+readonly release_commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+readonly moved_commit=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+readonly first_tag_object=cccccccccccccccccccccccccccccccccccccccc
+readonly second_tag_object=dddddddddddddddddddddddddddddddddddddddd
+
+log_call() {
+  printf 'CALL\n' >> "${test_log}"
+  for argument in "$@"; do
+    printf 'ARG=%s\n' "${argument}" >> "${test_log}"
+  done
+}
+
+checksum() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1"
+  else
+    shasum -a 256 "$1"
+  fi
+}
+
+api() {
+  local hostname= endpoint= argument
+  shift
+  while [[ $# -gt 0 ]]; do
+    argument=$1
+    shift
+    case "${argument}" in
+      --hostname)
+        [[ $# -gt 0 ]] || exit 2
+        hostname=$1
+        shift
+        ;;
+      --jq)
+        [[ $# -gt 0 ]] || exit 2
+        shift
+        ;;
+      *)
+        [[ -z "${endpoint}" ]] || exit 2
+        endpoint=${argument}
+        ;;
+    esac
+  done
+  [[ "${hostname}" == github.com ]] || exit 2
+
+  case "${endpoint}" in
+    repos/gcomfident-crypto/stratadiff/git/ref/tags/${release_tag})
+      local count=0
+      if [[ -f "${test_state}" ]]; then
+        count="$(< "${test_state}")"
+      fi
+      count=$((count + 1))
+      printf '%s\n' "${count}" > "${test_state}"
+      if [[ "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" == tag-drift && \
+            "${count}" -gt 1 ]]; then
+        printf 'tag\t%s\n' "${second_tag_object}"
+      else
+        printf 'tag\t%s\n' "${first_tag_object}"
+      fi
+      ;;
+    repos/gcomfident-crypto/stratadiff/git/tags/${first_tag_object})
+      printf 'commit\t%s\n' "${release_commit}"
+      ;;
+    repos/gcomfident-crypto/stratadiff/git/tags/${second_tag_object})
+      printf 'commit\t%s\n' "${moved_commit}"
+      ;;
+    *)
+      echo "unexpected gh api endpoint: ${endpoint}" >&2
+      exit 2
+      ;;
+  esac
+}
+
+release_download() {
+  local tag=$1
+  shift
+  local repository= directory= argument asset_name=
+  local -a patterns=()
+
+  while [[ $# -gt 0 ]]; do
+    argument=$1
+    shift
+    case "${argument}" in
+      --repo)
+        repository=$1
+        shift
+        ;;
+      --dir)
+        directory=$1
+        shift
+        ;;
+      --pattern)
+        patterns+=("$1")
+        shift
+        ;;
+      *)
+        echo "unexpected gh release download argument: ${argument}" >&2
+        exit 2
+        ;;
+    esac
+  done
+
+  [[ "${tag}" == "${release_tag}" ]] || exit 2
+  [[ "${repository}" == github.com/gcomfident-crypto/stratadiff ]] || exit 2
+  [[ "${#patterns[@]}" -eq 3 ]] || exit 2
+  for argument in "${patterns[@]}"; do
+    case "${argument}" in
+      *.sha256|*.intoto.jsonl) ;;
+      stratadiff-*)
+        [[ -z "${asset_name}" ]] || exit 2
+        asset_name=${argument}
+        ;;
+      *) exit 2 ;;
+    esac
+  done
+  [[ -n "${asset_name}" ]] || exit 2
+  [[ " ${patterns[*]} " == *" ${asset_name}.sha256 "* ]] || exit 2
+  [[ " ${patterns[*]} " == *" ${asset_name}.intoto.jsonl "* ]] || exit 2
+
+  cp "${test_fixture}" "${directory}/${asset_name}"
+  local digest
+  digest="$(checksum "${directory}/${asset_name}")"
+  digest=${digest%% *}
+  printf '%s  %s\n' "${digest}" "${asset_name}" > "${directory}/${asset_name}.sha256"
+  printf '{"test-only":true}\n' > "${directory}/${asset_name}.intoto.jsonl"
+  if [[ "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" == tamper ]]; then
+    printf 'tampered\n' >> "${directory}/${asset_name}"
+  fi
+  if [[ "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" == missing-asset ]]; then
+    rm -- "${directory}/${asset_name}.sha256"
+  fi
+  if [[ "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" == extra-asset ]]; then
+    : > "${directory}/unexpected"
+  fi
+}
+
+release_view() {
+  local tag=$1
+  shift
+  local repository= json_fields= jq_filter= argument
+  while [[ $# -gt 0 ]]; do
+    argument=$1
+    shift
+    case "${argument}" in
+      --repo) repository=$1; shift ;;
+      --json) json_fields=$1; shift ;;
+      --jq) jq_filter=$1; shift ;;
+      *) exit 2 ;;
+    esac
+  done
+  [[ "${tag}" == "${release_tag}" ]] || exit 2
+  [[ "${repository}" == github.com/gcomfident-crypto/stratadiff ]] || exit 2
+  [[ "${json_fields}" == tagName,isDraft,isPrerelease,isImmutable ]] || exit 2
+  [[ -n "${jq_filter}" ]] || exit 2
+  case "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" in
+    draft) printf '%s\ttrue\tfalse\tfalse\n' "${release_tag}" ;;
+    prerelease) printf '%s\tfalse\ttrue\tfalse\n' "${release_tag}" ;;
+    mutable-release) printf '%s\tfalse\tfalse\tfalse\n' "${release_tag}" ;;
+    *) printf '%s\tfalse\tfalse\ttrue\n' "${release_tag}" ;;
+  esac
+}
+
+attestation_verify() {
+  local artifact=$1
+  shift
+  local hostname= bundle= repository= source_ref= source_digest= signer_workflow=
+  local deny_self_hosted=false argument
+
+  while [[ $# -gt 0 ]]; do
+    argument=$1
+    shift
+    case "${argument}" in
+      --hostname) hostname=$1; shift ;;
+      --bundle) bundle=$1; shift ;;
+      --repo) repository=$1; shift ;;
+      --source-ref) source_ref=$1; shift ;;
+      --source-digest) source_digest=$1; shift ;;
+      --signer-workflow) signer_workflow=$1; shift ;;
+      --deny-self-hosted-runners) deny_self_hosted=true ;;
+      *) exit 2 ;;
+    esac
+  done
+
+  [[ -f "${artifact}" ]] || exit 2
+  [[ "${bundle}" == "${artifact}.intoto.jsonl" ]] || exit 2
+  [[ "${hostname}" == github.com ]] || exit 2
+  [[ "${repository}" == gcomfident-crypto/stratadiff ]] || exit 2
+  [[ "${source_ref}" == refs/tags/${release_tag} ]] || exit 2
+  [[ "${source_digest}" == "${release_commit}" ]] || exit 2
+  [[ "${signer_workflow}" == gcomfident-crypto/stratadiff/.github/workflows/release.yml ]] || exit 2
+  [[ "${deny_self_hosted}" == true ]] || exit 2
+  [[ "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" != attestation-failure ]]
+}
+
+log_call "$@"
+case "${1:-}:${2:-}" in
+  api:*)
+    api "$@"
+    ;;
+  release:download)
+    shift 2
+    release_download "$@"
+    ;;
+  release:view)
+    shift 2
+    release_view "$@"
+    ;;
+  attestation:verify)
+    shift 2
+    attestation_verify "$@"
+    ;;
+  *)
+    echo "unexpected gh command: $*" >&2
+    exit 2
+    ;;
+esac

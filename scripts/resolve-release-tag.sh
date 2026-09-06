@@ -19,6 +19,7 @@ fi
 
 stratadiff_object="$(
   gh api \
+    --hostname github.com \
     "repos/${stratadiff_repository}/git/ref/tags/${stratadiff_release_tag}" \
     --jq '.object.type + "\t" + .object.sha'
 )"
@@ -39,6 +40,7 @@ for _ in 1 2 3 4 5 6 7 8; do
     tag)
       stratadiff_object="$(
         gh api \
+          --hostname github.com \
           "repos/${stratadiff_repository}/git/tags/${stratadiff_object_sha}" \
           --jq '.object.type + "\t" + .object.sha'
       )"

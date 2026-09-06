@@ -186,4 +186,35 @@ then
   exit 1
 fi
 
+"${stratadiff_script_directory}/check-release-repository-policy.sh" \
+  acme/stratadiff >/dev/null
+for stratadiff_policy_failure in mutable missing-ruleset invalid-ruleset null-bypass; do
+  export STRATADIFF_TEST_POLICY_SCENARIO=${stratadiff_policy_failure}
+  if "${stratadiff_script_directory}/check-release-repository-policy.sh" \
+    acme/stratadiff >/dev/null 2>&1
+  then
+    echo "release policy verifier accepted ${stratadiff_policy_failure}" >&2
+    exit 1
+  fi
+done
+unset STRATADIFF_TEST_POLICY_SCENARIO
+
+stratadiff_release_workflow=${stratadiff_repository_root}/.github/workflows/release.yml
+if grep -F 'check-release-repository-policy.sh' "${stratadiff_release_workflow}" >/dev/null; then
+  echo "release workflow calls an admin-read policy endpoint with its default token" >&2
+  exit 1
+fi
+grep -F -- '--json tagName,isDraft,isPrerelease,isImmutable' \
+  "${stratadiff_release_workflow}" >/dev/null || {
+  echo "release workflow does not verify the published immutable state" >&2
+  exit 1
+}
+grep -F 'gh release delete "${RELEASE_TAG}" --yes' \
+  "${stratadiff_release_workflow}" >/dev/null || {
+  echo "release workflow does not remove a mutable publication" >&2
+  exit 1
+}
+
+"${stratadiff_script_directory}/test-install-release.sh"
+
 printf 'release packaging self-test passed\n'

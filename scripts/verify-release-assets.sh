@@ -29,8 +29,12 @@ done
 
 stratadiff_expected_inventory="$(printf '%s\n' "${stratadiff_expected_files[@]}" | LC_ALL=C sort)"
 stratadiff_actual_inventory="$(
-  find "${stratadiff_asset_directory}" -mindepth 1 -maxdepth 1 -exec basename {} \; |
-    LC_ALL=C sort
+  (
+    shopt -s dotglob nullglob
+    for stratadiff_asset_entry in "${stratadiff_asset_directory}"/*; do
+      printf '%s\n' "${stratadiff_asset_entry##*/}"
+    done
+  ) | LC_ALL=C sort
 )"
 if [[ "${stratadiff_actual_inventory}" != "${stratadiff_expected_inventory}" ]]; then
   echo "release asset inventory is incomplete or contains unexpected files" >&2

@@ -1,8 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-[[ "${1:-}" == api && "${3:-}" == --jq ]] || exit 2
-case "${2:-}" in
+[[ "${1:-}" == api ]] || exit 2
+shift
+stratadiff_test_hostname=
+stratadiff_test_endpoint=
+stratadiff_test_jq=
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hostname)
+      stratadiff_test_hostname=$2
+      shift 2
+      ;;
+    --jq)
+      [[ $# -eq 2 ]] || exit 2
+      stratadiff_test_jq=$2
+      shift 2
+      ;;
+    *)
+      [[ -z "${stratadiff_test_endpoint}" ]] || exit 2
+      stratadiff_test_endpoint=$1
+      shift
+      ;;
+  esac
+done
+[[ -z "${stratadiff_test_hostname}" || "${stratadiff_test_hostname}" == github.com ]] || exit 2
+case "${stratadiff_test_endpoint}" in
   repos/acme/stratadiff/git/ref/tags/v0.3.0)
     printf 'tag\tbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n'
     ;;
@@ -11,6 +34,28 @@ case "${2:-}" in
     ;;
   repos/acme/stratadiff/git/ref/tags/v0.3.1)
     printf 'tree\tcccccccccccccccccccccccccccccccccccccccc\n'
+    ;;
+  repos/acme/stratadiff/immutable-releases)
+    if [[ "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" == mutable ]]; then
+      printf 'false\n'
+    else
+      printf 'true\n'
+    fi
+    ;;
+  repos/acme/stratadiff/rulesets)
+    [[ "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" != missing-ruleset ]] || exit 0
+    printf '22362123\n'
+    ;;
+  repos/acme/stratadiff/rulesets/22362123)
+    [[ "${stratadiff_test_jq}" == *'((.bypass_actors | type) == "array")'* ]] || exit 2
+    [[ "${stratadiff_test_jq}" == *'(.bypass_actors == [])'* ]] || exit 2
+    if [[ "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" == invalid-ruleset ]]; then
+      printf 'false\n'
+    elif [[ "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" == null-bypass ]]; then
+      printf 'false\n'
+    else
+      printf 'true\n'
+    fi
     ;;
   *)
     exit 2

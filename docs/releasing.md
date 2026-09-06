@@ -48,11 +48,15 @@ Rust build graph for the four supported release targets and is embedded in the e
 at runtime with `stratadiff licenses`. The Workbench's JavaScript notices remain embedded separately.
 
 The tag must be an exact stable `vMAJOR.MINOR.PATCH` matching the root Cargo package version. From a
-clean checkout of the intended commit:
+clean checkout of the intended commit, use an authenticated GitHub identity with repository
+Administration write access to verify the service-side policy immediately before creating the tag.
+GitHub omits ruleset bypass actors from this API response unless the caller can write the ruleset,
+so a read-only administration token is insufficient for this fail-closed check:
 
 ```console
+scripts/check-release-repository-policy.sh gcomfident-crypto/stratadiff
 scripts/ci.sh
-git tag v0.3.0
+git tag -a v0.3.0 -m "StrataDiff v0.3.0"
 git push origin v0.3.0
 ```
 
@@ -86,13 +90,51 @@ Immediately before publication, the workflow dereferences the remote tag again a
 resolve to that same release commit. Checkout credentials are not persisted, and permissions are
 scoped per job; `GH_TOKEN` is exposed only to the individual release API steps.
 
-If any build, checksum, inventory, or signature check fails, the release remains a draft. A rerun may
-replace only the twelve expected assets. Any unrelated filesystem entry represented in the download,
-including a directory or symbolic link in local verification, deliberately blocks publication;
-inspect an unexpected remote asset and remove it explicitly with `gh release delete-asset TAG ASSET`
-before rerunning. A previously published release is never overwritten by this workflow.
+If any prepublication build, checksum, inventory, or signature check fails, the release remains a
+draft. A rerun may replace only the twelve expected assets. Any unrelated filesystem entry
+represented in the download, including a directory or symbolic link in local verification,
+deliberately blocks publication; inspect an unexpected remote asset and remove it explicitly with
+`gh release delete-asset TAG ASSET` before rerunning. After publication, the workflow requires the
+release API to report a stable immutable release before marking it latest; otherwise it tries to
+remove the invalid release while preserving the protected tag, then fails. The installer repeats
+the stable and immutable release check before downloading assets. A previously published release is
+never overwritten by this workflow.
 
 ## Install and verify a released binary
+
+The normal user path downloads the installer from the same immutable version tag, then lets it
+select and verify the platform asset:
+
+```bash
+(
+  set -e
+  installer="$(mktemp)"
+  trap 'rm -f "$installer"' EXIT
+  gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.3.0' \
+    > "$installer"
+  test -s "$installer"
+  bash "$installer" v0.3.0
+)
+```
+
+After that block succeeds:
+
+```console
+export PATH="$HOME/.local/bin:$PATH"
+stratadiff build-info
+stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
+```
+
+Use the actual immutable release tag instead of copying the example blindly. The bootstrap step
+trusts GitHub's authenticated contents response for that protected tag and downloads it completely
+before execution; the binary verification does not retroactively attest the installer itself. The
+installer accepts only stable semantic-version tags, fixes the release repository and signer
+workflow, fully dereferences the tag before download and again before installation, verifies the
+checksum and bundled GitHub attestation, checks the binary's reported version, and installs through
+a same-directory atomic rename. An existing binary is left untouched on every validation failure.
+`scripts/test-install-release.sh` exercises the four platform mappings and principal failure modes;
+the release-contract CI job runs it under both Ubuntu and macOS system tooling.
 
 Select the asset for the current kernel and CPU, then download the binary, checksum, and provenance
 bundle. For example, on Linux x86-64:
@@ -100,11 +142,13 @@ bundle. For example, on Linux x86-64:
 ```console
 tag=v0.3.0
 asset=stratadiff-linux-x86_64
-source_digest="$(gh api "repos/gcomfident-crypto/stratadiff/commits/$tag" --jq .sha)"
-gh release download "$tag" -R gcomfident-crypto/stratadiff \
+source_digest="$(gh api --hostname github.com \
+  "repos/gcomfident-crypto/stratadiff/commits/$tag" --jq .sha)"
+gh release download "$tag" -R github.com/gcomfident-crypto/stratadiff \
   -p "$asset" -p "$asset.sha256" -p "$asset.intoto.jsonl"
 sha256sum -c "$asset.sha256"
 gh attestation verify "$asset" \
+  --hostname github.com \
   --bundle "$asset.intoto.jsonl" \
   --repo gcomfident-crypto/stratadiff \
   --source-ref "refs/tags/$tag" \
@@ -142,6 +186,10 @@ path. Until that distribution decision is made, local extension installation fro
 `extensions/gh-stratadiff` remains the truthful path.
 
 Before the first public release, enable immutable releases and a tag ruleset that prevents updates
-or deletion of `v*` tags. The workflow rechecks the remote tag in the same shell step that publishes
-the draft and refuses to modify an already published release; the repository controls close the
-remaining service-side gap and protect the tag and assets afterward.
+or deletion of `v*` tags. `scripts/check-release-repository-policy.sh` verifies both controls with a
+repository Administration write credential immediately before tag creation; GitHub requires this
+to expose the complete bypass-actor list, and its default Actions token cannot call the
+immutable-release settings endpoint. The workflow rechecks the remote tag in the same shell step
+that publishes the draft, verifies the resulting release's public `isImmutable` state, and refuses
+to modify an already published release. The repository controls then protect the tag and assets
+afterward.
