@@ -122,6 +122,27 @@ reset_scenario attestation-failure Linux x86_64
 expect_failure_preserves_old_binary attestation-failure \
   "${stratadiff_temporary_directory}/attestation-failure"
 
+reset_scenario draft Linux x86_64
+expect_failure_preserves_old_binary draft-release \
+  "${stratadiff_temporary_directory}/draft-release"
+if grep -Fx 'ARG=download' "${STRATADIFF_INSTALL_TEST_LOG}" >/dev/null; then
+  fail "installer downloaded assets from a draft release"
+fi
+
+reset_scenario prerelease Linux x86_64
+expect_failure_preserves_old_binary prerelease \
+  "${stratadiff_temporary_directory}/prerelease"
+if grep -Fx 'ARG=download' "${STRATADIFF_INSTALL_TEST_LOG}" >/dev/null; then
+  fail "installer downloaded assets from a prerelease"
+fi
+
+reset_scenario mutable-release Linux x86_64
+expect_failure_preserves_old_binary mutable-release \
+  "${stratadiff_temporary_directory}/mutable-release"
+if grep -Fx 'ARG=download' "${STRATADIFF_INSTALL_TEST_LOG}" >/dev/null; then
+  fail "installer downloaded assets from a mutable release"
+fi
+
 reset_scenario tag-drift Linux x86_64
 expect_failure_preserves_old_binary tag-drift "${stratadiff_temporary_directory}/tag-drift"
 

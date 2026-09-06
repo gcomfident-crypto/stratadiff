@@ -140,6 +140,32 @@ release_download() {
   fi
 }
 
+release_view() {
+  local tag=$1
+  shift
+  local repository= json_fields= jq_filter= argument
+  while [[ $# -gt 0 ]]; do
+    argument=$1
+    shift
+    case "${argument}" in
+      --repo) repository=$1; shift ;;
+      --json) json_fields=$1; shift ;;
+      --jq) jq_filter=$1; shift ;;
+      *) exit 2 ;;
+    esac
+  done
+  [[ "${tag}" == "${release_tag}" ]] || exit 2
+  [[ "${repository}" == github.com/gcomfident-crypto/stratadiff ]] || exit 2
+  [[ "${json_fields}" == tagName,isDraft,isPrerelease,isImmutable ]] || exit 2
+  [[ -n "${jq_filter}" ]] || exit 2
+  case "${STRATADIFF_INSTALL_TEST_SCENARIO:-success}" in
+    draft) printf '%s\ttrue\tfalse\tfalse\n' "${release_tag}" ;;
+    prerelease) printf '%s\tfalse\ttrue\tfalse\n' "${release_tag}" ;;
+    mutable-release) printf '%s\tfalse\tfalse\tfalse\n' "${release_tag}" ;;
+    *) printf '%s\tfalse\tfalse\ttrue\n' "${release_tag}" ;;
+  esac
+}
+
 attestation_verify() {
   local artifact=$1
   shift
@@ -180,6 +206,10 @@ case "${1:-}:${2:-}" in
   release:download)
     shift 2
     release_download "$@"
+    ;;
+  release:view)
+    shift 2
+    release_view "$@"
     ;;
   attestation:verify)
     shift 2

@@ -180,7 +180,7 @@ checks.
   set -e
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
-  gh api -H 'Accept: application/vnd.github.raw+json' \
+  gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
     'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.3.0' \
     > "$installer"
   test -s "$installer"

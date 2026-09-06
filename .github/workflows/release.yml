@@ -182,7 +182,7 @@ jobs:
             "refs/tags/${RELEASE_TAG}" \
             "${RELEASE_COMMIT}" \
             "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
-      - name: Revalidate remote tag and publish verified release
+      - name: Revalidate remote tag and publish verified immutable release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
@@ -195,4 +195,18 @@ jobs:
             echo "remote tag moved from ${RELEASE_COMMIT} to ${remote_commit}; refusing publication" >&2
             exit 1
           fi
-          gh release edit "${RELEASE_TAG}" --draft=false --latest
+          gh release edit "${RELEASE_TAG}" --draft=false
+          release_state="$(
+            gh release view "${RELEASE_TAG}" \
+              --json tagName,isDraft,isPrerelease,isImmutable \
+              --jq '.tagName + "\t" + (.isDraft | tostring) + "\t" + (.isPrerelease | tostring) + "\t" + (.isImmutable | tostring)'
+          )"
+          if [[ "${release_state}" != "${RELEASE_TAG}"$'\tfalse\tfalse\ttrue' ]]; then
+            if gh release delete "${RELEASE_TAG}" --yes; then
+              echo "GitHub did not make ${RELEASE_TAG} immutable; removed the invalid release" >&2
+            else
+              echo "GitHub did not make ${RELEASE_TAG} immutable and cleanup failed" >&2
+            fi
+            exit 1
+          fi
+          gh release edit "${RELEASE_TAG}" --latest

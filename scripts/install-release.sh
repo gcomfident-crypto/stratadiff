@@ -148,6 +148,19 @@ if [[ -L "${stratadiff_destination}" || \
   die "refusing to replace unsafe install target: ${stratadiff_destination}"
 fi
 
+stratadiff_release_state="$(
+  gh release view "${stratadiff_release_tag}" \
+    --repo "${stratadiff_github_host}/${stratadiff_repository}" \
+    --json tagName,isDraft,isPrerelease,isImmutable \
+    --jq '.tagName + "\t" + (.isDraft | tostring) + "\t" + (.isPrerelease | tostring) + "\t" + (.isImmutable | tostring)'
+)"
+IFS=$'\t' read -r stratadiff_published_tag stratadiff_is_draft stratadiff_is_prerelease \
+  stratadiff_is_immutable <<< "${stratadiff_release_state}"
+[[ "${stratadiff_published_tag}" == "${stratadiff_release_tag}" && \
+   "${stratadiff_is_draft}" == false && "${stratadiff_is_prerelease}" == false && \
+   "${stratadiff_is_immutable}" == true ]] || \
+  die "release ${stratadiff_release_tag} is not a published immutable stable release"
+
 stratadiff_temporary_directory="$(
   mktemp -d "${TMPDIR:-/tmp}/stratadiff-install-XXXXXX"
 )"

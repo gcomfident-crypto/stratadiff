@@ -31,12 +31,14 @@ stratadiff resume https://github.com/OWNER/REPO/pull/123
 ```
 
 The command must derive the host and repository, resolve the authenticated reviewer, materialize
-only the exact required objects in bounded temporary storage, and open the Workbench without
-`-R`, a commit SHA, repository administration, a GitHub App, or workflow YAML. Source-level URL
-inference and repository-local tests do not by themselves prove that activation contract; the
-URL-only flow remains an unshipped product claim until a verified release artifact passes the fresh
-environment test. Until a fresh machine can reach the first residue this way, broader proof classes
-and hosted policy add less product leverage than removing activation friction.
+the named commits in an isolated temporary bare repository, and open the Workbench without `-R`, a
+commit SHA, repository administration, a GitHub App, or workflow YAML. An exact-SHA fetch can still
+transfer the commit's reachable object closure; the current implementation has no hard network-byte
+or disk-usage ceiling. Source-level URL inference and repository-local tests do not by themselves
+prove that activation contract; the URL-only flow remains an unshipped product claim until a
+verified release artifact passes the fresh-environment test. Until a fresh machine can reach the
+first residue this way, broader proof classes and hosted policy add less product leverage than
+removing activation friction.
 
 The user-visible outcome is not “a better diff.” It is: **after every relevant push, tell me which
 human review still has evidence, show me exactly what remains, and expose any changed base context
@@ -105,7 +107,9 @@ rereads the PR, all bounded review pages, and exact commits before opening sourc
 
 The current value surface is a **personal Review Resume** that requires no repository administrator
 and does not replace GitHub's review UI. It resolves the reviewer's checkpoint and opens a local
-workbench over the exact residue, using an existing checkout or bounded temporary repository. The
+workbench over the exact residue, using an existing checkout or isolated temporary repository. Git
+may transfer the reachable object closure for each requested commit; this path is isolated and
+automatically cleaned up, but is not yet protected by a hard network-byte or disk-usage ceiling. The
 canonical PR URL must become the demonstrated default so the user does not need to understand
 repository selection or commit identity. This is the shortest path from diagnosed pain to
 experienced value and avoids asking a team to trust an App before the reviewer has saved any time.
@@ -430,11 +434,12 @@ The host-workflow acceptance matrix must include these end-to-end cases:
 1. Close the clean-machine activation gap before broadening analysis. From a shell outside any Git
    checkout, after installing a verified binary and authenticating `gh`, this exact shape must work:
    `stratadiff resume https://github.com/OWNER/REPO/pull/N`. Infer repository coordinates from
-   the canonical URL, reject cross-host or ambiguous identity, fetch only the bounded exact-object
-   closure into temporary storage, clean it up, and open the local Workbench. Do not require `-R`,
-   a SHA, repository administration, an App, or workflow YAML. Test Linux and macOS release assets
-   on fresh environments and record activation success, time to first residue, bytes fetched, and
-   every fail-closed reason.
+   the canonical URL, reject cross-host or ambiguous identity, fetch the named commits into an
+   isolated temporary bare repository, clean it up, and open the local Workbench. Git may transfer
+   each commit's reachable object closure. Do not require `-R`, a SHA, repository administration, an
+   App, or workflow YAML. Test Linux and macOS release assets on fresh environments and record
+   activation success, time to first residue, network and on-disk bytes, and every fail-closed
+   reason. Define and enforce a resource policy before claiming a hard download or storage bound.
 2. Stabilize and distribute the implemented one-repository Review Memory Audit and personal Review
    Inbox. Audit qualifies a repository; Inbox uses the authenticated reviewer to scan complete
    open-PR metadata and emit exact Resume URLs without collecting source or review text. Expand the
@@ -598,7 +603,8 @@ The next milestone is not “GitHub parity.” It is one end-to-end proof:
 clean machine with Git + authenticated gh, but no checkout
   -> install a verified release artifact
   -> paste https://github.com/OWNER/REPO/pull/N with no -R or SHA
-  -> derive repository and reviewer; materialize bounded exact objects temporarily
+  -> derive repository and reviewer; materialize named commits in an isolated temporary repo
+  -> record network and on-disk use; no hard byte ceiling is implemented yet
   -> resolve the large PR's reviewed checkpoint R
   -> rewritten, rebased, or incrementally updated head H
   -> exact identity, then strict four-way replay where eligible

@@ -105,23 +105,27 @@ Gerrit requires operating a different review system. A local, no-admin entry is 
 is genuinely easier than those paths.
 
 At this repository snapshot, [`resume`](../src/resume.rs) contains canonical PR-URL repository
-inference and bounded temporary Git storage. That source-level path and its repository-local tests
-are necessary but do not establish distributable activation: the [release procedure](releasing.md)
-explicitly distinguishes release infrastructure from an actually published, installed artifact.
-The highest-leverage acceptance test is therefore:
+inference and an isolated temporary bare repository. Its exact-SHA fetch asks Git for named commits,
+but Git may transfer their reachable object closure; the current implementation caps wall time and
+captured subprocess output, not network bytes or disk usage. That source-level path and its
+repository-local tests are necessary but do not establish distributable activation: the
+[release procedure](releasing.md) explicitly distinguishes release infrastructure from an actually
+published, installed artifact. The highest-leverage acceptance test is therefore:
 
 ```text
 fresh environment with Git + authenticated gh
   -> install a verified prebuilt StrataDiff release
   -> run stratadiff resume with one canonical GitHub PR URL
   -> infer host/repository/reviewer with no checkout, -R, or SHA
-  -> fetch only the exact bounded object closure into temporary storage
+  -> materialize the named commits in an isolated temporary bare repository
   -> open the first verified residue, or fail closed with an actionable reason
 ```
 
 Measure activation success and time to first residue before adding more classifiers or a hosted
-control plane. A source build, pre-cloned repository, hand-selected checkpoint, or organization
-administrator install does not satisfy this activation contract.
+control plane. Record transferred and on-disk bytes, and establish an enforceable resource policy
+before making any bounded-download or bounded-storage claim. A source build, pre-cloned repository,
+hand-selected checkpoint, or organization administrator install does not satisfy this activation
+contract.
 
 StrataDiff therefore treats the current PR range, not the raw checkpoint-to-head snapshot delta, as
 the source of the residue after a base change. It tries complete Git identity first. A unique
