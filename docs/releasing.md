@@ -19,10 +19,10 @@ version to become visible before continuing:
 
 ```console
 cargo publish --package stratadiff-core --locked
-cargo info stratadiff-core@0.3.0
+cargo info stratadiff-core@0.4.0
 
 cargo publish --package stratadiff-verifier --locked
-cargo info stratadiff-verifier@0.3.0
+cargo info stratadiff-verifier@0.4.0
 
 cargo publish --package stratadiff --locked
 ```
@@ -48,16 +48,18 @@ Rust build graph for the four supported release targets and is embedded in the e
 at runtime with `stratadiff licenses`. The Workbench's JavaScript notices remain embedded separately.
 
 The tag must be an exact stable `vMAJOR.MINOR.PATCH` matching the root Cargo package version. From a
-clean checkout of the intended commit, use an authenticated GitHub identity with repository
-Administration write access to verify the service-side policy immediately before creating the tag.
+clean checkout of the intended commit, use Python 3 and an authenticated GitHub identity with
+repository Administration write access to verify the service-side policy immediately before
+creating the tag.
 GitHub omits ruleset bypass actors from this API response unless the caller can write the ruleset,
-so a read-only administration token is insufficient for this fail-closed check:
+so a read-only administration token is insufficient for this fail-closed check. Missing, null, or
+nonempty `bypass_actors` all fail closed:
 
 ```console
 scripts/check-release-repository-policy.sh gcomfident-crypto/stratadiff
 scripts/ci.sh
-git tag -a v0.3.0 -m "StrataDiff v0.3.0"
-git push origin v0.3.0
+git tag -a v0.4.0 -m "StrataDiff v0.4.0"
+git push origin v0.4.0
 ```
 
 Use the actual manifest version instead of copying the example blindly. The tag push starts
@@ -111,10 +113,10 @@ select and verify the platform asset:
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
-    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.3.0' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.0' \
     > "$installer"
   test -s "$installer"
-  bash "$installer" v0.3.0
+  bash "$installer" v0.4.0
 )
 ```
 
@@ -140,7 +142,7 @@ Select the asset for the current kernel and CPU, then download the binary, check
 bundle. For example, on Linux x86-64:
 
 ```console
-tag=v0.3.0
+tag=v0.4.0
 asset=stratadiff-linux-x86_64
 source_digest="$(gh api --hostname github.com \
   "repos/gcomfident-crypto/stratadiff/commits/$tag" --jq .sha)"

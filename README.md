@@ -41,8 +41,8 @@ The first question is answered losslessly. The second is re-derived by the match
 crate used by `stratadiff verify`. The third never silently turns a heuristic score into a
 historical fact.
 
-> **Project status:** research alpha. The no-checkout `gh stratadiff audit`, personal
-> `gh stratadiff inbox`, native no-admin `stratadiff resume <PR>` path (also exposed as
+> **Project status:** research alpha. The no-checkout `gh stratadiff audit`, native cross-repository
+> `stratadiff inbox` and no-admin `stratadiff resume <PR>` paths (also exposed as
 > `gh stratadiff resume <PR>`), exact base-drift replay, Review Resume Workbench with explicit
 > upstream base context, webhook review ledger, exact-base CODEOWNERS and permission snapshots,
 > receiver-signed review-coverage Passport, offline verification, and deterministic Check Run
@@ -166,12 +166,12 @@ production safety rate or evidence that reviewers save time.
 
 ## Quick start
 
-From any directory, install the exact `v0.3.0` release through an authenticated GitHub CLI, then
+From any directory, install the exact `v0.4.0` release through an authenticated GitHub CLI, then
 paste the pull request URL. The installer selects one of the four supported native binaries,
 checks its SHA-256 digest and GitHub build-provenance bundle against the fully dereferenced release
 tag, checks the embedded version, and replaces the destination atomically:
 
-This path becomes available only after `v0.3.0` appears on the repository's Releases page. A 404
+This path becomes available only after `v0.4.0` appears on the repository's Releases page. A 404
 means no verified artifact exists yet; use the development path below instead of bypassing the
 checks.
 
@@ -181,10 +181,10 @@ checks.
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
-    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.3.0' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.0' \
     > "$installer"
   test -s "$installer"
-  bash "$installer" v0.3.0
+  bash "$installer" v0.4.0
 )
 ```
 
@@ -254,15 +254,19 @@ GitHub login and immutable user node ID; missing or conflicting reviewer identit
 
 ### Find the open reviews that need to be resumed
 
-The personal Inbox uses the authenticated `gh` user and works without a checkout or the StrataDiff
-binary. It scans every open pull request and the current viewer's review metadata, then prints a
-copyable Resume command only when a completed `APPROVED` or `CHANGES_REQUESTED` checkpoint differs
-from the current head:
+The native personal Inbox uses the authenticated `gh` user and works without a checkout. By
+default it searches across repositories visible to that account, then prints a copyable Resume
+command only when a completed `APPROVED` or `CHANGES_REQUESTED` checkpoint differs from the current
+head. `-R` narrows the queue to one repository, while `--reviewer` supports an explicit reviewer:
 
 ```console
-gh stratadiff inbox -R OWNER/REPOSITORY
-gh stratadiff inbox -R HOST/OWNER/REPOSITORY \
+stratadiff inbox
+stratadiff inbox --reviewer LOGIN
+stratadiff inbox -R OWNER/REPOSITORY
+stratadiff inbox -R HOST/OWNER/REPOSITORY \
   --format json --output review-inbox.json
+# The local development extension forwards to the same native command:
+gh stratadiff inbox
 ```
 
 Later comments do not replace the latest completed checkpoint. The collector binds the viewer and
@@ -273,8 +277,37 @@ closed. GitHub does not expose an atomic repository-wide snapshot, so the report
 observation window and changes elsewhere in that window may appear on the next run. The command
 requests no source, diff, title, body, comment text, review text, or commit message; `resume` then
 rereads the PR, consumes all bounded review pages, and verifies exact commits before opening source
-locally. Inbox also reads the unfiltered review count and withholds commands when the PR exceeds
+locally. A scan cut off by `--limit` is marked `partial` and never reported as a clean global queue.
+Inbox also resolves an explicit repository before searching, binds the authenticated actor on every
+GraphQL response, reads the unfiltered review count, and withholds commands when the PR exceeds
 Resume's shared 10,000-review limit.
+
+For an explicitly consented pilot, `--value-log` records only the local product funnel and adds the
+same private log plus a pseudonymous transition digest to each emitted Resume command. Normal
+commands remain zero-telemetry and nothing is uploaded automatically. The raw event log contains no
+source, filenames, paths, or plaintext repository, PR, or reviewer identity, but its stable digest
+can be linkable or reidentified when the underlying public GitHub tuple is enumerable. Keep the raw
+log private; `value-report` is the direct-identifier-free aggregate intended for export:
+
+```console
+stratadiff inbox --value-log /absolute/private/path/value-funnel.jsonl
+stratadiff value-report /absolute/private/path/value-funnel.jsonl
+```
+
+The append-only JSONL integrity chain records `baseline`, internal `gap_discovery`, confirmed
+`inbox_delivery`, `resume_invoked`, `transition_bound`, `covered_transition`, `workbench_ready`, and
+staged failures. A discovery is recorded before output and does not claim that the user received it.
+`inbox_delivery` is appended only after the complete Inbox was written and flushed to its selected
+output sink; it still does not prove that a person read the result. A scan without that marker has
+unconfirmed delivery. `value-report` keeps discovered and delivery-confirmed gaps separate and uses
+only delivery-confirmed gaps in its delivered-gap-to-Resume conversion. It verifies every event
+digest and chain link, then exports aggregate conversion and failure counts plus schema/tool metadata
+and the chain tip, but no transition IDs. The chain tip can correlate repeated exports of the same
+log. The chain detects accidental edits and reordered events; its reported tip must be anchored
+externally if a pilot needs to detect malicious rewriting or removal of a valid tail.
+These observations measure product activation, not time savings, defect recall, market prevalence,
+or approval safety. Resume's private log path and pseudonymous IDs are passed to its local child
+process; same-user process inspection is therefore inside the current local threat boundary.
 
 ### Resume your own GitHub review
 

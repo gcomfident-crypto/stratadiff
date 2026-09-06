@@ -16,15 +16,17 @@ gate.**
 This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff's
 wedge is to remove repeated work only when a narrower factual claim can be checked again by an
 independent verifier. The qualification experience is `gh stratadiff audit -R OWNER/REPO`; the
-daily discovery experience is `gh stratadiff inbox -R OWNER/REPO`; the value experience is
-`stratadiff resume <PR-URL>`. Audit and Inbox currently use the checkout-installed extension;
-Resume is intended to be the first independently distributed binary path. None requires an
+daily discovery experience is native cross-repository `stratadiff inbox`; the value experience is
+`stratadiff resume <PR-URL>`. Inbox and Resume are native binary paths; Audit currently uses the
+checkout-installed extension. None requires an
 administrator install or a new review system, and none restores or manufactures a code-host
 approval.
 
-The highest-leverage next milestone is **clean-machine PR-URL activation**, not another matcher or
-policy surface. On a machine with Git, an authenticated `gh`, and a verified StrataDiff binary, the
-target flow is to paste one canonical URL from outside any checkout:
+The v0.3.0 release shipped the first verified native binary and PR-URL flow, but release publication
+alone did not close the measured **clean-machine PR-URL activation** milestone. The highest-leverage
+next milestone is a clean-environment proof followed by a measured global Inbox-to-Resume loop, not
+another matcher or policy surface. On a machine with Git, an authenticated `gh`, and a verified
+StrataDiff binary, the intended value flow starts outside any checkout:
 
 ```text
 stratadiff resume https://github.com/OWNER/REPO/pull/123
@@ -35,8 +37,8 @@ the named commits in an isolated temporary bare repository, and open the Workben
 commit SHA, repository administration, a GitHub App, or workflow YAML. An exact-SHA fetch can still
 transfer the commit's reachable object closure; the current implementation has no hard network-byte
 or disk-usage ceiling. Source-level URL inference and repository-local tests do not by themselves
-prove that activation contract; the URL-only flow remains an unshipped product claim until a
-verified release artifact passes the fresh-environment test. Until a fresh machine can reach the
+prove that activation contract; URL-only activation remains an unvalidated distribution claim until
+a verified release artifact passes the fresh-environment test. Until a fresh machine can reach the
 first residue this way, broader proof classes and hosted policy add less product leverage than
 removing activation friction.
 
@@ -440,19 +442,21 @@ The host-workflow acceptance matrix must include these end-to-end cases:
    App, or workflow YAML. Test Linux and macOS release assets on fresh environments and record
    activation success, time to first residue, network and on-disk bytes, and every fail-closed
    reason. Define and enforce a resource policy before claiming a hard download or storage bound.
-2. Stabilize and distribute the implemented one-repository Review Memory Audit and personal Review
-   Inbox. Audit qualifies a repository; Inbox uses the authenticated reviewer to scan complete
-   open-PR metadata and emit exact Resume URLs without collecting source or review text. Expand the
-   three-case prospective seed to at least 30 multi-repository cases with real pagination,
-   missing-OID, and `CHANGES_REQUESTED` coverage before making generalization claims; neither
-   surface is a prevalence estimate or a substitute for the human study.
+2. Stabilize and distribute the implemented one-repository Review Memory Audit and cross-repository
+   personal Review Inbox. Audit qualifies a repository; Inbox uses the authenticated reviewer to
+   search bounded open-PR metadata and emit exact Resume commands without collecting source or
+   review text. Truncated search results must remain explicitly partial. Expand the
+   three-case prospective seed to at least 30 multi-repository live cases with real pagination,
+   missing-OID, and `CHANGES_REQUESTED` coverage before making generalization claims. The separate
+   60-case target-semantic corpus freezes synthetic behavior but still needs a Rust conformance
+   adapter; neither corpus is a prevalence estimate or a substitute for the human study.
 3. Complete `stratadiff resume <PR-URL>` as the default released action. It must use the caller's existing
    GitHub CLI authentication, resolve the current reviewer and PR revisions, recover the exact
    reviewed commit when the provider still serves it, and open the local Workbench. Missing,
    ambiguous, paginated, or unverifiable history must stop with an actionable error; a SHA and `-R`
    remain expert diagnostics rather than first-run requirements. The `gh stratadiff` spelling
-   becomes a distribution claim only after the separately required `gh-stratadiff` extension
-   repository has a verified remote-install and update path.
+   becomes a distribution claim only after the existing public `gh-stratadiff` extension repository
+   publishes and clean-machine tests a verified remote-install and update path.
 4. Make the first-run result answer three questions in under a minute: what changed since my review,
    what was proved, and what could not be recovered. Installation and the first useful run must not
    require repository administration, a webhook, or a new conversation interface.
@@ -511,9 +515,9 @@ therefore:
 - **Public GitHub App:** the eventual zero-YAML product surface. It emits an informational Check only
   after an existing human review and a later head change, with one `Resume review` requested action.
 - **Native `stratadiff`:** the early validation and permanent local-trust surface. It resolves the
-  checkpoint, keeps source local, opens the Workbench, and verifies downloaded Passports. A future
-  remotely installable `gh-stratadiff` repository may add the `gh stratadiff` spelling without
-  changing this trust path.
+  checkpoint, keeps source local, opens the Workbench, and verifies downloaded Passports. The public
+  `gh-stratadiff` distribution repository can add the `gh stratadiff` spelling without changing this
+  trust path once its first verified release and clean-install/update tests pass.
 - **GitHub Action/self-hosted runner:** the privacy and enterprise escape hatch, not the default
   onboarding path.
 

@@ -1,0 +1,846 @@
+{
+  "cases": {
+    "approval-followed-by-comment": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "approved-current": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "up_to_date",
+      "trigger": null
+    },
+    "approved-stale": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "base-drift-only": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "base_drift"
+    },
+    "changes-followed-by-comment": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "changes-requested-current": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "up_to_date",
+      "trigger": null
+    },
+    "changes-requested-stale": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "closed-pull-request": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "pull_request_not_open",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "commented-only": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 1,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "no_eligible_reviews",
+      "trigger": null
+    },
+    "dismissed-rerequested": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 1,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "no_eligible_reviews",
+      "trigger": null
+    },
+    "dismissed-then-approved": {
+      "checkpoint_review_node_id": "PRR_1002",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "up_to_date",
+      "trigger": null
+    },
+    "duplicate-pull-request-node": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "duplicate_pull_request_node",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "duplicate-review-database-id": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "duplicate_review_database_id",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "duplicate-review-node": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "duplicate_review_node",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "force-push": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "ghes-canonical": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "head-and-base-drift": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed+base_drift"
+    },
+    "identical-replay": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "incomplete-review-pagination": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "incomplete_review_pagination",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "malformed-checkpoint-commit": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "review_commit_invalid",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "missing-checkpoint-base-stable-head": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 1,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": "checkpoint_base_oid_unavailable",
+      "result": "success",
+      "status": "insufficient_evidence",
+      "trigger": null
+    },
+    "missing-checkpoint-base-with-head-change": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "missing-current-base-stable-head": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 1,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": "current_base_oid_unavailable",
+      "result": "success",
+      "status": "insufficient_evidence",
+      "trigger": null
+    },
+    "missing-head": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 1,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": "head_oid_unavailable",
+      "result": "success",
+      "status": "insufficient_evidence",
+      "trigger": null
+    },
+    "mixed-case-login": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "multipage-complete": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "newer-approval-wins": {
+      "checkpoint_review_node_id": "PRR_1002",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "up_to_date",
+      "trigger": null
+    },
+    "other-repository-same-number": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "other-review-node": {
+      "checkpoint_review_node_id": "PRR_other",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "other-reviewer-identity": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed"
+    },
+    "partial-actionable": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "partial",
+      "trigger": "head_changed"
+    },
+    "partial-clean": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "partial",
+      "trigger": null
+    },
+    "partial-zero-captured": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "partial",
+      "trigger": null
+    },
+    "pending-only": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 1,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "no_eligible_reviews",
+      "trigger": null
+    },
+    "provider-url-mismatch": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "provider_url_mismatch",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "pure-rebase": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed+base_drift"
+    },
+    "repository-not-found": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "repository_not_found",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "requested-repository-name-mismatch": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "repository_identity_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "requested-repository-node-mismatch": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "repository_identity_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "rerequest-and-head": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed+review_re_requested"
+    },
+    "rerequest-only": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "review_re_requested"
+    },
+    "restack": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 1,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "actionable",
+      "trigger": "head_changed+base_drift"
+    },
+    "revalidation-forbidden": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "candidate_forbidden",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "revalidation-not-found": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "candidate_not_found",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "revalidation-pull-request-change": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "pull_request_identity_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "revalidation-repository-change": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "repository_identity_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "revalidation-snapshot-change": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "candidate_changed_during_revalidation",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "revalidation-viewer-change": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "authenticated_actor_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "review-count-mismatch": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "review_history_count_mismatch",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "reviewer-bot-collision": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "reviewer_identity_mismatch",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "reviewer-login-mismatch": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "reviewer_identity_mismatch",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "reviewer-node-collision": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "reviewer_identity_mismatch",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "same-time-database-id-tiebreak": {
+      "checkpoint_review_node_id": "PRR_1002",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "up_to_date",
+      "trigger": null
+    },
+    "search-forbidden": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "search_forbidden",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "search-pagination-inconsistent": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "search_pagination_inconsistent",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "search-viewer-login-change": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "authenticated_actor_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "search-viewer-node-change": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "authenticated_actor_changed",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "stalled-review-cursor": {
+      "checkpoint_review_node_id": null,
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 0
+      },
+      "error": "review_pagination_cursor_stalled",
+      "reason": null,
+      "result": "error",
+      "status": null,
+      "trigger": null
+    },
+    "timestamp-beats-database-id": {
+      "checkpoint_review_node_id": "PRR_1000",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 0,
+        "up_to_date": 1
+      },
+      "error": null,
+      "reason": null,
+      "result": "success",
+      "status": "up_to_date",
+      "trigger": null
+    },
+    "total-review-limit-exceeded": {
+      "checkpoint_review_node_id": "PRR_1001",
+      "counts": {
+        "actionable": 0,
+        "no_eligible_reviews": 0,
+        "unobservable": 1,
+        "up_to_date": 0
+      },
+      "error": null,
+      "reason": "resume_review_limit_exceeded",
+      "result": "success",
+      "status": "insufficient_evidence",
+      "trigger": null
+    }
+  },
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-review-inbox-global-oracle-v1"
+}

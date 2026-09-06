@@ -46,8 +46,10 @@ use stratadiff::{
 };
 
 mod demo;
+mod inbox;
 mod process;
 mod resume;
+mod value_funnel;
 mod viewer;
 
 use process::run_bounded_process;
@@ -76,8 +78,12 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Find open pull requests where one reviewer's completed checkpoint has moved.
+    Inbox(inbox::InboxArgs),
     /// Resume one reviewer's latest completed GitHub review from exact Git evidence.
     Resume(resume::ResumeArgs),
+    /// Verify and aggregate an explicitly enabled, local-only value-funnel log.
+    ValueReport(value_funnel::ValueReportArgs),
     /// Internal isolated workbench entry point used by `resume`.
     #[command(name = "__resume-workbench", hide = true)]
     ResumeWorkbench(resume::ResumeWorkbenchArgs),
@@ -409,7 +415,9 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::Inbox(args) => inbox::run(args)?,
         Command::Resume(args) => resume::run(args)?,
+        Command::ValueReport(args) => value_funnel::run(args)?,
         Command::ResumeWorkbench(args) => resume::run_workbench(args)?,
         Command::Demo { port, no_open } => demo::run(port, no_open)?,
         Command::Licenses => print!("{THIRD_PARTY_NOTICES}"),

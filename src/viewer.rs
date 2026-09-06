@@ -147,6 +147,8 @@ enum ReviewScope {
     Base,
 }
 
+pub(crate) type ReadyHook = Box<dyn FnOnce() -> Result<()> + Send>;
+
 pub fn serve(
     report: DiffReport,
     before: Vec<u8>,
@@ -161,6 +163,7 @@ pub fn serve(
         port,
         open_browser,
         None,
+        None,
     )
 }
 
@@ -169,6 +172,17 @@ pub fn serve_review(
     repository: PathBuf,
     port: u16,
     open_browser: bool,
+) -> Result<()> {
+    serve_review_with_ready(review, repository, port, open_browser, None, None)
+}
+
+pub(crate) fn serve_review_with_ready(
+    review: RepositoryReview,
+    repository: PathBuf,
+    port: u16,
+    open_browser: bool,
+    covered_hook: Option<ReadyHook>,
+    ready_hook: Option<ReadyHook>,
 ) -> Result<()> {
     let repository = std::fs::canonicalize(&repository)
         .with_context(|| format!("failed to resolve repository {}", repository.display()))?;
@@ -258,6 +272,9 @@ pub fn serve_review(
         "repository viewer session bytes limit exceeded: observed {}, limit {report_limit}",
         session_json.len()
     );
+    if let Some(covered_hook) = covered_hook {
+        covered_hook().context("failed to record covered review transition")?;
+    }
 
     serve_content(
         ViewerContent::Repository(Box::new(RepositorySession {
@@ -272,6 +289,7 @@ pub fn serve_review(
         port,
         open_browser,
         startup_warning,
+        ready_hook,
     )
 }
 
@@ -307,6 +325,7 @@ pub fn serve_review_coverage(
         "StrataDiff Review Coverage Passport",
         port,
         open_browser,
+        None,
         None,
     )
 }
@@ -355,6 +374,7 @@ fn serve_content(
     port: u16,
     open_browser: bool,
     startup_warning: Option<String>,
+    ready_hook: Option<ReadyHook>,
 ) -> Result<()> {
     let token = session_token()?;
     let runtime = Builder::new_multi_thread()
@@ -392,6 +412,10 @@ fn serve_content(
             .with_graceful_shutdown(shutdown)
             .into_future();
         tokio::pin!(server);
+
+        if let Some(ready_hook) = ready_hook {
+            ready_hook().context("failed to record local workbench readiness")?;
+        }
 
         eprintln!("{label}: {url}");
         eprintln!("Press Ctrl+C to stop the local server.");

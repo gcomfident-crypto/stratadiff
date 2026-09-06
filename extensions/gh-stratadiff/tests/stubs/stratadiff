@@ -34,6 +34,46 @@ printf '\n' >> "${STRATADIFF_EXTENSION_TEST_LOG}"
 checkpoint=cccccccccccccccccccccccccccccccccccccccc
 base=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 case "${1:-}" in
+  inbox)
+    if [[ " $* " == *" --help "* ]]; then
+      printf '%s\n' 'Usage: stratadiff inbox [OPTIONS]'
+      printf '%s\n' '  --reviewer <REVIEWER>'
+      printf '%s\n' '  --format <FORMAT>'
+      exit 0
+    fi
+    output=
+    format=markdown
+    index=1
+    while [[ "${index}" -le "$#" ]]; do
+      argument=${!index}
+      case "${argument}" in
+        --output|-o)
+          index=$((index + 1))
+          output=${!index}
+          ;;
+        --format)
+          index=$((index + 1))
+          format=${!index}
+          ;;
+      esac
+      index=$((index + 1))
+    done
+    if [[ "${format}" == json ]]; then
+      payload='{"schema":"stratadiff-review-inbox-v2","summary":{"status":"actionable"}}'
+    else
+      payload='# StrataDiff Review Inbox'
+    fi
+    if [[ -n "${output}" ]]; then
+      printf '%s\n' "${payload}" > "${output}"
+    else
+      printf '%s\n' "${payload}"
+    fi
+    if [[ -n "${INBOX_STUB_EXIT_STATUS:-}" ]]; then
+      printf '%s\n' 'inbox backend stdout'
+      printf '%s\n' 'inbox backend stderr' >&2
+      exit "${INBOX_STUB_EXIT_STATUS}"
+    fi
+    ;;
   resume)
     exit "${GH_STUB_RESUME_EXIT_STATUS:-0}"
     ;;

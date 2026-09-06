@@ -92,6 +92,9 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/review-memory-audit-v1.schema.json"),
         include_str!("../schema/review-memory-audit-v2.schema.json"),
         include_str!("../schema/review-inbox-v1.schema.json"),
+        include_str!("../schema/review-inbox-v2.schema.json"),
+        include_str!("../schema/value-funnel-event-v1.schema.json"),
+        include_str!("../schema/value-funnel-report-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
         jsonschema::draft202012::new(&schema).unwrap();

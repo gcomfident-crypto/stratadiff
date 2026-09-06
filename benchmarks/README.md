@@ -48,6 +48,23 @@ than independent ground truth. It demonstrates a real action shape, not prevalen
 retention, safety, or product fit. The frozen protocol requires a later 30-case multi-repository
 expansion before broader claims.
 
+## Review Inbox Global v1 semantic corpus
+
+[`review-inbox-global-v1/`](review-inbox-global-v1/) is a deterministic 60-case, network-free
+target-specification corpus for the global reviewer queue. It covers formal checkpoint selection,
+later `COMMENTED` records, dismissals and re-requests, force-push/rebase/restack shapes, independent
+base drift, outer and inner pagination, immutable actor/repository/host identity, duplicate nodes,
+permission loss, non-atomic revalidation, and fail-closed unobservable states. Its
+implementation-independent Python reference evaluator expands minimal case patches, derives every
+outcome, checks cross-case transition identity, and rejects nine tamper classes.
+
+This controlled adversarial corpus freezes the intended semantics, not implementation conformance:
+the current CI checks the corpus, reference evaluator, oracle, and checksums, but does not feed the
+materialized cases to the Rust `stratadiff inbox` implementation. An implementation adapter is still
+required before this can be called a product semantic-regression gate. It also does not replace a
+new multi-repository live capture or measure prevalence, reviewer time, issue recall, repeat use, or
+willingness to pay.
+
 ## Rebase-aware review-delta contract
 
 [`review-delta-v1/`](review-delta-v1/) is a deterministic, network-free suite of thirteen synthetic

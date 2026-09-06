@@ -254,6 +254,13 @@ assert_discovery_did_not_touch_git_state() {
   assert_not_contains "${CASE_LOG}" 'refs/stratadiff'
 }
 
+assert_native_inbox_forward_only() {
+  assert_contains "${CASE_LOG}" 'stratadiff inbox'
+  assert_not_contains "${CASE_LOG}" 'audit-tool'
+  assert_not_contains "${CASE_LOG}" 'gh '
+  assert_not_contains "${CASE_LOG}" 'git '
+}
+
 TOP_LEVEL_HELP="$(bash "${extension_directory}/gh-stratadiff" --help)"
 assert_contains "${TOP_LEVEL_HELP}" 'inbox                      Find open PRs that need your review resumed'
 assert_contains "${TOP_LEVEL_HELP}" 'demo                       Open a deterministic offline Review Resume scenario'
@@ -271,10 +278,18 @@ set -e
 assert_contains "${DEMO_BAD_PORT_OUTPUT}" '--port must be an integer from 0 through 65535'
 [[ "${DEMO_POSITIONAL_STATUS}" -ne 0 ]]
 assert_contains "${DEMO_POSITIONAL_OUTPUT}" 'demo does not accept positional arguments'
-INBOX_HELP="$(bash "${extension_directory}/gh-stratadiff" inbox --help)"
-assert_contains "${INBOX_HELP}" 'Usage: gh stratadiff inbox [options]'
-assert_contains "${INBOX_HELP}" '--format markdown|json'
-assert_contains "${INBOX_HELP}" 'works outside a Git checkout'
+inbox_help_log=${temporary_directory}/inbox-help.txt
+: > "${inbox_help_log}"
+INBOX_HELP="$(
+  env \
+    PATH="${stubs}:${PATH}" \
+    STRATADIFF_BIN=stratadiff \
+    STRATADIFF_EXTENSION_TEST_LOG="${inbox_help_log}" \
+    bash "${extension_directory}/gh-stratadiff" inbox --help
+)"
+assert_contains "${INBOX_HELP}" 'Usage: stratadiff inbox [OPTIONS]'
+assert_contains "${INBOX_HELP}" '--reviewer <REVIEWER>'
+[[ "$(< "${inbox_help_log}")" == 'stratadiff inbox --help' ]]
 resume_delegate_log=${temporary_directory}/resume-delegate.txt
 : > "${resume_delegate_log}"
 set +e
@@ -375,48 +390,42 @@ assert_not_contains "${CASE_LOG}" 'audit-tool'
 run_inbox inbox-default
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_OUTPUT}" '# StrataDiff Review Inbox'
-assert_contains "${CASE_LOG}" 'gh repo view github.com/acme/widget --json nameWithOwner,url'
-assert_contains "${CASE_LOG}" 'audit-tool inbox --repository acme/widget --hostname github.com --format markdown'
-assert_discovery_did_not_touch_git_state
+assert_contains "${CASE_LOG}" 'stratadiff inbox -R github.com/acme/widget'
+assert_native_inbox_forward_only
 
 run_inbox inbox-enterprise-json GH_STUB_ENTERPRISE=true GH_TEST_INBOX_ALL_OPTIONS=true
 [[ "${CASE_STATUS}" -eq 0 ]]
-assert_contains "${CASE_LOG}" 'gh repo view ghe.example/acme/widget --json nameWithOwner,url'
-assert_contains "${CASE_LOG}" "audit-tool inbox --repository acme/widget --hostname ghe.example --format json --output ${CASE_INBOX_OUTPUT_PATH}"
+assert_contains "${CASE_LOG}" "stratadiff inbox -R ghe.example/acme/widget --format json --output ${CASE_INBOX_OUTPUT_PATH}"
 [[ -f "${CASE_INBOX_OUTPUT_PATH}" ]]
-assert_contains "$(< "${CASE_INBOX_OUTPUT_PATH}")" '"schema":"stratadiff-review-inbox-v1"'
-assert_discovery_did_not_touch_git_state
+assert_contains "$(< "${CASE_INBOX_OUTPUT_PATH}")" '"schema":"stratadiff-review-inbox-v2"'
+assert_native_inbox_forward_only
 
 run_inbox inbox-infer GH_TEST_INBOX_INFER=true
 [[ "${CASE_STATUS}" -eq 0 ]]
-assert_contains "${CASE_LOG}" 'gh repo view --json nameWithOwner,url'
-assert_contains "${CASE_LOG}" 'audit-tool inbox --repository acme/widget --hostname github.com --format markdown'
-assert_discovery_did_not_touch_git_state
+[[ "${CASE_LOG}" == 'stratadiff inbox' ]]
+assert_native_inbox_forward_only
 
 run_inbox inbox-backend-failure INBOX_STUB_EXIT_STATUS=29
 [[ "${CASE_STATUS}" -eq 29 ]]
 assert_contains "${CASE_OUTPUT}" 'inbox backend stdout'
 assert_contains "${CASE_OUTPUT}" 'inbox backend stderr'
-assert_contains "${CASE_LOG}" 'audit-tool inbox --repository acme/widget --hostname github.com --format markdown'
-assert_discovery_did_not_touch_git_state
+assert_contains "${CASE_LOG}" 'stratadiff inbox -R github.com/acme/widget'
+assert_native_inbox_forward_only
 
 run_inbox inbox-invalid-format GH_TEST_INBOX_BAD_FORMAT=true
-[[ "${CASE_STATUS}" -ne 0 ]]
-assert_contains "${CASE_OUTPUT}" '--format must be markdown or json'
-assert_not_contains "${CASE_LOG}" 'audit-tool'
-assert_discovery_did_not_touch_git_state
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'stratadiff inbox -R github.com/acme/widget --format yaml'
+assert_native_inbox_forward_only
 
 run_inbox inbox-positional-rejected GH_TEST_INBOX_POSITIONAL=true
-[[ "${CASE_STATUS}" -ne 0 ]]
-assert_contains "${CASE_OUTPUT}" 'inbox does not accept positional arguments'
-assert_not_contains "${CASE_LOG}" 'audit-tool'
-assert_discovery_did_not_touch_git_state
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'stratadiff inbox -R github.com/acme/widget 17'
+assert_native_inbox_forward_only
 
 run_inbox inbox-audit-option-rejected GH_TEST_INBOX_AUDIT_OPTION=true
-[[ "${CASE_STATUS}" -ne 0 ]]
-assert_contains "${CASE_OUTPUT}" 'unknown option: --limit'
-assert_not_contains "${CASE_LOG}" 'audit-tool'
-assert_discovery_did_not_touch_git_state
+[[ "${CASE_STATUS}" -eq 0 ]]
+assert_contains "${CASE_LOG}" 'stratadiff inbox -R github.com/acme/widget --limit 7'
+assert_native_inbox_forward_only
 
 run_audit audit-zero-limit GH_TEST_AUDIT_ZERO_LIMIT=true
 [[ "${CASE_STATUS}" -ne 0 ]]

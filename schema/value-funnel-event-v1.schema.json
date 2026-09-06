@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/value-funnel-event-v1.schema.json",
+  "title": "StrataDiff local value-funnel event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "sequence",
+    "observed_at_unix_seconds",
+    "event_id",
+    "previous_event_sha256",
+    "kind",
+    "payload",
+    "event_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-value-funnel-event-v1" },
+    "tool_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 100000 },
+    "observed_at_unix_seconds": { "type": "integer", "minimum": 1 },
+    "event_id": { "$ref": "#/$defs/sha256" },
+    "previous_event_sha256": { "$ref": "#/$defs/sha256" },
+    "event_sha256": { "$ref": "#/$defs/sha256" },
+    "kind": {
+      "enum": [
+        "baseline",
+        "gap_discovery",
+        "inbox_delivery",
+        "resume_invoked",
+        "transition_bound",
+        "covered_transition",
+        "workbench_ready",
+        "attempt_failed"
+      ]
+    },
+    "payload": { "type": "object" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "kind": { "const": "baseline" },
+        "payload": { "$ref": "#/$defs/baseline" }
+      }
+    },
+    {
+      "properties": {
+        "kind": { "const": "gap_discovery" },
+        "payload": { "$ref": "#/$defs/gap_discovery" }
+      }
+    },
+    {
+      "properties": {
+        "kind": { "const": "inbox_delivery" },
+        "payload": { "$ref": "#/$defs/inbox_delivery" }
+      }
+    },
+    {
+      "properties": {
+        "kind": { "enum": ["resume_invoked", "transition_bound", "covered_transition", "workbench_ready"] },
+        "payload": { "$ref": "#/$defs/attempt" }
+      }
+    },
+    {
+      "properties": {
+        "kind": { "const": "attempt_failed" },
+        "payload": { "$ref": "#/$defs/failure" }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scan_id",
+        "inspected_candidates",
+        "completed_review_prs",
+        "collection_complete"
+      ],
+      "properties": {
+        "scan_id": { "$ref": "#/$defs/sha256" },
+        "inspected_candidates": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "completed_review_prs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "collection_complete": { "type": "boolean" }
+      }
+    },
+    "gap_discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scan_id", "transition_id"],
+      "properties": {
+        "scan_id": { "$ref": "#/$defs/sha256" },
+        "transition_id": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "inbox_delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scan_id"],
+      "properties": {
+        "scan_id": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition_id", "attempt_id"],
+      "properties": {
+        "transition_id": { "$ref": "#/$defs/sha256" },
+        "attempt_id": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transition_id", "attempt_id", "stage"],
+      "properties": {
+        "transition_id": { "$ref": "#/$defs/sha256" },
+        "attempt_id": { "$ref": "#/$defs/sha256" },
+        "stage": {
+          "enum": [
+            "before_transition_bound",
+            "before_coverage",
+            "before_workbench_ready",
+            "after_workbench_ready"
+          ]
+        }
+      }
+    }
+  }
+}

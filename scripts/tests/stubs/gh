@@ -47,15 +47,24 @@ case "${stratadiff_test_endpoint}" in
     printf '22362123\n'
     ;;
   repos/acme/stratadiff/rulesets/22362123)
-    [[ "${stratadiff_test_jq}" == *'((.bypass_actors | type) == "array")'* ]] || exit 2
-    [[ "${stratadiff_test_jq}" == *'(.bypass_actors == [])'* ]] || exit 2
-    if [[ "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" == invalid-ruleset ]]; then
-      printf 'false\n'
-    elif [[ "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" == null-bypass ]]; then
-      printf 'false\n'
-    else
-      printf 'true\n'
-    fi
+    [[ -z "${stratadiff_test_jq}" ]] || exit 2
+    case "${STRATADIFF_TEST_POLICY_SCENARIO:-success}" in
+      invalid-ruleset)
+        printf '%s\n' '{"name":"Protect immutable v* release tags","target":"branch","enforcement":"active","bypass_actors":[],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"update"}]}'
+        ;;
+      missing-bypass)
+        printf '%s\n' '{"name":"Protect immutable v* release tags","target":"tag","enforcement":"active","conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"update"}]}'
+        ;;
+      null-bypass)
+        printf '%s\n' '{"name":"Protect immutable v* release tags","target":"tag","enforcement":"active","bypass_actors":null,"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"update"}]}'
+        ;;
+      extra-bypass)
+        printf '%s\n' '{"name":"Protect immutable v* release tags","target":"tag","enforcement":"active","bypass_actors":[{"actor_id":1,"actor_type":"RepositoryRole","bypass_mode":"always"}],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"update"}]}'
+        ;;
+      *)
+        printf '%s\n' '{"name":"Protect immutable v* release tags","target":"tag","enforcement":"active","bypass_actors":[],"conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},"rules":[{"type":"deletion"},{"type":"update"}]}'
+        ;;
+    esac
     ;;
   *)
     exit 2
