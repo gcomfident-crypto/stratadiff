@@ -166,12 +166,12 @@ production safety rate or evidence that reviewers save time.
 
 ## Quick start
 
-From any directory, install the exact `v0.4.0` release through an authenticated GitHub CLI, then
+From any directory, install the exact `v0.4.1` release through an authenticated GitHub CLI, then
 paste the pull request URL. The installer selects one of the four supported native binaries,
 checks its SHA-256 digest and GitHub build-provenance bundle against the fully dereferenced release
 tag, checks the embedded version, and replaces the destination atomically:
 
-This path becomes available only after `v0.4.0` appears on the repository's Releases page. A 404
+This path becomes available only after `v0.4.1` appears on the repository's Releases page. A 404
 means no verified artifact exists yet; use the development path below instead of bypassing the
 checks.
 
@@ -181,10 +181,10 @@ checks.
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
-    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.0' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.1' \
     > "$installer"
   test -s "$installer"
-  bash "$installer" v0.4.0
+  bash "$installer" v0.4.1
 )
 ```
 

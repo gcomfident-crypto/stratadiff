@@ -19,10 +19,10 @@ version to become visible before continuing:
 
 ```console
 cargo publish --package stratadiff-core --locked
-cargo info stratadiff-core@0.4.0
+cargo info stratadiff-core@0.4.1
 
 cargo publish --package stratadiff-verifier --locked
-cargo info stratadiff-verifier@0.4.0
+cargo info stratadiff-verifier@0.4.1
 
 cargo publish --package stratadiff --locked
 ```
@@ -58,8 +58,8 @@ nonempty `bypass_actors` all fail closed:
 ```console
 scripts/check-release-repository-policy.sh gcomfident-crypto/stratadiff
 scripts/ci.sh
-git tag -a v0.4.0 -m "StrataDiff v0.4.0"
-git push origin v0.4.0
+git tag -a v0.4.1 -m "StrataDiff v0.4.1"
+git push origin v0.4.1
 ```
 
 Use the actual manifest version instead of copying the example blindly. The tag push starts
@@ -113,10 +113,10 @@ select and verify the platform asset:
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
-    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.0' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.1' \
     > "$installer"
   test -s "$installer"
-  bash "$installer" v0.4.0
+  bash "$installer" v0.4.1
 )
 ```
 
@@ -142,7 +142,7 @@ Select the asset for the current kernel and CPU, then download the binary, check
 bundle. For example, on Linux x86-64:
 
 ```console
-tag=v0.4.0
+tag=v0.4.1
 asset=stratadiff-linux-x86_64
 source_digest="$(gh api --hostname github.com \
   "repos/gcomfident-crypto/stratadiff/commits/$tag" --jq .sha)"
