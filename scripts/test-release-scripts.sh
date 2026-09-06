@@ -188,7 +188,14 @@ fi
 
 "${stratadiff_script_directory}/check-release-repository-policy.sh" \
   acme/stratadiff >/dev/null
-for stratadiff_policy_failure in mutable missing-ruleset invalid-ruleset null-bypass; do
+for stratadiff_policy_failure in \
+  mutable \
+  missing-ruleset \
+  invalid-ruleset \
+  missing-bypass \
+  null-bypass \
+  extra-bypass
+do
   export STRATADIFF_TEST_POLICY_SCENARIO=${stratadiff_policy_failure}
   if "${stratadiff_script_directory}/check-release-repository-policy.sh" \
     acme/stratadiff >/dev/null 2>&1

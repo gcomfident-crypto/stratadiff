@@ -1,0 +1,80 @@
+{
+  "acceptance_gates": {
+    "minimum_actionable_cases": 10,
+    "minimum_cases": 30,
+    "minimum_error_cases": 10,
+    "minimum_partial_cases": 3,
+    "minimum_relation_assertions": 8,
+    "minimum_unobservable_cases": 3
+  },
+  "assets": {
+    "cases": {
+      "path": "cases.json",
+      "sha256": "d55b0ecd7df34e2a737ca45e62d9191134c2d8e2c42c392d1ece0ee499c74895"
+    },
+    "oracle": {
+      "path": "oracle.json",
+      "sha256": "82bb24a9428908ca1c520acc8889664ab4a30250193131247726d83cdb46323e"
+    }
+  },
+  "claim_boundary": [
+    "The cases are controlled semantic fixtures, not a prevalence sample of public or private pull requests.",
+    "Passing the corpus does not prove source-level residue correctness, defect recall, review-time savings, retention, or product-market fit.",
+    "Force-push, rebase, and restack labels describe constructed histories; metadata alone does not infer the rewrite mechanism.",
+    "Base identities and active re-review requests define the target contract even where the current CLI has not yet collected those fields.",
+    "Transition-key assertions prove deterministic identity separation only; they are not signatures or authentication evidence."
+  ],
+  "dataset_license": "MIT",
+  "dataset_version": "1.0.0",
+  "description": "A deterministic, network-free corpus for reviewer-specific review checkpoint discovery and fail-closed global inbox routing.",
+  "designation": "controlled_semantic_regression",
+  "expected_summary": {
+    "candidate_decisions": {
+      "actionable": 20,
+      "no_eligible_reviews": 3,
+      "unobservable": 4,
+      "up_to_date": 7
+    },
+    "cases": 60,
+    "coverage_tags": 55,
+    "error_cases": 25,
+    "relation_assertions": 12,
+    "status": {
+      "actionable": 19,
+      "insufficient_evidence": 4,
+      "no_eligible_reviews": 3,
+      "partial": 3,
+      "up_to_date": 6
+    },
+    "success_cases": 35
+  },
+  "name": "Review Inbox Global v1",
+  "required_coverage": [
+    "authenticated_actor_binding",
+    "base_drift",
+    "comment_after_checkpoint",
+    "commented_only",
+    "complete_review_pagination",
+    "dismissed_review",
+    "duplicate_review_node",
+    "fail_closed",
+    "force_push",
+    "ghes",
+    "host_identity",
+    "identity_confusion",
+    "immutable_reviewer_identity",
+    "never_false_clean",
+    "partial",
+    "permission_failure",
+    "rebase",
+    "repository_identity",
+    "restack",
+    "review_pagination",
+    "review_re_requested",
+    "reviewer_specific_checkpoint",
+    "transition_identity",
+    "truncated_search",
+    "unobservable"
+  ],
+  "schema": "stratadiff-review-inbox-global-manifest-v1"
+}

@@ -15,7 +15,7 @@ use clap::Args;
 use serde::Deserialize;
 use stratadiff::{
     github::{
-        MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
+        GithubReviewCheckpoint, MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
         resolve_github_review_checkpoint_slurp_pages, verify_github_commit_object,
     },
     review::review_git_range_with_checkpoint,
@@ -24,10 +24,10 @@ use tempfile::{Builder as TempDirBuilder, TempDir};
 
 use crate::{
     process::{
-        CapturedOutput, SignalState, run_bounded_process, run_bounded_process_recording_pid,
-        run_inherited_process, run_short_critical_process,
+        CapturedOutput, Interrupted, SignalState, run_bounded_process,
+        run_bounded_process_recording_pid, run_inherited_process, run_short_critical_process,
     },
-    viewer,
+    value_funnel, viewer,
 };
 
 const COMMAND_STDERR_LIMIT: usize = 64 * 1024;
@@ -107,6 +107,12 @@ pub(crate) struct ResumeArgs {
     /// Print the workbench URL without opening a browser.
     #[arg(long)]
     pub(crate) no_open: bool,
+    /// Opt in to a private, local-only value-funnel log created by `inbox`.
+    #[arg(long, value_name = "PATH", requires = "transition_id")]
+    pub(crate) value_log: Option<PathBuf>,
+    /// Opaque Inbox transition identifier used only inside the opted-in local funnel.
+    #[arg(long, requires = "value_log")]
+    pub(crate) transition_id: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -121,6 +127,12 @@ pub(crate) struct ResumeWorkbenchArgs {
     pub(crate) port: u16,
     #[arg(long)]
     pub(crate) no_open: bool,
+    #[arg(long, hide = true, requires = "transition_id")]
+    pub(crate) value_log: Option<PathBuf>,
+    #[arg(long, hide = true, requires = "value_log")]
+    pub(crate) transition_id: Option<String>,
+    #[arg(long, hide = true, requires_all = ["value_log", "transition_id"])]
+    pub(crate) attempt_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,6 +156,18 @@ struct RepositoryIdentity {
     full_name: String,
     url: String,
     host: String,
+}
+
+struct ViewerChildRequest<'a> {
+    base: &'a str,
+    head: &'a str,
+    checkpoint: &'a str,
+    repository: &'a Path,
+    port: u16,
+    no_open: bool,
+    value_log: Option<&'a Path>,
+    transition_id: Option<&'a str>,
+    attempt_id: Option<&'a str>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -942,23 +966,73 @@ impl Drop for ResumeSession<'_> {
     }
 }
 
-pub(crate) fn run(args: ResumeArgs) -> Result<()> {
-    let signals = SignalState::register()?;
-    let mut session = ResumeSession::new(&signals)?;
-    let operation = run_with_session(&args, &mut session);
-    session.clear_authorization();
-    let cleanup = session.cleanup();
-    match (operation, cleanup) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(()), Err(cleanup_error)) => Err(cleanup_error),
-        (Err(error), Err(cleanup_error)) => Err(anyhow!(
-            "resume failed: {error:#}; cleanup also failed: {cleanup_error:#}"
-        )),
+pub(crate) fn run(mut args: ResumeArgs) -> Result<()> {
+    let value_log = args
+        .value_log
+        .as_deref()
+        .map(value_funnel::canonical_log_path)
+        .transpose()?;
+    args.value_log = value_log;
+    let attempt_id = match (&args.value_log, &args.transition_id) {
+        (Some(path), Some(transition_id)) => {
+            Some(value_funnel::record_resume_invoked(path, transition_id)?)
+        }
+        (None, None) => None,
+        _ => bail!("value log and transition ID must be supplied together"),
+    };
+    let operation = (|| {
+        let signals = SignalState::register()?;
+        let mut session = ResumeSession::new(&signals)?;
+        let operation = run_with_session(&args, attempt_id.as_deref(), &mut session);
+        session.clear_authorization();
+        let cleanup = session.cleanup();
+        match (operation, cleanup) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(()), Err(cleanup_error)) => Err(cleanup_error),
+            (Err(error), Err(cleanup_error)) => Err(anyhow!(
+                "resume failed: {error:#}; cleanup also failed: {cleanup_error:#}"
+            )),
+        }
+    })();
+    match (operation, &args.value_log, &args.transition_id, &attempt_id) {
+        (Ok(()), _, _, _) => Ok(()),
+        (Err(error), Some(path), Some(transition_id), Some(attempt_id)) => {
+            if !should_record_attempt_failure(&error, path, transition_id, attempt_id)? {
+                return Err(error);
+            }
+            match value_funnel::record_attempt_failed(path, transition_id, attempt_id) {
+                Ok(()) => Err(error),
+                Err(log_error) => Err(anyhow!(
+                    "resume failed: {error:#}; recording the local failure also failed: {log_error:#}"
+                )),
+            }
+        }
+        (Err(error), _, _, _) => Err(error),
     }
 }
 
-fn run_with_session(args: &ResumeArgs, session: &mut ResumeSession<'_>) -> Result<()> {
+fn should_record_attempt_failure(
+    error: &anyhow::Error,
+    value_log: &Path,
+    transition_id: &str,
+    attempt_id: &str,
+) -> Result<bool> {
+    if error.downcast_ref::<Interrupted>().is_none() {
+        return Ok(true);
+    }
+    Ok(!value_funnel::attempt_reached_workbench_ready(
+        value_log,
+        transition_id,
+        attempt_id,
+    )?)
+}
+
+fn run_with_session(
+    args: &ResumeArgs,
+    attempt_id: Option<&str>,
+    session: &mut ResumeSession<'_>,
+) -> Result<()> {
     let pull_request_url = parse_pull_request_url(&args.pull_request)?;
     let inferred_repository = pull_request_url
         .as_ref()
@@ -1017,10 +1091,15 @@ fn run_with_session(args: &ResumeArgs, session: &mut ResumeSession<'_>) -> Resul
         session.repository(),
         session.signals,
     )?;
-    verify_provider_commit(&identity, &checkpoint, "review checkpoint", session.signals)?;
+    verify_provider_commit(
+        &identity,
+        &checkpoint.commit_id,
+        "review checkpoint",
+        session.signals,
+    )?;
     session.ensure_local_commit(
         &identity,
-        &checkpoint,
+        &checkpoint.commit_id,
         "review checkpoint",
         "checkpoint",
         true,
@@ -1041,17 +1120,45 @@ fn run_with_session(args: &ResumeArgs, session: &mut ResumeSession<'_>) -> Resul
         "pull request base or head changed while review coverage was being resolved; rerun the command"
     );
 
+    match (&args.value_log, &args.transition_id, attempt_id) {
+        (Some(path), Some(transition_id), Some(attempt_id)) => {
+            let expected_transition_id =
+                value_funnel::transition_id(&value_funnel::TransitionIdentity {
+                    provider_hostname: &identity.host,
+                    repository: &identity.full_name,
+                    pull_request_number: first.number,
+                    reviewer: &checkpoint.reviewer_login,
+                    review_id: checkpoint.review_id,
+                    review_state: &checkpoint.review_state,
+                    checkpoint: &checkpoint.commit_id,
+                    head: &first.head_ref_oid,
+                });
+            ensure!(
+                *transition_id == expected_transition_id,
+                "value-funnel transition ID does not match the revalidated pull request, reviewer, checkpoint, and head"
+            );
+            value_funnel::record_transition_bound(path, transition_id, attempt_id)?;
+        }
+        (None, None, None) => {}
+        _ => bail!("value log, transition ID, and attempt ID must be supplied together"),
+    }
+
     eprintln!(
-        "Resuming @{reviewer} review of {}#{} at exact checkpoint {checkpoint}.",
-        identity.full_name, first.number
+        "Resuming @{reviewer} review of {}#{} at exact checkpoint {}.",
+        identity.full_name, first.number, checkpoint.commit_id
     );
     run_viewer_child(
-        &first.base_ref_oid,
-        &first.head_ref_oid,
-        &checkpoint,
-        session.repository(),
-        args.port,
-        args.no_open,
+        ViewerChildRequest {
+            base: &first.base_ref_oid,
+            head: &first.head_ref_oid,
+            checkpoint: &checkpoint.commit_id,
+            repository: session.repository(),
+            port: args.port,
+            no_open: args.no_open,
+            value_log: args.value_log.as_deref(),
+            transition_id: args.transition_id.as_deref(),
+            attempt_id,
+        },
         session.signals,
     )
 }
@@ -1063,7 +1170,40 @@ pub(crate) fn run_workbench(args: ResumeWorkbenchArgs) -> Result<()> {
         &args.head,
         Some(&args.checkpoint),
     )?;
-    viewer::serve_review(review, args.repo, args.port, !args.no_open)
+    let value_log = args
+        .value_log
+        .as_deref()
+        .map(value_funnel::canonical_log_path)
+        .transpose()?;
+    let (covered_hook, ready_hook) = match (value_log, args.transition_id, args.attempt_id) {
+        (Some(path), Some(transition_id), Some(attempt_id)) => {
+            let ready_path = path.clone();
+            let ready_transition_id = transition_id.clone();
+            let ready_attempt_id = attempt_id.clone();
+            (
+                Some(Box::new(move || {
+                    value_funnel::record_covered_transition(&path, &transition_id, &attempt_id)
+                }) as viewer::ReadyHook),
+                Some(Box::new(move || {
+                    value_funnel::record_workbench_ready(
+                        &ready_path,
+                        &ready_transition_id,
+                        &ready_attempt_id,
+                    )
+                }) as viewer::ReadyHook),
+            )
+        }
+        (None, None, None) => (None, None),
+        _ => bail!("value log, transition ID, and attempt ID must be supplied together"),
+    };
+    viewer::serve_review_with_ready(
+        review,
+        args.repo,
+        args.port,
+        !args.no_open,
+        covered_hook,
+        ready_hook,
+    )
 }
 
 fn resolve_repository_identity(
@@ -1167,7 +1307,7 @@ fn resolve_review_checkpoint(
     reviewer: &str,
     repository: &Path,
     signals: &SignalState,
-) -> Result<String> {
+) -> Result<GithubReviewCheckpoint> {
     let endpoint = format!(
         "repos/{}/pulls/{pull_request}/reviews?per_page=100",
         identity.full_name
@@ -1204,7 +1344,7 @@ fn resolve_review_checkpoint(
             identity.full_name
         )
     })?;
-    Ok(checkpoint.commit_id)
+    Ok(checkpoint)
 }
 
 fn verify_provider_commit(
@@ -1232,25 +1372,17 @@ fn verify_provider_commit(
         .with_context(|| format!("provider verification failed for {label} {object_id}"))
 }
 
-fn run_viewer_child(
-    base: &str,
-    head: &str,
-    checkpoint: &str,
-    repository: &Path,
-    port: u16,
-    no_open: bool,
-    signals: &SignalState,
-) -> Result<()> {
+fn run_viewer_child(request: ViewerChildRequest<'_>, signals: &SignalState) -> Result<()> {
     let executable = env::current_exe().context("failed to resolve the StrataDiff executable")?;
     let mut command = Command::new(executable);
     command
         .arg("__resume-workbench")
-        .arg(base)
-        .arg(head)
-        .args(["--checkpoint", checkpoint, "--repo"])
-        .arg(repository)
-        .args(["--port", &port.to_string()])
-        .current_dir(repository)
+        .arg(request.base)
+        .arg(request.head)
+        .args(["--checkpoint", request.checkpoint, "--repo"])
+        .arg(request.repository)
+        .args(["--port", &request.port.to_string()])
+        .current_dir(request.repository)
         .env_clear();
     for name in VIEWER_ENVIRONMENT_ALLOWLIST {
         if let Some(value) = env::var_os(name) {
@@ -1264,8 +1396,17 @@ fn run_viewer_child(
         .env("GIT_ASKPASS", "/bin/false")
         .env("GIT_NO_LAZY_FETCH", "1")
         .env("GIT_NO_REPLACE_OBJECTS", "1");
-    if no_open {
+    if request.no_open {
         command.arg("--no-open");
+    }
+    match (request.value_log, request.transition_id, request.attempt_id) {
+        (Some(value_log), Some(transition_id), Some(attempt_id)) => {
+            command.arg("--value-log").arg(value_log);
+            command.args(["--transition-id", transition_id]);
+            command.args(["--attempt-id", attempt_id]);
+        }
+        (None, None, None) => {}
+        _ => bail!("value log, transition ID, and attempt ID must be supplied together"),
     }
     let status = run_inherited_process(
         &mut command,
@@ -1612,9 +1753,11 @@ mod tests {
     use super::{
         PullRequestCoordinates, RepositoryRecord, ResumeSession, SignalState,
         is_git_environment_name, is_object_id, is_sha1, list_pack_keep_files, pack_keep_has_owner,
-        parse_pull_request_url, requested_repository_host, should_remove_from_git_environment,
-        validate_owner_repository, validate_pull_request_coordinates, validate_reviewer,
+        parse_pull_request_url, requested_repository_host, should_record_attempt_failure,
+        should_remove_from_git_environment, validate_owner_repository,
+        validate_pull_request_coordinates, validate_reviewer,
     };
+    use crate::{process::Interrupted, value_funnel};
 
     fn repository_with_commit() -> (tempfile::TempDir, String) {
         let repository = tempfile::tempdir().unwrap();
@@ -1654,6 +1797,38 @@ mod tests {
         assert!(commit.status.success());
         let commit = String::from_utf8(commit.stdout).unwrap().trim().to_owned();
         (repository, commit)
+    }
+
+    #[test]
+    fn intentional_shutdown_after_workbench_readiness_is_not_a_failed_attempt() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("value.jsonl");
+        let transition_id = "a".repeat(64);
+        value_funnel::record_inbox(&path, true, 1, 1, std::slice::from_ref(&transition_id))
+            .unwrap();
+        let attempt_id = value_funnel::record_resume_invoked(&path, &transition_id).unwrap();
+        let interrupted = anyhow::Error::new(Interrupted::new(libc::SIGINT));
+        assert!(
+            should_record_attempt_failure(&interrupted, &path, &transition_id, &attempt_id)
+                .unwrap()
+        );
+
+        value_funnel::record_transition_bound(&path, &transition_id, &attempt_id).unwrap();
+        value_funnel::record_covered_transition(&path, &transition_id, &attempt_id).unwrap();
+        value_funnel::record_workbench_ready(&path, &transition_id, &attempt_id).unwrap();
+        assert!(
+            !should_record_attempt_failure(&interrupted, &path, &transition_id, &attempt_id)
+                .unwrap()
+        );
+        assert!(
+            should_record_attempt_failure(
+                &anyhow::anyhow!("workbench crashed"),
+                &path,
+                &transition_id,
+                &attempt_id,
+            )
+            .unwrap()
+        );
     }
 
     #[test]

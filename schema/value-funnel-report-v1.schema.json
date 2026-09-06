@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/value-funnel-report-v1.schema.json",
+  "title": "StrataDiff local value-funnel aggregate report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "source_schema",
+    "event_count",
+    "chain_tip_sha256",
+    "privacy",
+    "claim_boundary",
+    "summary",
+    "conversion",
+    "failures"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-value-funnel-report-v1" },
+    "tool_version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "source_schema": { "const": "stratadiff-value-funnel-event-v1" },
+    "event_count": { "type": "integer", "minimum": 0, "maximum": 100000 },
+    "chain_tip_sha256": { "$ref": "#/$defs/sha256" },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "automatic_upload",
+        "source_content_exported",
+        "local_paths_exported",
+        "repository_identity_exported",
+        "pull_request_identity_exported",
+        "reviewer_identity_exported",
+        "pseudonymous_transition_digests_exported",
+        "transition_identifiers_exported"
+      ],
+      "properties": {
+        "automatic_upload": { "const": false },
+        "source_content_exported": { "const": false },
+        "local_paths_exported": { "const": false },
+        "repository_identity_exported": { "const": false },
+        "pull_request_identity_exported": { "const": false },
+        "reviewer_identity_exported": { "const": false },
+        "pseudonymous_transition_digests_exported": { "const": false },
+        "transition_identifiers_exported": { "const": false }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_post_discovery_activation_supported",
+        "clean_install_success_supported",
+        "reviewer_time_savings_supported",
+        "issue_recall_supported",
+        "market_prevalence_supported"
+      ],
+      "properties": {
+        "local_post_discovery_activation_supported": { "const": true },
+        "clean_install_success_supported": { "const": false },
+        "reviewer_time_savings_supported": { "const": false },
+        "issue_recall_supported": { "const": false },
+        "market_prevalence_supported": { "const": false }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scans",
+        "partial_scans",
+        "inspected_candidates",
+        "completed_review_checkpoints",
+        "covered_transitions",
+        "gap_discoveries",
+        "unique_gap_transitions",
+        "unique_resumed_transitions",
+        "unique_ready_transitions",
+        "resume_attempts",
+        "transition_bound_attempts",
+        "covered_attempts",
+        "workbench_ready_attempts",
+        "unresolved_attempts"
+      ],
+      "properties": {
+        "scans": { "$ref": "#/$defs/count" },
+        "partial_scans": { "$ref": "#/$defs/count" },
+        "inspected_candidates": { "$ref": "#/$defs/count" },
+        "completed_review_checkpoints": { "$ref": "#/$defs/count" },
+        "covered_transitions": { "$ref": "#/$defs/count" },
+        "gap_discoveries": { "$ref": "#/$defs/count" },
+        "unique_gap_transitions": { "$ref": "#/$defs/count" },
+        "unique_resumed_transitions": { "$ref": "#/$defs/count" },
+        "unique_ready_transitions": { "$ref": "#/$defs/count" },
+        "resume_attempts": { "$ref": "#/$defs/count" },
+        "transition_bound_attempts": { "$ref": "#/$defs/count" },
+        "covered_attempts": { "$ref": "#/$defs/count" },
+        "workbench_ready_attempts": { "$ref": "#/$defs/count" },
+        "unresolved_attempts": { "$ref": "#/$defs/count" }
+      }
+    },
+    "conversion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gap_to_resume",
+        "resume_attempt_to_covered_transition",
+        "covered_transition_to_workbench_ready",
+        "resume_attempt_to_workbench_ready"
+      ],
+      "properties": {
+        "gap_to_resume": { "$ref": "#/$defs/rate" },
+        "resume_attempt_to_covered_transition": { "$ref": "#/$defs/rate" },
+        "covered_transition_to_workbench_ready": { "$ref": "#/$defs/rate" },
+        "resume_attempt_to_workbench_ready": { "$ref": "#/$defs/rate" }
+      }
+    },
+    "failures": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total",
+        "before_transition_bound",
+        "before_coverage",
+        "before_workbench_ready",
+        "after_workbench_ready"
+      ],
+      "properties": {
+        "total": { "$ref": "#/$defs/count" },
+        "before_transition_bound": { "$ref": "#/$defs/count" },
+        "before_coverage": { "$ref": "#/$defs/count" },
+        "before_workbench_ready": { "$ref": "#/$defs/count" },
+        "after_workbench_ready": { "$ref": "#/$defs/count" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["numerator", "denominator", "status", "basis_points"],
+      "properties": {
+        "numerator": { "$ref": "#/$defs/count" },
+        "denominator": { "$ref": "#/$defs/count" },
+        "status": { "enum": ["defined", "undefined"] },
+        "basis_points": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0, "maximum": 10000 },
+            { "type": "null" }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "status": { "const": "defined" },
+            "denominator": { "minimum": 1 },
+            "basis_points": { "type": "integer", "minimum": 0, "maximum": 10000 }
+          }
+        },
+        {
+          "properties": {
+            "status": { "const": "undefined" },
+            "denominator": { "const": 0 },
+            "numerator": { "const": 0 },
+            "basis_points": { "type": "null" }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -37,6 +37,9 @@ python3 -B benchmarks/review-memory-audit-v1/verify.py self-test
 python3 -B benchmarks/review-inbox-v1/verify.py verify
 python3 -B benchmarks/review-inbox-v1/verify.py self-test
 (cd benchmarks/review-inbox-v1 && sha256sum -c SHA256SUMS)
+python3 -B benchmarks/review-inbox-global-v1/verify.py verify
+python3 -B benchmarks/review-inbox-global-v1/verify.py self-test
+(cd benchmarks/review-inbox-global-v1 && sha256sum -c SHA256SUMS)
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

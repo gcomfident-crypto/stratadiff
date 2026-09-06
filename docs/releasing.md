@@ -48,10 +48,12 @@ Rust build graph for the four supported release targets and is embedded in the e
 at runtime with `stratadiff licenses`. The Workbench's JavaScript notices remain embedded separately.
 
 The tag must be an exact stable `vMAJOR.MINOR.PATCH` matching the root Cargo package version. From a
-clean checkout of the intended commit, use an authenticated GitHub identity with repository
-Administration write access to verify the service-side policy immediately before creating the tag.
+clean checkout of the intended commit, use Python 3 and an authenticated GitHub identity with
+repository Administration write access to verify the service-side policy immediately before
+creating the tag.
 GitHub omits ruleset bypass actors from this API response unless the caller can write the ruleset,
-so a read-only administration token is insufficient for this fail-closed check:
+so a read-only administration token is insufficient for this fail-closed check. Missing, null, or
+nonempty `bypass_actors` all fail closed:
 
 ```console
 scripts/check-release-repository-policy.sh gcomfident-crypto/stratadiff

@@ -54,24 +54,6 @@ inference is delegated to `gh repo view` in the current directory.
 EOF
 }
 
-inbox_usage() {
-  cat <<'EOF'
-Usage: gh stratadiff inbox [options]
-
-Find open pull requests where your completed review checkpoint no longer
-matches the current head.
-
-Options:
-  -R, --repo REPO          GitHub repository in [HOST/]OWNER/REPO form
-  --format markdown|json   Report format (default: markdown)
-  --output PATH            Write the report to PATH instead of stdout
-  -h, --help               Show this help
-
-With -R, this command works outside a Git checkout. Without -R, repository
-inference is delegated to `gh repo view` in the current directory.
-EOF
-}
-
 ownership_snapshot_usage() {
   cat <<'EOF'
 Usage: gh stratadiff ownership-snapshot <BASE> --output PATH [options]
@@ -426,8 +408,10 @@ case "${subcommand}" in
     ;;
 esac
 
-if [[ "${subcommand}" == resume ]]; then
-  exec "${STRATADIFF_BIN:-stratadiff}" resume "$@"
+if [[ "${subcommand}" == resume || "${subcommand}" == inbox ]]; then
+  stratadiff=${STRATADIFF_BIN:-stratadiff}
+  require_command "${stratadiff}"
+  exec "${stratadiff}" "${subcommand}" "$@"
 fi
 
 base_commit=
@@ -441,7 +425,6 @@ audit_limit=50
 audit_days=90
 audit_format=markdown
 audit_end_exclusive=
-inbox_format=markdown
 
 case "${subcommand}" in
   demo)
@@ -524,43 +507,6 @@ case "${subcommand}" in
     [[ "${audit_days}" =~ ^[1-9][0-9]*$ && "${audit_days}" -le 365 ]] || die \
       "--days must be an integer from 1 through 365"
     case "${audit_format}" in
-      markdown|json) ;;
-      *) die "--format must be markdown or json" ;;
-    esac
-    ;;
-  inbox)
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        -R|--repo)
-          require_value "$1" "${2:-}"
-          requested_repository=$2
-          requested_repository_set=true
-          shift 2
-          ;;
-        --format)
-          require_value "$1" "${2:-}"
-          inbox_format=$2
-          shift 2
-          ;;
-        --output)
-          require_value "$1" "${2:-}"
-          output_path=$2
-          shift 2
-          ;;
-        -h|--help)
-          inbox_usage
-          exit 0
-          ;;
-        --)
-          shift
-          [[ $# -eq 0 ]] || die "inbox does not accept positional arguments"
-          ;;
-        -*) die "unknown option: $1" ;;
-        *) die "inbox does not accept positional arguments" ;;
-      esac
-    done
-
-    case "${inbox_format}" in
       markdown|json) ;;
       *) die "--format must be markdown or json" ;;
     esac
@@ -664,7 +610,7 @@ fi
 
 require_command gh
 
-if [[ "${subcommand}" == audit || "${subcommand}" == inbox ]]; then
+if [[ "${subcommand}" == audit ]]; then
   require_command python3
   extension_directory="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
   repository_root="$(cd -P -- "${extension_directory}/../.." && pwd -P)"
@@ -692,15 +638,11 @@ if [[ "${subcommand}" == audit || "${subcommand}" == inbox ]]; then
   fi
 
   backend_arguments=("${subcommand}" --repository "${github_repository}" --hostname "${github_host}")
-  if [[ "${subcommand}" == audit ]]; then
-    backend_arguments+=(--limit "${audit_limit}" --days "${audit_days}" --format "${audit_format}")
-  else
-    backend_arguments+=(--format "${inbox_format}")
-  fi
+  backend_arguments+=(--limit "${audit_limit}" --days "${audit_days}" --format "${audit_format}")
   if [[ -n "${output_path}" ]]; then
     backend_arguments+=(--output "${output_path}")
   fi
-  if [[ "${subcommand}" == audit && -n "${audit_end_exclusive}" ]]; then
+  if [[ -n "${audit_end_exclusive}" ]]; then
     backend_arguments+=(--end-exclusive "${audit_end_exclusive}")
   fi
   exec python3 "${review_memory_tool}" "${backend_arguments[@]}"

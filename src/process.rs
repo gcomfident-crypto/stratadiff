@@ -93,7 +93,7 @@ pub(crate) struct Interrupted {
 }
 
 impl Interrupted {
-    fn new(signal: i32) -> Self {
+    pub(crate) fn new(signal: i32) -> Self {
         Self { signal }
     }
 

@@ -1,0 +1,1441 @@
+{
+  "base_observation": {
+    "provider": {
+      "host": "github.com"
+    },
+    "scope": {
+      "authenticated_actor": {
+        "login": "collector",
+        "node_id": "U_collector"
+      },
+      "requested_repository": null,
+      "reviewer": {
+        "actor_type": "User",
+        "login": "reviewer",
+        "node_id": "U_reviewer"
+      }
+    },
+    "search": {
+      "candidates": [
+        {
+          "pull_request": {
+            "current_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "head_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "node_id": "PR_17",
+            "number": 17,
+            "state": "OPEN",
+            "total_review_count": 1,
+            "updated_at": "2026-09-06T00:00:03Z",
+            "url": "https://github.com/acme/widget/pull/17"
+          },
+          "repository": {
+            "name_with_owner": "acme/widget",
+            "node_id": "R_widget",
+            "url": "https://github.com/acme/widget"
+          },
+          "revalidation": {
+            "outcome": "matched",
+            "pull_request_node_id": "PR_17",
+            "repository": {
+              "name_with_owner": "acme/widget",
+              "node_id": "R_widget",
+              "url": "https://github.com/acme/widget"
+            },
+            "snapshot_matches": true,
+            "viewer": {
+              "login": "collector",
+              "node_id": "U_collector"
+            }
+          },
+          "review_history": {
+            "cursor_advanced": true,
+            "nodes": [
+              {
+                "author": {
+                  "actor_type": "User",
+                  "login": "reviewer",
+                  "node_id": "U_reviewer"
+                },
+                "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+                "commit_oid": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "database_id": 1001,
+                "node_id": "PRR_1001",
+                "state": "APPROVED",
+                "submitted_at": "2026-09-05T00:00:00Z",
+                "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1001"
+              }
+            ],
+            "pages_observed": 1,
+            "reported_count": 1,
+            "terminal_page_observed": true
+          },
+          "review_request_active": false
+        }
+      ],
+      "has_next_page": false,
+      "issue_count": 1,
+      "limit": 100,
+      "outcome": "ok",
+      "viewer": {
+        "login": "collector",
+        "node_id": "U_collector"
+      }
+    }
+  },
+  "cases": [
+    {
+      "covers": [
+        "reviewer_specific_checkpoint",
+        "actionable"
+      ],
+      "description": "A completed approval points at an older head and is resumable.",
+      "id": "approved-stale",
+      "patch": [],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "reviewer_specific_checkpoint",
+        "up_to_date"
+      ],
+      "description": "The selected approval commit is still the current head.",
+      "id": "approved-current",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "changes_requested",
+        "reviewer_specific_checkpoint"
+      ],
+      "description": "A stale CHANGES_REQUESTED review is a completed reviewer checkpoint.",
+      "id": "changes-requested-stale",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "CHANGES_REQUESTED"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "changes_requested",
+        "up_to_date"
+      ],
+      "description": "A CHANGES_REQUESTED checkpoint at the current head is not stale.",
+      "id": "changes-requested-current",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "CHANGES_REQUESTED"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "commented_only",
+        "no_eligible_reviews"
+      ],
+      "description": "COMMENTED alone never becomes a formal review checkpoint.",
+      "id": "commented-only",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "COMMENTED"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "no_eligible_reviews",
+        "pending_review"
+      ],
+      "description": "A pending draft review is not a completed checkpoint.",
+      "id": "pending-only",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "PENDING"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "dismissed_review",
+        "review_re_requested"
+      ],
+      "description": "A dismissed approval plus a fresh request has no completed checkpoint to resume.",
+      "id": "dismissed-rerequested",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "DISMISSED"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_request_active",
+          "value": true
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "comment_after_checkpoint",
+        "reviewer_specific_checkpoint"
+      ],
+      "description": "A later COMMENTED review must not replace an earlier approval checkpoint.",
+      "id": "approval-followed-by-comment",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1002,
+            "node_id": "PRR_1002",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1002"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "changes_requested",
+        "comment_after_checkpoint"
+      ],
+      "description": "A later comment must not replace an earlier CHANGES_REQUESTED checkpoint.",
+      "id": "changes-followed-by-comment",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "CHANGES_REQUESTED"
+        },
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1002,
+            "node_id": "PRR_1002",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1002"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "latest_checkpoint_selection",
+        "rereview"
+      ],
+      "description": "A newer approval at the current head supersedes the stale approval.",
+      "id": "newer-approval-wins",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1002,
+            "node_id": "PRR_1002",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1002"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "database_id_tiebreak",
+        "latest_checkpoint_selection"
+      ],
+      "description": "Equal timestamps are resolved by the larger immutable database ID.",
+      "id": "same-time-database-id-tiebreak",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1002,
+            "node_id": "PRR_1002",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-05T00:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1002"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "latest_checkpoint_selection",
+        "timestamp_order"
+      ],
+      "description": "A later timestamp wins even when its database ID is numerically smaller.",
+      "id": "timestamp-beats-database-id",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/database_id",
+          "value": 2000
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/node_id",
+          "value": "PRR_2000"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/url",
+          "value": "https://github.com/acme/widget/pull/17#pullrequestreview-2000"
+        },
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1000,
+            "node_id": "PRR_1000",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1000"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "immutable_reviewer_identity",
+        "login_casefold"
+      ],
+      "description": "Login casing may differ when the immutable reviewer node remains identical.",
+      "id": "mixed-case-login",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/author/login",
+          "value": "ReViEwEr"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "force_push",
+        "transition_identity"
+      ],
+      "description": "A force-pushed head creates a distinct actionable transition.",
+      "id": "force-push",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "dddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "rebase",
+        "transition_identity"
+      ],
+      "description": "A rebased head and advanced base remain an actionable transition.",
+      "id": "pure-rebase",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/current_base_oid",
+          "value": "dddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "restack",
+        "transition_identity"
+      ],
+      "description": "A restacked branch changes both the head and its effective base.",
+      "id": "restack",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "ffffffffffffffffffffffffffffffffffffffff"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/current_base_oid",
+          "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "base_drift",
+        "transition_identity"
+      ],
+      "description": "Base drift alone changes the effective PR diff even when the head is unchanged.",
+      "id": "base-drift-only",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/current_base_oid",
+          "value": "dddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "base_drift",
+        "head_and_base_drift"
+      ],
+      "description": "Concurrent head and base movement is represented explicitly rather than collapsed.",
+      "id": "head-and-base-drift",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/current_base_oid",
+          "value": "dddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "review_re_requested",
+        "transition_identity"
+      ],
+      "description": "An explicit re-review request is actionable even on the same head and base.",
+      "id": "rerequest-only",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_request_active",
+          "value": true
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "head_drift",
+        "review_re_requested"
+      ],
+      "description": "A re-review request and changed head retain both trigger reasons.",
+      "id": "rerequest-and-head",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_request_active",
+          "value": true
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "dismissed_review",
+        "rereview"
+      ],
+      "description": "A fresh approval supersedes an older dismissed record.",
+      "id": "dismissed-then-approved",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/state",
+          "value": "DISMISSED"
+        },
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1002,
+            "node_id": "PRR_1002",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1002"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "checkpoint_base_unavailable",
+        "head_drift"
+      ],
+      "description": "A changed head is actionable even when the old base identity is unavailable.",
+      "id": "missing-checkpoint-base-with-head-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/checkpoint_base_oid",
+          "value": null
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "checkpoint_base_unavailable",
+        "unobservable"
+      ],
+      "description": "A stable head cannot prove continuity when its reviewed base is unknown.",
+      "id": "missing-checkpoint-base-stable-head",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/checkpoint_base_oid",
+          "value": null
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "current_base_unavailable",
+        "unobservable"
+      ],
+      "description": "A stable head with an unavailable current base fails closed.",
+      "id": "missing-current-base-stable-head",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/current_base_oid",
+          "value": null
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "partial",
+        "truncated_search"
+      ],
+      "description": "An actionable captured case cannot turn a truncated global scan into a complete result.",
+      "id": "partial-actionable",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/issue_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/has_next_page",
+          "value": true
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "never_false_clean",
+        "partial"
+      ],
+      "description": "A captured up-to-date checkpoint still yields partial when candidates were omitted.",
+      "id": "partial-clean",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/issue_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/has_next_page",
+          "value": true
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "never_false_clean",
+        "partial"
+      ],
+      "description": "A zero-row page with a positive issue count remains explicitly partial.",
+      "id": "partial-zero-captured",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/issue_count",
+          "value": 3
+        },
+        {
+          "op": "replace",
+          "path": "/search/has_next_page",
+          "value": true
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates",
+          "value": []
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "complete_review_pagination",
+        "review_pagination"
+      ],
+      "description": "A two-page reviewer history is valid after every node is captured.",
+      "id": "multipage-complete",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1002,
+            "node_id": "PRR_1002",
+            "state": "COMMENTED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1002"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/pages_observed",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "fail_closed",
+        "review_pagination"
+      ],
+      "description": "A non-terminal reviewer page cannot support checkpoint selection.",
+      "id": "incomplete-review-pagination",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/terminal_page_observed",
+          "value": false
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "fail_closed",
+        "review_pagination"
+      ],
+      "description": "A stalled pagination cursor is rejected instead of replayed forever.",
+      "id": "stalled-review-cursor",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/pages_observed",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/cursor_advanced",
+          "value": false
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "complete_review_pagination",
+        "fail_closed"
+      ],
+      "description": "A reported reviewer count larger than the captured nodes is rejected.",
+      "id": "review-count-mismatch",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "authenticated_actor_binding",
+        "identity_confusion"
+      ],
+      "description": "The search GraphQL viewer cannot silently switch immutable accounts.",
+      "id": "search-viewer-node-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/viewer/node_id",
+          "value": "U_intruder"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "authenticated_actor_binding",
+        "identity_confusion"
+      ],
+      "description": "The search viewer login must remain bound to the authenticated actor.",
+      "id": "search-viewer-login-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/viewer/login",
+          "value": "intruder"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "authenticated_actor_binding",
+        "revalidation"
+      ],
+      "description": "Every revalidation response is independently bound to the authenticated actor.",
+      "id": "revalidation-viewer-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/viewer/node_id",
+          "value": "U_intruder"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "identity_confusion",
+        "immutable_reviewer_identity"
+      ],
+      "description": "A matching mutable login with a different reviewer node is rejected.",
+      "id": "reviewer-node-collision",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/author/node_id",
+          "value": "U_lookalike"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "actor_type_binding",
+        "identity_confusion"
+      ],
+      "description": "A bot with the same login string cannot impersonate a human reviewer.",
+      "id": "reviewer-bot-collision",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/author/actor_type",
+          "value": "Bot"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "identity_confusion",
+        "reviewer_specific_checkpoint"
+      ],
+      "description": "A review returned for another login violates the author-filtered history contract.",
+      "id": "reviewer-login-mismatch",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/author/login",
+          "value": "other-reviewer"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "duplicate_review_node",
+        "fail_closed"
+      ],
+      "description": "The same immutable review node cannot appear twice in a paginated history.",
+      "id": "duplicate-review-node",
+      "patch": [
+        {
+          "from": "/search/candidates/0/review_history/nodes/0",
+          "op": "append_copy",
+          "path": "/search/candidates/0/review_history/nodes"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "duplicate_review_database_id",
+        "fail_closed"
+      ],
+      "description": "Distinct review nodes cannot reuse a completed review database ID.",
+      "id": "duplicate-review-database-id",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/search/candidates/0/review_history/nodes",
+          "value": {
+            "author": {
+              "actor_type": "User",
+              "login": "reviewer",
+              "node_id": "U_reviewer"
+            },
+            "checkpoint_base_oid": "cccccccccccccccccccccccccccccccccccccccc",
+            "commit_oid": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "database_id": 1001,
+            "node_id": "PRR_1002",
+            "state": "APPROVED",
+            "submitted_at": "2026-09-05T01:00:00Z",
+            "url": "https://github.com/acme/widget/pull/17#pullrequestreview-1001"
+          }
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/reported_count",
+          "value": 2
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "duplicate_pull_request_node",
+        "fail_closed"
+      ],
+      "description": "A duplicate search node cannot inflate or alias the global queue.",
+      "id": "duplicate-pull-request-node",
+      "patch": [
+        {
+          "from": "/search/candidates/0",
+          "op": "append_copy",
+          "path": "/search/candidates"
+        },
+        {
+          "op": "replace",
+          "path": "/search/issue_count",
+          "value": 2
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "repository_identity",
+        "scope_confusion"
+      ],
+      "description": "A scoped repository lookup cannot be satisfied by a different repository node.",
+      "id": "requested-repository-node-mismatch",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/scope/requested_repository",
+          "value": {
+            "name_with_owner": "acme/widget",
+            "node_id": "R_expected",
+            "url": "https://github.com/acme/widget"
+          }
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "repository_identity",
+        "scope_confusion"
+      ],
+      "description": "Matching node IDs do not excuse a canonical owner/name mismatch.",
+      "id": "requested-repository-name-mismatch",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/scope/requested_repository",
+          "value": {
+            "name_with_owner": "acme/other",
+            "node_id": "R_widget",
+            "url": "https://github.com/acme/other"
+          }
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "host_identity",
+        "scope_confusion"
+      ],
+      "description": "Repository and PR URLs must be canonical for the selected provider host.",
+      "id": "provider-url-mismatch",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/provider/host",
+          "value": "ghe.acme.example"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "ghes",
+        "host_identity",
+        "transition_identity"
+      ],
+      "description": "A fully host-bound GHES observation is valid and distinct from github.com.",
+      "id": "ghes-canonical",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/provider/host",
+          "value": "ghe.acme.example"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/repository/url",
+          "value": "https://ghe.acme.example/acme/widget"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/url",
+          "value": "https://ghe.acme.example/acme/widget/pull/17"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/url",
+          "value": "https://ghe.acme.example/acme/widget/pull/17#pullrequestreview-1001"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/repository/url",
+          "value": "https://ghe.acme.example/acme/widget"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "repository_identity",
+        "transition_identity"
+      ],
+      "description": "The same PR number and review IDs in another repository form a distinct transition.",
+      "id": "other-repository-same-number",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/repository/node_id",
+          "value": "R_other"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/repository/name_with_owner",
+          "value": "acme/other"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/repository/url",
+          "value": "https://github.com/acme/other"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/url",
+          "value": "https://github.com/acme/other/pull/17"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/url",
+          "value": "https://github.com/acme/other/pull/17#pullrequestreview-1001"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/repository/node_id",
+          "value": "R_other"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/repository/name_with_owner",
+          "value": "acme/other"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/repository/url",
+          "value": "https://github.com/acme/other"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "immutable_reviewer_identity",
+        "transition_identity"
+      ],
+      "description": "A different immutable reviewer identity owns a different checkpoint transition.",
+      "id": "other-reviewer-identity",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/scope/reviewer/node_id",
+          "value": "U_reviewer_2"
+        },
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/author/node_id",
+          "value": "U_reviewer_2"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "review_node_identity",
+        "transition_identity"
+      ],
+      "description": "A different immutable review node cannot alias the original event.",
+      "id": "other-review-node",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/node_id",
+          "value": "PRR_other"
+        }
+      ],
+      "transition_relation": {
+        "kind": "different",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "determinism",
+        "transition_identity"
+      ],
+      "description": "An identical frozen observation derives the identical transition identity.",
+      "id": "identical-replay",
+      "patch": [],
+      "transition_relation": {
+        "kind": "same",
+        "reference": "approved-stale"
+      }
+    },
+    {
+      "covers": [
+        "head_unavailable",
+        "unobservable"
+      ],
+      "description": "A missing current head is retained as insufficient evidence, never clean.",
+      "id": "missing-head",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/head_oid",
+          "value": null
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "bounded_review_history",
+        "unobservable"
+      ],
+      "description": "A PR exceeding the resumable all-review bound remains visible but unobservable.",
+      "id": "total-review-limit-exceeded",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/total_review_count",
+          "value": 10001
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "permission_failure",
+        "search_failure"
+      ],
+      "description": "A forbidden global search is an explicit collection error, not an empty inbox.",
+      "id": "search-forbidden",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/outcome",
+          "value": "forbidden"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "permission_failure",
+        "repository_identity"
+      ],
+      "description": "A missing or inaccessible requested repository fails before queue classification.",
+      "id": "repository-not-found",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/outcome",
+          "value": "repository_not_found"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "permission_failure",
+        "revalidation"
+      ],
+      "description": "Losing permission during revalidation cannot silently drop an actionable candidate.",
+      "id": "revalidation-forbidden",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/outcome",
+          "value": "forbidden"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "candidate_disappeared",
+        "revalidation"
+      ],
+      "description": "A candidate disappearing between search and revalidation forces a rerun.",
+      "id": "revalidation-not-found",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/outcome",
+          "value": "not_found"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "non_atomic_capture",
+        "revalidation"
+      ],
+      "description": "A changed snapshot is rejected instead of mixing two moments in one event.",
+      "id": "revalidation-snapshot-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/snapshot_matches",
+          "value": false
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "repository_identity",
+        "revalidation"
+      ],
+      "description": "Repository identity cannot change between discovery and revalidation.",
+      "id": "revalidation-repository-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/repository/node_id",
+          "value": "R_intruder"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "pull_request_identity",
+        "revalidation"
+      ],
+      "description": "Pull-request identity cannot change between discovery and revalidation.",
+      "id": "revalidation-pull-request-change",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/revalidation/pull_request_node_id",
+          "value": "PR_intruder"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "fail_closed",
+        "search_pagination"
+      ],
+      "description": "Contradictory search pagination metadata is rejected rather than guessed.",
+      "id": "search-pagination-inconsistent",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/has_next_page",
+          "value": true
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "candidate_state",
+        "fail_closed"
+      ],
+      "description": "A non-open pull request returned by the open-PR query is rejected.",
+      "id": "closed-pull-request",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/pull_request/state",
+          "value": "CLOSED"
+        }
+      ],
+      "transition_relation": null
+    },
+    {
+      "covers": [
+        "fail_closed",
+        "malformed_checkpoint"
+      ],
+      "description": "A completed review without a valid commit identity cannot become a checkpoint.",
+      "id": "malformed-checkpoint-commit",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/search/candidates/0/review_history/nodes/0/commit_oid",
+          "value": null
+        }
+      ],
+      "transition_relation": null
+    }
+  ],
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-review-inbox-global-cases-v1"
+}

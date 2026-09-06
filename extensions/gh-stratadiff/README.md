@@ -1,13 +1,13 @@
 # `gh stratadiff`
 
 This directory contains the personal, repository-admin-free GitHub CLI entry point for StrataDiff.
-The launcher exposes five commands; `resume` is implemented by the native Rust binary and the
-extension passes its arguments and exit status through unchanged:
+The launcher exposes five commands; `inbox` and `resume` are implemented by the native Rust binary,
+and the extension passes their arguments and exit status through unchanged:
 
 ```console
 gh stratadiff audit -R OWNER/REPOSITORY
 gh stratadiff demo
-gh stratadiff inbox -R OWNER/REPOSITORY
+gh stratadiff inbox
 gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
 ```
@@ -25,18 +25,18 @@ Review Resume Workbench without contacting GitHub. An upstream base edit and a p
 author edit are reconstructed, leaving exactly one post-review line in the queue. The temporary
 history is removed when the Workbench stops.
 
-`inbox` is the daily, reviewer-specific path. It finds open pull requests where the authenticated
-GitHub user completed a review and the current head differs from that exact checkpoint. Each
-actionable item carries the exact `gh stratadiff resume` invocation needed to continue. With `-R`,
-it also runs outside a Git checkout and does not invoke Git, materialize commits, or require a local
-`stratadiff` binary. It requests no source, diff, title, body, review text, comment text, or commit
-message; incomplete pagination and missing or inconsistent identities fail closed.
-The viewer and review authors are bound by immutable GitHub node ID as well as login. Every
-eligible candidate is fetched again before output, and total API calls, captured nodes, response
-bytes, and wall time are bounded. GitHub does not provide one atomic repository-wide snapshot, so
-changes to otherwise ineligible PRs during the recorded observation window may appear on the next
-run. The unfiltered PR review count is checked separately, so Inbox never emits a command that
-would exceed Resume's shared 10,000-review limit.
+`inbox` is the daily, reviewer-specific path. It searches across repositories for open pull
+requests where the authenticated GitHub user completed a review and the current head differs from
+that exact checkpoint. Each actionable item carries the exact native `stratadiff resume` invocation
+needed to continue. It works outside a Git checkout, but requires an installed `stratadiff` binary;
+`-R` optionally narrows the global queue to one repository. It requests no source, diff, title,
+body, review text, comment text, or commit message; incomplete pagination and missing or
+inconsistent identities fail closed. The authenticated actor and review authors are bound by
+immutable GitHub node ID as well as login on every response. Explicit repositories are resolved
+before search, and truncated scans are reported as partial rather than clean. Every eligible
+candidate is fetched again before output, and total API calls, review nodes, response bytes, and
+wall time are bounded. The unfiltered PR review count is checked separately, so Inbox never emits a
+command that would exceed Resume's shared 10,000-review limit.
 
 Native Rust `resume` finds the authenticated user's latest eligible completed review, binds it to
 the pull request's exact base and head commits, and opens the local Review Resume Workbench. If an
@@ -64,6 +64,7 @@ Point the extension at the binary from this checkout:
 ```console
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
 gh stratadiff demo
+gh stratadiff inbox
 gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 ```
 
@@ -87,9 +88,9 @@ gh stratadiff inbox -R HOST/OWNER/REPOSITORY \
   --format json --output review-inbox.json
 ```
 
-Omit `-R` to let `gh repo view` infer the repository. Like `audit`, `inbox` can run from a non-Git
-directory when the repository is explicit. The authenticated `gh` user defines whose completed
-reviews are examined.
+Omit `-R` to search the authenticated reviewer's queue across repositories. `--reviewer LOGIN`
+selects an explicit reviewer, and `--limit N` bounds recently updated candidates from 1 through
+100. Inbox can run from any directory.
 
 To collect the ownership input for a coverage Passport:
 
@@ -213,6 +214,9 @@ Inbox:
 
 ```text
 -R, --repo REPO          GitHub repository in [HOST/]OWNER/REPO form
+--hostname HOSTNAME      GitHub hostname when -R does not include one
+--reviewer LOGIN         Reviewer login; defaults to the authenticated gh user
+--limit N                Recently updated candidates to inspect; defaults to 100
 --format markdown|json   Report format; defaults to markdown
 --output PATH            Write the report to PATH instead of stdout
 ```
