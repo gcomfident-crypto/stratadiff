@@ -18,6 +18,7 @@ use stratadiff::{
         GithubReviewCheckpoint, MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
         resolve_github_review_checkpoint_slurp_pages, verify_github_commit_object,
     },
+    inbox_event::{InboxEventBinding, InboxEventEnvelope, InboxEventTrigger},
     review::review_git_range_with_checkpoint,
 };
 use tempfile::{Builder as TempDirBuilder, TempDir};
@@ -32,6 +33,8 @@ use crate::{
 
 const COMMAND_STDERR_LIMIT: usize = 64 * 1024;
 const SMALL_STDOUT_LIMIT: usize = 64 * 1024;
+const REQUESTED_REVIEWERS_STDOUT_LIMIT: usize = 4 * 1024 * 1024;
+const MAX_REQUESTED_REVIEW_TARGETS: usize = 100;
 const FETCH_PACK_CAPTURE_LIMIT: usize = 4 * 1024;
 const FETCH_PACK_PROTOCOL_LIMIT: usize = 256;
 const LOCAL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -113,6 +116,9 @@ pub(crate) struct ResumeArgs {
     /// Opaque Inbox transition identifier used only inside the opted-in local funnel.
     #[arg(long, requires = "value_log")]
     pub(crate) transition_id: Option<String>,
+    /// Content-addressed event envelope emitted by `stratadiff inbox`.
+    #[arg(long, value_name = "TOKEN")]
+    pub(crate) inbox_event: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -156,6 +162,57 @@ struct RepositoryIdentity {
     full_name: String,
     url: String,
     host: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundRepositoryRecord {
+    id: String,
+    name_with_owner: String,
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundPullRequestRecord {
+    id: String,
+    number: u64,
+    state: String,
+    url: String,
+    base_ref_oid: String,
+    head_ref_oid: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BoundReviewRecord {
+    id: u64,
+    node_id: String,
+    user: BoundUserRecord,
+    state: String,
+    html_url: String,
+    commit_id: String,
+    submitted_at: String,
+    author_association: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct BoundUserRecord {
+    login: String,
+    node_id: String,
+    #[serde(rename = "type")]
+    account_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RequestedReviewersPage {
+    users: Vec<BoundUserRecord>,
+    teams: Vec<RequestedTeamRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RequestedTeamRecord {
+    node_id: String,
 }
 
 struct ViewerChildRequest<'a> {
@@ -967,6 +1024,11 @@ impl Drop for ResumeSession<'_> {
 }
 
 pub(crate) fn run(mut args: ResumeArgs) -> Result<()> {
+    let inbox_event = args
+        .inbox_event
+        .as_deref()
+        .map(InboxEventEnvelope::from_token)
+        .transpose()?;
     let value_log = args
         .value_log
         .as_deref()
@@ -983,7 +1045,12 @@ pub(crate) fn run(mut args: ResumeArgs) -> Result<()> {
     let operation = (|| {
         let signals = SignalState::register()?;
         let mut session = ResumeSession::new(&signals)?;
-        let operation = run_with_session(&args, attempt_id.as_deref(), &mut session);
+        let operation = run_with_session(
+            &args,
+            inbox_event.as_ref(),
+            attempt_id.as_deref(),
+            &mut session,
+        );
         session.clear_authorization();
         let cleanup = session.cleanup();
         match (operation, cleanup) {
@@ -1030,10 +1097,37 @@ fn should_record_attempt_failure(
 
 fn run_with_session(
     args: &ResumeArgs,
+    inbox_event: Option<&InboxEventEnvelope>,
     attempt_id: Option<&str>,
     session: &mut ResumeSession<'_>,
 ) -> Result<()> {
     let pull_request_url = parse_pull_request_url(&args.pull_request)?;
+    if let Some(event) = inbox_event {
+        let url = pull_request_url.as_ref().context(
+            "--inbox-event requires the canonical pull request URL emitted by stratadiff inbox",
+        )?;
+        let event_repository = format!("{}/{}", event.provider_host, event.repository);
+        ensure!(
+            url.host == event.provider_host
+                && url.repository == event_repository
+                && url.number == event.pull_request_number,
+            "pull request URL does not match the bound Inbox event"
+        );
+        ensure!(
+            args.reviewer.as_deref() == Some(event.reviewer_login.as_str()),
+            "--reviewer must exactly match the bound Inbox event"
+        );
+        if let Some(requested) = args.repository.as_deref() {
+            ensure!(
+                requested == event.repository || requested == event_repository,
+                "--repo does not match the bound Inbox event"
+            );
+        }
+        ensure!(
+            event.checkpoint_base_oid.is_none(),
+            "this local Resume build cannot verify an event-attested checkpoint base"
+        );
+    }
     let inferred_repository = pull_request_url
         .as_ref()
         .filter(|url| {
@@ -1068,6 +1162,18 @@ fn run_with_session(
         session.signals,
     )?;
     validate_pull_request_coordinates(&first, &identity.url)?;
+    if let Some(event) = inbox_event {
+        ensure!(
+            identity.host == event.provider_host && identity.full_name == event.repository,
+            "selected repository does not match the bound Inbox event"
+        );
+        ensure!(
+            first.number == event.pull_request_number
+                && event.current_base_oid.as_deref() == Some(first.base_ref_oid.as_str())
+                && first.head_ref_oid == event.head_oid,
+            "pull request base or head no longer matches the bound Inbox event; rerun stratadiff inbox"
+        );
+    }
 
     session.ensure_local_commit(
         &identity,
@@ -1091,6 +1197,15 @@ fn run_with_session(
         session.repository(),
         session.signals,
     )?;
+    if let Some(event) = inbox_event {
+        ensure!(
+            checkpoint.review_id == event.review_database_id
+                && checkpoint.reviewer_login == event.reviewer_login
+                && checkpoint.review_state == event.review_state
+                && checkpoint.commit_id == event.checkpoint_oid,
+            "selected review checkpoint no longer matches the bound Inbox event; rerun stratadiff inbox"
+        );
+    }
     verify_provider_commit(
         &identity,
         &checkpoint.commit_id,
@@ -1120,10 +1235,23 @@ fn run_with_session(
         "pull request base or head changed while review coverage was being resolved; rerun the command"
     );
 
+    if let Some(expected) = inbox_event {
+        revalidate_inbox_event(
+            expected,
+            requested_repository,
+            &identity,
+            &latest,
+            &reviewer,
+            session.repository(),
+            session.signals,
+        )?;
+    }
+
     match (&args.value_log, &args.transition_id, attempt_id) {
         (Some(path), Some(transition_id), Some(attempt_id)) => {
-            let expected_transition_id =
-                value_funnel::transition_id(&value_funnel::TransitionIdentity {
+            let expected_transition_id = match inbox_event {
+                Some(event) => value_funnel::inbox_event_transition_id(event),
+                None => value_funnel::transition_id(&value_funnel::TransitionIdentity {
                     provider_hostname: &identity.host,
                     repository: &identity.full_name,
                     pull_request_number: first.number,
@@ -1132,7 +1260,8 @@ fn run_with_session(
                     review_state: &checkpoint.review_state,
                     checkpoint: &checkpoint.commit_id,
                     head: &first.head_ref_oid,
-                });
+                }),
+            };
             ensure!(
                 *transition_id == expected_transition_id,
                 "value-funnel transition ID does not match the revalidated pull request, reviewer, checkpoint, and head"
@@ -1345,6 +1474,326 @@ fn resolve_review_checkpoint(
         )
     })?;
     Ok(checkpoint)
+}
+
+fn revalidate_inbox_event(
+    expected: &InboxEventEnvelope,
+    requested_repository: Option<&str>,
+    identity: &RepositoryIdentity,
+    coordinates: &PullRequestCoordinates,
+    reviewer: &str,
+    repository: &Path,
+    signals: &SignalState,
+) -> Result<()> {
+    let first = observe_inbox_event(
+        requested_repository,
+        identity,
+        coordinates,
+        reviewer,
+        repository,
+        signals,
+    )?;
+    ensure!(
+        &first == expected,
+        "Inbox event no longer matches the repository, pull request, reviewer, review checkpoint, base, head, or review-request state; rerun stratadiff inbox"
+    );
+    let second = observe_inbox_event(
+        requested_repository,
+        identity,
+        coordinates,
+        reviewer,
+        repository,
+        signals,
+    )?;
+    ensure!(
+        second == first && &second == expected,
+        "Inbox event changed across consecutive live observations; rerun stratadiff inbox"
+    );
+    Ok(())
+}
+
+fn observe_inbox_event(
+    requested_repository: Option<&str>,
+    identity: &RepositoryIdentity,
+    coordinates: &PullRequestCoordinates,
+    reviewer: &str,
+    repository: &Path,
+    signals: &SignalState,
+) -> Result<InboxEventEnvelope> {
+    let identity_selector = identity.selector();
+    let repository_selector = requested_repository.unwrap_or(&identity_selector);
+    let observed_repository =
+        read_bound_repository_identity(repository, repository_selector, signals)?;
+    ensure!(
+        observed_repository.name_with_owner == identity.full_name
+            && observed_repository.url == identity.url,
+        "repository identity changed while the Inbox event was being revalidated"
+    );
+
+    let observed_pull_request = read_bound_pull_request(
+        coordinates.number,
+        &identity.selector(),
+        repository,
+        signals,
+    )?;
+    ensure!(
+        observed_pull_request.number == coordinates.number
+            && observed_pull_request.base_ref_oid == coordinates.base_ref_oid
+            && observed_pull_request.head_ref_oid == coordinates.head_ref_oid
+            && observed_pull_request.url == coordinates.url,
+        "pull request changed while the Inbox event was being revalidated"
+    );
+    ensure!(
+        observed_pull_request.state == "OPEN",
+        "bound Inbox pull request is no longer open"
+    );
+
+    let checkpoint = resolve_review_checkpoint(
+        identity,
+        observed_pull_request.number,
+        reviewer,
+        repository,
+        signals,
+    )?;
+    let review = read_bound_review(
+        identity,
+        observed_pull_request.number,
+        checkpoint.review_id,
+        repository,
+        signals,
+    )?;
+    ensure!(
+        review.id == checkpoint.review_id
+            && review.state.eq_ignore_ascii_case(&checkpoint.review_state)
+            && review.html_url == checkpoint.html_url
+            && review.commit_id == checkpoint.commit_id
+            && review.submitted_at == checkpoint.submitted_at
+            && review.author_association == checkpoint.author_association
+            && review
+                .user
+                .login
+                .eq_ignore_ascii_case(&checkpoint.reviewer_login)
+            && review.user.account_type == "User",
+        "selected review changed while the Inbox event was being revalidated"
+    );
+
+    let requested_reviewers =
+        read_requested_reviewers(identity, observed_pull_request.number, repository, signals)?;
+    let mut review_request_active = false;
+    for requested in requested_reviewers {
+        let same_node = requested.node_id == review.user.node_id;
+        let same_login = requested.login.eq_ignore_ascii_case(&review.user.login);
+        if same_node || same_login {
+            ensure!(
+                requested.account_type == "User" && same_node && same_login,
+                "requested reviewer does not match the Inbox event's bound immutable identity"
+            );
+            review_request_active = true;
+        }
+    }
+
+    let final_pull_request = read_bound_pull_request(
+        coordinates.number,
+        &identity.selector(),
+        repository,
+        signals,
+    )?;
+    ensure!(
+        final_pull_request.id == observed_pull_request.id
+            && final_pull_request.number == observed_pull_request.number
+            && final_pull_request.state == observed_pull_request.state
+            && final_pull_request.url == observed_pull_request.url
+            && final_pull_request.base_ref_oid == observed_pull_request.base_ref_oid
+            && final_pull_request.head_ref_oid == observed_pull_request.head_ref_oid,
+        "pull request changed while the Inbox event was being revalidated; rerun stratadiff inbox"
+    );
+
+    let mut triggers = Vec::with_capacity(2);
+    if checkpoint.commit_id != observed_pull_request.head_ref_oid {
+        triggers.push(InboxEventTrigger::HeadChanged);
+    }
+    if review_request_active {
+        triggers.push(InboxEventTrigger::ReviewReRequested);
+    }
+    InboxEventEnvelope::new(InboxEventBinding {
+        provider_host: identity.host.clone(),
+        repository: observed_repository.name_with_owner,
+        repository_node_id: observed_repository.id,
+        pull_request_number: observed_pull_request.number,
+        pull_request_node_id: observed_pull_request.id,
+        reviewer_login: checkpoint.reviewer_login,
+        reviewer_node_id: review.user.node_id,
+        review_database_id: checkpoint.review_id,
+        review_state: checkpoint.review_state,
+        review_node_id: review.node_id,
+        checkpoint_oid: checkpoint.commit_id,
+        checkpoint_base_oid: None,
+        current_base_oid: Some(observed_pull_request.base_ref_oid),
+        head_oid: observed_pull_request.head_ref_oid,
+        review_request_active,
+        triggers,
+    })
+    .context("live Inbox event is no longer actionable or complete")
+}
+
+fn read_bound_repository_identity(
+    repository: &Path,
+    requested: &str,
+    signals: &SignalState,
+) -> Result<BoundRepositoryRecord> {
+    let mut command = gh_command();
+    command
+        .args(["repo", "view", requested])
+        .args(["--json", "id,nameWithOwner,url"])
+        .current_dir(repository);
+    let output = run_bounded_process(
+        &mut command,
+        SMALL_STDOUT_LIMIT,
+        COMMAND_STDERR_LIMIT,
+        LOCAL_COMMAND_TIMEOUT,
+        "gh repo view for Inbox event",
+        Some(signals),
+    )?;
+    ensure_process_success(&output, "gh repo view for Inbox event")?;
+    serde_json::from_slice(&output.stdout)
+        .context("failed to decode repository identity for the Inbox event")
+}
+
+fn read_bound_pull_request(
+    pull_request: u64,
+    selector: &str,
+    repository: &Path,
+    signals: &SignalState,
+) -> Result<BoundPullRequestRecord> {
+    let mut command = gh_command();
+    command
+        .args([
+            "pr",
+            "view",
+            &pull_request.to_string(),
+            "--repo",
+            selector,
+            "--json",
+            "id,number,state,url,baseRefOid,headRefOid",
+        ])
+        .current_dir(repository);
+    let output = run_bounded_process(
+        &mut command,
+        SMALL_STDOUT_LIMIT,
+        COMMAND_STDERR_LIMIT,
+        LOCAL_COMMAND_TIMEOUT,
+        "gh pr view for Inbox event",
+        Some(signals),
+    )?;
+    ensure_process_success(&output, "gh pr view for Inbox event")?;
+    serde_json::from_slice(&output.stdout)
+        .context("failed to decode pull request identity for the Inbox event")
+}
+
+fn read_bound_review(
+    identity: &RepositoryIdentity,
+    pull_request: u64,
+    review_id: u64,
+    repository: &Path,
+    signals: &SignalState,
+) -> Result<BoundReviewRecord> {
+    let endpoint = format!(
+        "repos/{}/pulls/{pull_request}/reviews/{review_id}",
+        identity.full_name
+    );
+    let mut command = gh_command();
+    command
+        .args(["api", "--hostname", &identity.host, &endpoint])
+        .current_dir(repository);
+    let output = run_bounded_process(
+        &mut command,
+        SMALL_STDOUT_LIMIT,
+        COMMAND_STDERR_LIMIT,
+        LOCAL_COMMAND_TIMEOUT,
+        "gh api pull request review for Inbox event",
+        Some(signals),
+    )?;
+    ensure_process_success(&output, "gh api pull request review for Inbox event")?;
+    serde_json::from_slice(&output.stdout)
+        .context("failed to decode review identity for the Inbox event")
+}
+
+fn read_requested_reviewers(
+    identity: &RepositoryIdentity,
+    pull_request: u64,
+    repository: &Path,
+    signals: &SignalState,
+) -> Result<Vec<BoundUserRecord>> {
+    let endpoint = format!(
+        "repos/{}/pulls/{pull_request}/requested_reviewers?per_page=100",
+        identity.full_name
+    );
+    let mut command = gh_command();
+    command
+        .args([
+            "api",
+            "--paginate",
+            "--slurp",
+            "--hostname",
+            &identity.host,
+            &endpoint,
+        ])
+        .current_dir(repository);
+    let output = run_bounded_process(
+        &mut command,
+        REQUESTED_REVIEWERS_STDOUT_LIMIT,
+        COMMAND_STDERR_LIMIT,
+        LOCAL_COMMAND_TIMEOUT,
+        "gh api requested reviewers for Inbox event",
+        Some(signals),
+    )?;
+    ensure_process_success(&output, "gh api requested reviewers for Inbox event")?;
+    let pages: Vec<RequestedReviewersPage> = serde_json::from_slice(&output.stdout)
+        .context("failed to decode requested reviewers for the Inbox event")?;
+    ensure!(
+        !pages.is_empty(),
+        "GitHub returned no requested reviewer pages"
+    );
+
+    let mut users = Vec::new();
+    let mut node_ids = HashSet::new();
+    let mut target_count = 0_usize;
+    for page in pages {
+        let page_count = page
+            .users
+            .len()
+            .checked_add(page.teams.len())
+            .context("GitHub requested reviewer count overflow")?;
+        target_count = target_count
+            .checked_add(page_count)
+            .context("GitHub requested reviewer count overflow")?;
+        ensure!(
+            target_count <= MAX_REQUESTED_REVIEW_TARGETS,
+            "GitHub requested reviewer count limit exceeded: observed at least {target_count}, limit {MAX_REQUESTED_REVIEW_TARGETS}"
+        );
+        for user in page.users {
+            ensure!(
+                valid_node_id(&user.node_id),
+                "GitHub requested reviewer has an invalid node ID"
+            );
+            ensure!(
+                node_ids.insert(user.node_id.clone()),
+                "GitHub returned a duplicate requested reviewer or team identity"
+            );
+            users.push(user);
+        }
+        for team in page.teams {
+            ensure!(
+                valid_node_id(&team.node_id),
+                "GitHub requested review team has an invalid node ID"
+            );
+            ensure!(
+                node_ids.insert(team.node_id),
+                "GitHub returned a duplicate requested reviewer or team identity"
+            );
+        }
+    }
+    Ok(users)
 }
 
 fn verify_provider_commit(
@@ -1623,6 +2072,12 @@ fn validate_host(host: &str) -> Result<()> {
         "GitHub repository URL has an unsupported host"
     );
     Ok(())
+}
+
+fn valid_node_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value.bytes().all(|byte| (b'!'..=b'~').contains(&byte))
 }
 
 fn requested_repository_host(repository: &str) -> Option<&str> {

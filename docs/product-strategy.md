@@ -4,6 +4,9 @@ Evidence captured: **2026-09-06**. This is a falsifiable product thesis, not a m
 a claim that the roadmap is already implemented. Prices, install counts, stars, and vendor claims
 are point-in-time observations and must be refreshed before external use.
 
+The source-by-source demand record, competitor counter-evidence, ICP, and falsification gates are
+maintained in the [September 2026 market-evidence snapshot](market-evidence-2026-09.md).
+
 ## Decision in one sentence
 
 **StrataDiff should become a GitHub-native Verified Review Delta: after an existing human review and
@@ -100,12 +103,16 @@ commit messages. Its purpose is diagnosis and qualification, not a population es
 
 The personal routing surface is a **Review Inbox**. It scans open PR metadata for the
 authenticated user, selects only the latest non-dismissed `APPROVED` or `CHANGES_REQUESTED`
-checkpoint, and emits a Resume action only when both exact object IDs exist and differ. Later
-comments never become implicit completion; incomplete pagination, missing IDs, or identity drift
-remain explicit failures or unknowns. Eligible candidates are revalidated, the viewer is bound by
-immutable node ID and login, and collection has global resource budgets. GitHub does not provide an
-atomic repository-wide snapshot, so Inbox records a bounded advisory observation window; Resume
-rereads the PR, all bounded review pages, and exact commits before opening source locally.
+checkpoint, and emits a Resume action only from a complete, revalidated current-base observation
+with a changed head or an exact active re-review request. Because GitHub does not expose the
+historical review-time base, a stable head without that base remains unobservable instead of being
+declared clean. Later comments never become implicit completion; incomplete pagination, missing
+IDs, or identity drift remain explicit failures or unknowns. Each action binds repository, PR,
+reviewer, checkpoint, base, head, and request state into an unsigned, content-addressed event
+envelope. Resume checks that envelope against repeated live provider observations before opening
+the Workbench; the envelope is not a signature or standalone proof of authenticity. GitHub does not
+provide an atomic repository-wide snapshot, so Inbox records a bounded advisory observation window
+and collection has global resource budgets.
 
 The current value surface is a **personal Review Resume** that requires no repository administrator
 and does not replace GitHub's review UI. It resolves the reviewer's checkpoint and opens a local
@@ -448,8 +455,10 @@ The host-workflow acceptance matrix must include these end-to-end cases:
    review text. Truncated search results must remain explicitly partial. Expand the
    three-case prospective seed to at least 30 multi-repository live cases with real pagination,
    missing-OID, and `CHANGES_REQUESTED` coverage before making generalization claims. The separate
-   60-case target-semantic corpus freezes synthetic behavior but still needs a Rust conformance
-   adapter; neither corpus is a prevalence estimate or a substitute for the human study.
+   60-case target-semantic corpus now gates the shared Rust target-policy core at 60/60 in CI. The
+   live collector applies a stricter executable-Resume policy because GitHub does not expose the
+   historical review-time base; its separate CLI tests cover that boundary. Neither corpus is a
+   prevalence estimate or a substitute for the human study.
 3. Complete `stratadiff resume <PR-URL>` as the default released action. It must use the caller's existing
    GitHub CLI authentication, resolve the current reviewer and PR revisions, recover the exact
    reviewed commit when the provider still serves it, and open the local Workbench. Missing,

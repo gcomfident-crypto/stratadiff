@@ -11,10 +11,16 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Args, ValueEnum};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
-use stratadiff::github::{
-    GithubReviewCheckpoint, MAX_GITHUB_REVIEWS, MAX_GITHUB_REVIEWS_BYTES,
-    resolve_github_review_checkpoint,
+use serde_json::Value;
+use stratadiff::{
+    github::{GithubReviewCheckpoint, MAX_GITHUB_REVIEWS, MAX_GITHUB_REVIEWS_BYTES},
+    inbox_decision::{
+        ActorObservation, CandidateObservation, InboxCandidateStatus, InboxObservation,
+        ProviderObservation, PullRequestObservation, RepositoryObservation,
+        RevalidationObservation, ReviewHistoryObservation, ReviewObservation, ReviewerObservation,
+        ScopeObservation, SearchObservation, evaluate_inbox_observation_for_resume,
+    },
+    inbox_event::{InboxEventBinding, InboxEventEnvelope, InboxEventTrigger},
 };
 
 use crate::{
@@ -22,8 +28,9 @@ use crate::{
     value_funnel,
 };
 
-const INBOX_SCHEMA: &str = "stratadiff-review-inbox-v2";
+const INBOX_SCHEMA: &str = "stratadiff-review-inbox-v3";
 const MAX_CANDIDATES: usize = 100;
+const MAX_REVIEW_REQUESTS: usize = 100;
 const MAX_API_CALLS: usize = 256;
 const MAX_CAPTURED_REVIEW_NODES: usize = 100_000;
 const MAX_TOTAL_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
@@ -54,9 +61,20 @@ query StrataDiffReviewInboxSearch(
     pageInfo { hasNextPage endCursor }
     nodes {
       ... on PullRequest {
-        id number state url isDraft updatedAt headRefOid
+        id number state url isDraft updatedAt baseRefOid headRefOid
         repository { id nameWithOwner url }
         allReviews: reviews { totalCount }
+        reviewRequests(first: 100) {
+          totalCount
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            requestedReviewer {
+              __typename
+              ... on Node { id }
+              ... on Actor { login }
+            }
+          }
+        }
         reviews(first: 100, author: $reviewer) {
           totalCount
           pageInfo { hasNextPage endCursor }
@@ -85,8 +103,19 @@ query StrataDiffReviewInboxReviewPage(
   repository(owner: $owner, name: $name) {
     id nameWithOwner url
     pullRequest(number: $number) {
-      id number state url isDraft updatedAt headRefOid
+      id number state url isDraft updatedAt baseRefOid headRefOid
       allReviews: reviews { totalCount }
+      reviewRequests(first: 100) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          requestedReviewer {
+            __typename
+            ... on Node { id }
+            ... on Actor { login }
+          }
+        }
+      }
       reviews(first: 100, after: $cursor, author: $reviewer) {
         totalCount
         pageInfo { hasNextPage endCursor }
@@ -113,8 +142,19 @@ query StrataDiffReviewInboxRevalidate(
   repository(owner: $owner, name: $name) {
     id nameWithOwner url
     pullRequest(number: $number) {
-      id number state url isDraft updatedAt headRefOid
+      id number state url isDraft updatedAt baseRefOid headRefOid
       allReviews: reviews { totalCount }
+      reviewRequests(first: 100) {
+        totalCount
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          requestedReviewer {
+            __typename
+            ... on Node { id }
+            ... on Actor { login }
+          }
+        }
+      }
       reviews(first: 100, author: $reviewer) {
         totalCount
         pageInfo { hasNextPage endCursor }
@@ -232,9 +272,11 @@ struct PullRequestRecord {
     url: String,
     is_draft: bool,
     updated_at: String,
+    base_ref_oid: Option<String>,
     head_ref_oid: Option<String>,
     repository: RepositoryRecord,
     all_reviews: Count,
+    review_requests: ReviewRequestConnection,
     reviews: ReviewConnection,
 }
 
@@ -247,8 +289,10 @@ struct PullRequestBody {
     url: String,
     is_draft: bool,
     updated_at: String,
+    base_ref_oid: Option<String>,
     head_ref_oid: Option<String>,
     all_reviews: Count,
+    review_requests: ReviewRequestConnection,
     reviews: ReviewConnection,
 }
 
@@ -272,6 +316,28 @@ struct ReviewConnection {
     total_count: usize,
     page_info: PageInfo,
     nodes: Vec<ReviewRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ReviewRequestConnection {
+    total_count: usize,
+    page_info: PageInfo,
+    nodes: Vec<ReviewRequestRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ReviewRequestRecord {
+    requested_reviewer: Option<ReviewRequestTarget>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ReviewRequestTarget {
+    #[serde(rename = "__typename")]
+    account_type: String,
+    id: String,
+    login: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -385,7 +451,7 @@ struct Privacy {
 
 #[derive(Debug, Serialize)]
 struct Summary {
-    status: &'static str,
+    status: String,
     completed_review_prs: usize,
     resume_available_prs: usize,
     up_to_date_prs: usize,
@@ -404,8 +470,13 @@ struct ActionableItem {
     is_draft: bool,
     updated_at: String,
     checkpoint: GithubReviewCheckpoint,
+    checkpoint_base_oid: Option<String>,
+    current_base_oid: Option<String>,
     head_oid: String,
+    review_request_active: bool,
+    triggers: Vec<InboxEventTrigger>,
     total_review_count: usize,
+    inbox_event: String,
     resume_argv: Vec<String>,
 }
 
@@ -415,13 +486,14 @@ struct UnobservableItem {
     number: u64,
     url: String,
     updated_at: String,
-    reason: &'static str,
+    reason: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CandidateSnapshot {
     pull_request: PullRequestRecord,
     reviews: Vec<ReviewRecord>,
+    review_pages_observed: u64,
 }
 
 struct GhClient<'a> {
@@ -707,74 +779,121 @@ fn collect_inbox(
         initial.push(snapshot);
     }
 
-    let mut completed_review_prs = 0;
-    let mut up_to_date_prs = 0;
-    let mut no_completed_review_prs = 0;
     let mut revalidated_review_prs = 0;
+    let mut snapshots = Vec::with_capacity(initial.len());
+    let mut candidates = Vec::with_capacity(initial.len());
+    for snapshot in initial {
+        let observed = revalidate_snapshot(client, &snapshot, &authenticated_actor, &reviewer)?;
+        candidates.push(candidate_observation(
+            &snapshot,
+            &observed,
+            &authenticated_actor,
+            &reviewer,
+        )?);
+        snapshots.push(snapshot);
+        revalidated_review_prs += 1;
+    }
+
+    let observation = InboxObservation {
+        provider: ProviderObservation {
+            host: client.hostname.clone(),
+        },
+        scope: ScopeObservation {
+            authenticated_actor: actor_observation(&authenticated_actor),
+            requested_repository: scoped_repository.as_ref().map(repository_observation),
+            reviewer: ReviewerObservation {
+                actor_type: "User".to_owned(),
+                login: reviewer.login.clone(),
+                node_id: reviewer.node_id.clone(),
+            },
+        },
+        search: SearchObservation {
+            candidates,
+            has_next_page: data.search.page_info.has_next_page,
+            issue_count: u64::try_from(data.search.issue_count)
+                .context("GitHub search candidate count exceeds u64")?,
+            limit: u64::try_from(limit).context("Inbox limit exceeds u64")?,
+            outcome: "ok".to_owned(),
+            viewer: actor_observation(&authenticated_actor),
+        },
+    };
+    let evaluation = evaluate_inbox_observation_for_resume(&observation);
+    ensure!(
+        evaluation.decision.result == "success",
+        "review inbox decision failed closed: {}",
+        evaluation
+            .decision
+            .error
+            .as_deref()
+            .unwrap_or("decision_error_missing")
+    );
+    ensure!(
+        evaluation.candidates.len() == snapshots.len(),
+        "review inbox decision omitted candidate results"
+    );
+
     let mut actionable = Vec::new();
     let mut unobservable = Vec::new();
-    for snapshot in initial {
-        let resolution = resolve_checkpoint(&snapshot.reviews, &reviewer)?;
-        let Some(initial_checkpoint) = resolution.checkpoint else {
-            no_completed_review_prs += 1;
-            continue;
-        };
-        validate_checkpoint_output(&initial_checkpoint, &snapshot.pull_request.url)?;
-        completed_review_prs += 1;
-        let observed = revalidate_snapshot(client, &snapshot, &authenticated_actor, &reviewer)?;
-        ensure!(
-            observed == snapshot,
-            "{}#{} changed while its Review Resume action was revalidated; rerun the command",
-            snapshot.pull_request.repository.name_with_owner,
-            snapshot.pull_request.number
-        );
-        revalidated_review_prs += 1;
+    for ((snapshot, candidate), candidate_decision) in snapshots
+        .into_iter()
+        .zip(&observation.search.candidates)
+        .zip(&evaluation.candidates)
+    {
         let pull_request = snapshot.pull_request;
-        let Some(head_oid) = pull_request.head_ref_oid.clone() else {
-            unobservable.push(UnobservableItem {
-                repository: pull_request.repository.name_with_owner,
-                number: pull_request.number,
-                url: pull_request.url,
-                updated_at: pull_request.updated_at,
-                reason: "head_oid_unavailable",
-            });
-            continue;
-        };
-        if initial_checkpoint.commit_id == head_oid {
-            up_to_date_prs += 1;
-            continue;
+        match candidate_decision.status {
+            InboxCandidateStatus::NoEligibleReviews | InboxCandidateStatus::UpToDate => continue,
+            InboxCandidateStatus::Unobservable => {
+                unobservable.push(UnobservableItem {
+                    repository: pull_request.repository.name_with_owner,
+                    number: pull_request.number,
+                    url: pull_request.url,
+                    updated_at: pull_request.updated_at,
+                    reason: candidate_decision
+                        .reason
+                        .clone()
+                        .context("unobservable Inbox decision omitted its reason")?,
+                });
+                continue;
+            }
+            InboxCandidateStatus::Actionable => {}
         }
-        if pull_request.all_reviews.total_count > MAX_GITHUB_REVIEWS {
-            unobservable.push(UnobservableItem {
-                repository: pull_request.repository.name_with_owner,
-                number: pull_request.number,
-                url: pull_request.url,
-                updated_at: pull_request.updated_at,
-                reason: "resume_review_limit_exceeded",
-            });
-            continue;
-        }
-        let checkpoint_review_node_id =
-            checkpoint_review_node_id(&snapshot.reviews, initial_checkpoint.review_id)?;
-        let event_id = inbox_event_id(
-            &client.hostname,
-            &pull_request.repository.id,
-            &pull_request.id,
-            &reviewer.node_id,
-            checkpoint_review_node_id,
-            &initial_checkpoint.commit_id,
-            &head_oid,
-        );
-        let value_transition_id = value_funnel::transition_id(&value_funnel::TransitionIdentity {
-            provider_hostname: &client.hostname,
-            repository: &pull_request.repository.name_with_owner,
+        let checkpoint_review_node_id = candidate_decision
+            .checkpoint_review_node_id
+            .as_deref()
+            .context("actionable Inbox decision omitted its checkpoint")?;
+        let checkpoint = selected_checkpoint(&snapshot.reviews, checkpoint_review_node_id)?;
+        validate_checkpoint_output(&checkpoint, &pull_request.url)?;
+        let head_oid = pull_request
+            .head_ref_oid
+            .clone()
+            .context("actionable Inbox decision omitted the current head")?;
+        let triggers = event_triggers(
+            candidate_decision
+                .trigger
+                .as_deref()
+                .context("actionable Inbox decision omitted its trigger")?,
+        )?;
+        let event = InboxEventEnvelope::new(InboxEventBinding {
+            provider_host: client.hostname.clone(),
+            repository: pull_request.repository.name_with_owner.clone(),
+            repository_node_id: pull_request.repository.id.clone(),
             pull_request_number: pull_request.number,
-            reviewer: &reviewer.login,
-            review_id: initial_checkpoint.review_id,
-            review_state: &initial_checkpoint.review_state,
-            checkpoint: &initial_checkpoint.commit_id,
-            head: &head_oid,
-        });
+            pull_request_node_id: pull_request.id.clone(),
+            reviewer_login: reviewer.login.clone(),
+            reviewer_node_id: reviewer.node_id.clone(),
+            review_database_id: checkpoint.review_id,
+            review_state: checkpoint.review_state.clone(),
+            review_node_id: checkpoint_review_node_id.to_owned(),
+            checkpoint_oid: checkpoint.commit_id.clone(),
+            checkpoint_base_oid: None,
+            current_base_oid: pull_request.base_ref_oid.clone(),
+            head_oid: head_oid.clone(),
+            review_request_active: candidate.review_request_active,
+            triggers: triggers.clone(),
+        })
+        .context("failed to bind actionable Inbox evidence")?;
+        let inbox_event = event.to_token()?;
+        let value_transition_id = value_funnel::inbox_event_transition_id(&event);
         let resume_argv = resume_argv(
             &client.hostname,
             &pull_request.repository.name_with_owner,
@@ -782,18 +901,24 @@ fn collect_inbox(
             &reviewer.login,
             value_log,
             &value_transition_id,
+            &inbox_event,
         );
         actionable.push(ActionableItem {
-            event_id,
+            event_id: event.event_id,
             value_transition_id,
             repository: pull_request.repository.name_with_owner,
             number: pull_request.number,
             url: pull_request.url.clone(),
             is_draft: pull_request.is_draft,
             updated_at: pull_request.updated_at,
-            checkpoint: initial_checkpoint,
+            checkpoint,
+            checkpoint_base_oid: None,
+            current_base_oid: pull_request.base_ref_oid,
             head_oid,
+            review_request_active: candidate.review_request_active,
+            triggers,
             total_review_count: pull_request.all_reviews.total_count,
+            inbox_event,
             resume_argv,
         });
     }
@@ -812,17 +937,27 @@ fn collect_inbox(
             .then_with(|| left.number.cmp(&right.number))
     });
     let truncated = data.search.issue_count > pull_request_ids.len();
-    let status = if truncated {
-        "partial"
-    } else if !actionable.is_empty() {
-        "actionable"
-    } else if !unobservable.is_empty() {
-        "insufficient_evidence"
-    } else if completed_review_prs > 0 {
-        "up_to_date"
-    } else {
-        "no_eligible_reviews"
-    };
+    let status = evaluation
+        .decision
+        .status
+        .clone()
+        .context("successful Inbox decision omitted its status")?;
+    let actionable_count = usize::try_from(evaluation.decision.counts.actionable)
+        .context("actionable Inbox count exceeds usize")?;
+    let up_to_date_prs = usize::try_from(evaluation.decision.counts.up_to_date)
+        .context("up-to-date Inbox count exceeds usize")?;
+    let no_completed_review_prs = usize::try_from(evaluation.decision.counts.no_eligible_reviews)
+        .context("no-eligible-review Inbox count exceeds usize")?;
+    let unobservable_review_prs = usize::try_from(evaluation.decision.counts.unobservable)
+        .context("unobservable Inbox count exceeds usize")?;
+    let completed_review_prs = actionable_count
+        .checked_add(up_to_date_prs)
+        .and_then(|count| count.checked_add(unobservable_review_prs))
+        .context("completed-review Inbox count overflow")?;
+    ensure!(
+        actionable.len() == actionable_count && unobservable.len() == unobservable_review_prs,
+        "review inbox materialization disagrees with the shared decision core"
+    );
     let observed_at_unix_seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock is before the Unix epoch")?
@@ -861,10 +996,10 @@ fn collect_inbox(
         summary: Summary {
             status,
             completed_review_prs,
-            resume_available_prs: actionable.len(),
+            resume_available_prs: actionable_count,
             up_to_date_prs,
             no_completed_review_prs,
-            unobservable_review_prs: unobservable.len(),
+            unobservable_review_prs,
         },
         actionable,
         unobservable,
@@ -914,7 +1049,7 @@ fn complete_snapshot(
     reviewer: &ReviewerIdentity,
 ) -> Result<CandidateSnapshot> {
     let mut reviews = pull_request.reviews.nodes.clone();
-    append_review_pages(
+    let review_pages_observed = append_review_pages(
         client,
         &pull_request.repository,
         &PullRequestBody {
@@ -924,8 +1059,10 @@ fn complete_snapshot(
             url: pull_request.url.clone(),
             is_draft: pull_request.is_draft,
             updated_at: pull_request.updated_at.clone(),
+            base_ref_oid: pull_request.base_ref_oid.clone(),
             head_ref_oid: pull_request.head_ref_oid.clone(),
             all_reviews: pull_request.all_reviews.clone(),
+            review_requests: pull_request.review_requests.clone(),
             reviews: pull_request.reviews.clone(),
         },
         authenticated_actor,
@@ -936,6 +1073,7 @@ fn complete_snapshot(
     Ok(CandidateSnapshot {
         pull_request,
         reviews,
+        review_pages_observed,
     })
 }
 
@@ -978,15 +1116,17 @@ fn revalidate_snapshot(
         url: body.url.clone(),
         is_draft: body.is_draft,
         updated_at: body.updated_at.clone(),
+        base_ref_oid: body.base_ref_oid.clone(),
         head_ref_oid: body.head_ref_oid.clone(),
         repository: repository.clone(),
         all_reviews: body.all_reviews.clone(),
+        review_requests: body.review_requests.clone(),
         reviews: body.reviews.clone(),
     };
     validate_pull_request(&pull_request, &client.hostname, None)?;
     client.observe_review_nodes(body.reviews.nodes.len())?;
     let mut reviews = body.reviews.nodes.clone();
-    append_review_pages(
+    let review_pages_observed = append_review_pages(
         client,
         repository,
         &body,
@@ -998,6 +1138,7 @@ fn revalidate_snapshot(
     Ok(CandidateSnapshot {
         pull_request,
         reviews,
+        review_pages_observed,
     })
 }
 
@@ -1008,10 +1149,11 @@ fn append_review_pages(
     authenticated_actor: &ActorIdentity,
     reviewer: &str,
     reviews: &mut Vec<ReviewRecord>,
-) -> Result<()> {
+) -> Result<u64> {
     let (owner, name) = split_repository(&repository.name_with_owner)?;
     let mut page_info = expected_pull_request.reviews.page_info.clone();
     let total_count = expected_pull_request.reviews.total_count;
+    let mut pages_observed = 1_u64;
     while page_info.has_next_page {
         let cursor = page_info
             .end_cursor
@@ -1061,42 +1203,161 @@ fn append_review_pages(
             observed.reviews.page_info.end_cursor != page_info.end_cursor,
             "GitHub review pagination cursor did not advance"
         );
+        pages_observed = pages_observed
+            .checked_add(1)
+            .context("GitHub review page count overflow")?;
         page_info = observed.reviews.page_info;
     }
-    Ok(())
+    Ok(pages_observed)
 }
 
-fn resolve_checkpoint(
-    reviews: &[ReviewRecord],
+fn candidate_observation(
+    initial: &CandidateSnapshot,
+    revalidated: &CandidateSnapshot,
+    authenticated_actor: &ActorIdentity,
     reviewer: &ReviewerIdentity,
-) -> Result<stratadiff::github::GithubCheckpointResolution> {
-    let mut values = Vec::with_capacity(reviews.len());
-    for review in reviews {
-        if !matches!(review.state.as_str(), "APPROVED" | "CHANGES_REQUESTED") {
-            continue;
-        }
-        let database_id_value = review
-            .full_database_id
+) -> Result<CandidateObservation> {
+    let pull_request = &initial.pull_request;
+    let mut reviews = Vec::with_capacity(initial.reviews.len());
+    for review in &initial.reviews {
+        let author = review
+            .author
             .as_ref()
-            .context("GitHub completed review is missing its database ID")?;
-        let database_id = database_id(database_id_value)?;
-        let user = review.author.as_ref().map(|author| {
-            json!({
-                "login": author.login,
-                "type": author.account_type,
-            })
+            .context("reviewer-filtered GitHub review has no author")?;
+        reviews.push(ReviewObservation {
+            author: ReviewerObservation {
+                actor_type: author.account_type.clone(),
+                login: author.login.clone(),
+                node_id: author
+                    .id
+                    .clone()
+                    .context("reviewer-filtered GitHub review has no immutable author ID")?,
+            },
+            checkpoint_base_oid: None,
+            commit_oid: review.commit.as_ref().map(|commit| commit.oid.clone()),
+            database_id: review
+                .full_database_id
+                .as_ref()
+                .map(database_id)
+                .transpose()?,
+            node_id: review.id.clone(),
+            state: review.state.clone(),
+            submitted_at: review.submitted_at.clone(),
+            url: review.url.clone(),
         });
-        values.push(json!({
-            "id": database_id,
-            "user": user,
-            "state": review.state,
-            "html_url": review.url,
-            "commit_id": review.commit.as_ref().map_or("", |commit| commit.oid.as_str()),
-            "submitted_at": review.submitted_at,
-            "author_association": review.author_association,
-        }));
     }
-    resolve_github_review_checkpoint(&serde_json::to_vec(&values)?, &reviewer.login)
+    Ok(CandidateObservation {
+        pull_request: PullRequestObservation {
+            current_base_oid: pull_request.base_ref_oid.clone(),
+            head_oid: pull_request.head_ref_oid.clone(),
+            node_id: pull_request.id.clone(),
+            number: pull_request.number,
+            state: pull_request.state.clone(),
+            total_review_count: u64::try_from(pull_request.all_reviews.total_count)
+                .context("GitHub total review count exceeds u64")?,
+            updated_at: pull_request.updated_at.clone(),
+            url: pull_request.url.clone(),
+        },
+        repository: repository_observation(&pull_request.repository),
+        revalidation: RevalidationObservation {
+            outcome: "matched".to_owned(),
+            pull_request_node_id: revalidated.pull_request.id.clone(),
+            repository: repository_observation(&revalidated.pull_request.repository),
+            snapshot_matches: initial == revalidated,
+            viewer: actor_observation(authenticated_actor),
+        },
+        review_history: ReviewHistoryObservation {
+            cursor_advanced: true,
+            nodes: reviews,
+            pages_observed: initial.review_pages_observed,
+            reported_count: u64::try_from(pull_request.reviews.total_count)
+                .context("GitHub reviewer history count exceeds u64")?,
+            terminal_page_observed: true,
+        },
+        review_request_active: review_request_active(&pull_request.review_requests, reviewer)?,
+    })
+}
+
+fn actor_observation(actor: &ActorIdentity) -> ActorObservation {
+    ActorObservation {
+        login: actor.login.clone(),
+        node_id: actor.node_id.clone(),
+    }
+}
+
+fn repository_observation(repository: &RepositoryRecord) -> RepositoryObservation {
+    RepositoryObservation {
+        name_with_owner: repository.name_with_owner.clone(),
+        node_id: repository.id.clone(),
+        url: repository.url.clone(),
+    }
+}
+
+fn selected_checkpoint(
+    reviews: &[ReviewRecord],
+    selected_node_id: &str,
+) -> Result<GithubReviewCheckpoint> {
+    let review = reviews
+        .iter()
+        .find(|review| review.id == selected_node_id)
+        .context("selected Inbox checkpoint is absent from the reviewer history")?;
+    let author = review
+        .author
+        .as_ref()
+        .context("selected Inbox checkpoint has no author")?;
+    let review_state = match review.state.as_str() {
+        "APPROVED" => "approved",
+        "CHANGES_REQUESTED" => "changes_requested",
+        _ => bail!("selected Inbox checkpoint is not a completed review"),
+    };
+    Ok(GithubReviewCheckpoint {
+        review_id: database_id(
+            review
+                .full_database_id
+                .as_ref()
+                .context("selected Inbox checkpoint has no database ID")?,
+        )?,
+        reviewer_login: author.login.clone(),
+        review_state: review_state.to_owned(),
+        commit_id: review
+            .commit
+            .as_ref()
+            .context("selected Inbox checkpoint has no commit")?
+            .oid
+            .clone(),
+        submitted_at: review
+            .submitted_at
+            .clone()
+            .context("selected Inbox checkpoint has no submission timestamp")?,
+        html_url: review.url.clone(),
+        author_association: review.author_association.clone(),
+    })
+}
+
+fn event_triggers(trigger: &str) -> Result<Vec<InboxEventTrigger>> {
+    let triggers = match trigger {
+        "head_changed" => vec![InboxEventTrigger::HeadChanged],
+        "base_drift" => vec![InboxEventTrigger::BaseDrift],
+        "review_re_requested" => vec![InboxEventTrigger::ReviewReRequested],
+        "head_changed+base_drift" => {
+            vec![InboxEventTrigger::HeadChanged, InboxEventTrigger::BaseDrift]
+        }
+        "head_changed+review_re_requested" => vec![
+            InboxEventTrigger::HeadChanged,
+            InboxEventTrigger::ReviewReRequested,
+        ],
+        "base_drift+review_re_requested" => vec![
+            InboxEventTrigger::BaseDrift,
+            InboxEventTrigger::ReviewReRequested,
+        ],
+        "head_changed+base_drift+review_re_requested" => vec![
+            InboxEventTrigger::HeadChanged,
+            InboxEventTrigger::BaseDrift,
+            InboxEventTrigger::ReviewReRequested,
+        ],
+        _ => bail!("shared Inbox decision returned an invalid actionable trigger"),
+    };
+    Ok(triggers)
 }
 
 fn validate_complete_reviews(
@@ -1142,6 +1403,96 @@ fn validate_complete_reviews(
                 && author.id.as_deref() == Some(&reviewer.node_id),
             "reviewer-filtered GitHub review is not bound to the requested immutable reviewer identity"
         );
+    }
+    Ok(())
+}
+
+fn review_request_active(
+    requests: &ReviewRequestConnection,
+    reviewer: &ReviewerIdentity,
+) -> Result<bool> {
+    validate_review_requests(requests)?;
+    let mut active = false;
+    for request in &requests.nodes {
+        let target = request
+            .requested_reviewer
+            .as_ref()
+            .expect("review request target was validated");
+        if target.id == reviewer.node_id
+            || target
+                .login
+                .as_deref()
+                .is_some_and(|login| login.eq_ignore_ascii_case(&reviewer.login))
+        {
+            ensure!(
+                target.account_type == "User"
+                    && target.id == reviewer.node_id
+                    && target
+                        .login
+                        .as_deref()
+                        .is_some_and(|login| login.eq_ignore_ascii_case(&reviewer.login)),
+                "review_request_reviewer_identity_mismatch"
+            );
+            active = true;
+        }
+    }
+    Ok(active)
+}
+
+fn validate_review_requests(requests: &ReviewRequestConnection) -> Result<()> {
+    ensure!(
+        requests.nodes.len() <= MAX_REVIEW_REQUESTS,
+        "GitHub returned more than {MAX_REVIEW_REQUESTS} review requests in one page"
+    );
+    ensure!(
+        !requests.page_info.has_next_page,
+        "review_request_pagination_incomplete"
+    );
+    ensure!(
+        requests.total_count == requests.nodes.len(),
+        "review_request_count_mismatch"
+    );
+    let mut node_ids = HashSet::new();
+    for request in &requests.nodes {
+        let target = request
+            .requested_reviewer
+            .as_ref()
+            .context("review_request_target_missing")?;
+        ensure!(
+            matches!(
+                target.account_type.as_str(),
+                "Bot" | "EnterpriseTeam" | "Mannequin" | "Team" | "User"
+            ),
+            "review_request_target_type_invalid"
+        );
+        ensure!(
+            valid_node_id(&target.id),
+            "review_request_target_identity_invalid"
+        );
+        ensure!(
+            node_ids.insert(target.id.as_str()),
+            "duplicate_review_request_target"
+        );
+        match target.account_type.as_str() {
+            "User" => validate_login(
+                target
+                    .login
+                    .as_deref()
+                    .context("review_request_actor_login_missing")?,
+            )
+            .context("review_request_actor_login_invalid")?,
+            "Bot" | "Mannequin" => validate_provider_actor_login(
+                target
+                    .login
+                    .as_deref()
+                    .context("review_request_actor_login_missing")?,
+            )
+            .context("review_request_actor_login_invalid")?,
+            "EnterpriseTeam" | "Team" => {
+                ensure!(target.login.is_none(), "review_request_team_shape_invalid")
+            }
+            _ => unreachable!("review request target type was validated"),
+        }
     }
     Ok(())
 }
@@ -1195,6 +1546,13 @@ fn validate_pull_request(
             "pull request head is not a full lowercase SHA-1"
         );
     }
+    if let Some(base_oid) = &pull_request.base_ref_oid {
+        ensure!(
+            is_sha1(base_oid),
+            "pull request base is not a full lowercase SHA-1"
+        );
+    }
+    validate_review_requests(&pull_request.review_requests)?;
     ensure!(
         pull_request.reviews.nodes.len() <= 100,
         "GitHub returned more than 100 reviews in one page"
@@ -1230,8 +1588,10 @@ fn ensure_pull_request_body_matches(
             && observed.url == expected.url
             && observed.is_draft == expected.is_draft
             && observed.updated_at == expected.updated_at
+            && observed.base_ref_oid == expected.base_ref_oid
             && observed.head_ref_oid == expected.head_ref_oid
-            && observed.all_reviews == expected.all_reviews,
+            && observed.all_reviews == expected.all_reviews
+            && observed.review_requests == expected.review_requests,
         "pull request changed during review pagination"
     );
     Ok(())
@@ -1402,6 +1762,14 @@ fn validate_login(login: &str) -> Result<()> {
     Ok(())
 }
 
+fn validate_provider_actor_login(login: &str) -> Result<()> {
+    ensure!(
+        (1..=255).contains(&login.len()) && !login.chars().any(char::is_control),
+        "provider actor login is invalid"
+    );
+    Ok(())
+}
+
 fn parse_limit(value: &str) -> std::result::Result<usize, String> {
     let limit = value
         .parse::<usize>()
@@ -1437,49 +1805,6 @@ fn database_id(value: &DatabaseId) -> Result<u64> {
             Ok(value)
         }
     }
-}
-
-fn inbox_event_id(
-    provider_hostname: &str,
-    repository_node_id: &str,
-    pull_request_node_id: &str,
-    reviewer_node_id: &str,
-    review_node_id: &str,
-    checkpoint: &str,
-    head: &str,
-) -> String {
-    let mut hasher = blake3::Hasher::new();
-    for field in [
-        "stratadiff-review-inbox-event-v2",
-        provider_hostname,
-        repository_node_id,
-        pull_request_node_id,
-        reviewer_node_id,
-        review_node_id,
-        checkpoint,
-        head,
-    ] {
-        hasher.update(field.as_bytes());
-        hasher.update(&[0]);
-    }
-    hasher.finalize().to_hex().to_string()
-}
-
-fn checkpoint_review_node_id(reviews: &[ReviewRecord], review_id: u64) -> Result<&str> {
-    let mut node_id = None;
-    for review in reviews {
-        let Some(value) = &review.full_database_id else {
-            continue;
-        };
-        if database_id(value)? == review_id {
-            ensure!(
-                node_id.is_none(),
-                "selected GitHub checkpoint database ID is not unique"
-            );
-            node_id = Some(review.id.as_str());
-        }
-    }
-    node_id.context("selected GitHub checkpoint is absent from the reviewer history")
 }
 
 fn validate_checkpoint_output(
@@ -1530,6 +1855,7 @@ fn resume_argv(
     reviewer: &str,
     value_log: Option<&std::path::Path>,
     transition_id: &str,
+    inbox_event: &str,
 ) -> Vec<String> {
     let mut arguments = vec![
         "stratadiff".to_owned(),
@@ -1537,6 +1863,8 @@ fn resume_argv(
         url.to_owned(),
         "--reviewer".to_owned(),
         reviewer.to_owned(),
+        "--inbox-event".to_owned(),
+        inbox_event.to_owned(),
     ];
     if hostname != "github.com" {
         arguments.push("-R".to_owned());
@@ -1559,7 +1887,7 @@ fn resume_argv(
 fn render_markdown(inbox: &ReviewInbox) -> String {
     let mut output = String::new();
     output.push_str("# StrataDiff Review Inbox\n\n");
-    match inbox.summary.status {
+    match inbox.summary.status.as_str() {
         "partial" => output.push_str(&format!(
             "**Partial queue:** found {} Resume action{} while inspecting {} of {} matching open pull requests for `@{}`. This is not a clean global result.\n\n",
             inbox.summary.resume_available_prs,
@@ -1793,65 +2121,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn event_identity_changes_only_with_the_review_event_tuple() {
-        let first = inbox_event_id(
-            "github.com",
-            "R_widget",
-            "PR_17",
-            "U_reviewer",
-            "PRR_1701",
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        );
-        assert_eq!(first.len(), 64);
-        assert_eq!(
-            first,
-            inbox_event_id(
-                "github.com",
-                "R_widget",
-                "PR_17",
-                "U_reviewer",
-                "PRR_1701",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            )
-        );
-        assert_ne!(
-            first,
-            inbox_event_id(
-                "github.com",
-                "R_widget",
-                "PR_17",
-                "U_reviewer",
-                "PRR_1701",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "cccccccccccccccccccccccccccccccccccccccc",
-            )
-        );
-        assert_ne!(
-            first,
-            inbox_event_id(
-                "ghe.example",
-                "R_widget",
-                "PR_17",
-                "U_reviewer",
-                "PRR_1701",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            )
-        );
-        assert_eq!(
-            first,
-            inbox_event_id(
-                "github.com",
-                "R_widget",
-                "PR_17",
-                "U_reviewer",
-                "PRR_1701",
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            )
-        );
+    fn candidate_queries_collect_base_and_active_review_request_evidence() {
+        for query in [SEARCH_QUERY, REVIEW_PAGE_QUERY, REVALIDATE_QUERY] {
+            assert!(query.contains("baseRefOid"));
+            assert!(query.contains("reviewRequests(first: 100)"));
+            assert!(query.contains("requestedReviewer"));
+            assert!(query.contains("... on Node { id }"));
+            assert!(query.contains("... on Actor { login }"));
+        }
     }
 
     #[test]
@@ -1886,6 +2163,7 @@ mod tests {
                 "reviewer",
                 None,
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "event-token",
             ),
             [
                 "stratadiff",
@@ -1893,6 +2171,8 @@ mod tests {
                 "https://ghe.example/acme/widget/pull/17",
                 "--reviewer",
                 "reviewer",
+                "--inbox-event",
+                "event-token",
                 "-R",
                 "ghe.example/acme/widget",
             ]
@@ -1904,6 +2184,15 @@ mod tests {
         validate_login("reviewer-1").unwrap();
         assert!(validate_login("reviewer repo:private/repo").is_err());
         assert!(validate_login("reviewer:admin").is_err());
+    }
+
+    #[test]
+    fn provider_actor_login_accepts_brackets_but_rejects_invalid_bounds_and_controls() {
+        validate_provider_actor_login("dependabot[bot]").unwrap();
+        assert!(validate_provider_actor_login("").is_err());
+        assert!(validate_provider_actor_login(&"a".repeat(256)).is_err());
+        assert!(validate_provider_actor_login("bot\nname").is_err());
+        assert!(validate_login("dependabot[bot]").is_err());
     }
 
     #[test]

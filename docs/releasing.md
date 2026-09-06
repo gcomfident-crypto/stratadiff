@@ -19,10 +19,10 @@ version to become visible before continuing:
 
 ```console
 cargo publish --package stratadiff-core --locked
-cargo info stratadiff-core@0.4.1
+cargo info stratadiff-core@0.5.0
 
 cargo publish --package stratadiff-verifier --locked
-cargo info stratadiff-verifier@0.4.1
+cargo info stratadiff-verifier@0.5.0
 
 cargo publish --package stratadiff --locked
 ```
@@ -58,8 +58,8 @@ nonempty `bypass_actors` all fail closed:
 ```console
 scripts/check-release-repository-policy.sh gcomfident-crypto/stratadiff
 scripts/ci.sh
-git tag -a v0.4.1 -m "StrataDiff v0.4.1"
-git push origin v0.4.1
+git tag -a v0.5.0 -m "StrataDiff v0.5.0"
+git push origin v0.5.0
 ```
 
 Use the actual manifest version instead of copying the example blindly. The tag push starts
@@ -113,10 +113,10 @@ select and verify the platform asset:
   installer="$(mktemp)"
   trap 'rm -f "$installer"' EXIT
   gh api --hostname github.com -H 'Accept: application/vnd.github.raw+json' \
-    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.4.1' \
+    'repos/gcomfident-crypto/stratadiff/contents/scripts/install-release.sh?ref=v0.5.0' \
     > "$installer"
   test -s "$installer"
-  bash "$installer" v0.4.1
+  bash "$installer" v0.5.0
 )
 ```
 
@@ -142,7 +142,7 @@ Select the asset for the current kernel and CPU, then download the binary, check
 bundle. For example, on Linux x86-64:
 
 ```console
-tag=v0.4.1
+tag=v0.5.0
 asset=stratadiff-linux-x86_64
 source_digest="$(gh api --hostname github.com \
   "repos/gcomfident-crypto/stratadiff/commits/$tag" --jq .sha)"
@@ -170,28 +170,45 @@ binds those bytes to this repository's release workflow.
 ## GitHub CLI extension boundary
 
 The binary release above installs the native `stratadiff` command. It does **not** make this
-repository remotely installable as `gh stratadiff`.
+repository itself remotely installable as `gh stratadiff`. The public
+[`gcomfident-crypto/gh-stratadiff`](https://github.com/gcomfident-crypto/gh-stratadiff) repository is
+the separate precompiled GitHub CLI distribution surface.
 
 GitHub's extension contract requires a dedicated repository whose name begins with `gh-`; its root
 executable must match that repository name, or its release must contain precompiled assets named
 with the `gh-<name>-<os>-<arch>` convention. See GitHub's
 [extension authoring documentation](https://docs.github.com/en/github-cli/github-cli/creating-github-cli-extensions)
-and [`gh extension install` reference](https://cli.github.com/manual/gh_extension_install).
-This repository is named `stratadiff`, while its extension launcher lives below
-`extensions/gh-stratadiff`. Therefore a documented command such as
-`gh extension install gcomfident-crypto/stratadiff` would be false and is intentionally not offered.
+and [`gh extension install` reference](https://cli.github.com/manual/gh_extension_install). Every
+extension release tag maps one-to-one to the same upstream StrataDiff tag and promotes the verified
+upstream bytes under GitHub CLI's required asset names.
 
-Remote one-command extension installation requires a separate `gh-stratadiff` repository (or a
-repository rename and corresponding product migration), release assets such as
-`gh-stratadiff-linux-amd64` and `gh-stratadiff-darwin-arm64`, and an independently tested update
-path. Until that distribution decision is made, local extension installation from
-`extensions/gh-stratadiff` remains the truthful path.
+Publish the two repositories in this order:
 
-Before the first public release, enable immutable releases and a tag ruleset that prevents updates
-or deletion of `v*` tags. `scripts/check-release-repository-policy.sh` verifies both controls with a
-repository Administration write credential immediately before tag creation; GitHub requires this
-to expose the complete bypass-actor list, and its default Actions token cannot call the
-immutable-release settings endpoint. The workflow rechecks the remote tag in the same shell step
-that publishes the draft, verifies the resulting release's public `isImmutable` state, and refuses
-to modify an already published release. The repository controls then protect the tag and assets
-afterward.
+1. Complete the StrataDiff binary release procedure above. Wait until the upstream release is
+   public, stable, and immutable; the extension workflow deliberately rejects drafts, prereleases,
+   mutable releases, and version mismatches.
+2. From a clean checkout of the intended extension commit, run its offline CI and service-side
+   repository-policy gate. The policy check requires an authenticated identity with repository
+   Administration write access.
+3. Create and push the **matching** extension tag. Its tag-triggered workflow verifies and promotes
+   the already-published upstream release, publishes an immutable extension release, and runs clean
+   install and upgrade smoke tests on all four supported platforms.
+
+For example:
+
+```console
+tag=v0.5.0
+gh release view "$tag" -R gcomfident-crypto/stratadiff \
+  --json tagName,isDraft,isPrerelease,isImmutable
+
+cd /home/zene/gh-stratadiff
+scripts/ci.sh
+scripts/check-repository-policy.sh
+git tag -a "$tag" -m "gh-stratadiff $tag"
+git push origin "$tag"
+```
+
+Use the actual upstream version instead of copying the example blindly. Never create the extension
+tag before the matching upstream release is immutable, and never move or reuse either repository's
+release tag. The extension release workflow is triggered only by its own `v*` tag; publishing the
+upstream release alone does not update existing `gh stratadiff` installations.

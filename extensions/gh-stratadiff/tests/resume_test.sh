@@ -397,7 +397,7 @@ run_inbox inbox-enterprise-json GH_STUB_ENTERPRISE=true GH_TEST_INBOX_ALL_OPTION
 [[ "${CASE_STATUS}" -eq 0 ]]
 assert_contains "${CASE_LOG}" "stratadiff inbox -R ghe.example/acme/widget --format json --output ${CASE_INBOX_OUTPUT_PATH}"
 [[ -f "${CASE_INBOX_OUTPUT_PATH}" ]]
-assert_contains "$(< "${CASE_INBOX_OUTPUT_PATH}")" '"schema":"stratadiff-review-inbox-v2"'
+assert_contains "$(< "${CASE_INBOX_OUTPUT_PATH}")" '"schema":"stratadiff-review-inbox-v3"'
 assert_native_inbox_forward_only
 
 run_inbox inbox-infer GH_TEST_INBOX_INFER=true

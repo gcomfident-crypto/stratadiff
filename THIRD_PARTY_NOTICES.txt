@@ -2413,9 +2413,9 @@ SOFTWARE.
 MIT License
 
 Used by:
-- stratadiff 0.4.1 (https://github.com/gcomfident-crypto/stratadiff)
-- stratadiff-core 0.4.1 (https://github.com/gcomfident-crypto/stratadiff)
-- stratadiff-verifier 0.4.1 (https://github.com/gcomfident-crypto/stratadiff)
+- stratadiff 0.5.0 (https://github.com/gcomfident-crypto/stratadiff)
+- stratadiff-core 0.5.0 (https://github.com/gcomfident-crypto/stratadiff)
+- stratadiff-verifier 0.5.0 (https://github.com/gcomfident-crypto/stratadiff)
 
 MIT License
 
@@ -3473,7 +3473,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 MIT License
 
 Used by:
-- stratadiff 0.4.1 (https://github.com/gcomfident-crypto/stratadiff)
+- stratadiff 0.5.0 (https://github.com/gcomfident-crypto/stratadiff)
 
 This theme was built on top of
 [GitHub's Visual Studio Code Theme](https://github.com/primer/github-vscode-theme),

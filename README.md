@@ -51,6 +51,10 @@ historical fact.
 > human time/recall outcomes are still missing. The structural diff and provenance-complete
 > benchmark layers remain available underneath the review-memory product.
 
+The bound Inbox v3 and `--inbox-event` flow documented below belong to the unreleased `0.5.0`
+line. The latest immutable binary release remains `v0.4.1`; it supports manual Resume and the
+earlier Inbox contract, but it does not contain the v3 event/revalidation path.
+
 ## Why another code diff?
 
 Line diff is exact but structurally coarse. GumTree-style matching is useful but must choose a
@@ -166,14 +170,37 @@ production safety rate or evidence that reviewers save time.
 
 ## Quick start
 
-From any directory, install the exact `v0.4.1` release through an authenticated GitHub CLI, then
-paste the pull request URL. The installer selects one of the four supported native binaries,
-checks its SHA-256 digest and GitHub build-provenance bundle against the fully dereferenced release
-tag, checks the embedded version, and replaces the destination atomically:
+From any directory, install the released GitHub CLI extension and open the offline demo:
 
-This path becomes available only after `v0.4.1` appears on the repository's Releases page. A 404
-means no verified artifact exists yet; use the development path below instead of bypassing the
-checks.
+```console
+gh extension install gcomfident-crypto/gh-stratadiff --pin v0.4.1
+gh stratadiff demo
+```
+
+The pinned release still contains the original minimal demo. To preview the unreleased `0.5.0`
+value-first scenario—26 current files reduced to one file and one line—run from this source tree:
+
+```console
+cargo run --locked -- demo
+```
+
+Then paste a pull request URL to resume your latest completed review without a checkout, repository
+flag, or commit SHA:
+
+```console
+gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
+```
+
+This released path provides manual Resume and the earlier Inbox contract, not the unreleased Inbox
+v3 event/revalidation flow described below. GitHub CLI selects the matching extension binary but
+does not itself
+verify the adjacent checksum or provenance bundle. For an independently verified installation,
+use the upstream installer below; it selects one of the four supported native binaries, checks its
+SHA-256 digest and GitHub build-provenance bundle against the fully dereferenced release tag,
+checks the embedded version, and replaces the destination atomically.
+
+The `v0.4.1` release is published and immutable. A future version that returns 404 has no verified
+artifact; use the development path below instead of bypassing the checks:
 
 ```bash
 (
@@ -256,8 +283,9 @@ GitHub login and immutable user node ID; missing or conflicting reviewer identit
 
 The native personal Inbox uses the authenticated `gh` user and works without a checkout. By
 default it searches across repositories visible to that account, then prints a copyable Resume
-command only when a completed `APPROVED` or `CHANGES_REQUESTED` checkpoint differs from the current
-head. `-R` narrows the queue to one repository, while `--reviewer` supports an explicit reviewer:
+command only when the shared decision core has complete evidence for an actionable completed
+`APPROVED` or `CHANGES_REQUESTED` checkpoint. `-R` narrows the queue to one repository, while
+`--reviewer` supports an explicit reviewer:
 
 ```console
 stratadiff inbox
@@ -270,20 +298,29 @@ gh stratadiff inbox
 ```
 
 Later comments do not replace the latest completed checkpoint. The collector binds the viewer and
-every review author to the same immutable GitHub node ID, revalidates every eligible candidate
-before output, and enforces total call, node, response-byte, and wall-time budgets. Missing object
-IDs, incomplete pagination, changing candidate state, identity mismatches, and API errors fail
-closed. GitHub does not expose an atomic repository-wide snapshot, so the report records a bounded
-observation window and changes elsewhere in that window may appear on the next run. The command
-requests no source, diff, title, body, comment text, review text, or commit message; `resume` then
-rereads the PR, consumes all bounded review pages, and verifies exact commits before opening source
-locally. A scan cut off by `--limit` is marked `partial` and never reported as a clean global queue.
-Inbox also resolves an explicit repository before searching, binds the authenticated actor on every
-GraphQL response, reads the unfiltered review count, and withholds commands when the PR exceeds
-Resume's shared 10,000-review limit.
+every review author to the same immutable GitHub node ID, revalidates every inspected candidate,
+and records the current base plus reviewer-specific active review requests. Every action carries an
+unsigned, content-addressed `--inbox-event` envelope. Resume checks its content binding and then
+revalidates the live provider state before opening the Workbench; the envelope alone is not proof of
+authenticity and is distinct from a receiver-signed Passport. Missing object IDs, incomplete
+pagination, changing candidate state, identity mismatches, and API errors fail closed. GitHub does
+not expose the historical base at review time, so an unchanged head cannot be declared clean from
+current metadata alone; it remains explicitly unobservable. GitHub also does
+not expose an atomic repository-wide snapshot, so the report records a bounded advisory observation
+window and changes elsewhere in that window may appear on the next run. A `complete` collection
+means only that GitHub's returned Search page was not truncated and was internally count-consistent;
+it cannot prove that the provider's search index was globally fresh or omitted no matching PR. The
+command requests no source, diff, title, body, comment text, review text, or commit message;
+`resume` then rereads the PR, all bounded review pages, and exact commits before opening source
+locally. A scan cut off by
+`--limit` is marked `partial` and never reported as a clean global queue. Inbox resolves an explicit
+repository before searching, binds the authenticated actor on every GraphQL response, reads the
+unfiltered review count, and withholds commands when the PR exceeds Resume's shared 10,000-review
+limit.
 
 For an explicitly consented pilot, `--value-log` records only the local product funnel and adds the
-same private log plus a pseudonymous transition digest to each emitted Resume command. Normal
+same private log plus a pseudonymous transition digest of the full bound Inbox event to each
+emitted Resume command. Normal
 commands remain zero-telemetry and nothing is uploaded automatically. The raw event log contains no
 source, filenames, paths, or plaintext repository, PR, or reviewer identity, but its stable digest
 can be linkable or reidentified when the underlying public GitHub tuple is enumerable. Keep the raw

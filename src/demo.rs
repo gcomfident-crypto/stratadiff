@@ -2,12 +2,23 @@ use std::{env, fs, path::Path, process::Command};
 
 use anyhow::{Context, Result, ensure};
 use stratadiff::review::{
-    ReviewDeltaBaselineBasis, load_review_delta_file_sources, review_git_range_with_checkpoint,
-    review_git_resume_delta,
+    CheckpointCarryBasis, ReviewDeltaBaselineBasis, load_review_delta_file_sources,
+    review_git_range_with_checkpoint, review_git_resume_delta,
 };
 
 use crate::viewer;
 
+const EXACT_CARRY_FILES: usize = 21;
+const FOUR_WAY_CARRY_FILES: usize = 4;
+const CURRENT_FILES: usize = 26;
+const NEEDS_REVIEW_FILES: usize = 1;
+
+const EXACT_ORIGINAL_SOURCE: &[u8] = b"reviewed = 0\n";
+const EXACT_REVIEWED_SOURCE: &[u8] = b"reviewed = 1\n";
+const FOUR_WAY_ORIGINAL_SOURCE: &[u8] = b"upstream = 'old'\nanchor = 0\nreviewed = 0\n";
+const FOUR_WAY_REVIEWED_SOURCE: &[u8] = b"upstream = 'old'\nanchor = 0\nreviewed = 1\n";
+const FOUR_WAY_ADVANCED_BASE_SOURCE: &[u8] = b"upstream = 'new'\nanchor = 0\nreviewed = 0\n";
+const FOUR_WAY_CURRENT_SOURCE: &[u8] = b"upstream = 'new'\nanchor = 0\nreviewed = 1\n";
 const ORIGINAL_SOURCE: &[u8] = b"title = 'old'\nreviewed = 0\nfollowup = 0\n";
 const REVIEWED_SOURCE: &[u8] = b"title = 'old'\nreviewed = 1\nfollowup = 0\n";
 const ADVANCED_BASE_SOURCE: &[u8] = b"title = 'new'\nreviewed = 0\nfollowup = 0\n";
@@ -23,6 +34,28 @@ struct DemoHistory {
     head: String,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct DemoOutcome {
+    current_files: usize,
+    needs_review_files: usize,
+    carried_files: usize,
+    exact_carries: usize,
+    four_way_carries: usize,
+}
+
+impl DemoOutcome {
+    fn value_line(&self) -> String {
+        format!(
+            "{} current files -> {} needs review; {} carried ({} exact-identity, {} strict four-way).",
+            self.current_files,
+            self.needs_review_files,
+            self.carried_files,
+            self.exact_carries,
+            self.four_way_carries,
+        )
+    }
+}
+
 pub fn run(port: u16, no_open: bool) -> Result<()> {
     let history = build_history()?;
     let review = review_git_range_with_checkpoint(
@@ -31,13 +64,11 @@ pub fn run(port: u16, no_open: bool) -> Result<()> {
         &history.head,
         Some(&history.checkpoint),
     )?;
-    validate_demo(&history, &review)?;
+    let outcome = validate_demo(&history, &review)?;
 
+    println!("{}", outcome.value_line());
     println!(
-        "Demo ready: the base moved, the reviewed edit was reconstructed, and only one follow-up line remains."
-    );
-    println!(
-        "A {} -> B {} (reviewed), C {} (new base) -> D {} (current head)",
+        "The base moved, yet the reconstructed residue is one follow-up line. A {} -> B {} (reviewed), C {} (new base) -> D {} (current head).",
         short_oid(&history.original_base),
         short_oid(&history.checkpoint),
         short_oid(&history.current_base),
@@ -59,10 +90,20 @@ fn build_history() -> Result<DemoHistory> {
     fs::create_dir(&hooks).context("failed to create the empty demo hooks directory")?;
 
     git(&repository, &home, &hooks, &["init", "--quiet"])?;
-    write_source(&repository, ORIGINAL_SOURCE)?;
+    write_snapshot(
+        &repository,
+        EXACT_ORIGINAL_SOURCE,
+        FOUR_WAY_ORIGINAL_SOURCE,
+        ORIGINAL_SOURCE,
+    )?;
     let original_base = commit(&repository, &home, &hooks, "A: original base")?;
 
-    write_source(&repository, REVIEWED_SOURCE)?;
+    write_snapshot(
+        &repository,
+        EXACT_REVIEWED_SOURCE,
+        FOUR_WAY_REVIEWED_SOURCE,
+        REVIEWED_SOURCE,
+    )?;
     let checkpoint = commit(&repository, &home, &hooks, "B: reviewed author change")?;
 
     git(
@@ -71,10 +112,20 @@ fn build_history() -> Result<DemoHistory> {
         &hooks,
         &["checkout", "--quiet", "--detach", &original_base],
     )?;
-    write_source(&repository, ADVANCED_BASE_SOURCE)?;
+    write_snapshot(
+        &repository,
+        EXACT_ORIGINAL_SOURCE,
+        FOUR_WAY_ADVANCED_BASE_SOURCE,
+        ADVANCED_BASE_SOURCE,
+    )?;
     let current_base = commit(&repository, &home, &hooks, "C: upstream base change")?;
 
-    write_source(&repository, CURRENT_SOURCE)?;
+    write_snapshot(
+        &repository,
+        EXACT_REVIEWED_SOURCE,
+        FOUR_WAY_CURRENT_SOURCE,
+        CURRENT_SOURCE,
+    )?;
     let head = commit(
         &repository,
         &home,
@@ -92,9 +143,34 @@ fn build_history() -> Result<DemoHistory> {
     })
 }
 
-fn write_source(repository: &Path, source: &[u8]) -> Result<()> {
-    fs::write(repository.join("shared.py"), source)
-        .context("failed to write the deterministic demo source")
+fn write_snapshot(
+    repository: &Path,
+    exact_source: &[u8],
+    four_way_source: &[u8],
+    residue_source: &[u8],
+) -> Result<()> {
+    let exact_directory = repository.join("src/exact");
+    let four_way_directory = repository.join("src/four-way");
+    fs::create_dir_all(&exact_directory)
+        .context("failed to create the exact-carry demo directory")?;
+    fs::create_dir_all(&four_way_directory)
+        .context("failed to create the four-way demo directory")?;
+    for index in 1..=EXACT_CARRY_FILES {
+        fs::write(
+            exact_directory.join(format!("reviewed-{index:02}.py")),
+            exact_source,
+        )
+        .context("failed to write an exact-carry demo source")?;
+    }
+    for index in 1..=FOUR_WAY_CARRY_FILES {
+        fs::write(
+            four_way_directory.join(format!("reviewed-{index:02}.py")),
+            four_way_source,
+        )
+        .context("failed to write a four-way demo source")?;
+    }
+    fs::write(repository.join("shared.py"), residue_source)
+        .context("failed to write the review-residue demo source")
 }
 
 fn commit(repository: &Path, home: &Path, hooks: &Path, message: &str) -> Result<String> {
@@ -163,10 +239,62 @@ fn display_arguments(arguments: &[&str]) -> String {
 fn validate_demo(
     history: &DemoHistory,
     review: &stratadiff::review::RepositoryReview,
-) -> Result<()> {
+) -> Result<DemoOutcome> {
+    let review_checkpoint = review
+        .checkpoint
+        .as_ref()
+        .context("demo invariant failed: checkpoint metadata is unavailable")?;
+    ensure!(
+        review_checkpoint.base_commit == history.original_base
+            && review_checkpoint.commit == history.checkpoint
+            && review.base_commit == history.current_base
+            && review.head_commit == history.head
+            && review_checkpoint.base_commit != review.base_commit,
+        "demo invariant failed: expected a bound A/B/C/D history with base drift"
+    );
+    let checkpoint_summary = review
+        .summary
+        .checkpoint
+        .as_ref()
+        .context("demo invariant failed: checkpoint summary is unavailable")?;
+    let exact_carries = review
+        .files
+        .iter()
+        .filter(|file| {
+            file.checkpoint_match_basis == Some(CheckpointCarryBasis::ExactGitChangeIdentity)
+        })
+        .count();
+    let four_way_carries = review
+        .files
+        .iter()
+        .filter(|file| {
+            file.checkpoint_match_basis
+                == Some(CheckpointCarryBasis::ExactNoninteractingFourWayByteReplay)
+        })
+        .count();
+    let outcome = DemoOutcome {
+        current_files: review.summary.changed_files,
+        needs_review_files: checkpoint_summary.needs_review_now_files,
+        carried_files: checkpoint_summary.unchanged_since_checkpoint_files,
+        exact_carries,
+        four_way_carries,
+    };
+    ensure!(
+        outcome.current_files == CURRENT_FILES
+            && outcome.exact_carries == EXACT_CARRY_FILES
+            && outcome.four_way_carries == FOUR_WAY_CARRY_FILES
+            && outcome.needs_review_files == NEEDS_REVIEW_FILES
+            && outcome.carried_files == EXACT_CARRY_FILES + FOUR_WAY_CARRY_FILES,
+        "demo invariant failed: expected 26/21/4/1 current/exact/four-way/review files, observed {}/{}/{}/{}",
+        outcome.current_files,
+        outcome.exact_carries,
+        outcome.four_way_carries,
+        outcome.needs_review_files,
+    );
     let delta = review_git_resume_delta(&history.repository, review)?;
     ensure!(
-        delta.entries.len() == 1 && delta.summary.needs_review_files == 1,
+        delta.entries.len() == NEEDS_REVIEW_FILES
+            && delta.summary.needs_review_files == NEEDS_REVIEW_FILES,
         "demo invariant failed: expected exactly one file in the Resume queue"
     );
     let entry = &delta.entries[0];
@@ -189,7 +317,7 @@ fn validate_demo(
         sources.before == RECONSTRUCTED_SOURCE && sources.after == CURRENT_SOURCE,
         "demo invariant failed: Resume sources differ from the deterministic scenario"
     );
-    Ok(())
+    Ok(outcome)
 }
 
 fn short_oid(object_id: &str) -> &str {
@@ -210,7 +338,11 @@ mod tests {
             Some(&first.checkpoint),
         )
         .unwrap();
-        validate_demo(&first, &review).unwrap();
+        let outcome = validate_demo(&first, &review).unwrap();
+        assert_eq!(
+            outcome.value_line(),
+            "26 current files -> 1 needs review; 25 carried (21 exact-identity, 4 strict four-way)."
+        );
 
         let second = build_history().unwrap();
         assert_eq!(first.original_base, second.original_base);

@@ -58,12 +58,12 @@ permission loss, non-atomic revalidation, and fail-closed unobservable states. I
 implementation-independent Python reference evaluator expands minimal case patches, derives every
 outcome, checks cross-case transition identity, and rejects nine tamper classes.
 
-This controlled adversarial corpus freezes the intended semantics, not implementation conformance:
-the current CI checks the corpus, reference evaluator, oracle, and checksums, but does not feed the
-materialized cases to the Rust `stratadiff inbox` implementation. An implementation adapter is still
-required before this can be called a product semantic-regression gate. It also does not replace a
-new multi-repository live capture or measure prevalence, reviewer time, issue recall, repeat use, or
-willingness to pay.
+This controlled adversarial corpus freezes the intended semantics and CI feeds all 60 materialized
+observations through the shared Rust target-policy decision core, comparing every result with the
+frozen oracle. The adapter makes that target policy a semantic-regression gate; it does not exercise
+the live GitHub collector or complete `stratadiff inbox` command path. The corpus also does not replace
+a new multi-repository live capture or measure prevalence, reviewer time, issue recall, repeat use,
+or willingness to pay.
 
 ## Rebase-aware review-delta contract
 

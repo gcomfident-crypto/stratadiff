@@ -203,20 +203,24 @@ Use the topics `gh-extension`, `code-review`, `pull-request`, `rebase`, `force-p
 recording, the no-network deterministic demo, and one canonical PR-URL command. Stars may improve
 extension search rank, but stars are not activation or retention.
 
-**Observed current blocker:** `gcomfident-crypto/stratadiff` has a public `v0.3.0` release, and the
-separate public [`gcomfident-crypto/gh-stratadiff`](https://github.com/gcomfident-crypto/gh-stratadiff)
-distribution repository now exists with the intended extension topics and release automation. It
-does not yet have a release and deliberately has no root fallback executable, so the documented
-remote install cannot deliver a binary yet. At capture the main repository was three days old, with
-one star and one fork; per-asset download counters were single digits and include binaries,
-checksums, attestations, tests, retries, and upgrades. There is no defensible public
-`gh extension install` acquisition funnel yet.
+**Observed distribution state:** `gcomfident-crypto/stratadiff` and the separate public
+[`gcomfident-crypto/gh-stratadiff`](https://github.com/gcomfident-crypto/gh-stratadiff)
+distribution repository now publish matching immutable `v0.4.1` releases. The extension release
+contains correctly named binaries for the four supported Linux and macOS targets, and its release
+workflow completed successfully. In an operator-observed, non-benchmarked Linux x86-64 smoke run
+on 2026-09-06, the pinned extension installed and `gh stratadiff --version` plus `--help` ran
+successfully. The command log and environment were not captured as a reproducible artifact, and
+the run reused an already provisioned GitHub CLI, Git, network, and authentication. It is therefore
+not a fresh-machine activation, a comparable timing result, or proof that Resume reached useful
+residue. At capture the main
+repository was three days old, with one star and one fork; per-asset download counters were single
+digits and include binaries, checksums, attestations, tests, retries, and upgrades. There is now a
+working acquisition path, but no defensible activation or retention funnel yet.
 
-Before any launch post, publish the first stable `gh-stratadiff` release with correctly named
-precompiled assets for supported Linux and macOS targets, immutable release verification,
-checksums/attestations, a tested upgrade path, and an exact clean-machine installation test. GitHub
-does not verify or endorse third-party extensions, so wording such as “GitHub-verified extension”
-is forbidden.
+Before any broad launch post, reproduce install-to-Workbench activation on fresh supported Linux
+and macOS environments and publish the exact failures and timings. GitHub CLI does not verify the
+adjacent checksum or provenance bundle when installing an extension, and GitHub does not certify
+or endorse third-party extensions, so wording such as “GitHub-verified extension” is forbidden.
 
 ### GitHub App and Marketplace: scale surface, not first validation
 
@@ -461,13 +465,17 @@ screen does not waive that study.
 
 ## Immediate execution order
 
-1. Publish and clean-machine test the first immutable release from the existing standalone
-   `gh-stratadiff` repository; do not announce it as remotely installable before that release works.
-2. Finish and release-test the local consent-based funnel and immutable event/attempt IDs before
-   recruiting anyone; the current instrument measures only delivery-confirmed activation.
-3. Add a Rust conformance adapter for the 60-case target-semantic Inbox corpus, then freeze at least
-   30 live/adversarial Inbox-to-Resume cases covering pagination, missing objects, base drift,
-   dropped reviewed changes, and explicit failures.
+1. Keep the published `v0.4.1` extension immutable, and reproduce install-to-Workbench activation
+   on fresh supported Linux and macOS environments before a broad announcement. Publish the exact
+   timings, transferred bytes, on-disk bytes, and failures instead of treating the existing Linux
+   installation smoke test as proof of useful activation.
+2. Finish and release-test the local consent-based funnel and content-addressed event plus unique
+   attempt IDs before recruiting anyone; the current instrument measures only delivery-confirmed
+   activation.
+3. Keep the 60/60 Rust target-policy conformance adapter as a CI gate, and separately gate the
+   stricter executable-Resume policy used by the live collector. Then freeze at least 30
+   live/adversarial Inbox-to-Resume cases covering pagination, missing objects, base drift, dropped
+   reviewed changes, and explicit failures.
 4. Recruit current-event reviewers through consent-based direct outreach; run the four-week pilot.
 5. Implement the opt-in Review Recovery Card only after the basic Resume funnel works.
 6. If and only if the pilot gates pass, build a read-only direct-install GitHub App beta. Marketplace,

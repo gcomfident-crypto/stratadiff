@@ -10,6 +10,7 @@ use anyhow::{Context, Result, ensure};
 use clap::{Args, ValueEnum};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use stratadiff::inbox_event::InboxEventEnvelope;
 
 #[cfg(unix)]
 use std::os::unix::{
@@ -473,6 +474,15 @@ pub(crate) fn transition_id(identity: &TransitionIdentity<'_>) -> String {
         hasher.update(field.as_bytes());
         hasher.update([0]);
     }
+    hex(&hasher.finalize())
+}
+
+pub(crate) fn inbox_event_transition_id(event: &InboxEventEnvelope) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"stratadiff-value-funnel-transition-v2");
+    hasher.update([0]);
+    hasher.update(event.event_id.as_bytes());
+    hasher.update([0]);
     hex(&hasher.finalize())
 }
 

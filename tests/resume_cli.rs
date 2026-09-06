@@ -12,6 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use stratadiff::inbox_event::{InboxEventBinding, InboxEventEnvelope, InboxEventTrigger};
+
 const FETCH_HEAD_SENTINEL: &[u8] = b"caller-owned fetch state\n";
 const PROCESS_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -58,7 +60,9 @@ struct Fixture {
     bin: PathBuf,
     log: PathBuf,
     pause_marker: PathBuf,
+    base: String,
     checkpoint: String,
+    head: String,
     host: String,
 }
 
@@ -273,7 +277,9 @@ impl Fixture {
             bin,
             log,
             pause_marker,
+            base,
             checkpoint,
+            head,
             host: host.to_owned(),
         }
     }
@@ -442,6 +448,35 @@ impl Fixture {
 
     fn calls(&self) -> String {
         fs::read_to_string(&self.log).unwrap()
+    }
+
+    fn inbox_event_binding(&self) -> InboxEventBinding {
+        InboxEventBinding {
+            provider_host: self.host.clone(),
+            repository: "acme/widget".to_owned(),
+            repository_node_id: "R_widget".to_owned(),
+            pull_request_number: 17,
+            pull_request_node_id: "PR_17".to_owned(),
+            reviewer_login: "alice".to_owned(),
+            reviewer_node_id: "U_alice".to_owned(),
+            review_database_id: 101,
+            review_state: "approved".to_owned(),
+            review_node_id: "PRR_101".to_owned(),
+            checkpoint_oid: self.checkpoint.clone(),
+            checkpoint_base_oid: None,
+            current_base_oid: Some(self.base.clone()),
+            head_oid: self.head.clone(),
+            review_request_active: false,
+            triggers: vec![InboxEventTrigger::HeadChanged],
+        }
+    }
+
+    fn inbox_event(&self) -> InboxEventEnvelope {
+        InboxEventEnvelope::new(self.inbox_event_binding()).unwrap()
+    }
+
+    fn inbox_event_token(&self) -> String {
+        self.inbox_event().to_token().unwrap()
     }
 }
 
@@ -957,6 +992,392 @@ fn malformed_pull_request_urls_fail_before_repository_or_network_resolution() {
 }
 
 #[test]
+fn inbox_event_is_revalidated_before_the_workbench_opens() {
+    let fixture = Fixture::new("github.com", false);
+    let token = fixture.inbox_event_token();
+    let mut command = fixture.resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false);
+    command.args(["--inbox-event", &token]);
+    let result = run_until_ready_then_signal(command, libc::SIGTERM);
+
+    assert_eq!(result.status.code(), Some(128 + libc::SIGTERM));
+    assert!(result.stderr.contains("Review Resume Workbench:"));
+    let calls = fixture.calls();
+    assert!(
+        calls.contains(" --json id\\,nameWithOwner\\,url "),
+        "{calls}"
+    );
+    assert!(
+        calls.contains(" repos/acme/widget/pulls/17/reviews/101 "),
+        "{calls}"
+    );
+    assert!(
+        calls.contains(" repos/acme/widget/pulls/17/requested_reviewers\\?per_page=100 "),
+        "{calls}"
+    );
+    fixture.assert_fetch_head_unchanged();
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn malformed_inbox_event_fails_before_repository_or_network_resolution() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+        .args(["--inbox-event", "not+a-token"])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Inbox event token"));
+    assert!(fixture.calls().is_empty());
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn malformed_inbox_event_does_not_touch_an_opted_in_value_log() {
+    let fixture = Fixture::new("github.com", false);
+    let log = fixture.temporary_root.join("value-funnel.jsonl");
+    fs::write(&log, b"caller-owned log\n").unwrap();
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+        .args([
+            "--inbox-event",
+            "not+a-token",
+            "--value-log",
+            log.to_str().unwrap(),
+            "--transition-id",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert_eq!(fs::read(&log).unwrap(), b"caller-owned log\n");
+    assert!(fixture.calls().is_empty());
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn inbox_event_rejects_a_conflicting_repository_selector_before_resolution() {
+    let fixture = Fixture::new("github.com", false);
+    let token = fixture.inbox_event_token();
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrl, false)
+        .args(["-R", "github.com/acme/other", "--inbox-event", &token])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--repo does not match"));
+    assert!(fixture.calls().is_empty());
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn inbox_event_rejects_reused_repository_identity_before_workbench() {
+    let fixture = Fixture::new("github.com", false);
+    let mut binding = fixture.inbox_event_binding();
+    binding.repository_node_id = "R_recreated".to_owned();
+    let token = InboxEventEnvelope::new(binding)
+        .unwrap()
+        .to_token()
+        .unwrap();
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+        .args(["--inbox-event", &token])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Inbox event no longer matches"), "{stderr}");
+    assert!(!stderr.contains("Review Resume Workbench:"), "{stderr}");
+    assert!(!fixture.calls().contains("phase=workbench"));
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn inbox_event_rejects_live_identity_and_pull_request_drift_before_workbench() {
+    for variable in [
+        "STRATADIFF_TEST_REPOSITORY_NODE_DRIFT",
+        "STRATADIFF_TEST_PULL_REQUEST_NODE_DRIFT",
+        "STRATADIFF_TEST_REVIEWER_NODE_DRIFT",
+        "STRATADIFF_TEST_REVIEW_DATABASE_DRIFT",
+        "STRATADIFF_TEST_REVIEW_NODE_DRIFT",
+        "STRATADIFF_TEST_REVIEW_STATE_DRIFT",
+        "STRATADIFF_TEST_REVIEW_CHECKPOINT_DRIFT",
+        "STRATADIFF_TEST_PULL_REQUEST_CLOSED",
+        "STRATADIFF_TEST_BOUND_BASE_DRIFT",
+        "STRATADIFF_TEST_BOUND_HEAD_DRIFT",
+    ] {
+        let fixture = Fixture::new("github.com", false);
+        let token = fixture.inbox_event_token();
+        let output = fixture
+            .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+            .args(["--inbox-event", &token])
+            .env(variable, "1")
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{variable}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("Inbox event") || stderr.contains("pull request"),
+            "{variable}: {stderr}"
+        );
+        let calls = fixture.calls();
+        assert!(!calls.contains("phase=workbench"), "{variable}: {calls}");
+        fixture.assert_no_scratch_directories();
+    }
+}
+
+#[test]
+fn inbox_event_rejects_new_review_or_request_state_before_workbench() {
+    for variable in [
+        "STRATADIFF_TEST_REVIEW_DRIFT",
+        "STRATADIFF_TEST_REVIEW_REQUEST_DRIFT",
+        "STRATADIFF_TEST_RECREATED_REVIEW_REQUEST",
+    ] {
+        let fixture = Fixture::new("github.com", false);
+        let token = fixture.inbox_event_token();
+        let output = fixture
+            .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+            .args(["--inbox-event", &token])
+            .env(variable, "1")
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{variable}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("Inbox event") || stderr.contains("checkpoint base OID"),
+            "{variable}: {stderr}"
+        );
+        assert!(!stderr.contains("Review Resume Workbench:"), "{stderr}");
+        assert!(!fixture.calls().contains("phase=workbench"));
+        fixture.assert_no_scratch_directories();
+    }
+}
+
+#[test]
+fn inbox_event_rejects_review_or_request_drift_between_complete_observations() {
+    for variable in [
+        "STRATADIFF_TEST_LATE_REVIEW_DRIFT",
+        "STRATADIFF_TEST_LATE_REVIEW_REQUEST_DRIFT",
+    ] {
+        let fixture = Fixture::new("github.com", false);
+        let token = fixture.inbox_event_token();
+        let output = fixture
+            .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+            .args(["--inbox-event", &token])
+            .env(variable, "1")
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{variable}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("Inbox event"), "{variable}: {stderr}");
+        let calls = fixture.calls();
+        assert!(!calls.contains("phase=workbench"), "{variable}: {calls}");
+        fixture.assert_no_scratch_directories();
+    }
+}
+
+#[test]
+fn unrelated_bot_review_request_does_not_block_the_bound_user() {
+    let fixture = Fixture::new("github.com", false);
+    let token = fixture.inbox_event_token();
+    let mut command = fixture.resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false);
+    command
+        .args(["--inbox-event", &token])
+        .env("STRATADIFF_TEST_UNRELATED_BOT_REQUEST", "1");
+    let result = run_until_ready_then_signal(command, libc::SIGTERM);
+
+    assert_eq!(result.status.code(), Some(128 + libc::SIGTERM));
+    assert!(result.stderr.contains("Review Resume Workbench:"));
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn requested_reviewer_on_a_later_page_is_detected() {
+    let fixture = Fixture::new("github.com", false);
+    let mut binding = fixture.inbox_event_binding();
+    binding.review_request_active = true;
+    binding.triggers.push(InboxEventTrigger::ReviewReRequested);
+    let token = InboxEventEnvelope::new(binding)
+        .unwrap()
+        .to_token()
+        .unwrap();
+    let mut command = fixture.resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false);
+    command
+        .args(["--inbox-event", &token])
+        .env("STRATADIFF_TEST_REVIEW_REQUEST_SECOND_PAGE", "1");
+    let result = run_until_ready_then_signal(command, libc::SIGTERM);
+
+    assert_eq!(result.status.code(), Some(128 + libc::SIGTERM));
+    assert!(result.stderr.contains("Review Resume Workbench:"));
+    let calls = fixture.calls();
+    assert_eq!(
+        calls.matches("requested_reviewers\\?per_page=100").count(),
+        2,
+        "{calls}"
+    );
+    assert!(
+        calls
+            .lines()
+            .filter(|line| line.contains("requested_reviewers\\?per_page=100"))
+            .all(|line| line.contains(" --paginate ") && line.contains(" --slurp ")),
+        "{calls}"
+    );
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn malformed_or_oversized_requested_reviewer_pages_fail_closed() {
+    for (variable, diagnostic) in [
+        (
+            "STRATADIFF_TEST_REVIEW_REQUEST_TOO_MANY",
+            "requested reviewer count limit exceeded",
+        ),
+        (
+            "STRATADIFF_TEST_DUPLICATE_REVIEW_REQUEST_NODE",
+            "duplicate requested reviewer or team identity",
+        ),
+        (
+            "STRATADIFF_TEST_INVALID_REVIEW_REQUEST_NODE",
+            "requested review team has an invalid node ID",
+        ),
+        (
+            "STRATADIFF_TEST_MALFORMED_REVIEW_REQUEST_PAGE",
+            "failed to decode requested reviewers",
+        ),
+    ] {
+        let fixture = Fixture::new("github.com", false);
+        let token = fixture.inbox_event_token();
+        let output = fixture
+            .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+            .args(["--inbox-event", &token])
+            .env(variable, "1")
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{variable}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(diagnostic), "{variable}: {stderr}");
+        let calls = fixture.calls();
+        assert!(!calls.contains("phase=workbench"), "{variable}: {calls}");
+        fixture.assert_no_scratch_directories();
+    }
+}
+
+#[test]
+fn inbox_event_rejects_a_transient_new_review_before_materializing_its_checkpoint() {
+    let fixture = Fixture::new("github.com", false);
+    let token = fixture.inbox_event_token();
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+        .args(["--inbox-event", &token])
+        .env("STRATADIFF_TEST_REVERSE_REVIEW_DRIFT", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("selected review checkpoint no longer matches"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(!calls.contains("/git/commits/"), "{calls}");
+    assert!(!calls.contains("phase=workbench"), "{calls}");
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn inbox_event_rejects_a_final_pull_request_change_before_workbench() {
+    let fixture = Fixture::new("github.com", false);
+    let token = fixture.inbox_event_token();
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+        .args(["--inbox-event", &token])
+        .env("STRATADIFF_TEST_FINAL_PR_DRIFT", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("pull request changed while the Inbox event was being revalidated"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(!calls.contains("phase=workbench"), "{calls}");
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn inbox_event_with_unverifiable_checkpoint_base_fails_before_repository_resolution() {
+    let fixture = Fixture::new("github.com", false);
+    let mut binding = fixture.inbox_event_binding();
+    binding.checkpoint_base_oid = Some(binding.current_base_oid.clone().unwrap());
+    let token = InboxEventEnvelope::new(binding)
+        .unwrap()
+        .to_token()
+        .unwrap();
+    let output = fixture
+        .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+        .args(["--inbox-event", &token])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("cannot verify an event-attested checkpoint base"));
+    assert!(fixture.calls().is_empty());
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn inbox_event_with_base_drift_or_rerequest_only_is_explicitly_unsupported() {
+    let fixture = Fixture::new("github.com", false);
+    let mut cases = Vec::new();
+
+    let mut base_drift = fixture.inbox_event_binding();
+    base_drift.checkpoint_base_oid = Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned());
+    base_drift.triggers = vec![InboxEventTrigger::HeadChanged, InboxEventTrigger::BaseDrift];
+    cases.push(base_drift);
+
+    let mut rerequest_only = fixture.inbox_event_binding();
+    rerequest_only.head_oid = rerequest_only.checkpoint_oid.clone();
+    rerequest_only.checkpoint_base_oid = rerequest_only.current_base_oid.clone();
+    rerequest_only.review_request_active = true;
+    rerequest_only.triggers = vec![InboxEventTrigger::ReviewReRequested];
+    cases.push(rerequest_only);
+
+    for binding in cases {
+        let token = InboxEventEnvelope::new(binding)
+            .unwrap()
+            .to_token()
+            .unwrap();
+        let output = fixture
+            .resume_command(RepositoryMode::PullRequestUrlAndRepoDir, false)
+            .args(["--inbox-event", &token])
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr)
+                .contains("cannot verify an event-attested checkpoint base")
+        );
+        assert!(fixture.calls().is_empty());
+    }
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
 fn resume_rejects_a_second_pull_request_snapshot_that_drifted() {
     let fixture = Fixture::new("github.com", true);
     let output = fixture
@@ -1359,12 +1780,23 @@ arguments=" $* "
 
 case "${{1:-}} ${{2:-}}" in
   "repo view")
-    printf '{{"nameWithOwner":"acme/widget","url":"https://%s/acme/widget"}}\n' "$host"
+    if [[ "$arguments" == *" --json id,nameWithOwner,url "* ]]; then
+      repository_id=R_widget
+      if [[ "${{STRATADIFF_TEST_REPOSITORY_NODE_DRIFT:-}}" == 1 ]]; then
+        repository_id=R_recreated
+      fi
+      printf '{{"id":"%s","nameWithOwner":"acme/widget","url":"https://%s/acme/widget"}}\n' "$repository_id" "$host"
+    else
+      printf '{{"nameWithOwner":"acme/widget","url":"https://%s/acme/widget"}}\n' "$host"
+    fi
     ;;
   "pr view")
     [[ "${{3:-}}" != *"://"* ]]
     [[ "$arguments" == *" --repo $host/acme/widget "* ]]
-    [[ "$arguments" == *" --json number,baseRefOid,headRefOid,url "* ]]
+    if [[ "$arguments" != *" --json number,baseRefOid,headRefOid,url "* && "$arguments" != *" --json id,number,state,url,baseRefOid,headRefOid "* ]]; then
+      printf 'unexpected gh pr view fields: %s\n' "$*" >&2
+      exit 70
+    fi
     count=0
     if [[ -f "$state/pr-count" ]]; then
       read -r count < "$state/pr-count"
@@ -1379,7 +1811,37 @@ case "${{1:-}} ${{2:-}}" in
     if (( count > 1 )); then
       selected_head="$drift_head"
     fi
-    printf '{{"number":17,"baseRefOid":"%s","headRefOid":"%s","url":"%s"}}\n' "$base" "$selected_head" "$selected_url"
+    bound_count=0
+    if [[ "$arguments" == *" --json id,number,state,url,baseRefOid,headRefOid "* ]]; then
+      if [[ -f "$state/bound-pr-count" ]]; then
+        read -r bound_count < "$state/bound-pr-count"
+      fi
+      bound_count=$((bound_count + 1))
+      printf '%s\n' "$bound_count" > "$state/bound-pr-count"
+      if [[ "${{STRATADIFF_TEST_FINAL_PR_DRIFT:-}}" == 1 && "$bound_count" -gt 1 ]]; then
+        selected_head="$base"
+      fi
+    fi
+    if [[ "$arguments" == *" --json id,number,state,url,baseRefOid,headRefOid "* ]]; then
+      pull_request_id=PR_17
+      pull_request_state=OPEN
+      selected_base="$base"
+      if [[ "${{STRATADIFF_TEST_PULL_REQUEST_NODE_DRIFT:-}}" == 1 ]]; then
+        pull_request_id=PR_recreated
+      fi
+      if [[ "${{STRATADIFF_TEST_PULL_REQUEST_CLOSED:-}}" == 1 ]]; then
+        pull_request_state=CLOSED
+      fi
+      if [[ "${{STRATADIFF_TEST_BOUND_BASE_DRIFT:-}}" == 1 ]]; then
+        selected_base="$checkpoint"
+      fi
+      if [[ "${{STRATADIFF_TEST_BOUND_HEAD_DRIFT:-}}" == 1 ]]; then
+        selected_head="$base"
+      fi
+      printf '{{"id":"%s","number":17,"state":"%s","baseRefOid":"%s","headRefOid":"%s","url":"%s"}}\n' "$pull_request_id" "$pull_request_state" "$selected_base" "$selected_head" "$selected_url"
+    else
+      printf '{{"number":17,"baseRefOid":"%s","headRefOid":"%s","url":"%s"}}\n' "$base" "$selected_head" "$selected_url"
+    fi
     ;;
   "auth token")
     [[ "$arguments" == *" --hostname $host "* ]]
@@ -1389,6 +1851,30 @@ case "${{1:-}} ${{2:-}}" in
     [[ "$arguments" == *" --hostname $host "* ]]
     if [[ "$arguments" == *" user --jq .login "* ]]; then
       printf 'authenticated-reviewer\n'
+    elif [[ "$arguments" == *" repos/acme/widget/pulls/17/reviews/101 "* ]]; then
+      review_database_id=101
+      review_node_id=PRR_101
+      reviewer_node_id=U_alice
+      review_state=APPROVED
+      review_checkpoint="$checkpoint"
+      if [[ "${{STRATADIFF_TEST_REVIEW_DATABASE_DRIFT:-}}" == 1 ]]; then
+        review_database_id=999
+      fi
+      if [[ "${{STRATADIFF_TEST_REVIEW_NODE_DRIFT:-}}" == 1 ]]; then
+        review_node_id=PRR_recreated
+      fi
+      if [[ "${{STRATADIFF_TEST_REVIEWER_NODE_DRIFT:-}}" == 1 ]]; then
+        reviewer_node_id=U_recreated
+      fi
+      if [[ "${{STRATADIFF_TEST_REVIEW_STATE_DRIFT:-}}" == 1 ]]; then
+        review_state=CHANGES_REQUESTED
+      fi
+      if [[ "${{STRATADIFF_TEST_REVIEW_CHECKPOINT_DRIFT:-}}" == 1 ]]; then
+        review_checkpoint="$base"
+      fi
+      printf '{{"id":%s,"node_id":"%s","user":{{"login":"alice","node_id":"%s","type":"User"}},"state":"%s","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-101","commit_id":"%s","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}}\n' "$review_database_id" "$review_node_id" "$reviewer_node_id" "$review_state" "$host" "$review_checkpoint"
+    elif [[ "$arguments" == *" repos/acme/widget/pulls/17/reviews/103 "* ]]; then
+      printf '{{"id":103,"node_id":"PRR_103","user":{{"login":"alice","node_id":"U_alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-103","commit_id":"%s","submitted_at":"2026-09-04T19:10:09Z","author_association":"MEMBER"}}\n' "$host" "$head"
     elif [[ "$arguments" == *"/git/commits/"* ]]; then
       object_id="${{arguments##*/git/commits/}}"
       object_id="${{object_id%% *}}"
@@ -1401,8 +1887,56 @@ case "${{1:-}} ${{2:-}}" in
   "api --paginate")
     [[ "$arguments" == *" --hostname $host "* ]]
     [[ "$arguments" == *" --slurp "* ]]
-    [[ "$arguments" == *" repos/acme/widget/pulls/17/reviews?per_page=100 "* ]]
-    printf '[[{{"id":101,"user":{{"login":"alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-101","commit_id":"%s","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}},{{"id":102,"user":{{"login":"authenticated-reviewer","type":"User"}},"state":"CHANGES_REQUESTED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-102","commit_id":"%s","submitted_at":"2026-09-04T18:10:09Z","author_association":"MEMBER"}}]]\n' "$host" "$checkpoint" "$host" "$checkpoint"
+    if [[ "$arguments" == *" repos/acme/widget/pulls/17/reviews?per_page=100 "* ]]; then
+      review_count=0
+      if [[ -f "$state/review-count" ]]; then
+        read -r review_count < "$state/review-count"
+      fi
+      review_count=$((review_count + 1))
+      printf '%s\n' "$review_count" > "$state/review-count"
+      extra=
+      if [[ "${{STRATADIFF_TEST_REVIEW_DRIFT:-}}" == 1 && "$review_count" -gt 1 ]] || [[ "${{STRATADIFF_TEST_REVERSE_REVIEW_DRIFT:-}}" == 1 && "$review_count" == 1 ]] || [[ "${{STRATADIFF_TEST_LATE_REVIEW_DRIFT:-}}" == 1 && "$review_count" -gt 2 ]]; then
+        extra=',{{"id":103,"user":{{"login":"alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-103","commit_id":"%s","submitted_at":"2026-09-04T19:10:09Z","author_association":"MEMBER"}}'
+        extra=$(printf "$extra" "$host" "$head")
+      fi
+      printf '[[{{"id":101,"user":{{"login":"alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-101","commit_id":"%s","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}},{{"id":102,"user":{{"login":"authenticated-reviewer","type":"User"}},"state":"CHANGES_REQUESTED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-102","commit_id":"%s","submitted_at":"2026-09-04T18:10:09Z","author_association":"MEMBER"}}%s]]\n' "$host" "$checkpoint" "$host" "$checkpoint" "$extra"
+    elif [[ "$arguments" == *" repos/acme/widget/pulls/17/requested_reviewers?per_page=100 "* ]]; then
+      request_count=0
+      if [[ -f "$state/request-count" ]]; then
+        read -r request_count < "$state/request-count"
+      fi
+      request_count=$((request_count + 1))
+      printf '%s\n' "$request_count" > "$state/request-count"
+      if [[ "${{STRATADIFF_TEST_REVIEW_REQUEST_TOO_MANY:-}}" == 1 ]]; then
+        printf '[{{"users":['
+        for ((requested_index = 1; requested_index <= 100; requested_index++)); do
+          if (( requested_index > 1 )); then
+            printf ','
+          fi
+          printf '{{"login":"reviewer%s","node_id":"U_%s","type":"User"}}' "$requested_index" "$requested_index"
+        done
+        printf '],"teams":[]}},{{"users":[],"teams":[{{"node_id":"T_overflow"}}]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_DUPLICATE_REVIEW_REQUEST_NODE:-}}" == 1 ]]; then
+        printf '[{{"users":[{{"login":"other","node_id":"U_duplicate","type":"User"}}],"teams":[]}},{{"users":[],"teams":[{{"node_id":"U_duplicate"}}]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_INVALID_REVIEW_REQUEST_NODE:-}}" == 1 ]]; then
+        printf '[{{"users":[],"teams":[{{"node_id":"bad node"}}]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_MALFORMED_REVIEW_REQUEST_PAGE:-}}" == 1 ]]; then
+        printf '[{{"users":[]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_REVIEW_REQUEST_SECOND_PAGE:-}}" == 1 ]]; then
+        printf '[{{"users":[{{"login":"other","node_id":"U_other","type":"User"}}],"teams":[]}},{{"users":[{{"login":"alice","node_id":"U_alice","type":"User"}}],"teams":[]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_REVIEW_REQUEST_DRIFT:-}}" == 1 || "${{STRATADIFF_TEST_LATE_REVIEW_REQUEST_DRIFT:-}}" == 1 && "$request_count" -gt 1 ]]; then
+        printf '[{{"users":[{{"login":"alice","node_id":"U_alice","type":"User"}}],"teams":[]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_RECREATED_REVIEW_REQUEST:-}}" == 1 ]]; then
+        printf '[{{"users":[{{"login":"alice","node_id":"U_recreated","type":"User"}}],"teams":[]}}]\n'
+      elif [[ "${{STRATADIFF_TEST_UNRELATED_BOT_REQUEST:-}}" == 1 ]]; then
+        printf '[{{"users":[{{"login":"copilot-pull-request-reviewer[bot]","node_id":"BOT_copilot","type":"Bot"}}],"teams":[]}}]\n'
+      else
+        printf '[{{"users":[],"teams":[]}}]\n'
+      fi
+    else
+      printf 'unexpected paginated gh api invocation: %s\n' "$*" >&2
+      exit 70
+    fi
     ;;
   *)
     printf 'unexpected gh invocation: %s\n' "$*" >&2

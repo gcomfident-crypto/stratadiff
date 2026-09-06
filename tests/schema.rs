@@ -7,6 +7,7 @@ use stratadiff::{
         MAX_REVIEW_COVERAGE_CHECKPOINTS, MAX_REVIEW_COVERAGE_OWNER_RESULT_ITEMS,
         MAX_REVIEW_COVERAGE_REQUIREMENTS,
     },
+    inbox_event::{InboxEventBinding, InboxEventEnvelope, InboxEventTrigger},
     ledger::GITHUB_REVIEW_LEDGER_SCHEMA,
     ownership::GITHUB_OWNERSHIP_SNAPSHOT_SCHEMA,
     review::{
@@ -93,6 +94,7 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/review-memory-audit-v2.schema.json"),
         include_str!("../schema/review-inbox-v1.schema.json"),
         include_str!("../schema/review-inbox-v2.schema.json"),
+        include_str!("../schema/review-inbox-v3.schema.json"),
         include_str!("../schema/value-funnel-event-v1.schema.json"),
         include_str!("../schema/value-funnel-report-v1.schema.json"),
     ] {
@@ -510,6 +512,158 @@ fn review_inbox_schema_accepts_actions_and_fails_closed_on_unknown_evidence() {
     let mut unknown_field = instance;
     unknown_field["actionable"][0]["review_is_safe"] = serde_json::json!(true);
     assert!(!validator.is_valid(&unknown_field));
+}
+
+#[test]
+fn review_inbox_v3_accepts_a_real_bound_event_and_requires_its_action_shape() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/review-inbox-v3.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let event = InboxEventEnvelope::new(InboxEventBinding {
+        provider_host: "github.com".to_owned(),
+        repository: "acme/widget".to_owned(),
+        repository_node_id: "R_widget".to_owned(),
+        pull_request_number: 17,
+        pull_request_node_id: "PR_17".to_owned(),
+        reviewer_login: "reviewer".to_owned(),
+        reviewer_node_id: "U_reviewer".to_owned(),
+        review_database_id: 1701,
+        review_state: "approved".to_owned(),
+        review_node_id: "PRR_1701".to_owned(),
+        checkpoint_oid: "a".repeat(40),
+        checkpoint_base_oid: None,
+        current_base_oid: Some("c".repeat(40)),
+        head_oid: "b".repeat(40),
+        review_request_active: false,
+        triggers: vec![InboxEventTrigger::HeadChanged],
+    })
+    .unwrap();
+    let token = event.to_token().unwrap();
+    let instance = serde_json::json!({
+        "schema": "stratadiff-review-inbox-v3",
+        "tool_version": env!("CARGO_PKG_VERSION"),
+        "observed_at_unix_seconds": 1_788_624_000_u64,
+        "scope": {
+            "provider_url": "https://github.com",
+            "repository": null,
+            "authenticated_actor": {
+                "login": "reviewer",
+                "database_id": 42,
+                "node_id": "U_reviewer"
+            },
+            "reviewer": {
+                "login": "reviewer",
+                "database_id": 42,
+                "node_id": "U_reviewer",
+                "source": "authenticated_viewer"
+            }
+        },
+        "collection": {
+            "status": "complete",
+            "temporal_consistency": "eligible_candidates_revalidated_non_atomic",
+            "search_candidates": 1,
+            "inspected_candidates": 1,
+            "truncated": false,
+            "revalidated_review_prs": 1,
+            "api_calls": 3,
+            "captured_review_nodes": 2,
+            "response_bytes": 4096,
+            "minimum_rate_limit_remaining": 4997,
+            "last_rate_limit_reset_at": "2026-09-06T01:00:00Z"
+        },
+        "privacy": {
+            "source_collected": false,
+            "pr_text_collected": false,
+            "review_text_collected": false,
+            "commit_messages_collected": false,
+            "authenticated_actor_identity_persisted": true,
+            "reviewer_identity_persisted": true
+        },
+        "summary": {
+            "status": "actionable",
+            "completed_review_prs": 1,
+            "resume_available_prs": 1,
+            "up_to_date_prs": 0,
+            "no_completed_review_prs": 0,
+            "unobservable_review_prs": 0
+        },
+        "actionable": [{
+            "event_id": event.event_id,
+            "repository": "acme/widget",
+            "number": 17,
+            "url": "https://github.com/acme/widget/pull/17",
+            "is_draft": false,
+            "updated_at": "2026-09-06T00:00:03Z",
+            "checkpoint": {
+                "review_id": 1701,
+                "reviewer_login": "reviewer",
+                "review_state": "approved",
+                "commit_id": "a".repeat(40),
+                "submitted_at": "2026-09-05T00:00:00Z",
+                "html_url": "https://github.com/acme/widget/pull/17#pullrequestreview-1701",
+                "author_association": "MEMBER"
+            },
+            "checkpoint_base_oid": null,
+            "current_base_oid": "c".repeat(40),
+            "head_oid": "b".repeat(40),
+            "review_request_active": false,
+            "triggers": ["head_changed"],
+            "total_review_count": 2,
+            "inbox_event": token.clone(),
+            "resume_argv": [
+                "stratadiff",
+                "resume",
+                "https://github.com/acme/widget/pull/17",
+                "--reviewer",
+                "reviewer",
+                "--inbox-event",
+                token.clone()
+            ]
+        }],
+        "unobservable": []
+    });
+    assert!(validator.is_valid(&instance));
+    assert_eq!(
+        InboxEventEnvelope::from_token(instance["actionable"][0]["inbox_event"].as_str().unwrap())
+            .unwrap(),
+        event
+    );
+
+    let mut maximum_review_count = instance.clone();
+    maximum_review_count["actionable"][0]["total_review_count"] = serde_json::json!(10000);
+    assert!(validator.is_valid(&maximum_review_count));
+
+    let mut excessive_review_count = instance.clone();
+    excessive_review_count["actionable"][0]["total_review_count"] = serde_json::json!(10001);
+    assert!(!validator.is_valid(&excessive_review_count));
+
+    let mut missing_base = instance.clone();
+    missing_base["actionable"][0]["current_base_oid"] = serde_json::Value::Null;
+    assert!(!validator.is_valid(&missing_base));
+
+    let mut unsupported_checkpoint_base = instance.clone();
+    unsupported_checkpoint_base["actionable"][0]["checkpoint_base_oid"] =
+        serde_json::json!("d".repeat(40));
+    assert!(!validator.is_valid(&unsupported_checkpoint_base));
+
+    let mut malformed_token = instance.clone();
+    malformed_token["actionable"][0]["inbox_event"] = serde_json::json!("padded=");
+    assert!(!validator.is_valid(&malformed_token));
+
+    let mut missing_argv_token = instance.clone();
+    missing_argv_token["actionable"][0]["resume_argv"] = serde_json::json!([
+        "stratadiff",
+        "resume",
+        "https://github.com/acme/widget/pull/17",
+        "--reviewer",
+        "reviewer"
+    ]);
+    assert!(!validator.is_valid(&missing_argv_token));
+
+    let mut inconsistent_request_trigger = instance;
+    inconsistent_request_trigger["actionable"][0]["review_request_active"] =
+        serde_json::json!(true);
+    assert!(!validator.is_valid(&inconsistent_request_trigger));
 }
 
 #[test]

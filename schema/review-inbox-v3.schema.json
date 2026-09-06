@@ -1,0 +1,526 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-inbox-v3.schema.json",
+  "title": "StrataDiff global Review Inbox v3",
+  "description": "Structural shape for a bounded cross-repository queue evaluated by the shared fail-closed Inbox decision core. Actionable entries carry a canonical Resume event token; JSON Schema cannot decode that token or prove cross-field equality, so consumers must use StrataDiff's event validator before execution. Complete means only that the provider-reported Search page was not truncated and internally matched its count, not that the search index was globally fresh. Truncated scans are explicitly partial and cannot support a clean global conclusion. It is not an approval or a safety claim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "observed_at_unix_seconds",
+    "scope",
+    "collection",
+    "privacy",
+    "summary",
+    "actionable",
+    "unobservable"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-review-inbox-v3" },
+    "tool_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "observed_at_unix_seconds": { "type": "integer", "minimum": 0 },
+    "scope": { "$ref": "#/$defs/scope" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "privacy": { "$ref": "#/$defs/privacy" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "actionable": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/actionable" }
+    },
+    "unobservable": {
+      "type": "array",
+      "maxItems": 100,
+      "items": { "$ref": "#/$defs/unobservable" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "collection": {
+            "properties": { "truncated": { "const": true } },
+            "required": ["truncated"]
+          }
+        },
+        "required": ["collection"]
+      },
+      "then": {
+        "properties": {
+          "collection": {
+            "properties": { "status": { "const": "partial" } }
+          },
+          "summary": {
+            "properties": { "status": { "const": "partial" } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "collection": {
+            "properties": { "truncated": { "const": false } },
+            "required": ["truncated"]
+          }
+        },
+        "required": ["collection"]
+      },
+      "then": {
+        "properties": {
+          "collection": {
+            "properties": { "status": { "const": "complete" } }
+          },
+          "summary": {
+            "properties": {
+              "status": {
+                "enum": ["actionable", "up_to_date", "no_eligible_reviews", "insufficient_evidence"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "actionable" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "minItems": 1 },
+          "summary": {
+            "properties": { "resume_available_prs": { "minimum": 1 } }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "insufficient_evidence" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "maxItems": 0 },
+          "unobservable": { "minItems": 1 },
+          "summary": {
+            "properties": {
+              "completed_review_prs": { "minimum": 1 },
+              "resume_available_prs": { "const": 0 },
+              "unobservable_review_prs": { "minimum": 1 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "up_to_date" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "maxItems": 0 },
+          "unobservable": { "maxItems": 0 },
+          "summary": {
+            "properties": {
+              "completed_review_prs": { "minimum": 1 },
+              "resume_available_prs": { "const": 0 },
+              "up_to_date_prs": { "minimum": 1 },
+              "unobservable_review_prs": { "const": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "status": { "const": "no_eligible_reviews" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "actionable": { "maxItems": 0 },
+          "unobservable": { "maxItems": 0 },
+          "summary": {
+            "properties": {
+              "completed_review_prs": { "const": 0 },
+              "resume_available_prs": { "const": 0 },
+              "up_to_date_prs": { "const": 0 },
+              "unobservable_review_prs": { "const": 0 }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "inbox_event_token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "node_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[!-~]+$"
+    },
+    "login": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 202,
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_url", "repository", "authenticated_actor", "reviewer"],
+      "properties": {
+        "provider_url": {
+          "type": "string",
+          "pattern": "^https://[A-Za-z0-9][A-Za-z0-9.-]*$"
+        },
+        "repository": {
+          "oneOf": [
+            { "$ref": "#/$defs/repository" },
+            { "type": "null" }
+          ]
+        },
+        "authenticated_actor": { "$ref": "#/$defs/actor_identity" },
+        "reviewer": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["login", "database_id", "node_id", "source"],
+          "properties": {
+            "login": { "$ref": "#/$defs/login" },
+            "database_id": { "type": "integer", "minimum": 1 },
+            "node_id": { "$ref": "#/$defs/node_id" },
+            "source": {
+              "enum": ["authenticated_viewer", "explicit_reviewer"]
+            }
+          }
+        }
+      }
+    },
+    "actor_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["login", "database_id", "node_id"],
+      "properties": {
+        "login": { "$ref": "#/$defs/login" },
+        "database_id": { "type": "integer", "minimum": 1 },
+        "node_id": { "$ref": "#/$defs/node_id" }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "temporal_consistency",
+        "search_candidates",
+        "inspected_candidates",
+        "truncated",
+        "revalidated_review_prs",
+        "api_calls",
+        "captured_review_nodes",
+        "response_bytes",
+        "minimum_rate_limit_remaining",
+        "last_rate_limit_reset_at"
+      ],
+      "properties": {
+        "status": { "enum": ["complete", "partial"] },
+        "temporal_consistency": {
+          "const": "eligible_candidates_revalidated_non_atomic"
+        },
+        "search_candidates": { "type": "integer", "minimum": 0 },
+        "inspected_candidates": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "truncated": { "type": "boolean" },
+        "revalidated_review_prs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "api_calls": { "type": "integer", "minimum": 2, "maximum": 256 },
+        "captured_review_nodes": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "response_bytes": { "type": "integer", "minimum": 1, "maximum": 67108864 },
+        "minimum_rate_limit_remaining": {
+          "oneOf": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "null" }
+          ]
+        },
+        "last_rate_limit_reset_at": {
+          "oneOf": [
+            { "$ref": "#/$defs/timestamp" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_collected",
+        "pr_text_collected",
+        "review_text_collected",
+        "commit_messages_collected",
+        "authenticated_actor_identity_persisted",
+        "reviewer_identity_persisted"
+      ],
+      "properties": {
+        "source_collected": { "const": false },
+        "pr_text_collected": { "const": false },
+        "review_text_collected": { "const": false },
+        "commit_messages_collected": { "const": false },
+        "authenticated_actor_identity_persisted": { "const": true },
+        "reviewer_identity_persisted": { "const": true }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "completed_review_prs",
+        "resume_available_prs",
+        "up_to_date_prs",
+        "no_completed_review_prs",
+        "unobservable_review_prs"
+      ],
+      "properties": {
+        "status": {
+          "enum": ["partial", "actionable", "up_to_date", "no_eligible_reviews", "insufficient_evidence"]
+        },
+        "completed_review_prs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "resume_available_prs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "up_to_date_prs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "no_completed_review_prs": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "unobservable_review_prs": { "type": "integer", "minimum": 0, "maximum": 100 }
+      }
+    },
+    "checkpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_id",
+        "reviewer_login",
+        "review_state",
+        "commit_id",
+        "submitted_at",
+        "html_url",
+        "author_association"
+      ],
+      "properties": {
+        "review_id": { "type": "integer", "minimum": 1 },
+        "reviewer_login": { "$ref": "#/$defs/login" },
+        "review_state": { "enum": ["approved", "changes_requested"] },
+        "commit_id": { "$ref": "#/$defs/object_id" },
+        "submitted_at": { "$ref": "#/$defs/timestamp" },
+        "html_url": { "type": "string", "pattern": "^https://" },
+        "author_association": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "actionable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "repository",
+        "number",
+        "url",
+        "is_draft",
+        "updated_at",
+        "checkpoint",
+        "checkpoint_base_oid",
+        "current_base_oid",
+        "head_oid",
+        "review_request_active",
+        "triggers",
+        "total_review_count",
+        "inbox_event",
+        "resume_argv"
+      ],
+      "properties": {
+        "event_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "pattern": "^https://" },
+        "is_draft": { "type": "boolean" },
+        "updated_at": { "$ref": "#/$defs/timestamp" },
+        "checkpoint": { "$ref": "#/$defs/checkpoint" },
+        "checkpoint_base_oid": { "type": "null" },
+        "current_base_oid": { "$ref": "#/$defs/object_id" },
+        "head_oid": { "$ref": "#/$defs/object_id" },
+        "review_request_active": { "type": "boolean" },
+        "triggers": {
+          "enum": [
+            ["head_changed"],
+            ["head_changed", "review_re_requested"]
+          ]
+        },
+        "total_review_count": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "inbox_event": { "$ref": "#/$defs/inbox_event_token" },
+        "resume_argv": {
+          "oneOf": [
+            {
+              "type": "array",
+              "minItems": 7,
+              "maxItems": 7,
+              "prefixItems": [
+                { "const": "stratadiff" },
+                { "const": "resume" },
+                { "type": "string", "pattern": "^https://" },
+                { "const": "--reviewer" },
+                { "$ref": "#/$defs/login" },
+                { "const": "--inbox-event" },
+                { "$ref": "#/$defs/inbox_event_token" }
+              ],
+              "items": false
+            },
+            {
+              "type": "array",
+              "minItems": 9,
+              "maxItems": 9,
+              "prefixItems": [
+                { "const": "stratadiff" },
+                { "const": "resume" },
+                { "type": "string", "pattern": "^https://" },
+                { "const": "--reviewer" },
+                { "$ref": "#/$defs/login" },
+                { "const": "--inbox-event" },
+                { "$ref": "#/$defs/inbox_event_token" },
+                { "const": "-R" },
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+                }
+              ],
+              "items": false
+            },
+            {
+              "type": "array",
+              "minItems": 11,
+              "maxItems": 11,
+              "prefixItems": [
+                { "const": "stratadiff" },
+                { "const": "resume" },
+                { "type": "string", "pattern": "^https://" },
+                { "const": "--reviewer" },
+                { "$ref": "#/$defs/login" },
+                { "const": "--inbox-event" },
+                { "$ref": "#/$defs/inbox_event_token" },
+                { "const": "--value-log" },
+                { "type": "string", "pattern": "^/", "maxLength": 4096 },
+                { "const": "--transition-id" },
+                { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              ],
+              "items": false
+            },
+            {
+              "type": "array",
+              "minItems": 13,
+              "maxItems": 13,
+              "prefixItems": [
+                { "const": "stratadiff" },
+                { "const": "resume" },
+                { "type": "string", "pattern": "^https://" },
+                { "const": "--reviewer" },
+                { "$ref": "#/$defs/login" },
+                { "const": "--inbox-event" },
+                { "$ref": "#/$defs/inbox_event_token" },
+                { "const": "-R" },
+                {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9.-]*/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+                },
+                { "const": "--value-log" },
+                { "type": "string", "pattern": "^/", "maxLength": 4096 },
+                { "const": "--transition-id" },
+                { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              ],
+              "items": false
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "review_request_active": { "const": true } },
+            "required": ["review_request_active"]
+          },
+          "then": {
+            "properties": {
+              "triggers": { "const": ["head_changed", "review_re_requested"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "review_request_active": { "const": false } },
+            "required": ["review_request_active"]
+          },
+          "then": {
+            "properties": { "triggers": { "const": ["head_changed"] } }
+          }
+        }
+      ]
+    },
+    "unobservable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "number", "url", "updated_at", "reason"],
+      "properties": {
+        "repository": { "$ref": "#/$defs/repository" },
+        "number": { "type": "integer", "minimum": 1 },
+        "url": { "type": "string", "pattern": "^https://" },
+        "updated_at": { "$ref": "#/$defs/timestamp" },
+        "reason": {
+          "enum": [
+            "head_oid_unavailable",
+            "checkpoint_base_oid_unavailable",
+            "current_base_oid_unavailable",
+            "resume_review_limit_exceeded"
+          ]
+        }
+      }
+    }
+  }
+}

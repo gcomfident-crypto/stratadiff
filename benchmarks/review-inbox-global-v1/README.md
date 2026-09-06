@@ -14,9 +14,10 @@ or credential. They are reproducible regression vectors, not a claim that the sc
 the same rate in production.
 
 The checked-in commands validate the corpus and its implementation-independent Python reference
-evaluator. They do not run the Rust `stratadiff inbox` implementation. Product conformance requires
-a separate adapter that consumes the materialized cases and compares the CLI result with this
-oracle; that adapter is not yet present.
+evaluator. A Rust conformance adapter also feeds all 60 materialized observations through the
+shared target-policy decision core and compares every result with the frozen oracle in CI. The
+live Inbox uses an additional executable-Resume policy and has separate CLI tests; this corpus does
+not exercise the GitHub collector or the complete `stratadiff inbox` command path.
 
 ## Target contract
 
@@ -41,9 +42,11 @@ The frozen oracle requires the following behavior:
 - Incomplete pagination, duplicate nodes, identity changes, repository confusion, permission loss,
   non-atomic revalidation changes, and malformed checkpoints fail closed with stable error codes.
 
-This is a target semantic contract. In particular, the base-identity and active-review-request
-fixtures intentionally expose product work beyond the metadata currently emitted by the v0.4 CLI;
-the benchmark must not weaken those cases merely to match an implementation.
+This is a target semantic contract. The `0.5.0` collector records the current base and active
+review-request state, but GitHub does not expose the historical base at review time. The live path
+therefore uses a stricter executable-Resume policy: with a stable head and no checkpoint base it
+reports insufficient evidence instead of emitting the corpus's base-only or re-request-only target
+actions. The benchmark must not weaken those future-facing cases merely to match that limitation.
 
 ## Bundle layout
 
@@ -104,12 +107,13 @@ no-eligible-review, and 4 unobservable decisions.
 
 ## Offline verification
 
-Run the complete bundle checks with only Python's standard library:
+Run the complete bundle and Rust conformance checks:
 
 ```text
 python3 -B benchmarks/review-inbox-global-v1/verify.py verify
 python3 -B benchmarks/review-inbox-global-v1/verify.py self-test
 (cd benchmarks/review-inbox-global-v1 && sha256sum -c SHA256SUMS)
+cargo test --test review_inbox_global_v1 --locked
 ```
 
 To inspect fully expanded observations or independently generated expectations:
@@ -120,7 +124,7 @@ python3 -B benchmarks/review-inbox-global-v1/verify.py derive-oracle
 python3 -B benchmarks/review-inbox-global-v1/verify.py summary
 ```
 
-`materialize` writes canonical JSON to stdout, so a future implementation adapter can consume it
+`materialize` writes canonical JSON to stdout. The Rust conformance adapter consumes that output
 without granting the reference evaluator network access or repository write access.
 
 ## Independent and tamper checks
@@ -136,11 +140,12 @@ and an unmet required-coverage tag.
 
 ## Claim boundary
 
-Passing this bundle demonstrates that the frozen fixtures, oracle, reference evaluator, and
-manifest agree. It does not demonstrate conformance by the Rust CLI until an implementation adapter
-is added. It also does not prove that a checkpoint was reviewed carefully, that two source histories
-are semantically equivalent, that the Resume residue is correct, that defects are recalled, or that
-developers save time, nor does it estimate production prevalence or product-market fit.
+Passing the complete bundle demonstrates that the frozen fixtures, oracle, reference evaluator,
+manifest, and shared Rust target-policy core agree across all 60 cases. It does not demonstrate
+end-to-end conformance by the live GitHub collector or complete Rust CLI. It also does not prove
+that a checkpoint was reviewed carefully, that two source histories are semantically equivalent,
+that the Resume residue is correct, that defects are recalled, or that developers save time, nor
+does it estimate production prevalence or product-market fit.
 
 The rewrite labels are controlled provenance: metadata alone cannot distinguish a force-push from
 a rebase or restack. Source-level residue correctness belongs in Review Continuity/Review Delta

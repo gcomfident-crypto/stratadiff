@@ -59,7 +59,7 @@ case "${1:-}" in
       index=$((index + 1))
     done
     if [[ "${format}" == json ]]; then
-      payload='{"schema":"stratadiff-review-inbox-v2","summary":{"status":"actionable"}}'
+      payload='{"schema":"stratadiff-review-inbox-v3","summary":{"status":"actionable"}}'
     else
       payload='# StrataDiff Review Inbox'
     fi

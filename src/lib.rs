@@ -8,6 +8,8 @@ pub mod diffbenchmark_prediction;
 pub mod github;
 pub mod github_check;
 pub mod github_ownership;
+pub mod inbox_decision;
+pub mod inbox_event;
 pub mod ledger;
 mod matcher;
 pub mod ownership;

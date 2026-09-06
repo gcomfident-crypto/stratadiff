@@ -1660,7 +1660,7 @@ dependencies = [
 
 [[package]]
 name = "stratadiff"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1691,7 +1691,7 @@ dependencies = [
 
 [[package]]
 name = "stratadiff-core"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1729,7 +1729,7 @@ dependencies = [
 
 [[package]]
 name = "stratadiff-verifier"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "base64",
