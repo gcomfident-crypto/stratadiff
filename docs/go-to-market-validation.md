@@ -296,6 +296,7 @@ participant consent, keep its pseudonymous raw log private, and export only the 
 ```text
 baseline
   -> gap_discovery
+  -> inbox_delivery
   -> resume_invoked
   -> transition_bound
   -> covered_transition
@@ -307,8 +308,11 @@ Definitions:
 
 - `baseline`: one successful Inbox collection recorded counts and whether its queue was complete.
   It is not evidence of a clean installation or of a failed scan that never reached collection.
-- `gap_discovery`: Inbox emitted one exact, pseudonymous transition for a completed review whose
-  checkpoint differs from the current head.
+- `gap_discovery`: Inbox found one exact, pseudonymous transition for a completed review whose
+  checkpoint differs from the current head. This pre-output event does not claim delivery.
+- `inbox_delivery`: the selected output sink accepted and flushed the complete Inbox. One marker
+  confirms delivery for all discoveries in that scan; it does not prove that a person read them.
+  A missing marker means delivery is unconfirmed, not necessarily that output failed.
 - `resume_invoked`: the user deliberately selected Resume; a fresh random attempt ID is recorded
   before network and Git work starts.
 - `transition_bound`: Resume revalidated that the attempt still names the same host, repository,
@@ -329,14 +333,15 @@ formal review, but those are not implemented in this instrument.
 Every funnel rate must publish its denominator. In particular:
 
 ```text
-gap-to-resume       = unique resumed transitions / unique discovered transitions
+delivered-gap-to-resume = unique transitions both delivered and resumed / unique delivered transitions
 resume-to-covered  = covered attempts / resume attempts
 covered-to-ready   = workbench-ready attempts / covered attempts
 resume-to-ready    = workbench-ready attempts / resume attempts
 ```
 
-This instrumentation cannot yet measure clean-install activation, repeat use by participant, or
-week-four retention. Do not infer those claims from the post-discovery funnel.
+This instrumentation cannot yet measure clean-install activation, human attention to delivered
+output, repeat use by participant, or week-four retention. Do not infer those claims from the
+post-delivery funnel.
 
 ## Four-week pilot
 
@@ -459,7 +464,7 @@ screen does not waive that study.
 1. Publish and clean-machine test the first immutable release from the existing standalone
    `gh-stratadiff` repository; do not announce it as remotely installable before that release works.
 2. Finish and release-test the local consent-based funnel and immutable event/attempt IDs before
-   recruiting anyone; the current instrument measures only post-discovery activation.
+   recruiting anyone; the current instrument measures only delivery-confirmed activation.
 3. Add a Rust conformance adapter for the 60-case target-semantic Inbox corpus, then freeze at least
    30 live/adversarial Inbox-to-Resume cases covering pagination, missing objects, base drift,
    dropped reviewed changes, and explicit failures.

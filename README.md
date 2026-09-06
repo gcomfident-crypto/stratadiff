@@ -294,13 +294,17 @@ stratadiff inbox --value-log /absolute/private/path/value-funnel.jsonl
 stratadiff value-report /absolute/private/path/value-funnel.jsonl
 ```
 
-The append-only JSONL integrity chain records `baseline`, `gap_discovery`, `resume_invoked`,
-`transition_bound`, `covered_transition`, `workbench_ready`, and staged failures. `value-report`
-verifies every event digest and chain link, then exports aggregate conversion and failure counts plus
-schema/tool metadata and the chain tip, but no transition IDs. The chain tip can correlate repeated
-exports of the same log. The chain detects accidental edits and reordered events; its reported tip
-must be anchored externally if a pilot needs to detect malicious rewriting or removal of a valid
-tail.
+The append-only JSONL integrity chain records `baseline`, internal `gap_discovery`, confirmed
+`inbox_delivery`, `resume_invoked`, `transition_bound`, `covered_transition`, `workbench_ready`, and
+staged failures. A discovery is recorded before output and does not claim that the user received it.
+`inbox_delivery` is appended only after the complete Inbox was written and flushed to its selected
+output sink; it still does not prove that a person read the result. A scan without that marker has
+unconfirmed delivery. `value-report` keeps discovered and delivery-confirmed gaps separate and uses
+only delivery-confirmed gaps in its delivered-gap-to-Resume conversion. It verifies every event
+digest and chain link, then exports aggregate conversion and failure counts plus schema/tool metadata
+and the chain tip, but no transition IDs. The chain tip can correlate repeated exports of the same
+log. The chain detects accidental edits and reordered events; its reported tip must be anchored
+externally if a pilot needs to detect malicious rewriting or removal of a valid tail.
 These observations measure product activation, not time savings, defect recall, market prevalence,
 or approval safety. Resume's private log path and pseudonymous IDs are passed to its local child
 process; same-user process inspection is therefore inside the current local threat boundary.

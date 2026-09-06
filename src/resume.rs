@@ -1804,8 +1804,15 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("value.jsonl");
         let transition_id = "a".repeat(64);
-        value_funnel::record_inbox(&path, true, 1, 1, std::slice::from_ref(&transition_id))
-            .unwrap();
+        let scan_id = value_funnel::record_inbox_discovery(
+            &path,
+            true,
+            1,
+            1,
+            std::slice::from_ref(&transition_id),
+        )
+        .unwrap();
+        value_funnel::record_inbox_delivery(&path, &scan_id).unwrap();
         let attempt_id = value_funnel::record_resume_invoked(&path, &transition_id).unwrap();
         let interrupted = anyhow::Error::new(Interrupted::new(libc::SIGINT));
         assert!(

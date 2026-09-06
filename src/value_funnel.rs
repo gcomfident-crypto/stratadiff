@@ -86,6 +86,9 @@ enum FunnelEvent {
         scan_id: String,
         transition_id: String,
     },
+    InboxDelivery {
+        scan_id: String,
+    },
     ResumeInvoked {
         transition_id: String,
         attempt_id: String,
@@ -153,11 +156,15 @@ struct ClaimBoundary {
 struct ReportSummary {
     scans: u64,
     partial_scans: u64,
+    delivery_confirmed_scans: u64,
+    delivery_unconfirmed_scans: u64,
     inspected_candidates: u64,
     completed_review_checkpoints: u64,
     covered_transitions: u64,
     gap_discoveries: u64,
     unique_gap_transitions: u64,
+    delivered_gap_discoveries: u64,
+    unique_delivered_gap_transitions: u64,
     unique_resumed_transitions: u64,
     unique_ready_transitions: u64,
     resume_attempts: u64,
@@ -169,7 +176,7 @@ struct ReportSummary {
 
 #[derive(Debug, Serialize)]
 struct ReportConversion {
-    gap_to_resume: Rate,
+    delivered_gap_to_resume: Rate,
     resume_attempt_to_covered_transition: Rate,
     covered_transition_to_workbench_ready: Rate,
     resume_attempt_to_workbench_ready: Rate,
@@ -208,6 +215,7 @@ struct FunnelValidationState {
 struct ScanValidationState {
     completed_review_prs: u64,
     gap_count: u64,
+    delivery_confirmed: bool,
 }
 
 struct AttemptValidationState {
@@ -255,6 +263,7 @@ impl FunnelValidationState {
                             ScanValidationState {
                                 completed_review_prs: *completed_review_prs,
                                 gap_count: 0,
+                                delivery_confirmed: false,
                             },
                         )
                         .is_none(),
@@ -270,11 +279,26 @@ impl FunnelValidationState {
                     .get_mut(scan_id)
                     .context("gap discovery is missing its scan baseline")?;
                 ensure!(
+                    !scan.delivery_confirmed,
+                    "gap discovery follows delivery confirmation for its scan"
+                );
+                ensure!(
                     scan.gap_count < scan.completed_review_prs,
                     "gap discovery count exceeds completed reviews for its scan"
                 );
                 scan.gap_count += 1;
                 self.gaps.insert(transition_id.clone());
+            }
+            FunnelEvent::InboxDelivery { scan_id } => {
+                let scan = self
+                    .scans
+                    .get_mut(scan_id)
+                    .context("Inbox delivery is missing its scan baseline")?;
+                ensure!(
+                    !scan.delivery_confirmed,
+                    "value log contains a duplicate Inbox delivery"
+                );
+                scan.delivery_confirmed = true;
             }
             FunnelEvent::ResumeInvoked {
                 transition_id,
@@ -391,8 +415,8 @@ pub(crate) fn canonical_log_path(path: &Path) -> Result<PathBuf> {
     ensure!(
         canonical_text
             .chars()
-            .all(|character| !character.is_control() && character != '`'),
-        "value log path contains a control character or backtick"
+            .all(|character| !crate::is_terminal_unsafe(character) && character != '`'),
+        "value log path contains a terminal-unsafe character or backtick"
     );
     if let Ok(metadata) = fs::symlink_metadata(&canonical) {
         ensure!(
@@ -452,7 +476,7 @@ pub(crate) fn transition_id(identity: &TransitionIdentity<'_>) -> String {
     hex(&hasher.finalize())
 }
 
-pub(crate) fn record_inbox(
+pub(crate) fn record_inbox_discovery(
     path: &Path,
     collection_complete: bool,
     inspected_candidates: usize,
@@ -487,6 +511,16 @@ pub(crate) fn record_inbox(
     }
     append_events(path, events)?;
     Ok(scan_id)
+}
+
+pub(crate) fn record_inbox_delivery(path: &Path, scan_id: &str) -> Result<()> {
+    require_sha256(scan_id, "scan ID")?;
+    append_events(
+        path,
+        vec![FunnelEvent::InboxDelivery {
+            scan_id: scan_id.to_owned(),
+        }],
+    )
 }
 
 pub(crate) fn record_resume_invoked(path: &Path, transition_id: &str) -> Result<String> {
@@ -624,7 +658,10 @@ pub(crate) fn run(args: ValueReportArgs) -> Result<()> {
     };
     if let Some(path) = args.output {
         write_private(&path, &bytes)?;
-        eprintln!("wrote aggregate value report to {}", path.display());
+        eprintln!(
+            "wrote aggregate value report to {}",
+            crate::display_path(&path)
+        );
     } else {
         let mut stdout = std::io::stdout().lock();
         stdout.write_all(&bytes)?;
@@ -640,14 +677,13 @@ fn append_events(path: &Path, requested: Vec<FunnelEvent>) -> Result<()> {
         !requested.is_empty(),
         "value log append must contain an event"
     );
-    let mut file = open_log(path, true)?;
-    lock_exclusive(&file)?;
-    let result = append_events_locked(&mut file, requested);
+    let mut file = open_current_log_locked(path, true, lock_exclusive)?;
+    let result = append_events_locked(path, &mut file, requested);
     unlock(&file);
     result
 }
 
-fn append_events_locked(file: &mut File, requested: Vec<FunnelEvent>) -> Result<()> {
+fn append_events_locked(path: &Path, file: &mut File, requested: Vec<FunnelEvent>) -> Result<()> {
     file.seek(SeekFrom::Start(0))?;
     let mut bytes = Vec::new();
     file.take((MAX_LOG_BYTES + 1) as u64)
@@ -729,15 +765,12 @@ fn append_events_locked(file: &mut File, requested: Vec<FunnelEvent>) -> Result<
         new_size <= MAX_LOG_BYTES,
         "value log exceeds its {MAX_LOG_BYTES}-byte limit"
     );
-    file.seek(SeekFrom::End(0))?;
-    file.write_all(&encoded)?;
-    file.sync_all()?;
-    Ok(())
+    bytes.extend_from_slice(&encoded);
+    replace_log_atomically(path, file, &bytes)
 }
 
 fn read_log_path(path: &Path) -> Result<VerifiedLog> {
-    let file = open_log(path, false)?;
-    lock_shared(&file)?;
+    let file = open_current_log_locked(path, false, lock_shared)?;
     read_locked(file)
 }
 
@@ -894,6 +927,9 @@ fn validate_payload(event: &FunnelEvent) -> Result<()> {
             require_sha256(scan_id, "scan ID")?;
             require_sha256(transition_id, "transition ID")?;
         }
+        FunnelEvent::InboxDelivery { scan_id } => {
+            require_sha256(scan_id, "scan ID")?;
+        }
         FunnelEvent::CoveredTransition {
             transition_id,
             attempt_id,
@@ -951,7 +987,9 @@ fn has_attempt(
                 attempt_id: candidate_attempt,
                 ..
             } => candidate_transition == transition_id && candidate_attempt == attempt_id,
-            FunnelEvent::Baseline { .. } | FunnelEvent::GapDiscovery { .. } => false,
+            FunnelEvent::Baseline { .. }
+            | FunnelEvent::GapDiscovery { .. }
+            | FunnelEvent::InboxDelivery { .. } => false,
         };
         matches_identity && predicate(&event.event)
     })
@@ -964,6 +1002,8 @@ fn build_report(log: &VerifiedLog) -> Result<ValueReport> {
     let mut completed_review_checkpoints = 0_u64;
     let mut gap_discoveries = 0_u64;
     let mut gaps = HashSet::new();
+    let mut gaps_by_scan = HashMap::<String, Vec<String>>::new();
+    let mut delivery_confirmed_scan_ids = HashSet::new();
     let mut resumed_transitions = HashSet::new();
     let mut covered_transitions = HashSet::new();
     let mut ready_transitions = HashSet::new();
@@ -1007,11 +1047,21 @@ fn build_report(log: &VerifiedLog) -> Result<ValueReport> {
                 covered_transitions.insert(transition_id.clone());
                 covered_attempts.insert(attempt_id.clone());
             }
-            FunnelEvent::GapDiscovery { transition_id, .. } => {
+            FunnelEvent::GapDiscovery {
+                scan_id,
+                transition_id,
+            } => {
                 gap_discoveries = gap_discoveries
                     .checked_add(1)
                     .context("gap discovery count overflow")?;
                 gaps.insert(transition_id.clone());
+                gaps_by_scan
+                    .entry(scan_id.clone())
+                    .or_default()
+                    .push(transition_id.clone());
+            }
+            FunnelEvent::InboxDelivery { scan_id } => {
+                delivery_confirmed_scan_ids.insert(scan_id.clone());
             }
             FunnelEvent::ResumeInvoked {
                 transition_id,
@@ -1079,8 +1129,34 @@ fn build_report(log: &VerifiedLog) -> Result<ValueReport> {
         "failed attempts are not a subset of resume attempts"
     );
     let unique_gap_transitions = u64::try_from(gaps.len()).context("gap count overflow")?;
+    let delivery_confirmed_scans = u64::try_from(delivery_confirmed_scan_ids.len())
+        .context("delivery-confirmed scan count overflow")?;
+    let delivery_unconfirmed_scans = scans
+        .checked_sub(delivery_confirmed_scans)
+        .context("delivery-confirmed scan count exceeds scan count")?;
+    let mut delivered_gap_discoveries = 0_u64;
+    let mut delivered_gap_transitions = HashSet::new();
+    for scan_id in &delivery_confirmed_scan_ids {
+        if let Some(transition_ids) = gaps_by_scan.get(scan_id) {
+            delivered_gap_discoveries = delivered_gap_discoveries
+                .checked_add(
+                    u64::try_from(transition_ids.len())
+                        .context("delivered gap discovery count overflow")?,
+                )
+                .context("delivered gap discovery count overflow")?;
+            delivered_gap_transitions.extend(transition_ids.iter().cloned());
+        }
+    }
+    let unique_delivered_gap_transitions = u64::try_from(delivered_gap_transitions.len())
+        .context("delivered gap transition count overflow")?;
     let unique_resumed_transitions =
         u64::try_from(resumed_transitions.len()).context("resumed transition count overflow")?;
+    let delivered_resumed_transitions = u64::try_from(
+        resumed_transitions
+            .intersection(&delivered_gap_transitions)
+            .count(),
+    )
+    .context("delivered resumed transition count overflow")?;
     let covered_transition_count =
         u64::try_from(covered_transitions.len()).context("covered transition count overflow")?;
     let unique_ready_transitions =
@@ -1128,11 +1204,15 @@ fn build_report(log: &VerifiedLog) -> Result<ValueReport> {
         summary: ReportSummary {
             scans,
             partial_scans,
+            delivery_confirmed_scans,
+            delivery_unconfirmed_scans,
             inspected_candidates,
             completed_review_checkpoints,
             covered_transitions: covered_transition_count,
             gap_discoveries,
             unique_gap_transitions,
+            delivered_gap_discoveries,
+            unique_delivered_gap_transitions,
             unique_resumed_transitions,
             unique_ready_transitions,
             resume_attempts: resume_attempt_count,
@@ -1142,7 +1222,10 @@ fn build_report(log: &VerifiedLog) -> Result<ValueReport> {
             unresolved_attempts: unresolved_attempt_count,
         },
         conversion: ReportConversion {
-            gap_to_resume: rate(unique_resumed_transitions, unique_gap_transitions),
+            delivered_gap_to_resume: rate(
+                delivered_resumed_transitions,
+                unique_delivered_gap_transitions,
+            ),
             resume_attempt_to_covered_transition: rate(covered_attempt_count, resume_attempt_count),
             covered_transition_to_workbench_ready: rate(ready_attempt_count, covered_attempt_count),
             resume_attempt_to_workbench_ready: rate(ready_attempt_count, resume_attempt_count),
@@ -1180,13 +1263,17 @@ fn render_markdown(report: &ValueReport) -> String {
         None => "undefined".to_owned(),
     };
     format!(
-        "# StrataDiff local value funnel\n\n- Scans: {} ({} partial)\n- Inspected candidates: {}\n- Completed-review checkpoints: {}\n- Gap discoveries: {} ({} unique transitions)\n- Unique resumed transitions: {}\n- Unique covered transitions: {}\n- Unique ready transitions: {}\n- Resume attempts: {}\n- Transition-bound attempts: {}\n- Covered attempts: {}\n- Workbench-ready attempts: {}\n- Unresolved attempts: {}\n- Terminal failures: {} ({} before binding, {} before coverage, {} before readiness, {} after readiness)\n- Gap → Resume: {}\n- Resume attempt → covered transition: {}\n- Covered transition → workbench ready: {}\n- Resume attempt → workbench ready: {}\n\nChain tip: `{}`\n\nUnresolved attempts may still be running or may have ended without a recorded terminal event. This aggregate supports only the explicitly recorded local activation funnel after a gap was discovered. It does not establish clean-install success, reviewer time savings, issue recall, or market prevalence. No event is uploaded automatically.\n",
+        "# StrataDiff local value funnel\n\n- Scans: {} ({} partial; {} output-delivery confirmed, {} unconfirmed)\n- Inspected candidates: {}\n- Completed-review checkpoints: {}\n- Gap discoveries: {} ({} unique transitions)\n- Delivered gap discoveries: {} ({} unique transitions)\n- Unique resumed transitions: {}\n- Unique covered transitions: {}\n- Unique ready transitions: {}\n- Resume attempts: {}\n- Transition-bound attempts: {}\n- Covered attempts: {}\n- Workbench-ready attempts: {}\n- Unresolved attempts: {}\n- Terminal failures: {} ({} before binding, {} before coverage, {} before readiness, {} after readiness)\n- Delivered gap → Resume: {}\n- Resume attempt → covered transition: {}\n- Covered transition → workbench ready: {}\n- Resume attempt → workbench ready: {}\n\nChain tip: `{}`\n\nAn `inbox_delivery` confirms only that the selected output sink accepted the complete Inbox bytes; it does not prove that a person read them. A scan without that event has unconfirmed delivery, which may reflect an output failure, interruption, or a later logging failure. Unresolved Resume attempts may still be running or may have ended without a recorded terminal event. This aggregate supports only the explicitly recorded local activation funnel after confirmed Inbox delivery. It does not establish clean-install success, reviewer time savings, issue recall, or market prevalence. No event is uploaded automatically.\n",
         report.summary.scans,
         report.summary.partial_scans,
+        report.summary.delivery_confirmed_scans,
+        report.summary.delivery_unconfirmed_scans,
         report.summary.inspected_candidates,
         report.summary.completed_review_checkpoints,
         report.summary.gap_discoveries,
         report.summary.unique_gap_transitions,
+        report.summary.delivered_gap_discoveries,
+        report.summary.unique_delivered_gap_transitions,
         report.summary.unique_resumed_transitions,
         report.summary.covered_transitions,
         report.summary.unique_ready_transitions,
@@ -1200,7 +1287,7 @@ fn render_markdown(report: &ValueReport) -> String {
         report.failures.before_coverage,
         report.failures.before_workbench_ready,
         report.failures.after_workbench_ready,
-        format_rate(&report.conversion.gap_to_resume),
+        format_rate(&report.conversion.delivered_gap_to_resume),
         format_rate(&report.conversion.resume_attempt_to_covered_transition),
         format_rate(&report.conversion.covered_transition_to_workbench_ready),
         format_rate(&report.conversion.resume_attempt_to_workbench_ready),
@@ -1213,6 +1300,7 @@ fn event_kind(event: &FunnelEvent) -> &'static str {
         FunnelEvent::Baseline { .. } => "baseline",
         FunnelEvent::CoveredTransition { .. } => "covered_transition",
         FunnelEvent::GapDiscovery { .. } => "gap_discovery",
+        FunnelEvent::InboxDelivery { .. } => "inbox_delivery",
         FunnelEvent::ResumeInvoked { .. } => "resume_invoked",
         FunnelEvent::TransitionBound { .. } => "transition_bound",
         FunnelEvent::WorkbenchReady { .. } => "workbench_ready",
@@ -1227,6 +1315,7 @@ fn business_key(event: &FunnelEvent) -> String {
             scan_id,
             transition_id,
         } => format!("{scan_id}\0{transition_id}"),
+        FunnelEvent::InboxDelivery { scan_id } => scan_id.clone(),
         FunnelEvent::CoveredTransition { attempt_id, .. }
         | FunnelEvent::ResumeInvoked { attempt_id, .. }
         | FunnelEvent::TransitionBound { attempt_id, .. }
@@ -1291,6 +1380,35 @@ fn open_log(path: &Path, create: bool) -> Result<File> {
     Ok(file)
 }
 
+fn open_current_log_locked(
+    path: &Path,
+    create: bool,
+    lock: fn(&File) -> Result<()>,
+) -> Result<File> {
+    loop {
+        let file = open_log(path, create)?;
+        lock(&file)?;
+        if log_path_matches_file(path, &file)? {
+            return Ok(file);
+        }
+        unlock(&file);
+    }
+}
+
+#[cfg(unix)]
+fn log_path_matches_file(path: &Path, file: &File) -> Result<bool> {
+    let path_metadata = fs::symlink_metadata(path)?;
+    let file_metadata = file.metadata()?;
+    Ok(path_metadata.file_type().is_file()
+        && path_metadata.dev() == file_metadata.dev()
+        && path_metadata.ino() == file_metadata.ino())
+}
+
+#[cfg(not(unix))]
+fn log_path_matches_file(_path: &Path, _file: &File) -> Result<bool> {
+    Ok(true)
+}
+
 #[cfg(unix)]
 fn lock_exclusive(file: &File) -> Result<()> {
     let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
@@ -1325,6 +1443,54 @@ fn unlock(file: &File) {
 #[cfg(not(unix))]
 fn unlock(_file: &File) {}
 
+fn replace_log_atomically(path: &Path, locked: &File, bytes: &[u8]) -> Result<()> {
+    replace_log_atomically_with(path, locked, bytes, |temporary, replacement| {
+        temporary.write_all(replacement)?;
+        temporary.as_file().sync_all()?;
+        Ok(())
+    })
+}
+
+fn replace_log_atomically_with(
+    path: &Path,
+    locked: &File,
+    bytes: &[u8],
+    stage: impl FnOnce(&mut tempfile::NamedTempFile, &[u8]) -> Result<()>,
+) -> Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".stratadiff-value-log-")
+        .tempfile_in(parent)
+        .with_context(|| {
+            format!(
+                "failed to create temporary value log beside {}",
+                path.display()
+            )
+        })?;
+    stage(&mut temporary, bytes).context("failed to stage complete value-log transaction")?;
+    ensure!(
+        temporary.as_file().metadata()?.len() == u64::try_from(bytes.len())?,
+        "temporary value-log transaction has an incomplete byte count"
+    );
+    ensure!(
+        log_path_matches_file(path, locked)?,
+        "value log changed while its transaction was staged"
+    );
+    temporary
+        .persist(path)
+        .map_err(|error| error.error)
+        .with_context(|| format!("failed to commit local value log {}", path.display()))?;
+    #[cfg(unix)]
+    File::open(parent)
+        .with_context(|| format!("failed to open value log directory {}", parent.display()))?
+        .sync_all()
+        .with_context(|| format!("failed to sync value log directory {}", parent.display()))?;
+    Ok(())
+}
+
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
@@ -1351,7 +1517,11 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, Instant};
+    use std::{
+        sync::{Arc, Barrier},
+        thread,
+        time::{Duration, Instant},
+    };
 
     use super::*;
 
@@ -1437,12 +1607,104 @@ mod tests {
     }
 
     #[test]
+    fn failed_transaction_staging_never_publishes_a_valid_partial_batch() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("value.jsonl");
+        record_inbox_discovery(&path, true, 0, 0, &[]).unwrap();
+        let before = fs::read(&path).unwrap();
+        let verified = verify_log_bytes(&before).unwrap();
+        let mut replacement = before.clone();
+        let mut chain_tip = verified.chain_tip;
+        let sequence = u64::try_from(verified.events.len()).unwrap() + 1;
+        let scan_id = transition('1');
+        push_encoded_event(
+            &mut replacement,
+            &mut chain_tip,
+            sequence,
+            FunnelEvent::Baseline {
+                scan_id: scan_id.clone(),
+                inspected_candidates: 1,
+                completed_review_prs: 1,
+                collection_complete: true,
+            },
+        );
+        let valid_partial_len = replacement.len();
+        push_encoded_event(
+            &mut replacement,
+            &mut chain_tip,
+            sequence + 1,
+            FunnelEvent::GapDiscovery {
+                scan_id,
+                transition_id: transition('2'),
+            },
+        );
+        assert!(verify_log_bytes(&replacement[..valid_partial_len]).is_ok());
+
+        let file = open_current_log_locked(&path, true, lock_exclusive).unwrap();
+        let error = replace_log_atomically_with(&path, &file, &replacement, |temporary, bytes| {
+            temporary.write_all(&bytes[..valid_partial_len])?;
+            Err(std::io::Error::from_raw_os_error(libc::ENOSPC).into())
+        })
+        .unwrap_err();
+        unlock(&file);
+        assert!(error.to_string().contains("failed to stage"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+        assert_eq!(read_log_path(&path).unwrap().events.len(), 1);
+
+        let file = open_current_log_locked(&path, true, lock_exclusive).unwrap();
+        let error = replace_log_atomically_with(&path, &file, &replacement, |temporary, bytes| {
+            temporary.write_all(bytes)?;
+            anyhow::bail!("injected sync failure")
+        })
+        .unwrap_err();
+        unlock(&file);
+        assert!(error.to_string().contains("failed to stage"));
+        assert_eq!(fs::read(&path).unwrap(), before);
+    }
+
+    #[test]
+    fn concurrent_atomic_appends_preserve_every_event() {
+        const WORKERS: usize = 16;
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("value.jsonl");
+        let transition_id = transition('3');
+        let scan_id =
+            record_inbox_discovery(&path, true, 1, 1, std::slice::from_ref(&transition_id))
+                .unwrap();
+        record_inbox_delivery(&path, &scan_id).unwrap();
+        let barrier = Arc::new(Barrier::new(WORKERS));
+        let handles = (0..WORKERS)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                let path = path.clone();
+                let transition_id = transition_id.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    record_resume_invoked(&path, &transition_id).unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        let attempts = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<HashSet<_>>();
+        assert_eq!(attempts.len(), WORKERS);
+        let log = read_log_path(&path).unwrap();
+        assert_eq!(log.events.len(), WORKERS + 3);
+        assert_eq!(
+            build_report(&log).unwrap().summary.resume_attempts,
+            u64::try_from(WORKERS).unwrap()
+        );
+    }
+
+    #[test]
     fn funnel_is_local_aggregate_and_integrity_chained() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("value.jsonl");
         let first = transition('a');
         let second = transition('b');
-        record_inbox(&path, true, 4, 3, &[first.clone(), second]).unwrap();
+        let scan_id = record_inbox_discovery(&path, true, 4, 3, &[first.clone(), second]).unwrap();
+        record_inbox_delivery(&path, &scan_id).unwrap();
         let attempt_id = record_resume_invoked(&path, &first).unwrap();
         record_transition_bound(&path, &first, &attempt_id).unwrap();
         record_covered_transition(&path, &first, &attempt_id).unwrap();
@@ -1451,10 +1713,14 @@ mod tests {
         let log = read_log_path(&path).unwrap();
         let report = build_report(&log).unwrap();
         assert_eq!(report.summary.scans, 1);
+        assert_eq!(report.summary.delivery_confirmed_scans, 1);
+        assert_eq!(report.summary.delivery_unconfirmed_scans, 0);
         assert_eq!(report.summary.inspected_candidates, 4);
         assert_eq!(report.summary.completed_review_checkpoints, 3);
         assert_eq!(report.summary.covered_transitions, 1);
         assert_eq!(report.summary.unique_gap_transitions, 2);
+        assert_eq!(report.summary.delivered_gap_discoveries, 2);
+        assert_eq!(report.summary.unique_delivered_gap_transitions, 2);
         assert_eq!(report.summary.unique_resumed_transitions, 1);
         assert_eq!(report.summary.unique_ready_transitions, 1);
         assert_eq!(report.summary.resume_attempts, 1);
@@ -1462,7 +1728,10 @@ mod tests {
         assert_eq!(report.summary.covered_attempts, 1);
         assert_eq!(report.summary.workbench_ready_attempts, 1);
         assert_eq!(report.summary.unresolved_attempts, 0);
-        assert_eq!(report.conversion.gap_to_resume.basis_points, Some(5_000));
+        assert_eq!(
+            report.conversion.delivered_gap_to_resume.basis_points,
+            Some(5_000)
+        );
         assert_eq!(
             report
                 .conversion
@@ -1494,7 +1763,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("value.jsonl");
         let id = transition('c');
-        record_inbox(&path, false, 1, 1, std::slice::from_ref(&id)).unwrap();
+        record_inbox_discovery(&path, false, 1, 1, std::slice::from_ref(&id)).unwrap();
         let before = fs::read(&path).unwrap();
         let first_attempt = record_resume_invoked(&path, &id).unwrap();
         let once = fs::read(&path).unwrap();
@@ -1509,6 +1778,12 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), bound_once);
         let report = build_report(&read_log_path(&path).unwrap()).unwrap();
         assert_eq!(report.summary.unresolved_attempts, 2);
+        assert_eq!(report.summary.delivery_unconfirmed_scans, 1);
+        assert_eq!(report.summary.unique_delivered_gap_transitions, 0);
+        assert_eq!(
+            report.conversion.delivered_gap_to_resume.status,
+            "undefined"
+        );
 
         let unknown = transition('d');
         let error = record_resume_invoked(&path, &unknown).unwrap_err();
@@ -1533,13 +1808,43 @@ mod tests {
     }
 
     #[test]
+    fn delivery_conversion_excludes_resumes_from_unconfirmed_scans() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("value.jsonl");
+        let unconfirmed = transition('4');
+        record_inbox_discovery(&path, true, 1, 1, std::slice::from_ref(&unconfirmed)).unwrap();
+
+        // Optional instrumentation must not block a Resume command the user already received.
+        record_resume_invoked(&path, &unconfirmed).unwrap();
+
+        let delivered = transition('5');
+        let delivered_scan =
+            record_inbox_discovery(&path, true, 1, 1, std::slice::from_ref(&delivered)).unwrap();
+        record_inbox_delivery(&path, &delivered_scan).unwrap();
+
+        let report = build_report(&read_log_path(&path).unwrap()).unwrap();
+        assert_eq!(report.summary.unique_resumed_transitions, 1);
+        assert_eq!(report.summary.unique_delivered_gap_transitions, 1);
+        assert_eq!(report.conversion.delivered_gap_to_resume.numerator, 0);
+        assert_eq!(report.conversion.delivered_gap_to_resume.denominator, 1);
+        assert_eq!(
+            report.conversion.delivered_gap_to_resume.basis_points,
+            Some(0)
+        );
+    }
+
+    #[test]
     fn zero_denominators_remain_explicitly_undefined() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("value.jsonl");
-        record_inbox(&path, true, 0, 0, &[]).unwrap();
+        let scan_id = record_inbox_discovery(&path, true, 0, 0, &[]).unwrap();
+        record_inbox_delivery(&path, &scan_id).unwrap();
         let report = build_report(&read_log_path(&path).unwrap()).unwrap();
-        assert_eq!(report.conversion.gap_to_resume.status, "undefined");
-        assert_eq!(report.conversion.gap_to_resume.basis_points, None);
+        assert_eq!(
+            report.conversion.delivered_gap_to_resume.status,
+            "undefined"
+        );
+        assert_eq!(report.conversion.delivered_gap_to_resume.basis_points, None);
         assert_eq!(
             report.conversion.resume_attempt_to_workbench_ready.status,
             "undefined"
@@ -1551,7 +1856,7 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("value.jsonl");
         let id = transition('f');
-        record_inbox(&path, true, 1, 1, std::slice::from_ref(&id)).unwrap();
+        record_inbox_discovery(&path, true, 1, 1, std::slice::from_ref(&id)).unwrap();
         let attempt_id = record_resume_invoked(&path, &id).unwrap();
         assert!(!attempt_reached_workbench_ready(&path, &id, &attempt_id).unwrap());
         record_attempt_failed(&path, &id, &attempt_id).unwrap();
@@ -1568,7 +1873,7 @@ mod tests {
         );
 
         let oversized = directory.path().join("oversized.jsonl");
-        let error = record_inbox(&oversized, true, 101, 0, &[]).unwrap_err();
+        let error = record_inbox_discovery(&oversized, true, 101, 0, &[]).unwrap_err();
         assert!(error.to_string().contains("exceeds 100"));
     }
 }

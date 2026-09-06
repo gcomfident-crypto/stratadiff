@@ -596,30 +596,42 @@ pub(crate) fn run(args: InboxArgs) -> Result<()> {
         InboxFormat::Markdown => render_markdown(&inbox).into_bytes(),
         InboxFormat::Json => serde_json::to_vec(&inbox)?,
     };
-    if let Some(path) = &value_log {
+    let value_scan_id = if let Some(path) = &value_log {
         let transition_ids = inbox
             .actionable
             .iter()
             .map(|item| item.value_transition_id.clone())
             .collect::<Vec<_>>();
-        value_funnel::record_inbox(
+        Some(value_funnel::record_inbox_discovery(
             path,
             inbox.collection.status == "complete",
             inbox.collection.inspected_candidates,
             inbox.summary.completed_review_prs,
             &transition_ids,
-        )?;
-    }
+        )?)
+    } else {
+        None
+    };
     if let Some(path) = args.output {
         write_private(&path, &bytes)?;
-        eprintln!("wrote review inbox to {}", path.display());
+        eprintln!("wrote review inbox to {}", crate::display_path(&path));
     } else {
         let mut stdout = std::io::stdout().lock();
-        stdout.write_all(&bytes)?;
+        match args.format {
+            InboxFormat::Markdown => stdout.write_all(&bytes)?,
+            InboxFormat::Json => {
+                stdout.write_all(crate::escape_terminal_unsafe_json(&bytes).as_bytes())?
+            }
+        }
         if !bytes.ends_with(b"\n") {
             stdout.write_all(b"\n")?;
         }
         stdout.flush()?;
+    }
+    if let (Some(path), Some(scan_id)) = (&value_log, &value_scan_id) {
+        value_funnel::record_inbox_delivery(path, scan_id).with_context(|| {
+            "review Inbox output was delivered, but its local value-log delivery confirmation failed"
+        })?;
     }
     Ok(())
 }
@@ -1602,6 +1614,7 @@ fn render_markdown(inbox: &ReviewInbox) -> String {
         output.push_str("| Pull request | Updated | Checkpoint → head | Resume |\n");
         output.push_str("|---|---|---|---|\n");
         for item in &inbox.actionable {
+            let resume_command = crate::escape_terminal_unsafe_text(&shell_join(&item.resume_argv));
             output.push_str(&format!(
                 "| [`{}#{}`]({}) | `{}` | `{}…` → `{}…` | `{}` |\n",
                 item.repository,
@@ -1610,7 +1623,7 @@ fn render_markdown(inbox: &ReviewInbox) -> String {
                 item.updated_at,
                 &item.checkpoint.commit_id[..8],
                 &item.head_oid[..8],
-                shell_join(&item.resume_argv),
+                resume_command,
             ));
         }
     }
@@ -1674,6 +1687,11 @@ fn write_private(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
         .persist(path)
         .map_err(|error| error.error)
         .with_context(|| format!("failed to replace {}", path.display()))?;
+    #[cfg(unix)]
+    std::fs::File::open(parent)
+        .with_context(|| format!("failed to open output directory {}", parent.display()))?
+        .sync_all()
+        .with_context(|| format!("failed to sync output directory {}", parent.display()))?;
     Ok(())
 }
 
@@ -1725,17 +1743,49 @@ fn is_sha1(value: &str) -> bool {
 
 fn valid_timestamp(value: &str) -> bool {
     let bytes = value.as_bytes();
-    bytes.len() >= 20
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes[10] == b'T'
-        && bytes[13] == b':'
-        && bytes[16] == b':'
-        && bytes.last() == Some(&b'Z')
-        && bytes[..19]
+    let valid_fraction = match bytes.len() {
+        20 => true,
+        22..=30 => bytes[19] == b'.' && bytes[20..bytes.len() - 1].iter().all(u8::is_ascii_digit),
+        _ => false,
+    };
+    if !valid_fraction
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes.last() != Some(&b'Z')
+        || !bytes[..19]
             .iter()
             .enumerate()
             .all(|(index, byte)| matches!(index, 4 | 7 | 10 | 13 | 16) || byte.is_ascii_digit())
+    {
+        return false;
+    }
+
+    let year = u16::from(bytes[0] - b'0') * 1_000
+        + u16::from(bytes[1] - b'0') * 100
+        + u16::from(bytes[2] - b'0') * 10
+        + u16::from(bytes[3] - b'0');
+    let month = (bytes[5] - b'0') * 10 + bytes[6] - b'0';
+    let day = (bytes[8] - b'0') * 10 + bytes[9] - b'0';
+    let hour = (bytes[11] - b'0') * 10 + bytes[12] - b'0';
+    let minute = (bytes[14] - b'0') * 10 + bytes[15] - b'0';
+    let second = (bytes[17] - b'0') * 10 + bytes[18] - b'0';
+    let leap_year = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    let maximum_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap_year => 29,
+        2 => 28,
+        _ => return false,
+    };
+
+    day > 0
+        && day <= maximum_day
+        && hour <= 23
+        && minute <= 59
+        && (second <= 59 || (second == 60 && hour == 23 && minute == 59))
 }
 
 #[cfg(test)]
@@ -1866,5 +1916,33 @@ mod tests {
             ]),
             "stratadiff --value-log '/tmp/review pilot/value'\"'\"'s.jsonl'"
         );
+    }
+
+    #[test]
+    fn timestamps_match_the_public_schema_contract() {
+        for timestamp in [
+            "0000-01-01T00:00:00Z",
+            "2024-02-29T23:59:59.1Z",
+            "2026-09-06T01:02:03.123456789Z",
+            "2026-12-31T23:59:60Z",
+        ] {
+            assert!(valid_timestamp(timestamp), "rejected {timestamp}");
+        }
+
+        for timestamp in [
+            "2026-09-06T01:02:03ZsuffixZ",
+            "2026-09-06T01:02:03+00:00",
+            "2026-09-06T01:02:03.Z",
+            "2026-09-06T01:02:03.1234567890Z",
+            "2025-02-29T01:02:03Z",
+            "2026-00-06T01:02:03Z",
+            "2026-09-31T01:02:03Z",
+            "2026-09-06T24:02:03Z",
+            "2026-09-06T01:60:03Z",
+            "2026-09-06T01:02:60Z",
+            "2026-09-06t01:02:03z",
+        ] {
+            assert!(!valid_timestamp(timestamp), "accepted {timestamp}");
+        }
     }
 }

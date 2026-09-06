@@ -30,6 +30,7 @@
       "enum": [
         "baseline",
         "gap_discovery",
+        "inbox_delivery",
         "resume_invoked",
         "transition_bound",
         "covered_transition",
@@ -50,6 +51,12 @@
       "properties": {
         "kind": { "const": "gap_discovery" },
         "payload": { "$ref": "#/$defs/gap_discovery" }
+      }
+    },
+    {
+      "properties": {
+        "kind": { "const": "inbox_delivery" },
+        "payload": { "$ref": "#/$defs/inbox_delivery" }
       }
     },
     {
@@ -93,6 +100,14 @@
       "properties": {
         "scan_id": { "$ref": "#/$defs/sha256" },
         "transition_id": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "inbox_delivery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scan_id"],
+      "properties": {
+        "scan_id": { "$ref": "#/$defs/sha256" }
       }
     },
     "attempt": {

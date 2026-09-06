@@ -80,6 +80,9 @@ JSON
     exit 0
   fi
   if [[ "$joined" == *" number=18 "* ]]; then
+    if [[ -n "${STRATADIFF_TEST_REMOVE_OUTPUT_PARENT:-}" ]]; then
+      rmdir -- "${STRATADIFF_TEST_REMOVE_OUTPUT_PARENT}"
+    fi
     cat <<JSON
 {"data":{"viewer":{"id":"U_reviewer","login":"reviewer"},"repository":{"id":"R_widget","nameWithOwner":"acme/widget","url":"https://${host}/acme/widget","pullRequest":{"id":"PR_current","number":18,"state":"OPEN","url":"https://${host}/acme/widget/pull/18","isDraft":false,"updatedAt":"2026-09-06T00:00:02Z","headRefOid":"cccccccccccccccccccccccccccccccccccccccc","allReviews":{"totalCount":1},"reviews":{"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":"review-18"},"nodes":[{"id":"PRR_18","fullDatabaseId":"1801","state":"CHANGES_REQUESTED","submittedAt":"2026-09-05T00:00:01Z","url":"https://${host}/acme/widget/pull/18#pullrequestreview-1801","authorAssociation":"MEMBER","author":{"__typename":"User","login":"reviewer","id":"U_reviewer"},"commit":{"oid":"cccccccccccccccccccccccccccccccccccccccc"}}]}}},"rateLimit":{"cost":1,"remaining":4997,"resetAt":"2026-09-06T01:00:00Z"}}}
 JSON
@@ -327,6 +330,86 @@ fn review_limit_markdown_reports_insufficient_evidence_instead_of_clean() {
 }
 
 #[test]
+fn terminal_unsafe_value_log_paths_fail_before_output() {
+    let (json_directory, mut json_command) = inbox_command();
+    let format_control = '\u{202e}';
+    let json_log = json_directory
+        .path()
+        .join(format!("value-{format_control}-funnel.jsonl"));
+    let json_output = json_command
+        .arg("--value-log")
+        .arg(&json_log)
+        .output()
+        .unwrap();
+    assert!(!json_output.status.success());
+    assert!(json_output.stdout.is_empty());
+    let json_error = String::from_utf8(json_output.stderr).unwrap();
+    assert!(!json_error.contains(format_control));
+    assert!(json_error.contains("terminal-unsafe"));
+
+    let (markdown_directory, mut markdown_command) = inbox_command_with_format("markdown");
+    let markdown_log = markdown_directory
+        .path()
+        .join(format!("value-{format_control}-funnel.jsonl"));
+    let markdown_output = markdown_command
+        .arg("--value-log")
+        .arg(&markdown_log)
+        .output()
+        .unwrap();
+    assert!(!markdown_output.status.success());
+    assert!(markdown_output.stdout.is_empty());
+    let markdown_error = String::from_utf8(markdown_output.stderr).unwrap();
+    assert!(!markdown_error.contains(format_control));
+    assert!(markdown_error.contains("terminal-unsafe"));
+}
+
+#[test]
+fn inbox_output_success_message_is_terminal_safe() {
+    let (directory, mut command) = inbox_command();
+    let output_path = directory.path().join("inbox-\u{1b}[31m-\u{202e}.json");
+    let output = command.arg("--output").arg(&output_path).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.contains('\u{1b}'));
+    assert!(!stderr.contains('\u{202e}'));
+    assert!(stderr.contains("\\u001b"));
+    assert!(stderr.contains("\\u202e"));
+    let inbox: Value = serde_json::from_slice(&fs::read(output_path).unwrap()).unwrap();
+    assert_eq!(inbox["schema"], "stratadiff-review-inbox-v2");
+}
+
+#[test]
+fn value_report_rejects_terminal_unsafe_output_paths() {
+    let (directory, mut inbox_command) = inbox_command();
+    let log = directory.path().join("value-funnel.jsonl");
+    let inbox_output = inbox_command.arg("--value-log").arg(&log).output().unwrap();
+    assert!(
+        inbox_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&inbox_output.stderr)
+    );
+
+    let report_path = directory.path().join("report-\u{202e}.json");
+    let output = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .args(["value-report", log.to_str().unwrap(), "--format", "json"])
+        .arg("--output")
+        .arg(&report_path)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(!stderr.contains('\u{202e}'));
+    assert!(stderr.contains("terminal-unsafe"));
+    assert!(!report_path.exists());
+}
+
+#[test]
 fn opted_in_value_log_is_private_verifiable_and_aggregates_without_identity() {
     let (directory, mut command) = inbox_command();
     let log = directory.path().join("value-funnel.jsonl");
@@ -342,7 +425,7 @@ fn opted_in_value_log_is_private_verifiable_and_aggregates_without_identity() {
     assert!(!log_text.contains("acme/widget"));
     assert!(!log_text.contains("reviewer"));
     let lines = log_text.lines().collect::<Vec<_>>();
-    assert_eq!(lines.len(), 2);
+    assert_eq!(lines.len(), 3);
     let schema: Value =
         serde_json::from_str(include_str!("../schema/value-funnel-event-v1.schema.json")).unwrap();
     let validator = jsonschema::draft202012::new(&schema).unwrap();
@@ -355,9 +438,14 @@ fn opted_in_value_log_is_private_verifiable_and_aggregates_without_identity() {
     }
     assert_eq!(events[0]["kind"], "baseline");
     assert_eq!(events[1]["kind"], "gap_discovery");
+    assert_eq!(events[2]["kind"], "inbox_delivery");
     assert_eq!(
         events[0]["payload"]["scan_id"],
         events[1]["payload"]["scan_id"]
+    );
+    assert_eq!(
+        events[0]["payload"]["scan_id"],
+        events[2]["payload"]["scan_id"]
     );
     let argv = inbox["actionable"][0]["resume_argv"].as_array().unwrap();
     assert_eq!(argv[5], "--value-log");
@@ -391,6 +479,10 @@ fn opted_in_value_log_is_private_verifiable_and_aggregates_without_identity() {
     assert_eq!(report["summary"]["completed_review_checkpoints"], 2);
     assert_eq!(report["summary"]["covered_transitions"], 0);
     assert_eq!(report["summary"]["unique_gap_transitions"], 1);
+    assert_eq!(report["summary"]["delivery_confirmed_scans"], 1);
+    assert_eq!(report["summary"]["delivery_unconfirmed_scans"], 0);
+    assert_eq!(report["summary"]["delivered_gap_discoveries"], 1);
+    assert_eq!(report["summary"]["unique_delivered_gap_transitions"], 1);
     assert_eq!(report["summary"]["unique_resumed_transitions"], 0);
     assert_eq!(report["summary"]["resume_attempts"], 0);
     assert_eq!(
@@ -402,6 +494,55 @@ fn opted_in_value_log_is_private_verifiable_and_aggregates_without_identity() {
         !String::from_utf8(report.to_string().into_bytes())
             .unwrap()
             .contains(transition_id)
+    );
+}
+
+#[test]
+fn failed_inbox_output_keeps_discovery_but_never_confirms_delivery() {
+    let (directory, mut command) = inbox_command();
+    let log = directory.path().join("value-funnel.jsonl");
+    let output_parent = directory.path().join("removed-output-parent");
+    fs::create_dir(&output_parent).unwrap();
+    let output_path = output_parent.join("inbox.json");
+
+    let output = command
+        .arg("--value-log")
+        .arg(&log)
+        .arg("--output")
+        .arg(&output_path)
+        .env("STRATADIFF_TEST_REMOVE_OUTPUT_PARENT", &output_parent)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let events = fs::read_to_string(&log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["kind"], "baseline");
+    assert_eq!(events[1]["kind"], "gap_discovery");
+    assert!(events.iter().all(|event| event["kind"] != "inbox_delivery"));
+
+    let report = Command::new(env!("CARGO_BIN_EXE_stratadiff"))
+        .args(["value-report", log.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(
+        report.status.success(),
+        "{}",
+        String::from_utf8_lossy(&report.stderr)
+    );
+    let report: Value = serde_json::from_slice(&report.stdout).unwrap();
+    assert_eq!(report["summary"]["gap_discoveries"], 1);
+    assert_eq!(report["summary"]["delivery_confirmed_scans"], 0);
+    assert_eq!(report["summary"]["delivery_unconfirmed_scans"], 1);
+    assert_eq!(report["summary"]["delivered_gap_discoveries"], 0);
+    assert_eq!(
+        report["conversion"]["delivered_gap_to_resume"]["status"],
+        "undefined"
     );
 }
 
@@ -522,4 +663,6 @@ fn relative_inbox_and_value_report_outputs_are_supported() {
         serde_json::from_slice(&fs::read(directory.path().join("value-report.json")).unwrap())
             .unwrap();
     assert_eq!(report["summary"]["scans"], 1);
+    assert_eq!(report["summary"]["delivery_confirmed_scans"], 1);
+    assert_eq!(report["summary"]["delivery_unconfirmed_scans"], 0);
 }
