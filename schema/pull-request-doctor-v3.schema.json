@@ -1,0 +1,1061 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/pull-request-doctor-v3.schema.json",
+  "title": "StrataDiff pull-request doctor report v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "generated_at",
+    "provider_url",
+    "repository",
+    "target",
+    "collection",
+    "claim_boundary",
+    "verdict",
+    "summary",
+    "requirements",
+    "next_actions",
+    "workflow_collection",
+    "workflow_trigger_diagnoses"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-pull-request-doctor-v3" },
+    "tool_version": { "$ref": "#/$defs/text_255" },
+    "generated_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "provider_url": { "$ref": "#/$defs/provider_origin" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 202
+    },
+    "target": { "$ref": "#/$defs/target" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "claim_boundary": { "$ref": "#/$defs/claim_boundary" },
+    "verdict": { "enum": ["checks_clear", "checks_blocked", "inconclusive"] },
+    "summary": { "$ref": "#/$defs/summary" },
+    "requirements": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/diagnosis" }
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 10001,
+      "items": { "$ref": "#/$defs/action" }
+    },
+    "workflow_collection": { "$ref": "#/$defs/workflow_collection" },
+    "workflow_trigger_diagnoses": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/workflow_trigger_report" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "resolution": { "const": "provisional" } },
+                "required": ["resolution"]
+              }
+            },
+            "required": ["evaluation"]
+          }
+        },
+        "required": ["target"]
+      },
+      "then": {
+        "properties": {
+          "verdict": { "const": "inconclusive" },
+          "claim_boundary": {
+            "properties": { "required_check_readiness_supported": { "const": false } },
+            "required": ["required_check_readiness_supported"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "collection": {
+            "properties": { "status": { "const": "partial" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["collection"]
+      },
+      "then": {
+        "properties": {
+          "verdict": { "not": { "const": "checks_clear" } },
+          "claim_boundary": {
+            "properties": { "required_check_readiness_supported": { "const": false } },
+            "required": ["required_check_readiness_supported"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "not": { "const": "merge_group" } } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          }
+        },
+        "required": ["target"]
+      },
+      "then": {
+        "properties": {
+          "workflow_collection": {
+            "properties": { "status": { "const": "not_applicable" } },
+            "required": ["status"]
+          },
+          "workflow_trigger_diagnoses": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workflow_collection": {
+            "properties": { "status": { "const": "not_applicable" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["workflow_collection"]
+      },
+      "then": {
+        "properties": {
+          "requirements": {
+            "not": {
+              "contains": { "$ref": "#/$defs/pinned_missing_diagnosis" }
+            }
+          },
+          "workflow_trigger_diagnoses": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workflow_collection": {
+            "properties": { "status": { "const": "complete" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["workflow_collection"]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "merge_group" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          },
+          "requirements": {
+            "contains": { "$ref": "#/$defs/pinned_missing_diagnosis" }
+          },
+          "workflow_trigger_diagnoses": {
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/complete_workflow_trigger_report" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workflow_collection": {
+            "properties": { "status": { "const": "partial" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["workflow_collection"]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "merge_group" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          },
+          "requirements": {
+            "contains": { "$ref": "#/$defs/pinned_missing_diagnosis" }
+          },
+          "workflow_trigger_diagnoses": {
+            "minItems": 1,
+            "contains": {
+              "type": "object",
+              "properties": { "diagnosis": { "type": "null" } },
+              "required": ["diagnosis"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workflow_trigger_diagnoses": {
+            "contains": {
+              "type": "object",
+              "properties": { "diagnosis": { "type": "object" } },
+              "required": ["diagnosis"]
+            }
+          }
+        },
+        "required": ["workflow_trigger_diagnoses"]
+      },
+      "then": {
+        "properties": {
+          "workflow_collection": {
+            "properties": {
+              "inventory": { "$ref": "#/$defs/resolved_workflow_inventory" },
+              "probes": { "minItems": 1 }
+            },
+            "required": ["inventory", "probes"]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "positive_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "text_64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "text_128": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "text_255": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "text_1024": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "bounded_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "nonempty_string": {
+      "type": "string",
+      "minLength": 1
+    },
+    "https_url": {
+      "type": "string",
+      "pattern": "^https://[^\\s<>\\\"']+$",
+      "maxLength": 2048
+    },
+    "provider_origin": {
+      "type": "string",
+      "pattern": "^https://[^\\s<>\\\"'/@?#]+$",
+      "maxLength": 2048
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "nullable_app_id": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/positive_id" }
+      ]
+    },
+    "nullable_object_id": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/object_id" }
+      ]
+    },
+    "nullable_text_64": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/text_64" }
+      ]
+    },
+    "nullable_text_255": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/text_255" }
+      ]
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "resolution", "sha", "base_sha", "queue_entry_id", "queue_state"],
+      "properties": {
+        "kind": { "enum": ["pr_head", "test_merge", "merge_group"] },
+        "resolution": { "enum": ["selected", "provisional"] },
+        "sha": { "$ref": "#/$defs/object_id" },
+        "base_sha": { "$ref": "#/$defs/nullable_object_id" },
+        "queue_entry_id": { "$ref": "#/$defs/nullable_text_255" },
+        "queue_state": { "$ref": "#/$defs/nullable_text_64" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "pr_head" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "base_sha": { "type": "null" },
+              "queue_entry_id": { "type": "null" },
+              "queue_state": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "test_merge" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "base_sha": { "$ref": "#/$defs/object_id" },
+              "queue_entry_id": { "type": "null" },
+              "queue_state": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "merge_group" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "base_sha": { "$ref": "#/$defs/object_id" },
+              "queue_entry_id": { "$ref": "#/$defs/text_255" },
+              "queue_state": { "$ref": "#/$defs/text_64" }
+            }
+          }
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "url", "base_ref", "base_sha", "head_sha", "evaluation"],
+      "properties": {
+        "number": { "$ref": "#/$defs/positive_id" },
+        "url": { "$ref": "#/$defs/https_url" },
+        "base_ref": { "$ref": "#/$defs/text_255" },
+        "base_sha": { "$ref": "#/$defs/object_id" },
+        "head_sha": { "$ref": "#/$defs/object_id" },
+        "evaluation": { "$ref": "#/$defs/evaluation" }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "reason"],
+      "properties": {
+        "surface": { "enum": ["target", "requirements", "check_runs", "commit_statuses"] },
+        "reason": { "$ref": "#/$defs/bounded_text" }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "api_calls", "response_bytes", "gaps"],
+      "properties": {
+        "status": { "enum": ["complete", "partial"] },
+        "api_calls": { "$ref": "#/$defs/count" },
+        "response_bytes": { "$ref": "#/$defs/count" },
+        "gaps": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/gap" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+          "then": { "properties": { "gaps": { "maxItems": 0 } } },
+          "else": { "properties": { "gaps": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "name", "url"],
+      "properties": {
+        "kind": { "enum": ["ruleset", "branch_protection"] },
+        "id": { "$ref": "#/$defs/text_255" },
+        "name": { "$ref": "#/$defs/text_255" },
+        "url": { "$ref": "#/$defs/https_url" }
+      }
+    },
+    "requirement_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context", "expected_app_id"],
+      "properties": {
+        "context": { "$ref": "#/$defs/text_255" },
+        "expected_app_id": { "$ref": "#/$defs/nullable_app_id" }
+      }
+    },
+    "pinned_requirement_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context", "expected_app_id"],
+      "properties": {
+        "context": { "$ref": "#/$defs/text_255" },
+        "expected_app_id": { "$ref": "#/$defs/positive_id" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "url", "sha", "context", "app_id", "producer", "status", "conclusion"],
+      "properties": {
+        "kind": { "enum": ["check_run", "commit_status"] },
+        "id": { "$ref": "#/$defs/text_255" },
+        "url": { "$ref": "#/$defs/https_url" },
+        "sha": { "$ref": "#/$defs/object_id" },
+        "context": { "$ref": "#/$defs/text_255" },
+        "app_id": { "$ref": "#/$defs/nullable_app_id" },
+        "producer": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/text_255" }
+          ]
+        },
+        "status": { "$ref": "#/$defs/text_64" },
+        "conclusion": { "$ref": "#/$defs/nullable_text_64" }
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "status", "explanation", "policies", "evidence"],
+      "properties": {
+        "key": { "$ref": "#/$defs/requirement_key" },
+        "status": {
+          "enum": ["satisfied", "pending", "failed", "missing", "source_mismatch", "source_unknown"]
+        },
+        "explanation": { "$ref": "#/$defs/bounded_text" },
+        "policies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/policy" }
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "pinned_missing_diagnosis": {
+      "allOf": [
+        { "$ref": "#/$defs/diagnosis" },
+        {
+          "properties": {
+            "key": { "$ref": "#/$defs/pinned_requirement_key" },
+            "status": { "const": "missing" }
+          },
+          "required": ["key", "status"]
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirements", "satisfied", "pending", "failed", "missing", "source_mismatch", "source_unknown"],
+      "properties": {
+        "requirements": { "$ref": "#/$defs/count" },
+        "satisfied": { "$ref": "#/$defs/count" },
+        "pending": { "$ref": "#/$defs/count" },
+        "failed": { "$ref": "#/$defs/count" },
+        "missing": { "$ref": "#/$defs/count" },
+        "source_mismatch": { "$ref": "#/$defs/count" },
+        "source_unknown": { "$ref": "#/$defs/count" }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_check_readiness_supported", "mergeability_supported", "review_requirements_supported", "compliance_supported", "code_safety_supported"],
+      "properties": {
+        "required_check_readiness_supported": { "type": "boolean" },
+        "mergeability_supported": { "const": false },
+        "review_requirements_supported": { "const": false },
+        "compliance_supported": { "const": false },
+        "code_safety_supported": { "const": false }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "requirement", "title", "rationale", "argv"],
+      "properties": {
+        "code": {
+          "enum": ["wait_for_check", "inspect_failed_check", "restore_required_check", "fix_required_check_source", "resolve_source_identity", "complete_collection"]
+        },
+        "requirement": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/requirement_key" }
+          ]
+        },
+        "title": { "$ref": "#/$defs/bounded_text" },
+        "rationale": { "$ref": "#/$defs/bounded_text" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+          }
+        }
+      }
+    },
+    "string_set": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/nonempty_string" }
+    },
+    "pull_request_trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branches", "branches_ignore", "paths", "paths_ignore", "types"],
+      "properties": {
+        "branches": { "$ref": "#/$defs/string_set" },
+        "branches_ignore": { "$ref": "#/$defs/string_set" },
+        "paths": { "$ref": "#/$defs/string_set" },
+        "paths_ignore": { "$ref": "#/$defs/string_set" },
+        "types": { "$ref": "#/$defs/string_set" }
+      },
+      "allOf": [
+        {
+          "not": {
+            "properties": {
+              "branches": { "minItems": 1 },
+              "branches_ignore": { "minItems": 1 }
+            },
+            "required": ["branches", "branches_ignore"]
+          }
+        },
+        {
+          "not": {
+            "properties": {
+              "paths": { "minItems": 1 },
+              "paths_ignore": { "minItems": 1 }
+            },
+            "required": ["paths", "paths_ignore"]
+          }
+        }
+      ]
+    },
+    "merge_group_trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["types"],
+      "properties": {
+        "types": {
+          "type": "array",
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": { "const": "checks_requested" }
+        }
+      }
+    },
+    "workflow_triggers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["merge_group", "pull_request"],
+      "properties": {
+        "merge_group": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/merge_group_trigger" }
+          ]
+        },
+        "pull_request": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/pull_request_trigger" }
+          ]
+        }
+      }
+    },
+    "workflow_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["condition", "id", "name", "name_static", "reusable"],
+      "properties": {
+        "condition": { "$ref": "#/$defs/text_255" },
+        "id": { "$ref": "#/$defs/text_255" },
+        "name": { "$ref": "#/$defs/text_255" },
+        "name_static": { "type": "boolean" },
+        "reusable": { "type": "boolean" }
+      }
+    },
+    "inventory_workflow_path": {
+      "type": "string",
+      "pattern": "^\\.github/workflows/[^/]+\\.ya?ml$"
+    },
+    "producer_workflow_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^\\.github/workflows/[^/\\u0000-\\u001F\\u007F]+\\.ya?ml$"
+    },
+    "workflow_inventory_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["blob_sha", "jobs", "path", "triggers"],
+      "properties": {
+        "blob_sha": { "$ref": "#/$defs/object_id" },
+        "jobs": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/workflow_job" }
+        },
+        "path": { "$ref": "#/$defs/inventory_workflow_path" },
+        "triggers": { "$ref": "#/$defs/workflow_triggers" }
+      }
+    },
+    "workflow_inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha", "files"],
+      "properties": {
+        "sha": { "$ref": "#/$defs/object_id" },
+        "files": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/workflow_inventory_file" }
+        }
+      }
+    },
+    "nonempty_workflow_inventory": {
+      "allOf": [
+        { "$ref": "#/$defs/workflow_inventory" },
+        {
+          "properties": { "files": { "minItems": 1 } },
+          "required": ["files"]
+        }
+      ]
+    },
+    "resolved_workflow_inventory": {
+      "allOf": [
+        { "$ref": "#/$defs/nonempty_workflow_inventory" },
+        {
+          "properties": {
+            "files": {
+              "items": {
+                "properties": {
+                  "jobs": {
+                    "items": {
+                      "properties": {
+                        "name_static": { "const": true },
+                        "reusable": { "const": false }
+                      },
+                      "required": ["name_static", "reusable"]
+                    }
+                  }
+                },
+                "required": ["jobs"]
+              }
+            }
+          },
+          "required": ["files"]
+        }
+      ]
+    },
+    "workflow_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sha"],
+      "properties": {
+        "kind": { "enum": ["pull_request_head", "test_merge"] },
+        "sha": { "$ref": "#/$defs/object_id" }
+      }
+    },
+    "workflow_collection_gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "code", "reason"],
+      "properties": {
+        "requirement": { "$ref": "#/$defs/pinned_requirement_key" },
+        "code": {
+          "allOf": [
+            { "$ref": "#/$defs/text_128" },
+            { "pattern": "^[a-z0-9_]+$" }
+          ]
+        },
+        "reason": { "$ref": "#/$defs/bounded_text" }
+      }
+    },
+    "workflow_collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "api_calls", "response_bytes", "inventory", "probes", "gaps"],
+      "properties": {
+        "status": { "enum": ["not_applicable", "complete", "partial"] },
+        "api_calls": { "$ref": "#/$defs/count" },
+        "response_bytes": { "$ref": "#/$defs/count" },
+        "inventory": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/workflow_inventory" }
+          ]
+        },
+        "probes": {
+          "type": "array",
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/workflow_probe" },
+          "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "pull_request_head" } },
+                "required": ["kind"]
+              },
+              "minContains": 0,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "test_merge" } },
+                "required": ["kind"]
+              },
+              "minContains": 0,
+              "maxContains": 1
+            }
+          ]
+        },
+        "gaps": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/workflow_collection_gap" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "not_applicable" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "api_calls": { "const": 0 },
+              "response_bytes": { "const": 0 },
+              "inventory": { "type": "null" },
+              "probes": { "maxItems": 0 },
+              "gaps": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "complete" } }, "required": ["status"] },
+          "then": {
+            "properties": {
+              "api_calls": { "minimum": 1 },
+              "inventory": { "$ref": "#/$defs/nonempty_workflow_inventory" },
+              "probes": {
+                "minItems": 1,
+                "contains": {
+                  "type": "object",
+                  "properties": { "kind": { "const": "pull_request_head" } },
+                  "required": ["kind"]
+                }
+              },
+              "gaps": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "partial" } }, "required": ["status"] },
+          "then": { "properties": { "gaps": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "workflow_producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sha",
+        "check_run_id",
+        "check_run_api_url",
+        "check_run_url",
+        "check_name",
+        "app_id",
+        "app_slug",
+        "check_suite_id",
+        "workflow_run_id",
+        "workflow_run_attempt",
+        "workflow_run_url",
+        "workflow_run_path",
+        "workflow_job_id",
+        "workflow_job_url",
+        "workflow_job_name",
+        "workflow_job_check_run_url",
+        "workflow_id",
+        "workflow_path",
+        "workflow_url"
+      ],
+      "properties": {
+        "source_sha": { "$ref": "#/$defs/object_id" },
+        "check_run_id": { "$ref": "#/$defs/positive_id" },
+        "check_run_api_url": { "$ref": "#/$defs/https_url" },
+        "check_run_url": { "$ref": "#/$defs/https_url" },
+        "check_name": { "$ref": "#/$defs/text_255" },
+        "app_id": { "$ref": "#/$defs/positive_id" },
+        "app_slug": { "const": "github-actions" },
+        "check_suite_id": { "$ref": "#/$defs/positive_id" },
+        "workflow_run_id": { "$ref": "#/$defs/positive_id" },
+        "workflow_run_attempt": { "$ref": "#/$defs/positive_id" },
+        "workflow_run_url": { "$ref": "#/$defs/https_url" },
+        "workflow_run_path": {
+          "allOf": [
+            { "$ref": "#/$defs/text_1024" },
+            { "pattern": "^\\.github/workflows/[^/]+\\.ya?ml(?:@.+)?$" }
+          ]
+        },
+        "workflow_job_id": { "$ref": "#/$defs/positive_id" },
+        "workflow_job_url": { "$ref": "#/$defs/https_url" },
+        "workflow_job_name": { "$ref": "#/$defs/text_255" },
+        "workflow_job_check_run_url": { "$ref": "#/$defs/https_url" },
+        "workflow_id": { "$ref": "#/$defs/positive_id" },
+        "workflow_path": { "$ref": "#/$defs/producer_workflow_path" },
+        "workflow_url": { "$ref": "#/$defs/https_url" }
+      }
+    },
+    "workflow_trigger_fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action_code", "argv", "requires_human_edit"],
+      "properties": {
+        "action_code": {
+          "enum": [
+            "add_merge_group_trigger",
+            "approve_fork_workflow",
+            "collect_merge_group_run",
+            "none"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "requires_human_edit": { "type": "boolean" }
+      }
+    },
+    "workflow_trigger_diagnosis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
+            "cause_code": { "const": "merge_group_trigger_missing" },
+            "confidence": { "const": "certain" },
+            "evidence": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "prefixItems": [
+                { "const": "target:merge_group" },
+                {
+                  "type": "string",
+                  "maxLength": 1033,
+                  "pattern": "^workflow:\\.github/workflows/[^/\\u0000-\\u001F\\u007F]+\\.ya?ml$"
+                },
+                { "const": "trigger:merge_group_absent" }
+              ]
+            },
+            "fix": {
+              "allOf": [
+                { "$ref": "#/$defs/workflow_trigger_fix" },
+                {
+                  "properties": {
+                    "action_code": { "const": "add_merge_group_trigger" },
+                    "requires_human_edit": { "const": true }
+                  },
+                  "required": ["action_code", "requires_human_edit"]
+                }
+              ]
+            },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
+            "cause_code": { "const": "fork_approval_required" },
+            "confidence": { "const": "certain" },
+            "evidence": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "prefixItems": [
+                { "const": "head_repository:fork" },
+                { "const": "run_conclusion:action_required" },
+                { "const": "run_head:exact" }
+              ]
+            },
+            "fix": {
+              "allOf": [
+                { "$ref": "#/$defs/workflow_trigger_fix" },
+                {
+                  "properties": {
+                    "action_code": { "const": "approve_fork_workflow" },
+                    "requires_human_edit": { "const": false }
+                  },
+                  "required": ["action_code", "requires_human_edit"]
+                }
+              ]
+            },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
+            "cause_code": { "const": "none" },
+            "confidence": { "const": "certain" },
+            "evidence": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "prefixItems": [
+                { "const": "target:merge_group" },
+                { "const": "trigger:merge_group_checks_requested" },
+                { "const": "run:queued" }
+              ]
+            },
+            "fix": {
+              "allOf": [
+                { "$ref": "#/$defs/workflow_trigger_fix" },
+                {
+                  "properties": {
+                    "action_code": { "const": "none" },
+                    "requires_human_edit": { "const": false }
+                  },
+                  "required": ["action_code", "requires_human_edit"]
+                }
+              ]
+            },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
+            "cause_code": { "const": "workflow_trigger_unknown" },
+            "confidence": { "const": "uncertain" },
+            "evidence": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1,
+              "prefixItems": [
+                { "const": "merge_group_run:absent" }
+              ]
+            },
+            "fix": {
+              "allOf": [
+                { "$ref": "#/$defs/workflow_trigger_fix" },
+                {
+                  "properties": {
+                    "action_code": { "const": "collect_merge_group_run" },
+                    "requires_human_edit": { "const": false }
+                  },
+                  "required": ["action_code", "requires_human_edit"]
+                }
+              ]
+            },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          }
+        }
+      ]
+    },
+    "workflow_trigger_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["requirement", "producer", "diagnosis"],
+      "properties": {
+        "requirement": { "$ref": "#/$defs/pinned_requirement_key" },
+        "producer": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/workflow_producer" }
+          ]
+        },
+        "diagnosis": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/workflow_trigger_diagnosis" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "diagnosis": { "type": "object" } }, "required": ["diagnosis"] },
+          "then": { "properties": { "producer": { "$ref": "#/$defs/workflow_producer" } } }
+        }
+      ]
+    },
+    "complete_workflow_trigger_report": {
+      "allOf": [
+        { "$ref": "#/$defs/workflow_trigger_report" },
+        {
+          "properties": {
+            "producer": { "$ref": "#/$defs/workflow_producer" },
+            "diagnosis": { "$ref": "#/$defs/workflow_trigger_diagnosis" }
+          },
+          "required": ["producer", "diagnosis"]
+        }
+      ]
+    }
+  }
+}

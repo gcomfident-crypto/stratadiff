@@ -1808,7 +1808,8 @@ pub fn evaluate_pull_request_doctor_v3(
             ensure!(
                 diagnosis.as_ref().is_none_or(|diagnosis| matches!(
                     diagnosis.cause_code,
-                    WorkflowTriggerCause::MergeGroupTriggerMissing
+                    WorkflowTriggerCause::ForkApprovalRequired
+                        | WorkflowTriggerCause::MergeGroupTriggerMissing
                         | WorkflowTriggerCause::None
                         | WorkflowTriggerCause::WorkflowTriggerUnknown
                 )),
@@ -2194,6 +2195,77 @@ pub fn render_pull_request_doctor_v3_markdown(report: &PullRequestDoctorReportV3
     if report.workflow_collection.status == DoctorWorkflowCollectionStatus::NotApplicable {
         return output;
     }
+
+    let (overview, details) = output
+        .split_once("\n## Claim boundary\n\n")
+        .expect("the v2 Doctor renderer always emits its claim boundary");
+    let mut prioritized = String::with_capacity(output.len() + 1_024);
+    prioritized.push_str(overview);
+    prioritized.push_str("\n\n## Answer\n\n");
+    for trigger in &report.workflow_trigger_diagnoses {
+        let context = markdown_code(&trigger.requirement.context);
+        match trigger
+            .diagnosis
+            .as_ref()
+            .map(|diagnosis| diagnosis.cause_code)
+        {
+            Some(WorkflowTriggerCause::MergeGroupTriggerMissing) => {
+                let producer = trigger
+                    .producer
+                    .as_ref()
+                    .expect("a classified workflow diagnosis always has a producer");
+                prioritized.push_str(&format!(
+                    "- {context}: {} is the unique static workflow-job producer in the exact-SHA inventory, but it does not subscribe to {}. Add that trigger to enable the workflow for merge-queue candidates, then verify that the required check appears.\n",
+                    markdown_code(&producer.workflow_path),
+                    markdown_code("merge_group"),
+                ));
+            }
+            Some(WorkflowTriggerCause::ForkApprovalRequired) => {
+                prioritized.push_str(&format!(
+                    "- {context}: the exact-candidate workflow run is waiting for approval because the pull-request head comes from a fork. Review and approve that run in GitHub, then run Doctor again.\n"
+                ));
+            }
+            Some(WorkflowTriggerCause::None) => {
+                prioritized.push_str(&format!(
+                    "- {context}: the producer has an exact-candidate {} run, so its workflow trigger is not the proven blocker.\n",
+                    markdown_code("merge_group"),
+                ));
+            }
+            Some(WorkflowTriggerCause::WorkflowTriggerUnknown) => {
+                prioritized.push_str(&format!(
+                    "- {context}: the producer is identified, but the available exact-candidate evidence does not prove why the required check is absent.\n"
+                ));
+            }
+            Some(cause) => {
+                prioritized.push_str(&format!(
+                    "- {context}: Doctor classified the cause as {}.\n",
+                    markdown_code(workflow_cause_name(cause)),
+                ));
+            }
+            None => {
+                let gap_codes = report
+                    .workflow_collection
+                    .gaps
+                    .iter()
+                    .filter(|gap| gap.requirement == trigger.requirement)
+                    .map(|gap| markdown_code(&gap.code))
+                    .collect::<Vec<_>>();
+                if gap_codes.is_empty() {
+                    prioritized.push_str(&format!(
+                        "- {context}: the required evidence is incomplete, so Doctor did not guess a root cause.\n"
+                    ));
+                } else {
+                    prioritized.push_str(&format!(
+                        "- {context}: Doctor did not guess a root cause because evidence is incomplete ({}).\n",
+                        gap_codes.join(", "),
+                    ));
+                }
+            }
+        }
+    }
+    prioritized.push_str("\n## Claim boundary\n\n");
+    prioritized.push_str(details);
+    output = prioritized;
 
     output.push_str("\n## Workflow trigger diagnoses\n\n");
     output.push_str(&format!(

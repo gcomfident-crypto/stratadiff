@@ -1,11 +1,12 @@
 # StrataDiff
 
-**A `gh doctor` for stuck pull requests: identify GitHub's exact evaluation candidate, inspect its
-required signals and producers, and show the next evidence-gathering action behind “policy
-prohibits this merge.”**
+**`gh stratadiff doctor <PR>` diagnoses required-check blockers behind "policy prohibits this
+merge." It binds observations to the candidate SHA GitHub exposes, marks unresolved target
+identity provisional, and shows the smallest safe next step without claiming the PR is otherwise
+mergeable.**
 
-StrataDiff starts as a read-only **PR Flight Recorder and required-check doctor**, then grows into a
-verifiable merge-proof control plane for GitHub. It does not replace
+StrataDiff is currently a read-only **PR merge debugger** for maintainers, CI owners and
+developer-platform teams. It does not replace
 Copilot, CodeRabbit, Graphite AI, a policy bot, CI, or a human reviewer. It captures their observable
 evidence as versioned, content-addressed snapshots, binds each snapshot to exact PR-head inputs,
 evaluates one versioned policy, and publishes a dedicated GitHub App Check for the actual final
@@ -81,13 +82,15 @@ a concurrent candidate or policy change aborts the snapshot instead of mixing ob
 canonical PR URL is checked against any explicit repository or hostname before the first provider
 request.
 
-For a pinned GitHub Actions check missing from a merge-group candidate, v3 also follows an observed
-historical Check Run through its check suite, workflow run, exact job, and canonical workflow, then
-reads that workflow definition at the evaluation SHA. The producer collection is repeated and must
-remain identical. This evidence does not by itself prove that no second workflow can emit the same
-context and App identity: until Doctor can enumerate every workflow definition at the exact SHA, a
-selected producer without `merge_group` remains an explicit evidence gap rather than a claimed root
-cause.
+When a pinned GitHub Actions check is missing from a merge-group candidate, v3 traces a previous
+Check Run through its suite, workflow run, exact job and canonical workflow. It then reads every
+direct `.github/workflows/*.yml` and `.yaml` file at the evaluation SHA, records each Git blob ID,
+and repeats the whole collection. Doctor reports a missing `merge_group` trigger only if the
+inventory is complete, all possible job names are static and non-reusable, and one workflow job
+matches the required context. A second matching job, a dynamic name, a reusable workflow, an
+invalid definition, pagination or identity drift leaves an evidence gap. This uniqueness claim is
+limited to the collected workflow-job model. Workflow code can still make arbitrary Checks API
+writes.
 
 For a PR that is not currently in a merge queue, Doctor follows GitHub's documented target rule:
 if the test-merge commit has any Check Run or legacy commit status, it selects `test_merge`.
@@ -98,7 +101,9 @@ GitHub selected the head.
 For a queued PR, Doctor reads the current GraphQL `mergeQueueEntry`, records its entry ID, state,
 base commit, and head commit, and represents the entry head as a `merge_group` evaluation target.
 That polling-derived candidate has not yet been cross-validated against a delivered `merge_group`
-webhook, so every queued diagnosis remains `inconclusive`, even when all observed checks pass.
+webhook, so the global queued verdict remains `inconclusive`, even when a target-bound workflow
+subdiagnosis can prove that its unique static workflow-job producer in the exact-SHA inventory
+lacks the trigger.
 Doctor also detects effective required-workflow rules, but this version does not collect or
 diagnose their expected workflow identities; their presence likewise keeps the result
 `inconclusive`. The separate offline workflow-trigger corpus treats the path-filter boundary as

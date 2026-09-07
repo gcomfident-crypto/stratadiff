@@ -28,11 +28,19 @@ author edit are reconstructed, leaving exactly one post-review line in the queue
 history is removed when the Workbench stops.
 
 `doctor` is an experimental, low-friction incident path for a stuck pull request once the native
-`stratadiff` binary is on `PATH` (or selected with `STRATADIFF_BIN`). Its v2 report explicitly names
+`stratadiff` binary is on `PATH` (or selected with `STRATADIFF_BIN`). Its v3 report explicitly names
 the evaluation target as `pr_head`, `test_merge`, or `merge_group` and binds every observed Check
 Run, legacy commit status, and next inspection command to that exact SHA. For effective required
 status checks, it distinguishes a missing signal from a failed or pending signal and an
 expected-App source mismatch.
+
+For a pinned GitHub Actions check missing from a merge-group candidate, Doctor traces a historical
+Check Run through its suite, workflow run, exact job, and canonical workflow. It then inventories
+every direct workflow YAML file at the evaluation SHA. Doctor reports
+`merge_group_trigger_missing` only when that inventory contains one static, non-reusable
+workflow-job producer. Duplicate or dynamic producers, pagination, malformed definitions and
+collection drift remain explicit evidence gaps. The human-readable report puts this answer before
+the detailed evidence and claim boundary.
 
 For a PR that is not queued, Doctor follows GitHub's documented rule: any Check Run or legacy
 commit status on the test-merge commit selects `test_merge`. A missing test-merge SHA, incomplete
@@ -41,8 +49,9 @@ probe, or complete but empty test-merge signals leave `pr_head` provisional and 
 
 For a queued PR, Doctor reads GraphQL `mergeQueueEntry`, records its entry ID, state, base commit,
 and head commit, and reports the entry head as the `merge_group` target. This polling-derived
-identity has not yet been cross-validated against a delivered `merge_group` webhook, so queued
-results are always `inconclusive`. Effective required-workflow rules are detected, but their
+identity has not yet been cross-validated against a delivered `merge_group` webhook, so the global
+queued verdict remains `inconclusive` even when a target-bound workflow subdiagnosis is certain.
+Effective required-workflow rules are detected, but their
 expected workflow identities are not yet collected or diagnosed and also keep the result
 `inconclusive`.
 

@@ -1,14 +1,18 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use stratadiff::doctor::{
     DoctorCollectionStatus, DoctorCollectionSurface, DoctorEvaluationTargetKind,
     DoctorEvaluationTargetResolution, DoctorPolicyKind, DoctorVerdict,
-    evaluate_pull_request_doctor_v2,
+    DoctorWorkflowCollectionStatus, evaluate_pull_request_doctor_v2,
+    evaluate_pull_request_doctor_v3, render_pull_request_doctor_v3_markdown,
 };
+use stratadiff::doctor_workflow::WorkflowTriggerCause;
 use stratadiff::readiness_audit::{
     GithubPullRequestDoctorApi, GithubReadinessApi, GithubReadinessApiResponse,
     PullRequestDoctorCollection, collect_pull_request_doctor_snapshot,
+    collect_pull_request_doctor_snapshot_v3,
 };
 
 const BASE_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -16,6 +20,8 @@ const HEAD_SHA: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const MERGE_SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
 const QUEUE_BASE_SHA: &str = "dddddddddddddddddddddddddddddddddddddddd";
 const QUEUE_SHA: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+const WORKFLOW_BLOB_SHA: &str = "1111111111111111111111111111111111111111";
+const DUPLICATE_WORKFLOW_BLOB_SHA: &str = "2222222222222222222222222222222222222222";
 
 struct StubApi {
     responses: VecDeque<(String, GithubReadinessApiResponse)>,
@@ -73,6 +79,260 @@ impl GithubReadinessApi for StubApi {
         let (expected, response) = self.responses.pop_front().expect("unexpected API request");
         assert_eq!(endpoint, expected);
         Ok(response)
+    }
+}
+
+struct StableWorkflowDoctorApi {
+    calls: BTreeMap<String, usize>,
+    duplicate_producer: bool,
+    drift_producer_on_second_pass: bool,
+    graphql_calls: usize,
+}
+
+impl StableWorkflowDoctorApi {
+    fn new(duplicate_producer: bool) -> Self {
+        Self {
+            calls: BTreeMap::new(),
+            duplicate_producer,
+            drift_producer_on_second_pass: false,
+            graphql_calls: 0,
+        }
+    }
+
+    fn with_producer_drift(mut self) -> Self {
+        self.drift_producer_on_second_pass = true;
+        self
+    }
+
+    fn call_count(&self, endpoint: &str) -> usize {
+        self.calls.get(endpoint).copied().unwrap_or(0)
+    }
+
+    fn pull() -> Value {
+        json!({
+            "number": 9,
+            "html_url": "https://github.com/acme/widgets/pull/9",
+            "state": "open",
+            "merge_commit_sha": null,
+            "base": {"ref": "release/1.x", "sha": BASE_SHA},
+            "head": {
+                "ref": "feature/doctor",
+                "sha": HEAD_SHA,
+                "repo": {"full_name": "acme/widgets"}
+            }
+        })
+    }
+
+    fn policy() -> Value {
+        json!([
+            {
+                "type": "merge_queue",
+                "parameters": {},
+                "ruleset_source_type": "Repository",
+                "ruleset_source": "acme/widgets",
+                "ruleset_id": 70
+            },
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "required_status_checks": [
+                        {"context": "ci", "integration_id": 15368}
+                    ]
+                },
+                "ruleset_source_type": "Repository",
+                "ruleset_source": "acme/widgets",
+                "ruleset_id": 70
+            }
+        ])
+    }
+
+    fn workflow_content(path: &str, sha: &str) -> Value {
+        let yaml = concat!(
+            "name: CI\n",
+            "on: pull_request\n",
+            "jobs:\n",
+            "  ci:\n",
+            "    name: ci\n",
+            "    runs-on: ubuntu-latest\n",
+            "    steps: []\n"
+        );
+        json!({
+            "type": "file",
+            "encoding": "base64",
+            "content": STANDARD.encode(yaml),
+            "path": path,
+            "sha": sha
+        })
+    }
+}
+
+impl GithubPullRequestDoctorApi for StableWorkflowDoctorApi {
+    fn graphql(
+        &mut self,
+        query: &str,
+        variables: &Value,
+    ) -> anyhow::Result<GithubReadinessApiResponse> {
+        assert!(query.contains("query StrataDiffPullRequestCandidate"));
+        assert_eq!(
+            variables,
+            &json!({"owner": "acme", "name": "widgets", "number": 9})
+        );
+        self.graphql_calls += 1;
+        Ok(queued_graphql_response(QUEUE_SHA))
+    }
+}
+
+impl GithubReadinessApi for StableWorkflowDoctorApi {
+    fn get(&mut self, endpoint: &str) -> anyhow::Result<GithubReadinessApiResponse> {
+        *self.calls.entry(endpoint.to_owned()).or_default() += 1;
+
+        if endpoint == "repos/acme/widgets/pulls/9" {
+            return Ok(response(200, Self::pull()));
+        }
+        if endpoint == "repos/acme/widgets" {
+            return Ok(response(200, repository()));
+        }
+        if endpoint == "repos/acme/widgets/rules/branches/release%2F1.x?per_page=100&page=1" {
+            return Ok(response(200, Self::policy()));
+        }
+        if endpoint == "repos/acme/widgets/branches/release%2F1.x" {
+            return Ok(response(
+                200,
+                json!({"name": "release/1.x", "protected": false}),
+            ));
+        }
+        if endpoint
+            == format!(
+                "repos/acme/widgets/commits/{QUEUE_SHA}/check-runs?filter=latest&per_page=100&page=1"
+            )
+        {
+            return Ok(response(200, json!({"total_count": 0, "check_runs": []})));
+        }
+        if endpoint
+            == format!("repos/acme/widgets/commits/{QUEUE_SHA}/statuses?per_page=100&page=1")
+        {
+            return Ok(response(200, json!([])));
+        }
+        if endpoint == format!("repos/acme/widgets/contents/.github/workflows?ref={QUEUE_SHA}") {
+            let mut files = vec![json!({
+                "type": "file",
+                "path": ".github/workflows/ci.yml",
+                "sha": WORKFLOW_BLOB_SHA
+            })];
+            if self.duplicate_producer {
+                files.push(json!({
+                    "type": "file",
+                    "path": ".github/workflows/duplicate.yml",
+                    "sha": DUPLICATE_WORKFLOW_BLOB_SHA
+                }));
+            }
+            return Ok(response(200, Value::Array(files)));
+        }
+        if endpoint
+            == format!("repos/acme/widgets/contents/.github/workflows/ci.yml?ref={QUEUE_SHA}")
+        {
+            return Ok(response(
+                200,
+                Self::workflow_content(".github/workflows/ci.yml", WORKFLOW_BLOB_SHA),
+            ));
+        }
+        if endpoint
+            == format!(
+                "repos/acme/widgets/contents/.github/workflows/duplicate.yml?ref={QUEUE_SHA}"
+            )
+        {
+            return Ok(response(
+                200,
+                Self::workflow_content(
+                    ".github/workflows/duplicate.yml",
+                    DUPLICATE_WORKFLOW_BLOB_SHA,
+                ),
+            ));
+        }
+        if endpoint
+            == format!("repos/acme/widgets/actions/runs?head_sha={QUEUE_SHA}&per_page=100&page=1")
+        {
+            return Ok(response(
+                200,
+                json!({"total_count": 0, "workflow_runs": []}),
+            ));
+        }
+        if endpoint
+            == format!(
+                "repos/acme/widgets/commits/{HEAD_SHA}/check-runs?check_name=ci&app_id=15368&filter=all&per_page=100&page=1"
+            )
+        {
+            return Ok(response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "check_runs": [{
+                        "id": 501,
+                        "url": "https://api.github.com/repos/acme/widgets/check-runs/501",
+                        "html_url": "https://github.com/acme/widgets/actions/runs/701/job/801",
+                        "name": "ci",
+                        "head_sha": HEAD_SHA,
+                        "app": {"id": 15368, "slug": "github-actions"},
+                        "check_suite": {"id": 601}
+                    }]
+                }),
+            ));
+        }
+        if endpoint == "repos/acme/widgets/actions/runs?check_suite_id=601&per_page=100&page=1" {
+            return Ok(response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "workflow_runs": [{
+                        "id": 701,
+                        "html_url": "https://github.com/acme/widgets/actions/runs/701",
+                        "workflow_id": 901,
+                        "path": ".github/workflows/ci.yml@refs/pull/9/merge",
+                        "event": "pull_request",
+                        "head_sha": HEAD_SHA,
+                        "check_suite_id": 601,
+                        "run_attempt": 2,
+                        "status": "completed",
+                        "conclusion": "success"
+                    }]
+                }),
+            ));
+        }
+        if endpoint == "repos/acme/widgets/actions/runs/701/jobs?filter=all&per_page=100&page=1" {
+            return Ok(response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "jobs": [{
+                        "id": 801,
+                        "html_url": "https://github.com/acme/widgets/actions/runs/701/job/801",
+                        "name": "ci",
+                        "check_run_url": "https://api.github.com/repos/acme/widgets/check-runs/501",
+                        "run_attempt": 2
+                    }]
+                }),
+            ));
+        }
+        if endpoint == "repos/acme/widgets/actions/workflows/901" {
+            let workflow_url =
+                if self.drift_producer_on_second_pass && self.call_count(endpoint) == 2 {
+                    "https://github.com/acme/widgets/actions/workflows/renamed.yml"
+                } else {
+                    "https://github.com/acme/widgets/actions/workflows/ci.yml"
+                };
+            return Ok(response(
+                200,
+                json!({
+                    "id": 901,
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "state": "active",
+                    "html_url": workflow_url
+                }),
+            ));
+        }
+
+        anyhow::bail!("unexpected API request: {endpoint}")
     }
 }
 
@@ -924,6 +1184,119 @@ fn only_required_workflow_rules_remain_an_unsupported_target() {
             DoctorVerdict::Inconclusive
         );
     }
+}
+
+#[test]
+fn v3_live_collection_proves_a_unique_exact_sha_merge_group_trigger_gap() {
+    let mut api = StableWorkflowDoctorApi::new(false);
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+    let markdown = render_pull_request_doctor_v3_markdown(&report);
+
+    assert_eq!(
+        snapshot.workflow_collection.status,
+        DoctorWorkflowCollectionStatus::Complete
+    );
+    assert_eq!(
+        snapshot.workflow_collection.inventory.as_ref().unwrap().sha,
+        QUEUE_SHA
+    );
+    assert_eq!(
+        report.workflow_trigger_diagnoses[0]
+            .diagnosis
+            .as_ref()
+            .unwrap()
+            .cause_code,
+        WorkflowTriggerCause::MergeGroupTriggerMissing
+    );
+    assert_eq!(api.graphql_calls, 6);
+    assert!(markdown.find("## Answer").unwrap() < markdown.find("## Claim boundary").unwrap());
+    assert!(markdown.contains("unique static workflow-job producer in the exact-SHA inventory"));
+    assert!(markdown.contains("does not subscribe to <code>merge&#95;group</code>"));
+    assert!(markdown.contains("then verify that the required check appears"));
+    assert_eq!(
+        api.call_count(&format!(
+            "repos/acme/widgets/contents/.github/workflows?ref={QUEUE_SHA}"
+        )),
+        2
+    );
+    assert_eq!(
+        api.call_count(&format!(
+            "repos/acme/widgets/contents/.github/workflows/ci.yml?ref={QUEUE_SHA}"
+        )),
+        2
+    );
+    assert_eq!(
+        api.call_count(&format!(
+            "repos/acme/widgets/actions/runs?head_sha={QUEUE_SHA}&per_page=100&page=1"
+        )),
+        2
+    );
+    assert_eq!(
+        api.call_count(&format!(
+            "repos/acme/widgets/commits/{HEAD_SHA}/check-runs?check_name=ci&app_id=15368&filter=all&per_page=100&page=1"
+        )),
+        2
+    );
+    assert_eq!(
+        api.call_count("repos/acme/widgets/actions/runs?check_suite_id=601&per_page=100&page=1"),
+        2
+    );
+    assert_eq!(
+        api.call_count("repos/acme/widgets/actions/runs/701/jobs?filter=all&per_page=100&page=1"),
+        2
+    );
+    assert_eq!(
+        api.call_count("repos/acme/widgets/actions/workflows/901"),
+        2
+    );
+}
+
+#[test]
+fn v3_live_collection_rejects_second_pass_producer_drift() {
+    let mut api = StableWorkflowDoctorApi::new(false).with_producer_drift();
+
+    let error = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("workflow producer evidence changed during diagnosis")
+    );
+    assert_eq!(
+        api.call_count("repos/acme/widgets/actions/workflows/901"),
+        2
+    );
+}
+
+#[test]
+fn v3_live_collection_abstains_when_exact_sha_inventory_has_two_producers() {
+    let mut api = StableWorkflowDoctorApi::new(true);
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+    assert_eq!(
+        snapshot.workflow_collection.status,
+        DoctorWorkflowCollectionStatus::Partial
+    );
+    assert!(snapshot.workflow_collection.gaps.iter().any(|gap| {
+        gap.code == "workflow_producer_not_unique" && gap.requirement.context == "ci"
+    }));
+    assert!(
+        snapshot.workflow_trigger_investigations[0]
+            .producer
+            .is_some()
+    );
+    assert!(snapshot.workflow_trigger_investigations[0].input.is_none());
+    assert!(report.workflow_trigger_diagnoses[0].diagnosis.is_none());
+    assert_eq!(
+        api.call_count(&format!(
+            "repos/acme/widgets/contents/.github/workflows/duplicate.yml?ref={QUEUE_SHA}"
+        )),
+        2
+    );
 }
 
 #[test]
