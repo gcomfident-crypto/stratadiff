@@ -8,12 +8,12 @@ product-market fit. The technical thesis and prior-art boundary remain in
 
 ## Decision
 
-StrataDiff should first be tested as the **`gh doctor` for stuck pull requests and merge queues**,
+StrataDiff should first be tested as **`gh stratadiff doctor` for stuck pull requests and merge queues**,
 then as a verifiable merge-proof control plane across the AI, policy, CI, and human reviewers a
 team already uses—not as another diff viewer, reviewer model, merge queue, generic inbox, or
 approval bot:
 
-> One command. One exact candidate. The actual blocker and next safe action.
+> One command. One observed candidate. A proved blocker or an explicit unknown.
 
 The immediate buyer outcome is one App-bound state for the actual candidate: which API-observable
 provider and review objects are bound to which PR heads, which policy generation applied, whether an

@@ -10,16 +10,16 @@ maintained in the [September 2026 market-evidence snapshot](market-evidence-2026
 
 ## Decision in one sentence
 
-**StrataDiff should enter as the `gh doctor` for a stuck pull request: bind effective policy,
-required contexts, producer App identity, and observed signals to one exact PR or `merge_group`
-SHA, then name the blocker and smallest safe next action. Repeated diagnoses become the flight
-recorder and, only after shadow validation, the verifiable merge-proof control plane. The durable
-moat is cross-provider evidence lineage and a real-incident failure corpus—not another reviewer
-model, merge queue, rules dashboard, or generic composite Check.**
+**StrataDiff should enter through `gh stratadiff doctor <PR>`. It binds effective policy, required
+contexts, producer App identity and observed signals to one exact PR or `merge_group` SHA, then
+names the blocker and the smallest safe next action when the evidence supports them; otherwise it
+abstains. Repeated diagnoses may support a flight recorder and merge proof later, but only after
+shadow validation. It is not another reviewer, merge queue, rules dashboard or generic composite
+Check.**
 
 This is deliberately not another AI reviewer. AI reviewers generate judgments; GitHub supplies
 SHA, ruleset, review, and Check primitives. StrataDiff's job is to prove how those facts compose.
-For a developer, the first value experience is one read-only `doctor <PR-URL>` command at the
+For a developer, the first value experience is one read-only `gh stratadiff doctor <PR-URL>` command at the
 moment GitHub gives only a generic policy failure. For a platform owner, repeated incident bundles
 lead to an admin-level repository preflight and then a non-blocking shadow proof. `stratadiff
 resume <PR-URL>` remains the local review-recovery flow. A route never manufactures or restores a
