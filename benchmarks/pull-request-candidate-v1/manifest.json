@@ -1,0 +1,51 @@
+{
+  "schema": "stratadiff-pull-request-candidate-manifest-v1",
+  "dataset_version": "1.0.0",
+  "name": "Pull Request Candidate v1",
+  "designation": "controlled_semantic_regression_with_live_provenance",
+  "description": "A deterministic offline corpus for selecting the exact GitHub required-check candidate across PR head, test merge, and merge queue states.",
+  "dataset_license": "MIT",
+  "assets": {
+    "cases": {"path":"cases.json","sha256":"333d22d9702f6aaabc204d96c471722a778c49b6be9ad21c6424066ef0361ce9"},
+    "oracle": {"path":"oracle.json","sha256":"e2e4065666679d2545b695f12b732d87bb30ba96cd6a13805d6e3020d5ab5de6"}
+  },
+  "acceptance_gates": {
+    "minimum_cases": 10,
+    "minimum_inconclusive_cases": 3,
+    "minimum_live_provenance_captures": 2,
+    "minimum_merge_group_selections": 2,
+    "minimum_retry_cases": 1,
+    "minimum_selected_cases": 5
+  },
+  "required_coverage": [
+    "api_gap_fail_closed",
+    "live_capture_control",
+    "multi_entry_queue_chain",
+    "old_queue_green_new_missing",
+    "queue_enabled_not_enqueued",
+    "queue_target_drift",
+    "queued_entry_missing",
+    "queued_graphql_entry",
+    "test_merge_check_signal",
+    "test_merge_empty_fail_closed",
+    "test_merge_legacy_status_signal",
+    "test_merge_null"
+  ],
+  "expected_summary": {
+    "candidate_kinds": {"merge_group":2,"pr_head":0,"test_merge":3},
+    "cases": 10,
+    "coverage_tags": 12,
+    "live_provenance_captures": 2,
+    "outcomes": {"inconclusive":4,"retry":1,"selected":5},
+    "queue_entries_captured": 5
+  },
+  "claim_boundary": {
+    "controlled_candidate_selection_supported": true,
+    "end_to_end_collector_conformance_supported": false,
+    "failure_prevalence_supported": false,
+    "live_capture_currentness_supported": false,
+    "merge_safety_supported": false,
+    "production_accuracy_supported": false,
+    "product_market_fit_supported": false
+  }
+}

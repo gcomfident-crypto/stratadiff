@@ -1,5 +1,30 @@
 # Benchmark artifacts
 
+## Pull Request Candidate v1
+
+[`pull-request-candidate-v1/`](pull-request-candidate-v1/) is a deterministic ten-case corpus for
+choosing among a PR head, test-merge commit, and merge-queue candidate. It includes frozen
+read-only observations from `github/docs#45788` and the first five entries of the
+`ClickHouse/ClickHouse` merge queue, plus drift, stale-green, missing-candidate, and API-gap cases.
+An independent verifier derives the oracle and rejects sixteen mutation classes; the Rust selector
+adapter is a separate product regression gate.
+
+The live-derived records establish concrete API shapes and queue topology at capture time. They do
+not establish currentness, failure prevalence, production accuracy, merge safety, adoption, or
+product-market fit.
+
+## Doctor Workflow Trigger v1
+
+[`doctor-workflow-trigger-v1/`](doctor-workflow-trigger-v1/) is a deterministic 22-case corpus for
+explaining why an exact candidate never receives a required signal. It covers missing
+`merge_group`, path and base-branch filters, activity types, conflicts, disabled or invalid
+workflows, fork approval, job-name drift and ambiguity, third-party providers, runtime delivery
+gaps, and fail-closed dynamic cases. The independent verifier rejects fifteen mutation classes;
+the Rust classifier adapter is a separate product regression gate.
+
+The cases encode documented GitHub behavior and six public incident families. They do not measure
+incident prevalence, production accuracy, developer time saved, adoption, revenue, or product fit.
+
 ## Pull Request Doctor v1
 
 [`pull-request-doctor-v1/`](pull-request-doctor-v1/) is a deterministic 15-case semantic corpus

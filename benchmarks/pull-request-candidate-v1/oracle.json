@@ -1,0 +1,16 @@
+{
+  "schema": "stratadiff-pull-request-candidate-oracle-v1",
+  "dataset_version": "1.0.0",
+  "outcomes": [
+    {"case_id":"test-merge-check-signal","status":"selected","candidate_kind":"test_merge","sha":"cccccccccccccccccccccccccccccccccccccccc","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","queue_entry_id":null,"reason_code":"test_merge_signal","ignored_signal_shas":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]},
+    {"case_id":"test-merge-status-signal","status":"selected","candidate_kind":"test_merge","sha":"cccccccccccccccccccccccccccccccccccccccc","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","queue_entry_id":null,"reason_code":"test_merge_signal","ignored_signal_shas":[]},
+    {"case_id":"github-docs-empty-test-merge","status":"inconclusive","candidate_kind":null,"sha":null,"base_sha":null,"queue_entry_id":null,"reason_code":"test_merge_empty","ignored_signal_shas":[]},
+    {"case_id":"test-merge-null","status":"inconclusive","candidate_kind":null,"sha":null,"base_sha":null,"queue_entry_id":null,"reason_code":"potential_merge_unavailable","ignored_signal_shas":[]},
+    {"case_id":"queue-enabled-not-enqueued","status":"selected","candidate_kind":"test_merge","sha":"cccccccccccccccccccccccccccccccccccccccc","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","queue_entry_id":null,"reason_code":"test_merge_signal","ignored_signal_shas":[]},
+    {"case_id":"clickhouse-queued-entry","status":"selected","candidate_kind":"merge_group","sha":"7b33e4ced120cbec2932b81bdbb2a75c6245a7c4","base_sha":"16723d7e43a27fb1925d29f8f11c3a46e51b045a","queue_entry_id":"MQE_lQDOA5dJV88AAAABBVoJNs2aL84CwqYU","reason_code":"queue_entry_candidate","ignored_signal_shas":[]},
+    {"case_id":"queued-entry-missing","status":"inconclusive","candidate_kind":null,"sha":null,"base_sha":null,"queue_entry_id":null,"reason_code":"queue_entry_unavailable","ignored_signal_shas":[]},
+    {"case_id":"queue-entry-drift","status":"retry","candidate_kind":null,"sha":null,"base_sha":null,"queue_entry_id":null,"reason_code":"target_drift","ignored_signal_shas":["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]},
+    {"case_id":"old-queue-green-new-missing","status":"selected","candidate_kind":"merge_group","sha":"ffffffffffffffffffffffffffffffffffffffff","base_sha":"dddddddddddddddddddddddddddddddddddddddd","queue_entry_id":"MQE_current","reason_code":"queue_entry_candidate","ignored_signal_shas":["eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"]},
+    {"case_id":"test-merge-api-gap","status":"inconclusive","candidate_kind":null,"sha":null,"base_sha":null,"queue_entry_id":null,"reason_code":"signal_surface_gap","ignored_signal_shas":[]}
+  ]
+}

@@ -11,7 +11,7 @@ Usage: gh stratadiff <command> [options]
 Commands:
   audit                      Audit recent merged PRs for stranded review checkpoints
   demo                       Open a deterministic offline Review Resume scenario
-  doctor <PR>                Inspect required-check signals on one exact PR head
+  doctor <PR>                Diagnose required checks on GitHub's evaluation candidate
   inbox                      Find open PRs that need your review resumed
   resume <PR>                Resume your latest completed review
   ownership-snapshot <BASE> Collect exact-base CODEOWNERS identities and permissions

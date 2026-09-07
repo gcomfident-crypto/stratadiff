@@ -1,0 +1,160 @@
+{
+  "cases": {
+    "merge-group-trigger-missing": {
+      "cause_code": "merge_group_trigger_missing",
+      "confidence": "certain",
+      "evidence": ["target:merge_group", "workflow:.github/workflows/ci.yml", "trigger:merge_group_absent"],
+      "fix": {"action_code": "add_merge_group_trigger", "argv": [], "requires_human_edit": true},
+      "target_sha": "1000000000000000000000000000000000000001"
+    },
+    "merge-group-supported-control": {
+      "cause_code": "none",
+      "confidence": "certain",
+      "evidence": ["target:merge_group", "trigger:merge_group_checks_requested", "run:queued"],
+      "fix": {"action_code": "none", "argv": [], "requires_human_edit": false},
+      "target_sha": "2000000000000000000000000000000000000002"
+    },
+    "path-filter-excluded": {
+      "cause_code": "workflow_path_filter_excluded",
+      "confidence": "certain",
+      "evidence": ["changed:docs/guide.md", "paths:src/**", "workflow:.github/workflows/test.yml"],
+      "fix": {"action_code": "move_required_filter_inside_workflow", "argv": [], "requires_human_edit": true},
+      "target_sha": "3000000000000000000000000000000000000003"
+    },
+    "path-filter-match-control": {
+      "cause_code": "none",
+      "confidence": "certain",
+      "evidence": ["changed:src/main.rs", "paths:src/**", "run:queued"],
+      "fix": {"action_code": "none", "argv": [], "requires_human_edit": false},
+      "target_sha": "4000000000000000000000000000000000000004"
+    },
+    "path-negation-reinclude-control": {
+      "cause_code": "none",
+      "confidence": "certain",
+      "evidence": ["changed:docs/security/policy.md", "paths:ordered_reinclude", "run:queued"],
+      "fix": {"action_code": "none", "argv": [], "requires_human_edit": false},
+      "target_sha": "5000000000000000000000000000000000000005"
+    },
+    "branch-filter-excluded": {
+      "cause_code": "workflow_branch_filter_excluded",
+      "confidence": "certain",
+      "evidence": ["base:release/v2", "branches:main", "workflow:.github/workflows/ci.yml"],
+      "fix": {"action_code": "align_required_base_branch_filter", "argv": [], "requires_human_edit": true},
+      "target_sha": "6000000000000000000000000000000000000006"
+    },
+    "branch-filter-base-not-head-control": {
+      "cause_code": "none",
+      "confidence": "certain",
+      "evidence": ["base:main", "head:feature/x", "branches:main", "run:queued"],
+      "fix": {"action_code": "none", "argv": [], "requires_human_edit": false},
+      "target_sha": "7000000000000000000000000000000000000007"
+    },
+    "activity-type-excludes-synchronize": {
+      "cause_code": "workflow_activity_excludes_synchronize",
+      "confidence": "certain",
+      "evidence": ["last_activity:synchronize", "types:opened", "exact_head_run:absent"],
+      "fix": {"action_code": "add_pull_request_synchronize", "argv": [], "requires_human_edit": true},
+      "target_sha": "8000000000000000000000000000000000000008"
+    },
+    "job-condition-skipped-control": {
+      "cause_code": "none",
+      "confidence": "certain",
+      "evidence": ["workflow:triggered", "job:conditional", "run:skipped_success"],
+      "fix": {"action_code": "none", "argv": [], "requires_human_edit": false},
+      "target_sha": "9000000000000000000000000000000000000009"
+    },
+    "pull-request-merge-conflict": {
+      "cause_code": "pull_request_merge_conflict",
+      "confidence": "certain",
+      "evidence": ["mergeable_state:conflicting", "trigger:pull_request", "exact_head_run:absent"],
+      "fix": {"action_code": "resolve_merge_conflict", "argv": [], "requires_human_edit": true},
+      "target_sha": "a00000000000000000000000000000000000000a"
+    },
+    "workflow-disabled": {
+      "cause_code": "workflow_disabled",
+      "confidence": "certain",
+      "evidence": ["workflow:.github/workflows/ci.yml", "workflow_state:disabled_manually"],
+      "fix": {"action_code": "enable_workflow", "argv": ["gh", "workflow", "enable", ".github/workflows/ci.yml"], "requires_human_edit": false},
+      "target_sha": "b00000000000000000000000000000000000000b"
+    },
+    "fork-approval-required": {
+      "cause_code": "fork_approval_required",
+      "confidence": "certain",
+      "evidence": ["head_repository:fork", "run_conclusion:action_required", "run_head:exact"],
+      "fix": {"action_code": "approve_fork_workflow", "argv": [], "requires_human_edit": false},
+      "target_sha": "c00000000000000000000000000000000000000c"
+    },
+    "fork-approval-possible": {
+      "cause_code": "fork_approval_possible",
+      "confidence": "uncertain",
+      "evidence": ["head_repository:fork", "exact_head_run:absent", "gap:fork_approval_policy_unavailable"],
+      "fix": {"action_code": "inspect_fork_approval_policy", "argv": ["gh", "api", "repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval"], "requires_human_edit": false},
+      "target_sha": "d00000000000000000000000000000000000000d"
+    },
+    "required-job-renamed": {
+      "cause_code": "required_context_not_produced",
+      "confidence": "high",
+      "evidence": ["required:test-old", "historical:test-old", "current_job:test-new"],
+      "fix": {"action_code": "synchronize_required_context", "argv": [], "requires_human_edit": true},
+      "target_sha": "e00000000000000000000000000000000000000e"
+    },
+    "duplicate-job-name-ambiguous": {
+      "cause_code": "duplicate_job_name_ambiguous",
+      "confidence": "certain",
+      "evidence": ["job:test@.github/workflows/a.yml", "job:test@.github/workflows/b.yml"],
+      "fix": {"action_code": "make_required_job_names_unique", "argv": [], "requires_human_edit": true},
+      "target_sha": "f00000000000000000000000000000000000000f"
+    },
+    "dynamic-job-name-unknown": {
+      "cause_code": "workflow_trigger_unknown",
+      "confidence": "uncertain",
+      "evidence": ["job_name:dynamic", "gap:dynamic_job_name"],
+      "fix": {"action_code": "collect_expanded_job_names", "argv": [], "requires_human_edit": false},
+      "target_sha": "0100000000000000000000000000000000000010"
+    },
+    "third-party-merge-group-unsupported": {
+      "cause_code": "provider_did_not_emit_merge_group_status",
+      "confidence": "high",
+      "evidence": ["target:merge_group", "expected_app:third-party", "provider_capability:unsupported_merge_group"],
+      "fix": {"action_code": "replace_or_ungate_unsupported_provider", "argv": [], "requires_human_edit": true},
+      "target_sha": "1100000000000000000000000000000000000011"
+    },
+    "path-filter-over-300-unknown": {
+      "cause_code": "workflow_trigger_unknown",
+      "confidence": "uncertain",
+      "evidence": ["changed_files:301", "github_filter_limit:reached", "gap:github_path_filter_evaluation_truncated"],
+      "fix": {"action_code": "inspect_github_filter_evaluation", "argv": [], "requires_human_edit": false},
+      "target_sha": "1200000000000000000000000000000000000012"
+    },
+    "workflow-definition-invalid": {
+      "cause_code": "workflow_definition_invalid",
+      "confidence": "certain",
+      "evidence": ["workflow_syntax:invalid", "run_conclusion:startup_failure"],
+      "fix": {"action_code": "repair_workflow_syntax", "argv": [], "requires_human_edit": true},
+      "target_sha": "1300000000000000000000000000000000000013"
+    },
+    "provider-runtime-delivery-gap": {
+      "cause_code": "provider_runtime_delivery_gap",
+      "confidence": "uncertain",
+      "evidence": ["expected_app:third-party", "exact_target_status:absent", "gap:provider_webhook_delivery_unavailable"],
+      "fix": {"action_code": "inspect_provider_webhook_delivery", "argv": [], "requires_human_edit": false},
+      "target_sha": "1400000000000000000000000000000000000014"
+    },
+    "reusable-workflow-name-unknown": {
+      "cause_code": "workflow_trigger_unknown",
+      "confidence": "uncertain",
+      "evidence": ["job:reusable", "gap:reusable_workflow_definition_unavailable"],
+      "fix": {"action_code": "collect_reusable_workflow_definition", "argv": [], "requires_human_edit": false},
+      "target_sha": "1500000000000000000000000000000000000015"
+    },
+    "paths-ignore-excluded": {
+      "cause_code": "workflow_path_filter_excluded",
+      "confidence": "certain",
+      "evidence": ["changed:docs/readme.md", "paths_ignore:docs/**", "workflow:.github/workflows/test.yml"],
+      "fix": {"action_code": "move_required_filter_inside_workflow", "argv": [], "requires_human_edit": true},
+      "target_sha": "1600000000000000000000000000000000000016"
+    }
+  },
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-doctor-workflow-trigger-oracle-v1"
+}

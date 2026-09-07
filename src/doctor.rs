@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 
 pub const PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA: &str = "stratadiff-pull-request-doctor-snapshot-v1";
 pub const PULL_REQUEST_DOCTOR_REPORT_SCHEMA: &str = "stratadiff-pull-request-doctor-v1";
+pub const PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA: &str =
+    "stratadiff-pull-request-doctor-snapshot-v2";
+pub const PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA: &str = "stratadiff-pull-request-doctor-v2";
 
 const MAX_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 const MAX_COLLECTION_ITEMS: usize = 10_000;
@@ -49,6 +52,43 @@ pub struct DoctorTarget {
     pub base_ref: String,
     pub base_sha: String,
     pub head_sha: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorEvaluationTargetKind {
+    PrHead,
+    TestMerge,
+    MergeGroup,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorEvaluationTargetResolution {
+    Selected,
+    Provisional,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorEvaluationTarget {
+    pub kind: DoctorEvaluationTargetKind,
+    pub resolution: DoctorEvaluationTargetResolution,
+    pub sha: String,
+    pub base_sha: Option<String>,
+    pub queue_entry_id: Option<String>,
+    pub queue_state: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorTargetV2 {
+    pub number: u64,
+    pub url: String,
+    pub base_ref: String,
+    pub base_sha: String,
+    pub head_sha: String,
+    pub evaluation: DoctorEvaluationTarget,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -106,6 +146,21 @@ pub struct PullRequestDoctorSnapshot {
     pub provider_url: String,
     pub repository: String,
     pub target: DoctorTarget,
+    pub collection: DoctorCollection,
+    pub requirements: Vec<DoctorRequirement>,
+    pub check_runs: Vec<DoctorCheckRun>,
+    pub statuses: Vec<DoctorCommitStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PullRequestDoctorSnapshotV2 {
+    pub schema: String,
+    pub captured_at: String,
+    pub provider_url: String,
+    pub repository: String,
+    pub target: DoctorTargetV2,
+    pub signal_sha: String,
     pub collection: DoctorCollection,
     pub requirements: Vec<DoctorRequirement>,
     pub check_runs: Vec<DoctorCheckRun>,
@@ -221,6 +276,23 @@ pub struct PullRequestDoctorReport {
     pub provider_url: String,
     pub repository: String,
     pub target: DoctorTarget,
+    pub collection: DoctorCollection,
+    pub claim_boundary: DoctorClaimBoundary,
+    pub verdict: DoctorVerdict,
+    pub summary: DoctorSummary,
+    pub requirements: Vec<DoctorRequirementDiagnosis>,
+    pub next_actions: Vec<DoctorNextAction>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PullRequestDoctorReportV2 {
+    pub schema: String,
+    pub tool_version: String,
+    pub generated_at: String,
+    pub provider_url: String,
+    pub repository: String,
+    pub target: DoctorTargetV2,
     pub collection: DoctorCollection,
     pub claim_boundary: DoctorClaimBoundary,
     pub verdict: DoctorVerdict,
@@ -508,6 +580,101 @@ fn validate_snapshot(snapshot: &PullRequestDoctorSnapshot) -> Result<()> {
     Ok(())
 }
 
+fn legacy_snapshot(snapshot: &PullRequestDoctorSnapshotV2) -> PullRequestDoctorSnapshot {
+    PullRequestDoctorSnapshot {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA.to_owned(),
+        captured_at: snapshot.captured_at.clone(),
+        provider_url: snapshot.provider_url.clone(),
+        repository: snapshot.repository.clone(),
+        target: DoctorTarget {
+            number: snapshot.target.number,
+            url: snapshot.target.url.clone(),
+            base_ref: snapshot.target.base_ref.clone(),
+            base_sha: snapshot.target.base_sha.clone(),
+            head_sha: snapshot.target.head_sha.clone(),
+        },
+        collection: snapshot.collection.clone(),
+        requirements: snapshot.requirements.clone(),
+        check_runs: snapshot.check_runs.clone(),
+        statuses: snapshot.statuses.clone(),
+    }
+}
+
+fn validate_evaluation_target(target: &DoctorTargetV2) -> Result<()> {
+    let evaluation = &target.evaluation;
+    ensure!(
+        valid_sha(&evaluation.sha),
+        "evaluation SHA must be a lowercase full Git object ID"
+    );
+    if let Some(base_sha) = &evaluation.base_sha {
+        ensure!(
+            valid_sha(base_sha),
+            "evaluation base SHA must be a lowercase full Git object ID"
+        );
+    }
+    if let Some(queue_entry_id) = &evaluation.queue_entry_id {
+        bounded_nonempty(queue_entry_id, 255, "merge-queue entry ID")?;
+    }
+    if let Some(queue_state) = &evaluation.queue_state {
+        bounded_nonempty(queue_state, 64, "merge-queue state")?;
+    }
+
+    match evaluation.kind {
+        DoctorEvaluationTargetKind::PrHead => ensure!(
+            evaluation.sha == target.head_sha
+                && evaluation.base_sha.is_none()
+                && evaluation.queue_entry_id.is_none()
+                && evaluation.queue_state.is_none(),
+            "pr_head evaluation must use the PR head SHA without candidate metadata"
+        ),
+        DoctorEvaluationTargetKind::TestMerge => {
+            ensure!(
+                evaluation.sha != target.head_sha && evaluation.sha != target.base_sha,
+                "test_merge evaluation SHA must be distinct from the PR head and base"
+            );
+            ensure!(
+                evaluation.base_sha.as_deref() == Some(target.base_sha.as_str())
+                    && evaluation.queue_entry_id.is_none()
+                    && evaluation.queue_state.is_none(),
+                "test_merge evaluation must identify the PR base without merge-queue metadata"
+            );
+        }
+        DoctorEvaluationTargetKind::MergeGroup => {
+            ensure!(
+                evaluation.sha != target.head_sha
+                    && evaluation
+                        .base_sha
+                        .as_deref()
+                        .is_some_and(|base_sha| base_sha != evaluation.sha),
+                "merge_group evaluation must identify a distinct candidate and base SHA"
+            );
+            ensure!(
+                evaluation.queue_entry_id.is_some() && evaluation.queue_state.is_some(),
+                "merge_group evaluation must identify its queue entry and state"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_snapshot_v2(snapshot: &PullRequestDoctorSnapshotV2) -> Result<()> {
+    ensure!(
+        snapshot.schema == PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA,
+        "unsupported pull-request doctor v2 snapshot schema"
+    );
+    validate_snapshot(&legacy_snapshot(snapshot))?;
+    validate_evaluation_target(&snapshot.target)?;
+    ensure!(
+        valid_sha(&snapshot.signal_sha),
+        "signal SHA must be a lowercase full Git object ID"
+    );
+    ensure!(
+        snapshot.signal_sha == snapshot.target.evaluation.sha,
+        "signal SHA must match the evaluation SHA"
+    );
+    Ok(())
+}
+
 fn check_state(check: &DoctorCheckRun) -> SignalState {
     match check.status.as_str() {
         "queued" | "in_progress" | "requested" | "pending" | "waiting" => SignalState::Pending,
@@ -555,12 +722,12 @@ fn aggregate_signal_states(states: impl Iterator<Item = SignalState>) -> SignalS
     }
 }
 
-fn check_evidence(snapshot: &PullRequestDoctorSnapshot, check: &DoctorCheckRun) -> DoctorEvidence {
+fn check_evidence(signal_sha: &str, check: &DoctorCheckRun) -> DoctorEvidence {
     DoctorEvidence {
         kind: DoctorEvidenceKind::CheckRun,
         id: check.id.to_string(),
         url: check.url.clone(),
-        sha: snapshot.target.head_sha.clone(),
+        sha: signal_sha.to_owned(),
         context: check.name.clone(),
         app_id: check.app_id,
         producer: check.app_slug.clone(),
@@ -569,15 +736,12 @@ fn check_evidence(snapshot: &PullRequestDoctorSnapshot, check: &DoctorCheckRun) 
     }
 }
 
-fn status_evidence(
-    snapshot: &PullRequestDoctorSnapshot,
-    status: &DoctorCommitStatus,
-) -> DoctorEvidence {
+fn status_evidence(signal_sha: &str, status: &DoctorCommitStatus) -> DoctorEvidence {
     DoctorEvidence {
         kind: DoctorEvidenceKind::CommitStatus,
         id: status.id.to_string(),
         url: status.url.clone(),
-        sha: snapshot.target.head_sha.clone(),
+        sha: signal_sha.to_owned(),
         context: status.context.clone(),
         app_id: None,
         producer: status.creator_login.clone(),
@@ -606,6 +770,7 @@ fn signal_collection_incomplete(snapshot: &PullRequestDoctorSnapshot) -> bool {
 
 fn diagnose_requirement(
     snapshot: &PullRequestDoctorSnapshot,
+    signal_sha: &str,
     key: DoctorRequirementKey,
     policies: Vec<DoctorPolicyRef>,
 ) -> DoctorRequirementDiagnosis {
@@ -622,11 +787,11 @@ fn diagnose_requirement(
         .collect::<Vec<_>>();
     let mut evidence = matching_checks
         .iter()
-        .map(|check| check_evidence(snapshot, check))
+        .map(|check| check_evidence(signal_sha, check))
         .chain(
             matching_statuses
                 .iter()
-                .map(|status| status_evidence(snapshot, status)),
+                .map(|status| status_evidence(signal_sha, status)),
         )
         .collect::<Vec<_>>();
     evidence.sort();
@@ -803,8 +968,8 @@ fn status_count(
     .context("doctor requirement count exceeds u64")
 }
 
-fn checks_argv(snapshot: &PullRequestDoctorSnapshot) -> Vec<String> {
-    let hostname = provider_hostname(&snapshot.provider_url)
+fn checks_argv_for_sha(provider_url: &str, repository: &str, evaluation_sha: &str) -> Vec<String> {
+    let hostname = provider_hostname(provider_url)
         .expect("the provider URL was validated before actions are built");
     vec![
         "gh".to_owned(),
@@ -813,9 +978,17 @@ fn checks_argv(snapshot: &PullRequestDoctorSnapshot) -> Vec<String> {
         hostname.to_owned(),
         format!(
             "repos/{}/commits/{}/check-runs?filter=latest&per_page=100",
-            snapshot.repository, snapshot.target.head_sha
+            repository, evaluation_sha
         ),
     ]
+}
+
+fn checks_argv(snapshot: &PullRequestDoctorSnapshot) -> Vec<String> {
+    checks_argv_for_sha(
+        &snapshot.provider_url,
+        &snapshot.repository,
+        &snapshot.target.head_sha,
+    )
 }
 
 fn doctor_argv(snapshot: &PullRequestDoctorSnapshot) -> Vec<String> {
@@ -873,8 +1046,9 @@ fn action_for(
     })
 }
 
-pub fn evaluate_pull_request_doctor(
+fn evaluate_pull_request_doctor_with_signal_sha(
     snapshot: &PullRequestDoctorSnapshot,
+    signal_sha: &str,
 ) -> Result<PullRequestDoctorReport> {
     validate_snapshot(snapshot)?;
 
@@ -891,7 +1065,9 @@ pub fn evaluate_pull_request_doctor(
     }
     let diagnoses = requirements
         .into_iter()
-        .map(|(key, policies)| diagnose_requirement(snapshot, key, policies.into_iter().collect()))
+        .map(|(key, policies)| {
+            diagnose_requirement(snapshot, signal_sha, key, policies.into_iter().collect())
+        })
         .collect::<Vec<_>>();
 
     let summary = DoctorSummary {
@@ -980,6 +1156,81 @@ pub fn evaluate_pull_request_doctor(
     })
 }
 
+pub fn evaluate_pull_request_doctor(
+    snapshot: &PullRequestDoctorSnapshot,
+) -> Result<PullRequestDoctorReport> {
+    evaluate_pull_request_doctor_with_signal_sha(snapshot, &snapshot.target.head_sha)
+}
+
+pub fn evaluate_pull_request_doctor_v2(
+    snapshot: &PullRequestDoctorSnapshotV2,
+) -> Result<PullRequestDoctorReportV2> {
+    validate_snapshot_v2(snapshot)?;
+    let legacy = legacy_snapshot(snapshot);
+    let report = evaluate_pull_request_doctor_with_signal_sha(&legacy, &snapshot.signal_sha)?;
+    let target_selected =
+        snapshot.target.evaluation.resolution == DoctorEvaluationTargetResolution::Selected;
+    let mut requirements = report.requirements;
+    for diagnosis in &mut requirements {
+        diagnosis.explanation = diagnosis
+            .explanation
+            .replace("exact head", "exact evaluation target");
+    }
+    let mut next_actions = report.next_actions;
+    for action in &mut next_actions {
+        action.title = action
+            .title
+            .replace("exact head", "exact evaluation target");
+        action.rationale = action
+            .rationale
+            .replace("exact head", "exact evaluation target")
+            .replace("PR head", "declared evaluation target")
+            .replace("exact-head", "evaluation-target");
+        if action.requirement.is_some() {
+            action.argv = checks_argv_for_sha(
+                &snapshot.provider_url,
+                &snapshot.repository,
+                &snapshot.signal_sha,
+            );
+        }
+    }
+    if !target_selected {
+        next_actions = vec![DoctorNextAction {
+            code: DoctorActionCode::CompleteCollection,
+            requirement: None,
+            title: "Resolve the provisional evaluation target".to_owned(),
+            rationale: "Doctor observed signals on this SHA but did not prove that GitHub selected it as the active required-check target. Refresh candidate evidence before acting on the diagnosis."
+                .to_owned(),
+            argv: doctor_argv(&legacy),
+        }];
+    }
+
+    let mut claim_boundary = report.claim_boundary;
+    claim_boundary.required_check_readiness_supported = target_selected
+        && snapshot.collection.status == DoctorCollectionStatus::Complete
+        && claim_boundary.required_check_readiness_supported;
+    let verdict = if target_selected {
+        report.verdict
+    } else {
+        DoctorVerdict::Inconclusive
+    };
+
+    Ok(PullRequestDoctorReportV2 {
+        schema: PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA.to_owned(),
+        tool_version: report.tool_version,
+        generated_at: report.generated_at,
+        provider_url: report.provider_url,
+        repository: report.repository,
+        target: snapshot.target.clone(),
+        collection: report.collection,
+        claim_boundary,
+        verdict,
+        summary: report.summary,
+        requirements,
+        next_actions,
+    })
+}
+
 fn markdown_text(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
@@ -1055,30 +1306,32 @@ fn collection_surface(surface: DoctorCollectionSurface) -> &'static str {
     }
 }
 
-pub fn render_pull_request_doctor_markdown(report: &PullRequestDoctorReport) -> String {
-    let mut output = String::new();
-    output.push_str("# StrataDiff PR Required-Check Doctor\n\n");
-    output.push_str(&format!(
-        "- Pull request: [#{}](<{}>)\n",
-        report.target.number, report.target.url
-    ));
-    output.push_str(&format!(
-        "- Repository: {}\n- Exact head: {}\n- Base: {} at {}\n- Verdict: {}\n\n",
-        markdown_code(&report.repository),
-        markdown_code(&report.target.head_sha),
-        markdown_code(&report.target.base_ref),
-        markdown_code(&report.target.base_sha),
-        markdown_code(verdict_name(report.verdict))
-    ));
-    if report.claim_boundary.required_check_readiness_supported {
-        output.push_str("The verdict covers required-check readiness for this exact head SHA after confirming that GitHub's test-merge commit had no status signals and no visible rule selected an unsupported target. It does not evaluate reviews, conflicts, deployment policy, or code safety.\n\n");
-    } else {
-        output.push_str("The observed signals are bound to this exact head SHA, but Doctor could not prove that it is GitHub's active check target. The global verdict is therefore inconclusive and does not evaluate mergeability, reviews, conflicts, deployment policy, or code safety.\n\n");
+fn evaluation_kind(kind: DoctorEvaluationTargetKind) -> &'static str {
+    match kind {
+        DoctorEvaluationTargetKind::PrHead => "pr_head",
+        DoctorEvaluationTargetKind::TestMerge => "test_merge",
+        DoctorEvaluationTargetKind::MergeGroup => "merge_group",
     }
+}
+
+fn evaluation_resolution(resolution: DoctorEvaluationTargetResolution) -> &'static str {
+    match resolution {
+        DoctorEvaluationTargetResolution::Selected => "selected",
+        DoctorEvaluationTargetResolution::Provisional => "provisional",
+    }
+}
+
+fn render_doctor_sections(
+    output: &mut String,
+    requirements: &[DoctorRequirementDiagnosis],
+    next_actions: &[DoctorNextAction],
+    collection: &DoctorCollection,
+    clear_target: &str,
+) {
     output.push_str("## Required checks\n\n");
     output.push_str("| Requirement | Expected App | Status | Evidence |\n");
     output.push_str("|---|---:|---|---:|\n");
-    for diagnosis in &report.requirements {
+    for diagnosis in requirements {
         let expected_app = diagnosis
             .key
             .expected_app_id
@@ -1092,12 +1345,12 @@ pub fn render_pull_request_doctor_markdown(report: &PullRequestDoctorReport) -> 
             diagnosis.evidence.len()
         ));
     }
-    if report.requirements.is_empty() {
+    if requirements.is_empty() {
         output.push_str("| _No required checks_ | — | — | 0 |\n");
     }
 
     output.push_str("\n## Diagnosis\n\n");
-    for diagnosis in &report.requirements {
+    for diagnosis in requirements {
         output.push_str(&format!(
             "### {} · {}\n\n{}\n\n",
             markdown_code(&diagnosis.key.context),
@@ -1132,15 +1385,17 @@ pub fn render_pull_request_doctor_markdown(report: &PullRequestDoctorReport) -> 
             }
         }
     }
-    if report.requirements.is_empty() {
+    if requirements.is_empty() {
         output.push_str("No required checks were reported by the collected policy surfaces.\n");
     }
 
     output.push_str("\n## Next actions\n\n");
-    if report.next_actions.is_empty() {
-        output.push_str("No check-recovery action is needed for this exact head.\n");
+    if next_actions.is_empty() {
+        output.push_str(&format!(
+            "No check-recovery action is needed for {clear_target}.\n"
+        ));
     } else {
-        for action in &report.next_actions {
+        for action in next_actions {
             let argv = serde_json::to_string(&action.argv)
                 .expect("a string argv is always JSON serializable");
             output.push_str(&format!(
@@ -1153,10 +1408,10 @@ pub fn render_pull_request_doctor_markdown(report: &PullRequestDoctorReport) -> 
     }
 
     output.push_str("\n## Collection gaps\n\n");
-    if report.collection.gaps.is_empty() {
+    if collection.gaps.is_empty() {
         output.push_str("Collection was complete.\n");
     } else {
-        for gap in &report.collection.gaps {
+        for gap in &collection.gaps {
             output.push_str(&format!(
                 "- {}: {}\n",
                 markdown_code(collection_surface(gap.surface)),
@@ -1164,5 +1419,105 @@ pub fn render_pull_request_doctor_markdown(report: &PullRequestDoctorReport) -> 
             ));
         }
     }
+}
+
+pub fn render_pull_request_doctor_markdown(report: &PullRequestDoctorReport) -> String {
+    let mut output = String::new();
+    output.push_str("# StrataDiff PR Required-Check Doctor\n\n");
+    output.push_str(&format!(
+        "- Pull request: [#{}](<{}>)\n",
+        report.target.number, report.target.url
+    ));
+    output.push_str(&format!(
+        "- Repository: {}\n- Exact head: {}\n- Base: {} at {}\n- Verdict: {}\n\n",
+        markdown_code(&report.repository),
+        markdown_code(&report.target.head_sha),
+        markdown_code(&report.target.base_ref),
+        markdown_code(&report.target.base_sha),
+        markdown_code(verdict_name(report.verdict))
+    ));
+    if report.claim_boundary.required_check_readiness_supported {
+        output.push_str("The verdict covers required-check readiness for this exact head SHA after confirming that GitHub's test-merge commit had no status signals and no visible rule selected an unsupported target. It does not evaluate reviews, conflicts, deployment policy, or code safety.\n\n");
+    } else {
+        output.push_str("The observed signals are bound to this exact head SHA, but Doctor could not prove that it is GitHub's active check target. The global verdict is therefore inconclusive and does not evaluate mergeability, reviews, conflicts, deployment policy, or code safety.\n\n");
+    }
+    render_doctor_sections(
+        &mut output,
+        &report.requirements,
+        &report.next_actions,
+        &report.collection,
+        "this exact head",
+    );
+    output
+}
+
+fn support_name(supported: bool) -> &'static str {
+    if supported {
+        "supported"
+    } else {
+        "not supported"
+    }
+}
+
+pub fn render_pull_request_doctor_v2_markdown(report: &PullRequestDoctorReportV2) -> String {
+    let evaluation = &report.target.evaluation;
+    let mut output = String::new();
+    output.push_str("# StrataDiff PR Required-Check Doctor\n\n");
+    output.push_str(&format!(
+        "- Pull request: [#{}](<{}>)\n",
+        report.target.number, report.target.url
+    ));
+    output.push_str(&format!(
+        "- Repository: {}\n- Evaluation target: {} at {}\n- Resolution: {}\n- PR head: {}\n- PR base: {} at {}\n",
+        markdown_code(&report.repository),
+        markdown_code(evaluation_kind(evaluation.kind)),
+        markdown_code(&evaluation.sha),
+        markdown_code(evaluation_resolution(evaluation.resolution)),
+        markdown_code(&report.target.head_sha),
+        markdown_code(&report.target.base_ref),
+        markdown_code(&report.target.base_sha),
+    ));
+    if let Some(base_sha) = &evaluation.base_sha {
+        output.push_str(&format!("- Evaluation base: {}\n", markdown_code(base_sha)));
+    }
+    if let (Some(entry_id), Some(state)) = (&evaluation.queue_entry_id, &evaluation.queue_state) {
+        output.push_str(&format!(
+            "- Merge-queue entry: {} ({})\n",
+            markdown_code(entry_id),
+            markdown_code(state)
+        ));
+    }
+    output.push_str(&format!(
+        "- Verdict: {}\n\n## Claim boundary\n\n- Required-check readiness: {}\n- Mergeability: {}\n- Review requirements: {}\n- Compliance: {}\n- Code safety: {}\n\n",
+        markdown_code(verdict_name(report.verdict)),
+        support_name(report.claim_boundary.required_check_readiness_supported),
+        support_name(report.claim_boundary.mergeability_supported),
+        support_name(report.claim_boundary.review_requirements_supported),
+        support_name(report.claim_boundary.compliance_supported),
+        support_name(report.claim_boundary.code_safety_supported),
+    ));
+    if evaluation.resolution == DoctorEvaluationTargetResolution::Provisional {
+        output.push_str(&format!(
+            "This {} evaluation target is provisional: Doctor observed this SHA but has not proved that GitHub selected it as the active required-check target. The global verdict is therefore inconclusive. It does not evaluate mergeability, reviews, conflicts, deployment policy, compliance, or code safety.\n\n",
+            markdown_code(evaluation_kind(evaluation.kind)),
+        ));
+    } else if report.claim_boundary.required_check_readiness_supported {
+        output.push_str(&format!(
+            "The verdict covers required-check readiness only for the declared {} evaluation target at the exact SHA shown above. It does not evaluate mergeability, reviews, conflicts, deployment policy, compliance, or code safety.\n\n",
+            markdown_code(evaluation_kind(evaluation.kind)),
+        ));
+    } else {
+        output.push_str(&format!(
+            "The observed signals are bound to the declared {} evaluation target at the exact SHA shown above, but Doctor could not complete a required-check readiness claim. It does not evaluate mergeability, reviews, conflicts, deployment policy, compliance, or code safety.\n\n",
+            markdown_code(evaluation_kind(evaluation.kind)),
+        ));
+    }
+    render_doctor_sections(
+        &mut output,
+        &report.requirements,
+        &report.next_actions,
+        &report.collection,
+        "this exact evaluation target",
+    );
     output
 }

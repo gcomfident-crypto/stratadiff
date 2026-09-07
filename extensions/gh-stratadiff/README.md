@@ -27,17 +27,29 @@ Review Resume Workbench without contacting GitHub. An upstream base edit and a p
 author edit are reconstructed, leaving exactly one post-review line in the queue. The temporary
 history is removed when the Workbench stops.
 
-`doctor` is an experimental, low-friction incident path for a stuck pull request once the native `stratadiff`
-binary is on `PATH` (or selected with `STRATADIFF_BIN`). It binds the effective
-required-check policy to the PR's exact current head, distinguishes a missing signal from a failed
-or pending signal and an expected-App source mismatch, and prints the next safe inspection command.
-Incomplete policy or check visibility remains `inconclusive`; the command does not claim that the
-pull request is mergeable because reviews, conflicts, deployments, and other merge requirements
-remain outside this first contract.
+`doctor` is an experimental, low-friction incident path for a stuck pull request once the native
+`stratadiff` binary is on `PATH` (or selected with `STRATADIFF_BIN`). Its v2 report explicitly names
+the evaluation target as `pr_head`, `test_merge`, or `merge_group` and binds every observed Check
+Run, legacy commit status, and next inspection command to that exact SHA. For effective required
+status checks, it distinguishes a missing signal from a failed or pending signal and an
+expected-App source mismatch.
 
-Before returning `checks_clear` or `checks_blocked`, this head-only version confirms that the
-test-merge commit has no status signals and that no visible merge-queue or required-workflow rule
-selects another target. Unsupported or unresolved targets return `inconclusive`.
+For a PR that is not queued, Doctor follows GitHub's documented rule: any Check Run or legacy
+commit status on the test-merge commit selects `test_merge`. A missing test-merge SHA, incomplete
+probe, or complete but empty test-merge signals leave `pr_head` provisional and remain
+`inconclusive`.
+
+For a queued PR, Doctor reads GraphQL `mergeQueueEntry`, records its entry ID, state, base commit,
+and head commit, and reports the entry head as the `merge_group` target. This polling-derived
+identity has not yet been cross-validated against a delivered `merge_group` webhook, so queued
+results are always `inconclusive`. Effective required-workflow rules are detected, but their
+expected workflow identities are not yet collected or diagnosed and also keep the result
+`inconclusive`.
+
+The command re-reads REST and GraphQL target identity, effective rulesets, and classic branch
+protection after collection, then aborts on concurrent candidate or policy drift. Incomplete policy
+or check visibility cannot become clear. Doctor does not claim that the pull request is mergeable,
+reviewed, conflict-free, compliant, or safe to merge; those properties remain outside this contract.
 
 `inbox` is the daily, reviewer-specific path. It searches across repositories for open pull
 requests where the authenticated GitHub user completed a review and the current head differs from

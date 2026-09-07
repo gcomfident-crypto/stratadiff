@@ -16,7 +16,7 @@ use stratadiff::coverage::{
     verify_review_coverage_passport,
 };
 use stratadiff::doctor::{
-    DoctorVerdict, evaluate_pull_request_doctor, render_pull_request_doctor_markdown,
+    DoctorVerdict, evaluate_pull_request_doctor_v2, render_pull_request_doctor_v2_markdown,
 };
 use stratadiff::github::{
     MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
@@ -43,9 +43,9 @@ use stratadiff::readiness::{
     AuditVerdict, evaluate_merge_readiness, render_merge_readiness_markdown,
 };
 use stratadiff::readiness_audit::{
-    GithubReadinessApi, GithubReadinessApiResponse, MAX_READINESS_API_RESPONSE_BYTES,
-    MergeReadinessCollection, PullRequestDoctorCollection, collect_merge_readiness_snapshot,
-    collect_pull_request_doctor_snapshot,
+    GithubPullRequestDoctorApi, GithubReadinessApi, GithubReadinessApiResponse,
+    MAX_READINESS_API_RESPONSE_BYTES, MergeReadinessCollection, PullRequestDoctorCollection,
+    collect_merge_readiness_snapshot, collect_pull_request_doctor_snapshot,
 };
 use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
@@ -95,7 +95,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Inspect required-check signals for one pull request's exact current head.
+    /// Inspect required-check signals on GitHub's exact evaluation candidate.
     Doctor {
         /// Positive pull request number or canonical HTTPS pull request URL.
         pull_request: String,
@@ -836,10 +836,10 @@ fn run(command: Command) -> Result<()> {
                 },
                 &mut api,
             )?;
-            let report = evaluate_pull_request_doctor(&snapshot)?;
+            let report = evaluate_pull_request_doctor_v2(&snapshot)?;
             let mut encoded = match (format, output.is_some()) {
                 (ReadinessOutput::Markdown, _) => {
-                    render_pull_request_doctor_markdown(&report).into_bytes()
+                    render_pull_request_doctor_v2_markdown(&report).into_bytes()
                 }
                 (ReadinessOutput::Json, true) => serde_json::to_vec_pretty(&report)?,
                 (ReadinessOutput::Json, false) => serde_json::to_vec(&report)?,
@@ -1851,6 +1851,90 @@ impl GithubReadinessApi for GhCliReadinessApi {
     }
 }
 
+impl GithubPullRequestDoctorApi for GhCliReadinessApi {
+    fn graphql(
+        &mut self,
+        query: &str,
+        variables: &serde_json::Value,
+    ) -> Result<GithubReadinessApiResponse> {
+        let remaining = GITHUB_READINESS_TOTAL_TIMEOUT
+            .checked_sub(self.started.elapsed())
+            .context("GitHub readiness collection exceeded its 10-minute deadline")?;
+        ensure!(
+            !remaining.is_zero(),
+            "GitHub readiness collection exceeded its 10-minute deadline"
+        );
+        let variables = variables
+            .as_object()
+            .context("GraphQL variables must be a JSON object")?;
+        let mut command = ProcessCommand::new("gh");
+        command
+            .arg("api")
+            .arg("graphql")
+            .arg("--include")
+            .arg("--hostname")
+            .arg(&self.hostname)
+            .arg("--raw-field")
+            .arg(format!("query={query}"));
+        for (name, value) in variables {
+            ensure!(
+                !name.is_empty()
+                    && name
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'),
+                "GraphQL variable name is invalid"
+            );
+            match value {
+                serde_json::Value::String(value) => {
+                    command.arg("--raw-field").arg(format!("{name}={value}"));
+                }
+                serde_json::Value::Number(value) => {
+                    command.arg("--field").arg(format!("{name}={value}"));
+                }
+                serde_json::Value::Bool(value) => {
+                    command.arg("--field").arg(format!("{name}={value}"));
+                }
+                _ => bail!("GraphQL variable {name} must be a string, number, or boolean"),
+            }
+        }
+        command
+            .env_remove("GH_DEBUG")
+            .env_remove("DEBUG")
+            .env_remove("CLICOLOR")
+            .env_remove("CLICOLOR_FORCE")
+            .env_remove("FORCE_COLOR")
+            .env_remove("GH_FORCE_TTY")
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_PAGER", "cat")
+            .env("NO_COLOR", "1");
+        let output = run_bounded_process(
+            &mut command,
+            MAX_READINESS_API_RESPONSE_BYTES + GITHUB_API_HEADER_BYTES + 4,
+            64 * 1024,
+            remaining.min(GITHUB_API_TIMEOUT),
+            "gh api graphql",
+            None,
+        )?;
+        let response = match parse_gh_graphql_included_response(&output.stdout) {
+            Ok(response) => response,
+            Err(error) if !output.status.success() => bail!(
+                "gh api graphql failed with {}: {}; response parse error: {error:#}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim_end()
+            ),
+            Err(error) => return Err(error),
+        };
+        if !output.status.success() && successful_http_status(response.status) {
+            bail!(
+                "gh api graphql failed with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim_end()
+            );
+        }
+        Ok(response)
+    }
+}
+
 fn successful_http_status(status: u16) -> bool {
     (200..300).contains(&status)
 }
@@ -1858,6 +1942,18 @@ fn successful_http_status(status: u16) -> bool {
 fn parse_gh_readiness_included_response(
     included: &[u8],
     endpoint: &str,
+) -> Result<GithubReadinessApiResponse> {
+    parse_gh_json_included_response(included, endpoint, true)
+}
+
+fn parse_gh_graphql_included_response(included: &[u8]) -> Result<GithubReadinessApiResponse> {
+    parse_gh_json_included_response(included, "graphql", false)
+}
+
+fn parse_gh_json_included_response(
+    included: &[u8],
+    endpoint: &str,
+    require_selected_api_version: bool,
 ) -> Result<GithubReadinessApiResponse> {
     let (header_end, delimiter_len) = find_header_boundary(included)
         .context("gh api --include response did not contain a header boundary")?;
@@ -1927,12 +2023,14 @@ fn parse_gh_readiness_included_response(
             .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json")),
         "gh api returned unsupported Content-Type {content_type} for {endpoint}"
     );
-    let selected_api_version =
-        selected_api_version.context("gh api response is missing X-GitHub-Api-Version-Selected")?;
-    ensure!(
-        selected_api_version == GITHUB_API_VERSION,
-        "gh api selected version {selected_api_version} for {endpoint}, expected {GITHUB_API_VERSION}"
-    );
+    if require_selected_api_version {
+        let selected_api_version = selected_api_version
+            .context("gh api response is missing X-GitHub-Api-Version-Selected")?;
+        ensure!(
+            selected_api_version == GITHUB_API_VERSION,
+            "gh api selected version {selected_api_version} for {endpoint}, expected {GITHUB_API_VERSION}"
+        );
+    }
     Ok(GithubReadinessApiResponse {
         status,
         body,
@@ -2352,7 +2450,8 @@ mod tests {
 
     use super::{
         display_bytes, display_text, escape_terminal_unsafe_json, is_terminal_unsafe,
-        parse_gh_included_response, read_bounded, write_exact_byte_edits,
+        parse_gh_graphql_included_response, parse_gh_included_response, read_bounded,
+        write_exact_byte_edits,
     };
 
     #[test]
@@ -2409,6 +2508,17 @@ mod tests {
                 .to_string()
                 .contains("missing X-GitHub-Api-Version-Selected")
         );
+    }
+
+    #[test]
+    fn included_graphql_response_does_not_require_a_rest_api_version_header() {
+        let included = b"HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n{\"data\":{}}";
+
+        let response = parse_gh_graphql_included_response(included).unwrap();
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, br#"{"data":{}}"#);
+        assert!(response.link_header.is_none());
     }
 
     #[test]

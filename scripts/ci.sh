@@ -52,6 +52,14 @@ python3 -B benchmarks/pull-request-doctor-v1/verify.py verify
 python3 -B benchmarks/pull-request-doctor-v1/verify.py self-test
 (cd benchmarks/pull-request-doctor-v1 && sha256sum -c SHA256SUMS)
 cargo test --test pull_request_doctor_v1 --locked
+python3 -B benchmarks/pull-request-candidate-v1/verify.py verify
+python3 -B benchmarks/pull-request-candidate-v1/verify.py self-test
+(cd benchmarks/pull-request-candidate-v1 && sha256sum -c SHA256SUMS)
+cargo test --test doctor_candidate --locked
+python3 -B benchmarks/doctor-workflow-trigger-v1/verify.py verify
+python3 -B benchmarks/doctor-workflow-trigger-v1/verify.py self-test
+(cd benchmarks/doctor-workflow-trigger-v1 && sha256sum -c SHA256SUMS)
+cargo test --test doctor_workflow --locked
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

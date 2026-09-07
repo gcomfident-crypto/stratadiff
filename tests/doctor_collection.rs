@@ -2,27 +2,40 @@ use std::collections::VecDeque;
 
 use serde_json::{Value, json};
 use stratadiff::doctor::{
-    DoctorCollectionStatus, DoctorCollectionSurface, DoctorPolicyKind, DoctorVerdict,
-    evaluate_pull_request_doctor,
+    DoctorCollectionStatus, DoctorCollectionSurface, DoctorEvaluationTargetKind,
+    DoctorEvaluationTargetResolution, DoctorPolicyKind, DoctorVerdict,
+    evaluate_pull_request_doctor_v2,
 };
 use stratadiff::readiness_audit::{
-    GithubReadinessApi, GithubReadinessApiResponse, PullRequestDoctorCollection,
-    collect_pull_request_doctor_snapshot,
+    GithubPullRequestDoctorApi, GithubReadinessApi, GithubReadinessApiResponse,
+    PullRequestDoctorCollection, collect_pull_request_doctor_snapshot,
 };
 
 const BASE_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HEAD_SHA: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const MERGE_SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
+const QUEUE_BASE_SHA: &str = "dddddddddddddddddddddddddddddddddddddddd";
+const QUEUE_SHA: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
 
 struct StubApi {
     responses: VecDeque<(String, GithubReadinessApiResponse)>,
+    graphql_responses: VecDeque<GithubReadinessApiResponse>,
 }
 
 impl StubApi {
     fn new(responses: Vec<(String, GithubReadinessApiResponse)>) -> Self {
+        let graphql_response = responses
+            .first()
+            .map(|(_, response)| graphql_response_for_pull(&response.body));
         Self {
             responses: responses.into(),
+            graphql_responses: graphql_response.into_iter().cycle().take(2).collect(),
         }
+    }
+
+    fn with_graphql_responses(mut self, responses: Vec<GithubReadinessApiResponse>) -> Self {
+        self.graphql_responses = responses.into();
+        self
     }
 
     fn finish(self) {
@@ -34,6 +47,24 @@ impl StubApi {
                 .map(|(endpoint, _)| endpoint)
                 .collect::<Vec<_>>()
         );
+    }
+}
+
+impl GithubPullRequestDoctorApi for StubApi {
+    fn graphql(
+        &mut self,
+        query: &str,
+        variables: &Value,
+    ) -> anyhow::Result<GithubReadinessApiResponse> {
+        assert!(query.contains("query StrataDiffPullRequestCandidate"));
+        assert_eq!(
+            variables,
+            &json!({"owner": "acme", "name": "widgets", "number": 9})
+        );
+        Ok(self
+            .graphql_responses
+            .pop_front()
+            .expect("unexpected GraphQL request"))
     }
 }
 
@@ -61,6 +92,150 @@ fn response_with_next(status: u16, body: Value) -> GithubReadinessApiResponse {
             "<https://api.github.com/resource?per_page=100&page=2>; rel=\"next\"".to_owned(),
         ),
     }
+}
+
+fn graphql_response_for_pull(body: &[u8]) -> GithubReadinessApiResponse {
+    let pull: Value = serde_json::from_slice(body).unwrap();
+    let potential_merge_commit = match &pull["merge_commit_sha"] {
+        Value::String(sha) => json!({"oid": sha}),
+        Value::Null => Value::Null,
+        value => panic!("unexpected merge_commit_sha fixture: {value}"),
+    };
+    response(
+        200,
+        json!({
+            "data": {
+                "repository": {
+                    "nameWithOwner": "acme/widgets",
+                    "url": "https://github.com/acme/widgets",
+                    "pullRequest": {
+                        "number": pull["number"],
+                        "url": pull["html_url"],
+                        "state": "OPEN",
+                        "baseRefName": pull["base"]["ref"],
+                        "baseRefOid": pull["base"]["sha"],
+                        "headRefOid": pull["head"]["sha"],
+                        "mergeable": "MERGEABLE",
+                        "mergeStateStatus": "BLOCKED",
+                        "isMergeQueueEnabled": false,
+                        "isInMergeQueue": false,
+                        "potentialMergeCommit": potential_merge_commit,
+                        "mergeQueueEntry": null
+                    }
+                }
+            }
+        }),
+    )
+}
+
+fn queued_graphql_response(candidate_sha: &str) -> GithubReadinessApiResponse {
+    response(
+        200,
+        json!({
+            "data": {
+                "repository": {
+                    "nameWithOwner": "acme/widgets",
+                    "url": "https://github.com/acme/widgets",
+                    "pullRequest": {
+                        "number": 9,
+                        "url": "https://github.com/acme/widgets/pull/9",
+                        "state": "OPEN",
+                        "baseRefName": "release/1.x",
+                        "baseRefOid": BASE_SHA,
+                        "headRefOid": HEAD_SHA,
+                        "mergeable": "MERGEABLE",
+                        "mergeStateStatus": "BLOCKED",
+                        "isMergeQueueEnabled": true,
+                        "isInMergeQueue": true,
+                        "potentialMergeCommit": {"oid": MERGE_SHA},
+                        "mergeQueueEntry": {
+                            "id": "MQE_fixture_9",
+                            "state": "AWAITING_CHECKS",
+                            "position": 1,
+                            "baseCommit": {"oid": QUEUE_BASE_SHA},
+                            "headCommit": {"oid": candidate_sha},
+                            "pullRequest": {"number": 9, "headRefOid": HEAD_SHA}
+                        }
+                    }
+                }
+            }
+        }),
+    )
+}
+
+fn queued_without_entry_graphql_response() -> GithubReadinessApiResponse {
+    let mut body: Value = serde_json::from_slice(&queued_graphql_response(QUEUE_SHA).body).unwrap();
+    body["data"]["repository"]["pullRequest"]["mergeQueueEntry"] = Value::Null;
+    response(200, body)
+}
+
+fn queued_rest_responses() -> Vec<(String, GithubReadinessApiResponse)> {
+    let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
+    vec![
+        (
+            "repos/acme/widgets/pulls/9".to_owned(),
+            response(200, initial_pull.clone()),
+        ),
+        ("repos/acme/widgets".to_owned(), response(200, repository())),
+        (
+            "repos/acme/widgets/rules/branches/release%2F1.x?per_page=100&page=1".to_owned(),
+            response(
+                200,
+                json!([
+                    {
+                        "type": "merge_queue",
+                        "parameters": {},
+                        "ruleset_source_type": "Repository",
+                        "ruleset_source": "acme/widgets",
+                        "ruleset_id": 70
+                    },
+                    {
+                        "type": "required_status_checks",
+                        "parameters": {
+                            "required_status_checks": [
+                                {"context": "ci", "integration_id": 15368}
+                            ]
+                        },
+                        "ruleset_source_type": "Repository",
+                        "ruleset_source": "acme/widgets",
+                        "ruleset_id": 70
+                    }
+                ]),
+            ),
+        ),
+        (
+            "repos/acme/widgets/branches/release%2F1.x".to_owned(),
+            response(200, json!({"name": "release/1.x", "protected": false})),
+        ),
+        (
+            format!(
+                "repos/acme/widgets/commits/{QUEUE_SHA}/check-runs?filter=latest&per_page=100&page=1"
+            ),
+            response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "check_runs": [{
+                        "id": 901,
+                        "html_url": "https://github.com/acme/widgets/runs/901",
+                        "name": "ci",
+                        "head_sha": QUEUE_SHA,
+                        "app": {"id": 15368, "slug": "github-actions"},
+                        "status": "completed",
+                        "conclusion": "success"
+                    }]
+                }),
+            ),
+        ),
+        (
+            format!("repos/acme/widgets/commits/{QUEUE_SHA}/statuses?per_page=100&page=1"),
+            response(200, json!([])),
+        ),
+        (
+            "repos/acme/widgets/pulls/9".to_owned(),
+            response(200, initial_pull),
+        ),
+    ]
 }
 
 fn request() -> PullRequestDoctorCollection<'static> {
@@ -138,10 +313,19 @@ fn stable_empty_responses(final_pull: Value) -> Vec<(String, GithubReadinessApiR
     ]
 }
 
+fn append_policy_revalidation(
+    responses: &mut Vec<(String, GithubReadinessApiResponse)>,
+    start: usize,
+    end: usize,
+) {
+    let policy = responses[start..end].to_vec();
+    responses.extend(policy);
+}
+
 #[test]
 fn collects_only_the_exact_pr_base_and_head_with_classic_sources() {
     let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
-    let mut api = StubApi::new(vec![
+    let mut responses = vec![
         (
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull.clone()),
@@ -239,7 +423,9 @@ fn collects_only_the_exact_pr_base_and_head_with_classic_sources() {
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull),
         ),
-    ]);
+    ];
+    append_policy_revalidation(&mut responses, 2, 5);
+    let mut api = StubApi::new(responses);
 
     let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
     api.finish();
@@ -248,6 +434,15 @@ fn collects_only_the_exact_pr_base_and_head_with_classic_sources() {
     assert_eq!(snapshot.target.base_ref, "release/1.x");
     assert_eq!(snapshot.target.base_sha, BASE_SHA);
     assert_eq!(snapshot.target.head_sha, HEAD_SHA);
+    assert_eq!(snapshot.signal_sha, HEAD_SHA);
+    assert_eq!(
+        snapshot.target.evaluation.resolution,
+        DoctorEvaluationTargetResolution::Provisional
+    );
+    assert_eq!(
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
+        DoctorVerdict::Inconclusive
+    );
     assert_eq!(snapshot.check_runs.len(), 1);
     assert_eq!(snapshot.check_runs[0].name, "lint");
     assert_eq!(snapshot.statuses.len(), 1);
@@ -284,7 +479,7 @@ fn collects_only_the_exact_pr_base_and_head_with_classic_sources() {
 #[test]
 fn follows_effective_rule_pagination_before_calling_collection_complete() {
     let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
-    let mut api = StubApi::new(vec![
+    let mut responses = vec![
         (
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull.clone()),
@@ -360,13 +555,15 @@ fn follows_effective_rule_pagination_before_calling_collection_complete() {
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull),
         ),
-    ]);
+    ];
+    append_policy_revalidation(&mut responses, 2, 5);
+    let mut api = StubApi::new(responses);
 
     let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
     api.finish();
 
     assert_eq!(snapshot.collection.status, DoctorCollectionStatus::Complete);
-    assert_eq!(snapshot.collection.api_calls, 10);
+    assert_eq!(snapshot.collection.api_calls, 15);
     assert_eq!(snapshot.requirements.len(), 1);
     assert_eq!(snapshot.requirements[0].context, "lint");
     assert_eq!(snapshot.requirements[0].policies[0].id, "8");
@@ -375,7 +572,7 @@ fn follows_effective_rule_pagination_before_calling_collection_complete() {
 #[test]
 fn policy_visibility_and_incomplete_signals_are_partial() {
     let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
-    let mut api = StubApi::new(vec![
+    let mut responses = vec![
         (
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull.clone()),
@@ -431,7 +628,9 @@ fn policy_visibility_and_incomplete_signals_are_partial() {
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull),
         ),
-    ]);
+    ];
+    append_policy_revalidation(&mut responses, 2, 5);
+    let mut api = StubApi::new(responses);
 
     let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
     api.finish();
@@ -455,12 +654,16 @@ fn policy_visibility_and_incomplete_signals_are_partial() {
             DoctorCollectionSurface::CommitStatuses,
         ]
     );
+    assert_eq!(
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
+        DoctorVerdict::Inconclusive
+    );
 }
 
 #[test]
 fn an_explicitly_unprotected_base_skips_classic_protection_without_a_gap() {
     let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
-    let mut api = StubApi::new(vec![
+    let mut responses = vec![
         (
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull.clone()),
@@ -498,7 +701,9 @@ fn an_explicitly_unprotected_base_skips_classic_protection_without_a_gap() {
             "repos/acme/widgets/pulls/9".to_owned(),
             response(200, initial_pull),
         ),
-    ]);
+    ];
+    append_policy_revalidation(&mut responses, 2, 4);
+    let mut api = StubApi::new(responses);
 
     let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
     api.finish();
@@ -506,11 +711,11 @@ fn an_explicitly_unprotected_base_skips_classic_protection_without_a_gap() {
     assert_eq!(snapshot.collection.status, DoctorCollectionStatus::Complete);
     assert!(snapshot.collection.gaps.is_empty());
     assert!(snapshot.requirements.is_empty());
-    assert_eq!(snapshot.collection.api_calls, 9);
+    assert_eq!(snapshot.collection.api_calls, 13);
 }
 
 #[test]
-fn test_merge_signals_make_the_head_only_diagnosis_inconclusive() {
+fn test_merge_signals_select_the_test_merge_evaluation_target() {
     let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
     let mut responses = stable_empty_responses(initial_pull);
     responses[7].1 = response(
@@ -528,19 +733,128 @@ fn test_merge_signals_make_the_head_only_diagnosis_inconclusive() {
             }]
         }),
     );
+    append_policy_revalidation(&mut responses, 2, 5);
     let mut api = StubApi::new(responses);
 
     let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
     api.finish();
 
+    assert_eq!(snapshot.collection.status, DoctorCollectionStatus::Complete);
+    assert_eq!(
+        snapshot.target.evaluation.kind,
+        DoctorEvaluationTargetKind::TestMerge
+    );
+    assert_eq!(
+        snapshot.target.evaluation.resolution,
+        DoctorEvaluationTargetResolution::Selected
+    );
+    assert_eq!(snapshot.target.evaluation.sha, MERGE_SHA);
+    assert_eq!(snapshot.signal_sha, MERGE_SHA);
+    assert_eq!(snapshot.check_runs.len(), 1);
+    assert_eq!(
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
+        DoctorVerdict::ChecksClear
+    );
+}
+
+#[test]
+fn candidate_second_read_error_never_leaves_a_selected_target() {
+    let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
+    let initial_graphql = graphql_response_for_pull(&serde_json::to_vec(&initial_pull).unwrap());
+    let mut responses = stable_empty_responses(initial_pull);
+    responses[7].1 = response(
+        200,
+        json!({
+            "total_count": 1,
+            "check_runs": [{
+                "id": 901,
+                "html_url": "https://github.com/acme/widgets/runs/901",
+                "name": "merge-test",
+                "head_sha": MERGE_SHA,
+                "app": {"id": 15368, "slug": "github-actions"},
+                "status": "completed",
+                "conclusion": "success"
+            }]
+        }),
+    );
+    append_policy_revalidation(&mut responses, 2, 5);
+    let mut api = StubApi::new(responses).with_graphql_responses(vec![
+        initial_graphql,
+        response(
+            200,
+            json!({
+                "data": null,
+                "errors": [{"message": "candidate temporarily unavailable"}]
+            }),
+        ),
+    ]);
+
+    let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
+    api.finish();
+
     assert_eq!(snapshot.collection.status, DoctorCollectionStatus::Partial);
+    assert_eq!(
+        snapshot.target.evaluation.resolution,
+        DoctorEvaluationTargetResolution::Provisional
+    );
     assert!(snapshot.collection.gaps.iter().any(|gap| {
-        gap.surface == DoctorCollectionSurface::Target && gap.reason.contains("test-merge commit")
+        gap.surface == DoctorCollectionSurface::Target
+            && gap.reason.contains("could not revalidate")
     }));
     assert_eq!(
-        evaluate_pull_request_doctor(&snapshot).unwrap().verdict,
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
         DoctorVerdict::Inconclusive
     );
+}
+
+#[test]
+fn policy_drift_requires_a_fresh_snapshot() {
+    let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
+    let mut responses = stable_empty_responses(initial_pull);
+    responses.extend([
+        (
+            "repos/acme/widgets/rules/branches/release%2F1.x?per_page=100&page=1".to_owned(),
+            response(
+                200,
+                json!([{
+                    "type": "required_status_checks",
+                    "parameters": {
+                        "required_status_checks": [{"context": "new-ruleset-check", "integration_id": 15368}]
+                    },
+                    "ruleset_source_type": "Repository",
+                    "ruleset_source": "acme/widgets",
+                    "ruleset_id": 70
+                }]),
+            ),
+        ),
+        (
+            "repos/acme/widgets/branches/release%2F1.x".to_owned(),
+            response(200, json!({"name": "release/1.x", "protected": true})),
+        ),
+        (
+            "repos/acme/widgets/branches/release%2F1.x/protection".to_owned(),
+            response(
+                200,
+                json!({
+                    "required_status_checks": {
+                        "contexts": ["new-classic-check"],
+                        "checks": []
+                    }
+                }),
+            ),
+        ),
+    ]);
+    let mut api = StubApi::new(responses);
+
+    let error = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap_err();
+    api.finish();
+
+    assert!(
+        error
+            .to_string()
+            .contains("policy or its visibility changed during collection")
+    );
+    assert!(error.to_string().contains("retry the doctor command"));
 }
 
 #[test]
@@ -551,55 +865,165 @@ fn a_missing_test_merge_sha_is_inconclusive() {
     responses[0].1 = response(200, no_merge_pull);
     responses.remove(8);
     responses.remove(7);
+    append_policy_revalidation(&mut responses, 2, 5);
     let mut api = StubApi::new(responses);
 
     let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
     api.finish();
 
     assert_eq!(snapshot.collection.status, DoctorCollectionStatus::Partial);
+    assert_eq!(
+        snapshot.target.evaluation.resolution,
+        DoctorEvaluationTargetResolution::Provisional
+    );
     assert!(snapshot.collection.gaps.iter().any(|gap| {
         gap.surface == DoctorCollectionSurface::Target
             && gap.reason.contains("did not provide a test-merge SHA")
     }));
     assert_eq!(
-        evaluate_pull_request_doctor(&snapshot).unwrap().verdict,
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
         DoctorVerdict::Inconclusive
     );
 }
 
 #[test]
-fn merge_queue_and_required_workflow_rules_are_unsupported_targets() {
-    for kind in ["merge_queue", "workflows"] {
+fn only_required_workflow_rules_remain_an_unsupported_target() {
+    for (kind, expected_partial) in [("merge_queue", false), ("workflows", true)] {
         let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
         let mut responses = stable_empty_responses(initial_pull);
         responses[2].1 = response(
             200,
             json!([{
-                "type": kind,
-                "parameters": {},
-                "ruleset_source_type": "Repository",
-                "ruleset_source": "acme/widgets",
-                "ruleset_id": 70
+            "type": kind,
+            "parameters": {},
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "acme/widgets",
+            "ruleset_id": 70
             }]),
         );
+        append_policy_revalidation(&mut responses, 2, 5);
         let mut api = StubApi::new(responses);
 
         let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
         api.finish();
 
-        assert_eq!(snapshot.collection.status, DoctorCollectionStatus::Partial);
-        assert!(
+        assert_eq!(
+            snapshot.collection.status == DoctorCollectionStatus::Partial,
+            expected_partial
+        );
+        assert_eq!(
             snapshot
                 .collection
                 .gaps
                 .iter()
-                .any(|gap| gap.surface == DoctorCollectionSurface::Target)
+                .any(|gap| gap.surface == DoctorCollectionSurface::Target),
+            expected_partial
         );
         assert_eq!(
-            evaluate_pull_request_doctor(&snapshot).unwrap().verdict,
+            evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
             DoctorVerdict::Inconclusive
         );
     }
+}
+
+#[test]
+fn queued_pull_uses_the_graphql_queue_candidate_and_fails_closed_on_provenance() {
+    let graphql = queued_graphql_response(QUEUE_SHA);
+    let mut responses = queued_rest_responses();
+    append_policy_revalidation(&mut responses, 2, 4);
+    let mut api = StubApi::new(responses).with_graphql_responses(vec![graphql.clone(), graphql]);
+
+    let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
+    api.finish();
+
+    assert_eq!(
+        snapshot.target.evaluation.kind,
+        DoctorEvaluationTargetKind::MergeGroup
+    );
+    assert_eq!(
+        snapshot.target.evaluation.resolution,
+        DoctorEvaluationTargetResolution::Provisional
+    );
+    assert_eq!(snapshot.target.evaluation.sha, QUEUE_SHA);
+    assert_eq!(snapshot.signal_sha, QUEUE_SHA);
+    assert_eq!(
+        snapshot.target.evaluation.base_sha.as_deref(),
+        Some(QUEUE_BASE_SHA)
+    );
+    assert_eq!(
+        snapshot.target.evaluation.queue_entry_id.as_deref(),
+        Some("MQE_fixture_9")
+    );
+    assert_eq!(snapshot.check_runs.len(), 1);
+    assert_eq!(snapshot.check_runs[0].name, "ci");
+    assert!(snapshot.collection.gaps.iter().any(|gap| {
+        gap.surface == DoctorCollectionSurface::Target && gap.reason.contains("merge_group webhook")
+    }));
+    assert_eq!(
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
+        DoctorVerdict::Inconclusive
+    );
+}
+
+#[test]
+fn queued_candidate_drift_requires_a_fresh_snapshot() {
+    let mut api = StubApi::new(queued_rest_responses()).with_graphql_responses(vec![
+        queued_graphql_response(QUEUE_SHA),
+        queued_graphql_response("ffffffffffffffffffffffffffffffffffffffff"),
+    ]);
+
+    let error = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap_err();
+    api.finish();
+
+    assert!(
+        error
+            .to_string()
+            .contains("evaluation candidate changed during collection")
+    );
+}
+
+#[test]
+fn queued_pull_without_an_entry_uses_only_a_provisional_diagnostic_sha() {
+    let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
+    let mut responses = stable_empty_responses(initial_pull);
+    responses[2].1 = response(
+        200,
+        json!([{
+            "type": "merge_queue",
+            "parameters": {},
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "acme/widgets",
+            "ruleset_id": 70
+        }]),
+    );
+    responses.remove(8);
+    responses.remove(7);
+    append_policy_revalidation(&mut responses, 2, 5);
+    let graphql = queued_without_entry_graphql_response();
+    let mut api = StubApi::new(responses).with_graphql_responses(vec![graphql.clone(), graphql]);
+
+    let snapshot = collect_pull_request_doctor_snapshot(request(), &mut api).unwrap();
+    api.finish();
+
+    assert_eq!(
+        snapshot.target.evaluation.kind,
+        DoctorEvaluationTargetKind::PrHead
+    );
+    assert_eq!(
+        snapshot.target.evaluation.resolution,
+        DoctorEvaluationTargetResolution::Provisional
+    );
+    assert_eq!(snapshot.signal_sha, HEAD_SHA);
+    assert!(snapshot.collection.gaps.iter().any(|gap| {
+        gap.surface == DoctorCollectionSurface::Target
+            && gap
+                .reason
+                .contains("did not expose its queue entry candidate")
+    }));
+    assert_eq!(
+        evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
+        DoctorVerdict::Inconclusive
+    );
 }
 
 #[test]

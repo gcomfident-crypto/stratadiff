@@ -1,0 +1,160 @@
+{
+  "acceptance_gates": {
+    "minimum_cases": 18,
+    "minimum_control_cases": 5,
+    "minimum_real_incident_sources": 6,
+    "minimum_uncertain_cases": 4
+  },
+  "assets": {
+    "cases": {"path": "cases.json", "sha256": "4bac86a74057ae7deed6ba49d9a84202131a9dae59c6d51aa29b1d7b0590a55c"},
+    "oracle": {"path": "oracle.json", "sha256": "406ac09008b0024531b5347f5d6541456619160d20396c1692c055a74099e654"}
+  },
+  "claim_boundary": {
+    "controlled_trigger_semantics_supported": true,
+    "developer_time_saved_supported": false,
+    "failure_prevalence_supported": false,
+    "live_collector_conformance_supported": false,
+    "market_demand_supported": false,
+    "merge_safety_supported": false,
+    "production_accuracy_supported": false
+  },
+  "dataset_license": "MIT",
+  "dataset_version": "1.0.0",
+  "description": "A deterministic offline corpus for explaining absent required checks from workflow-trigger evidence.",
+  "designation": "controlled_semantic_regression",
+  "expected_summary": {
+    "cases": 22,
+    "causes": {
+      "duplicate_job_name_ambiguous": 1,
+      "fork_approval_possible": 1,
+      "fork_approval_required": 1,
+      "merge_group_trigger_missing": 1,
+      "none": 5,
+      "provider_did_not_emit_merge_group_status": 1,
+      "provider_runtime_delivery_gap": 1,
+      "pull_request_merge_conflict": 1,
+      "required_context_not_produced": 1,
+      "workflow_activity_excludes_synchronize": 1,
+      "workflow_branch_filter_excluded": 1,
+      "workflow_definition_invalid": 1,
+      "workflow_disabled": 1,
+      "workflow_path_filter_excluded": 2,
+      "workflow_trigger_unknown": 3
+    },
+    "confidence": {"certain": 15, "high": 2, "uncertain": 5},
+    "human_edits": 10,
+    "provenance_refs": 30
+  },
+  "name": "Doctor Workflow Trigger v1",
+  "provenance": [
+    {
+      "id": "official-skipped-checks",
+      "kind": "official_documentation",
+      "supports": ["workflow_filter_pending", "job_conditional_success"],
+      "title": "Troubleshooting required status checks",
+      "url": "https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks"
+    },
+    {
+      "id": "official-merge-group",
+      "kind": "official_documentation",
+      "supports": ["merge_group_is_distinct", "required_checks_need_merge_group"],
+      "title": "Events that trigger workflows: merge_group",
+      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#merge_group"
+    },
+    {
+      "id": "official-events",
+      "kind": "official_documentation",
+      "supports": ["pull_request_default_types", "merge_conflict_suppresses_pull_request"],
+      "title": "Events that trigger workflows: pull_request",
+      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request"
+    },
+    {
+      "id": "official-workflow-syntax",
+      "kind": "official_documentation",
+      "supports": ["base_branch_filter", "ordered_path_patterns", "three_hundred_file_limit"],
+      "title": "Workflow syntax for GitHub Actions",
+      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax"
+    },
+    {
+      "id": "official-branch-protection",
+      "kind": "official_documentation",
+      "supports": ["unique_job_names", "required_check_app_source"],
+      "title": "About protected branches",
+      "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches"
+    },
+    {
+      "id": "official-fork-approval",
+      "kind": "official_documentation",
+      "supports": ["fork_workflow_approval"],
+      "title": "Approving workflow runs from public forks",
+      "url": "https://docs.github.com/en/actions/how-tos/manage-workflow-runs/approve-runs-from-forks"
+    },
+    {
+      "id": "incident-docs-8926",
+      "kind": "public_incident",
+      "supports": ["path_filter_required_check_deadlock"],
+      "title": "Explain how to handle skipped required checks",
+      "url": "https://github.com/github/docs/issues/8926"
+    },
+    {
+      "id": "incident-mantid-2505",
+      "kind": "public_incident",
+      "supports": ["merge_queue_path_filter_deadlock"],
+      "title": "Resolve merge queue and path filtering",
+      "url": "https://github.com/mantidproject/mantidimaging/issues/2505"
+    },
+    {
+      "id": "incident-codeql-1537",
+      "kind": "public_incident",
+      "supports": ["provider_missing_merge_group_status"],
+      "title": "GitHub merge queue builds don't report CodeQL status",
+      "url": "https://github.com/github/codeql-action/issues/1537"
+    },
+    {
+      "id": "incident-rtd-10021",
+      "kind": "public_incident",
+      "supports": ["provider_missing_merge_group_status"],
+      "title": "Support GitHub merge queues when RTD PR builds are required to merge",
+      "url": "https://github.com/readthedocs/readthedocs.org/issues/10021"
+    },
+    {
+      "id": "incident-danger-1427",
+      "kind": "public_incident",
+      "supports": ["actions_job_passes_provider_status_absent"],
+      "title": "GitHub Merge Queue - Danger server stuck waiting for status",
+      "url": "https://github.com/danger/danger-js/issues/1427"
+    },
+    {
+      "id": "incident-flutter-162882",
+      "kind": "public_incident",
+      "supports": ["provider_runtime_delivery_or_handler_loss"],
+      "title": "Merge Queue Guard hangs",
+      "url": "https://github.com/flutter/flutter/issues/162882"
+    }
+  ],
+  "required_case_ids": [
+    "activity-type-excludes-synchronize",
+    "branch-filter-base-not-head-control",
+    "branch-filter-excluded",
+    "duplicate-job-name-ambiguous",
+    "dynamic-job-name-unknown",
+    "fork-approval-possible",
+    "fork-approval-required",
+    "job-condition-skipped-control",
+    "merge-group-supported-control",
+    "merge-group-trigger-missing",
+    "path-filter-excluded",
+    "path-filter-match-control",
+    "path-filter-over-300-unknown",
+    "path-negation-reinclude-control",
+    "paths-ignore-excluded",
+    "provider-runtime-delivery-gap",
+    "pull-request-merge-conflict",
+    "required-job-renamed",
+    "reusable-workflow-name-unknown",
+    "third-party-merge-group-unsupported",
+    "workflow-definition-invalid",
+    "workflow-disabled"
+  ],
+  "schema": "stratadiff-doctor-workflow-trigger-manifest-v1"
+}

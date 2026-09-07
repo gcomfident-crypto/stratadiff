@@ -2,15 +2,21 @@
 mod doctor;
 
 use doctor::{
-    DoctorCheckRun, DoctorCollection, DoctorCollectionGap, DoctorCollectionStatus,
-    DoctorCollectionSurface, DoctorCommitStatus, DoctorEvidenceKind, DoctorPolicyKind,
-    DoctorPolicyRef, DoctorRequirement, DoctorRequirementStatus, DoctorTarget, DoctorVerdict,
-    PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA, PullRequestDoctorSnapshot, evaluate_pull_request_doctor,
-    render_pull_request_doctor_markdown,
+    DoctorActionCode, DoctorCheckRun, DoctorCollection, DoctorCollectionGap,
+    DoctorCollectionStatus, DoctorCollectionSurface, DoctorCommitStatus, DoctorEvaluationTarget,
+    DoctorEvaluationTargetKind, DoctorEvaluationTargetResolution, DoctorEvidenceKind,
+    DoctorPolicyKind, DoctorPolicyRef, DoctorRequirement, DoctorRequirementStatus, DoctorTarget,
+    DoctorTargetV2, DoctorVerdict, PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA,
+    PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA,
+    PullRequestDoctorSnapshot, PullRequestDoctorSnapshotV2, evaluate_pull_request_doctor,
+    evaluate_pull_request_doctor_v2, render_pull_request_doctor_markdown,
+    render_pull_request_doctor_v2_markdown,
 };
 
 const BASE_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const HEAD_SHA: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const EVALUATION_BASE_SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
+const EVALUATION_SHA: &str = "dddddddddddddddddddddddddddddddddddddddd";
 const ACTIONS_APP_ID: u64 = 15_368;
 const CONTEXT: &str = "CI / test";
 
@@ -94,6 +100,46 @@ fn snapshot(expected_app_id: Option<u64>) -> PullRequestDoctorSnapshot {
     }
 }
 
+fn snapshot_v2(kind: DoctorEvaluationTargetKind) -> PullRequestDoctorSnapshotV2 {
+    let legacy = snapshot(Some(ACTIONS_APP_ID));
+    let (sha, base_sha, queue_entry_id, queue_state) = match kind {
+        DoctorEvaluationTargetKind::PrHead => (HEAD_SHA, None, None, None),
+        DoctorEvaluationTargetKind::TestMerge => (EVALUATION_SHA, Some(BASE_SHA), None, None),
+        DoctorEvaluationTargetKind::MergeGroup => (
+            EVALUATION_SHA,
+            Some(EVALUATION_BASE_SHA),
+            Some("MQE_lQDOA5dJV88AAAABBVoJNs2aL84CwqYU"),
+            Some("AWAITING_CHECKS"),
+        ),
+    };
+    PullRequestDoctorSnapshotV2 {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA.to_owned(),
+        captured_at: legacy.captured_at,
+        provider_url: legacy.provider_url,
+        repository: legacy.repository,
+        target: DoctorTargetV2 {
+            number: legacy.target.number,
+            url: legacy.target.url,
+            base_ref: legacy.target.base_ref,
+            base_sha: legacy.target.base_sha,
+            head_sha: legacy.target.head_sha,
+            evaluation: DoctorEvaluationTarget {
+                kind,
+                resolution: DoctorEvaluationTargetResolution::Selected,
+                sha: sha.to_owned(),
+                base_sha: base_sha.map(str::to_owned),
+                queue_entry_id: queue_entry_id.map(str::to_owned),
+                queue_state: queue_state.map(str::to_owned),
+            },
+        },
+        signal_sha: sha.to_owned(),
+        collection: legacy.collection,
+        requirements: legacy.requirements,
+        check_runs: legacy.check_runs,
+        statuses: legacy.statuses,
+    }
+}
+
 fn only_status(snapshot: &PullRequestDoctorSnapshot) -> DoctorRequirementStatus {
     evaluate_pull_request_doctor(snapshot).unwrap().requirements[0].status
 }
@@ -118,6 +164,243 @@ fn clean_exact_head_is_clear_and_matches_schema() {
     if let Err(error) = validator.validate(&instance) {
         panic!("pull-request doctor report did not match its schema: {error}");
     }
+}
+
+#[test]
+fn v1_wire_shape_remains_unchanged() {
+    let snapshot = snapshot(Some(ACTIONS_APP_ID));
+    let snapshot_instance = serde_json::to_value(&snapshot).unwrap();
+    let report = evaluate_pull_request_doctor(&snapshot).unwrap();
+    let instance = serde_json::to_value(report).unwrap();
+
+    assert!(snapshot_instance.get("signal_sha").is_none());
+    assert_eq!(instance["schema"], "stratadiff-pull-request-doctor-v1");
+    assert!(instance.get("signal_sha").is_none());
+    assert!(instance["target"].get("evaluation").is_none());
+}
+
+#[test]
+fn v2_binds_evidence_and_actions_to_each_evaluation_target() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/pull-request-doctor-v2.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+
+    for kind in [
+        DoctorEvaluationTargetKind::PrHead,
+        DoctorEvaluationTargetKind::TestMerge,
+        DoctorEvaluationTargetKind::MergeGroup,
+    ] {
+        let mut input = snapshot_v2(kind);
+        input.check_runs[0].conclusion = Some("failure".to_owned());
+        let expected_sha = input.target.evaluation.sha.clone();
+        let report = evaluate_pull_request_doctor_v2(&input).unwrap();
+
+        assert_eq!(report.schema, PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA);
+        assert_eq!(report.requirements[0].evidence[0].sha, expected_sha);
+        assert!(report.next_actions[0].argv[4].contains(&expected_sha));
+        let mut instance = serde_json::to_value(report).unwrap();
+        if let Err(error) = validator.validate(&instance) {
+            panic!("pull-request doctor v2 report did not match its schema: {error}");
+        }
+        let mut missing_resolution = instance.clone();
+        missing_resolution["target"]["evaluation"]
+            .as_object_mut()
+            .unwrap()
+            .remove("resolution");
+        assert!(validator.validate(&missing_resolution).is_err());
+        instance["target"]
+            .as_object_mut()
+            .unwrap()
+            .remove("evaluation");
+        assert!(validator.validate(&instance).is_err());
+    }
+}
+
+#[test]
+fn provisional_v2_targets_fail_closed_for_every_kind() {
+    for kind in [
+        DoctorEvaluationTargetKind::PrHead,
+        DoctorEvaluationTargetKind::TestMerge,
+        DoctorEvaluationTargetKind::MergeGroup,
+    ] {
+        let mut input = snapshot_v2(kind);
+        input.target.evaluation.resolution = DoctorEvaluationTargetResolution::Provisional;
+        let report = evaluate_pull_request_doctor_v2(&input).unwrap();
+
+        assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
+        assert!(!report.claim_boundary.required_check_readiness_supported);
+        assert_eq!(report.next_actions.len(), 1);
+        assert_eq!(
+            report.next_actions[0].code,
+            DoctorActionCode::CompleteCollection
+        );
+        assert_eq!(report.next_actions[0].requirement, None);
+        assert_eq!(
+            report.requirements[0].evidence[0].sha,
+            input.target.evaluation.sha
+        );
+
+        let markdown = render_pull_request_doctor_v2_markdown(&report);
+        assert!(markdown.contains("Resolution: <code>provisional</code>"));
+        assert!(markdown.contains("has not proved that GitHub selected it"));
+        assert!(!markdown.contains("exact head"));
+    }
+}
+
+#[test]
+fn selected_v2_target_requires_complete_collection_for_readiness_support() {
+    let mut input = snapshot_v2(DoctorEvaluationTargetKind::PrHead);
+    input.collection = DoctorCollection {
+        status: DoctorCollectionStatus::Partial,
+        api_calls: 4,
+        response_bytes: 9_000,
+        gaps: vec![DoctorCollectionGap {
+            surface: DoctorCollectionSurface::Requirements,
+            reason: "one ruleset could not be read".to_owned(),
+        }],
+    };
+
+    let report = evaluate_pull_request_doctor_v2(&input).unwrap();
+
+    assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
+    assert!(!report.claim_boundary.required_check_readiness_supported);
+}
+
+#[test]
+fn v2_schema_rejects_unsafe_resolution_and_collection_claims() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/pull-request-doctor-v2.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let report =
+        evaluate_pull_request_doctor_v2(&snapshot_v2(DoctorEvaluationTargetKind::PrHead)).unwrap();
+    let clear = serde_json::to_value(report).unwrap();
+    assert!(validator.validate(&clear).is_ok());
+
+    let mut provisional_clear = clear.clone();
+    provisional_clear["target"]["evaluation"]["resolution"] = serde_json::json!("provisional");
+    provisional_clear["claim_boundary"]["required_check_readiness_supported"] =
+        serde_json::json!(false);
+    assert!(validator.validate(&provisional_clear).is_err());
+
+    let mut provisional_supported = clear.clone();
+    provisional_supported["target"]["evaluation"]["resolution"] = serde_json::json!("provisional");
+    provisional_supported["verdict"] = serde_json::json!("inconclusive");
+    assert!(validator.validate(&provisional_supported).is_err());
+
+    let gap = serde_json::json!({
+        "surface": "requirements",
+        "reason": "one policy surface was unavailable"
+    });
+    let mut partial_clear = clear.clone();
+    partial_clear["collection"]["status"] = serde_json::json!("partial");
+    partial_clear["collection"]["gaps"] = serde_json::json!([gap.clone()]);
+    partial_clear["claim_boundary"]["required_check_readiness_supported"] =
+        serde_json::json!(false);
+    assert!(validator.validate(&partial_clear).is_err());
+
+    let mut partial_supported = clear;
+    partial_supported["collection"]["status"] = serde_json::json!("partial");
+    partial_supported["collection"]["gaps"] = serde_json::json!([gap]);
+    partial_supported["verdict"] = serde_json::json!("inconclusive");
+    assert!(validator.validate(&partial_supported).is_err());
+}
+
+#[test]
+fn v2_markdown_names_the_evaluation_target_and_claim_boundary() {
+    for kind in [
+        DoctorEvaluationTargetKind::PrHead,
+        DoctorEvaluationTargetKind::TestMerge,
+        DoctorEvaluationTargetKind::MergeGroup,
+    ] {
+        let report = evaluate_pull_request_doctor_v2(&snapshot_v2(kind)).unwrap();
+        let markdown = render_pull_request_doctor_v2_markdown(&report);
+
+        assert!(markdown.contains(&format!(
+            "Evaluation target: <code>{}</code> at <code>{}</code>",
+            match kind {
+                DoctorEvaluationTargetKind::PrHead => "pr&#95;head",
+                DoctorEvaluationTargetKind::TestMerge => "test&#95;merge",
+                DoctorEvaluationTargetKind::MergeGroup => "merge&#95;group",
+            },
+            report.target.evaluation.sha,
+        )));
+        assert!(markdown.contains("Resolution: <code>selected</code>"));
+        assert!(markdown.contains(&format!("PR head: <code>{HEAD_SHA}</code>")));
+        assert!(markdown.contains(&format!(
+            "PR base: <code>main</code> at <code>{BASE_SHA}</code>"
+        )));
+        assert!(markdown.contains("## Claim boundary"));
+        assert!(markdown.contains("Required-check readiness: supported"));
+        assert!(markdown.contains("Mergeability: not supported"));
+        assert!(markdown.contains("Review requirements: not supported"));
+        assert!(markdown.contains("Compliance: not supported"));
+        assert!(markdown.contains("Code safety: not supported"));
+        assert!(!markdown.contains("Exact head"));
+        assert!(!markdown.contains("exact head"));
+
+        if kind == DoctorEvaluationTargetKind::MergeGroup {
+            assert!(markdown.contains("Merge-queue entry:"));
+            assert!(markdown.contains("AWAITING&#95;CHECKS"));
+        }
+    }
+}
+
+#[test]
+fn v2_rejects_invalid_evaluation_metadata_combinations() {
+    let mut invalid = Vec::new();
+
+    let mut pr_head_with_base = snapshot_v2(DoctorEvaluationTargetKind::PrHead);
+    pr_head_with_base.target.evaluation.base_sha = Some(BASE_SHA.to_owned());
+    invalid.push(pr_head_with_base);
+
+    let mut pr_head_with_other_sha = snapshot_v2(DoctorEvaluationTargetKind::PrHead);
+    pr_head_with_other_sha.target.evaluation.sha = EVALUATION_SHA.to_owned();
+    invalid.push(pr_head_with_other_sha);
+
+    let mut test_merge_without_base = snapshot_v2(DoctorEvaluationTargetKind::TestMerge);
+    test_merge_without_base.target.evaluation.base_sha = None;
+    invalid.push(test_merge_without_base);
+
+    let mut test_merge_with_wrong_base = snapshot_v2(DoctorEvaluationTargetKind::TestMerge);
+    test_merge_with_wrong_base.target.evaluation.base_sha = Some(EVALUATION_BASE_SHA.to_owned());
+    invalid.push(test_merge_with_wrong_base);
+
+    let mut test_merge_with_queue = snapshot_v2(DoctorEvaluationTargetKind::TestMerge);
+    test_merge_with_queue.target.evaluation.queue_entry_id = Some("MQE_1".to_owned());
+    invalid.push(test_merge_with_queue);
+
+    let mut merge_group_without_entry = snapshot_v2(DoctorEvaluationTargetKind::MergeGroup);
+    merge_group_without_entry.target.evaluation.queue_entry_id = None;
+    invalid.push(merge_group_without_entry);
+
+    let mut merge_group_without_state = snapshot_v2(DoctorEvaluationTargetKind::MergeGroup);
+    merge_group_without_state.target.evaluation.queue_state = None;
+    invalid.push(merge_group_without_state);
+
+    let mut merge_group_without_base = snapshot_v2(DoctorEvaluationTargetKind::MergeGroup);
+    merge_group_without_base.target.evaluation.base_sha = None;
+    invalid.push(merge_group_without_base);
+
+    let mut merge_group_on_head = snapshot_v2(DoctorEvaluationTargetKind::MergeGroup);
+    merge_group_on_head.target.evaluation.sha = HEAD_SHA.to_owned();
+    invalid.push(merge_group_on_head);
+
+    for input in invalid {
+        assert!(evaluate_pull_request_doctor_v2(&input).is_err());
+    }
+}
+
+#[test]
+fn v2_rejects_a_signal_sha_from_a_different_endpoint() {
+    let mut input = snapshot_v2(DoctorEvaluationTargetKind::TestMerge);
+    input.signal_sha = HEAD_SHA.to_owned();
+
+    let error = evaluate_pull_request_doctor_v2(&input).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "signal SHA must match the evaluation SHA"
+    );
 }
 
 #[test]

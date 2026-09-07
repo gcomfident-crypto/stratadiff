@@ -8,9 +8,15 @@ use serde_yaml_ng::Value as YamlValue;
 
 use crate::doctor::{
     DoctorCheckRun, DoctorCollection, DoctorCollectionGap, DoctorCollectionStatus,
-    DoctorCollectionSurface, DoctorCommitStatus, DoctorPolicyKind, DoctorPolicyRef,
-    DoctorRequirement, DoctorTarget, PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA,
-    PullRequestDoctorSnapshot,
+    DoctorCollectionSurface, DoctorCommitStatus, DoctorEvaluationTarget,
+    DoctorEvaluationTargetKind, DoctorEvaluationTargetResolution, DoctorPolicyKind,
+    DoctorPolicyRef, DoctorRequirement, DoctorTargetV2, PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA,
+    PullRequestDoctorSnapshotV2,
+};
+use crate::doctor_candidate::{
+    CandidateKind, CandidateQueueEntry, CandidateSelectionInput, CandidateSelectionStatus,
+    CandidateSignalCollectionStatus, CandidateSignalSurface, CandidateSignals,
+    CandidateTargetIdentity, select_candidate,
 };
 use crate::ownership::github_provider_hostname;
 use crate::readiness::{
@@ -31,6 +37,13 @@ const MAX_PAGES: usize = 10;
 const MAX_LINK_HEADER_BYTES: usize = 16 * 1024;
 const MAX_WORKFLOW_TRIGGER_PATTERNS: usize = 1_000;
 const MAX_WORKFLOW_TRIGGER_PATTERN_BYTES: usize = 4 * 1024;
+const DOCTOR_CANDIDATE_QUERY: &str = concat!(
+    "query StrataDiffPullRequestCandidate($owner:String!,$name:String!,$number:Int!){",
+    "repository(owner:$owner,name:$name){nameWithOwner url pullRequest(number:$number){",
+    "number url state baseRefName baseRefOid headRefOid mergeable mergeStateStatus ",
+    "isMergeQueueEnabled isInMergeQueue potentialMergeCommit{oid} mergeQueueEntry{",
+    "id state position baseCommit{oid} headCommit{oid} pullRequest{number headRefOid}}}}}"
+);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GithubReadinessApiResponse {
@@ -41,6 +54,11 @@ pub struct GithubReadinessApiResponse {
 
 pub trait GithubReadinessApi {
     fn get(&mut self, endpoint: &str) -> Result<GithubReadinessApiResponse>;
+}
+
+pub trait GithubPullRequestDoctorApi: GithubReadinessApi {
+    fn graphql(&mut self, query: &str, variables: &JsonValue)
+    -> Result<GithubReadinessApiResponse>;
 }
 
 #[derive(Clone, Debug)]
@@ -101,6 +119,41 @@ impl ApiBudget {
                 "GitHub readiness Link header bytes limit exceeded for {endpoint}"
             );
         }
+        self.response_bytes = self
+            .response_bytes
+            .checked_add(response.body.len())
+            .context("GitHub readiness response byte count overflow")?;
+        ensure!(
+            self.response_bytes <= MAX_READINESS_API_TOTAL_BYTES,
+            "GitHub readiness total response bytes limit exceeded: observed {}, limit {MAX_READINESS_API_TOTAL_BYTES}",
+            self.response_bytes
+        );
+        Ok(response)
+    }
+
+    fn graphql<A: GithubPullRequestDoctorApi>(
+        &mut self,
+        api: &mut A,
+        query: &str,
+        variables: &JsonValue,
+    ) -> Result<GithubReadinessApiResponse> {
+        self.requests = self
+            .requests
+            .checked_add(1)
+            .context("GitHub readiness API request count overflow")?;
+        ensure!(
+            self.requests <= MAX_READINESS_API_REQUESTS,
+            "GitHub readiness API request limit exceeded: observed {}, limit {MAX_READINESS_API_REQUESTS}",
+            self.requests
+        );
+        let response = api
+            .graphql(query, variables)
+            .context("GitHub pull-request candidate GraphQL request failed")?;
+        ensure!(
+            response.body.len() <= MAX_READINESS_API_RESPONSE_BYTES,
+            "GitHub readiness response bytes limit exceeded for GraphQL: observed {}, limit {MAX_READINESS_API_RESPONSE_BYTES}",
+            response.body.len()
+        );
         self.response_bytes = self
             .response_bytes
             .checked_add(response.body.len())
@@ -243,6 +296,71 @@ struct ApiDoctorPullRef {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct ApiDoctorPullHead {
     sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorGraphqlEnvelope {
+    data: Option<ApiDoctorGraphqlData>,
+    #[serde(default)]
+    errors: Vec<ApiDoctorGraphqlError>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorGraphqlError {
+    message: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorGraphqlData {
+    repository: Option<ApiDoctorGraphqlRepository>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ApiDoctorGraphqlRepository {
+    name_with_owner: String,
+    url: String,
+    pull_request: Option<ApiDoctorGraphqlPullRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ApiDoctorGraphqlPullRequest {
+    number: u64,
+    url: String,
+    state: String,
+    base_ref_name: String,
+    base_ref_oid: String,
+    head_ref_oid: String,
+    mergeable: String,
+    merge_state_status: String,
+    is_merge_queue_enabled: bool,
+    is_in_merge_queue: bool,
+    potential_merge_commit: Option<ApiDoctorGraphqlCommit>,
+    merge_queue_entry: Option<ApiDoctorGraphqlQueueEntry>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorGraphqlCommit {
+    oid: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ApiDoctorGraphqlQueueEntry {
+    id: String,
+    state: String,
+    position: u64,
+    base_commit: ApiDoctorGraphqlCommit,
+    head_commit: ApiDoctorGraphqlCommit,
+    pull_request: ApiDoctorGraphqlQueuePullRequest,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct ApiDoctorGraphqlQueuePullRequest {
+    number: u64,
+    head_ref_oid: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1326,6 +1444,15 @@ fn doctor_surface_rank(surface: &DoctorCollectionSurface) -> u8 {
     }
 }
 
+fn sort_doctor_gaps(gaps: &mut Vec<DoctorCollectionGap>) {
+    gaps.sort_by(|left, right| {
+        doctor_surface_rank(&left.surface)
+            .cmp(&doctor_surface_rank(&right.surface))
+            .then_with(|| left.reason.cmp(&right.reason))
+    });
+    gaps.dedup_by(|left, right| left.surface == right.surface && left.reason == right.reason);
+}
+
 fn doctor_policy_kind_rank(kind: &DoctorPolicyKind) -> u8 {
     match kind {
         DoctorPolicyKind::Ruleset => 0,
@@ -1378,6 +1505,186 @@ fn valid_doctor_sha(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn collect_doctor_candidate_observation<A: GithubPullRequestDoctorApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    owner: &str,
+    name: &str,
+    repository: &ApiRepository,
+    pull: &ApiDoctorPullRequest,
+    gaps: &mut Vec<DoctorCollectionGap>,
+) -> Result<Option<ApiDoctorGraphqlPullRequest>> {
+    let variables = serde_json::json!({
+        "owner": owner,
+        "name": name,
+        "number": pull.number,
+    });
+    let response = budget.graphql(api, DOCTOR_CANDIDATE_QUERY, &variables)?;
+    if !successful(&response) {
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Target,
+            format!(
+                "GitHub returned HTTP {} while reading the pull-request evaluation candidate",
+                response.status
+            ),
+        );
+        return Ok(None);
+    }
+    let envelope: ApiDoctorGraphqlEnvelope = parse_json(&response.body, "graphql")?;
+    if !envelope.errors.is_empty() {
+        for error in &envelope.errors {
+            ensure!(
+                !error.message.is_empty()
+                    && error.message.len() <= 1_024
+                    && !error.message.chars().any(char::is_control),
+                "GitHub GraphQL returned a malformed error message"
+            );
+        }
+        let summary = envelope
+            .errors
+            .iter()
+            .take(3)
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; ");
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Target,
+            format!(
+                "GitHub GraphQL could not expose the pull-request evaluation candidate ({} error(s)): {summary}",
+                envelope.errors.len()
+            ),
+        );
+        return Ok(None);
+    }
+    let Some(data) = envelope.data else {
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Target,
+            "GitHub GraphQL returned no data for the pull-request evaluation candidate".to_owned(),
+        );
+        return Ok(None);
+    };
+    let Some(graphql_repository) = data.repository else {
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Target,
+            "GitHub GraphQL did not expose the requested repository".to_owned(),
+        );
+        return Ok(None);
+    };
+    ensure!(
+        graphql_repository
+            .name_with_owner
+            .eq_ignore_ascii_case(&repository.full_name)
+            && graphql_repository.url == repository.html_url,
+        "GraphQL repository identity does not match the REST repository; retry the doctor command"
+    );
+    let Some(graphql_pull) = graphql_repository.pull_request else {
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Target,
+            "GitHub GraphQL did not expose the requested pull request".to_owned(),
+        );
+        return Ok(None);
+    };
+    ensure!(
+        graphql_pull.number == pull.number
+            && graphql_pull.url == pull.html_url
+            && graphql_pull.state == "OPEN"
+            && graphql_pull.base_ref_name == pull.base.reference
+            && graphql_pull
+                .base_ref_oid
+                .eq_ignore_ascii_case(&pull.base.sha)
+            && graphql_pull
+                .head_ref_oid
+                .eq_ignore_ascii_case(&pull.head.sha),
+        "GraphQL pull-request identity does not match REST; retry the doctor command"
+    );
+    ensure!(
+        matches!(
+            graphql_pull.mergeable.as_str(),
+            "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
+        ),
+        "GitHub GraphQL returned an unknown mergeable state"
+    );
+    ensure!(
+        !graphql_pull.merge_state_status.is_empty()
+            && graphql_pull.merge_state_status.len() <= 64
+            && !graphql_pull
+                .merge_state_status
+                .chars()
+                .any(char::is_control),
+        "GitHub GraphQL returned a malformed merge-state status"
+    );
+    if let Some(candidate) = &graphql_pull.potential_merge_commit {
+        ensure!(
+            valid_doctor_sha(&candidate.oid),
+            "GitHub GraphQL test-merge SHA must be a lowercase full Git object ID"
+        );
+    }
+    if let (Some(rest), Some(graphql)) = (
+        pull.merge_commit_sha.as_deref(),
+        graphql_pull
+            .potential_merge_commit
+            .as_ref()
+            .map(|candidate| candidate.oid.as_str()),
+    ) {
+        ensure!(
+            rest.eq_ignore_ascii_case(graphql),
+            "REST and GraphQL test-merge candidates disagree; retry the doctor command"
+        );
+    }
+    ensure!(
+        graphql_pull.is_in_merge_queue || graphql_pull.merge_queue_entry.is_none(),
+        "GitHub GraphQL returned a merge-queue entry without active queue membership; retry the doctor command"
+    );
+    ensure!(
+        !graphql_pull.is_in_merge_queue || graphql_pull.is_merge_queue_enabled,
+        "GitHub GraphQL reported a queued pull request without an enabled merge queue"
+    );
+    if let Some(entry) = &graphql_pull.merge_queue_entry {
+        ensure!(
+            !entry.id.is_empty()
+                && entry.id.len() <= 255
+                && !entry.id.chars().any(char::is_control),
+            "GitHub GraphQL returned a malformed merge-queue entry ID"
+        );
+        ensure!(
+            matches!(
+                entry.state.as_str(),
+                "QUEUED" | "AWAITING_CHECKS" | "MERGEABLE" | "UNMERGEABLE" | "LOCKED"
+            ),
+            "GitHub GraphQL returned an unknown merge-queue entry state"
+        );
+        ensure!(
+            entry.position > 0
+                && entry.position <= i32::MAX as u64
+                && valid_doctor_sha(&entry.base_commit.oid)
+                && valid_doctor_sha(&entry.head_commit.oid),
+            "GitHub GraphQL returned malformed merge-queue candidate metadata"
+        );
+        ensure!(
+            entry.pull_request.number == pull.number
+                && entry
+                    .pull_request
+                    .head_ref_oid
+                    .eq_ignore_ascii_case(&pull.head.sha),
+            "merge-queue entry is bound to a different pull request; retry the doctor command"
+        );
+        ensure!(
+            !entry.head_commit.oid.eq_ignore_ascii_case(&pull.head.sha)
+                && !entry
+                    .head_commit
+                    .oid
+                    .eq_ignore_ascii_case(&entry.base_commit.oid),
+            "merge-queue candidate does not identify a distinct synthetic commit"
+        );
+    }
+    Ok(Some(graphql_pull))
 }
 
 fn doctor_ruleset_policy(rule: &ApiEffectiveRule, repository_url: &str) -> DoctorPolicyRef {
@@ -1452,6 +1759,90 @@ fn sort_doctor_requirements(requirements: &mut [DoctorRequirement]) {
     });
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DoctorTargetRules {
+    merge_queue: bool,
+    required_workflows: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct DoctorPolicySnapshot {
+    target_rules: DoctorTargetRules,
+    requirements: Vec<DoctorRequirement>,
+    visibility_gaps: Vec<DoctorCollectionGap>,
+}
+
+fn candidate_target_identity(
+    pull: &ApiDoctorPullRequest,
+    graphql: Option<&ApiDoctorGraphqlPullRequest>,
+    target_rules: DoctorTargetRules,
+) -> CandidateTargetIdentity {
+    let potential_merge_sha = graphql
+        .and_then(|observation| observation.potential_merge_commit.as_ref())
+        .map(|candidate| candidate.oid.to_ascii_lowercase())
+        .or_else(|| {
+            pull.merge_commit_sha
+                .as_ref()
+                .map(|sha| sha.to_ascii_lowercase())
+        })
+        .filter(|sha| !sha.eq_ignore_ascii_case(&pull.head.sha));
+    let queue_entry = graphql
+        .and_then(|observation| observation.merge_queue_entry.as_ref())
+        .map(|entry| CandidateQueueEntry {
+            id: entry.id.clone(),
+            state: entry.state.clone(),
+            position: entry.position,
+            base_sha: entry.base_commit.oid.to_ascii_lowercase(),
+            head_sha: entry.head_commit.oid.to_ascii_lowercase(),
+        });
+    CandidateTargetIdentity {
+        state: pull.state.clone(),
+        base_sha: pull.base.sha.to_ascii_lowercase(),
+        head_sha: pull.head.sha.to_ascii_lowercase(),
+        is_merge_queue_enabled: graphql
+            .is_some_and(|observation| observation.is_merge_queue_enabled)
+            || target_rules.merge_queue,
+        is_in_merge_queue: graphql.is_some_and(|observation| observation.is_in_merge_queue),
+        potential_merge_sha,
+        queue_entry,
+    }
+}
+
+fn candidate_signal_surface(complete: bool, observed: usize) -> Result<CandidateSignalSurface> {
+    Ok(CandidateSignalSurface {
+        collection: if complete {
+            CandidateSignalCollectionStatus::Complete
+        } else {
+            CandidateSignalCollectionStatus::Gap
+        },
+        success: 0,
+        other: u64::try_from(observed).context("candidate signal count exceeds u64")?,
+    })
+}
+
+fn candidate_signals(
+    sha: &str,
+    check_runs: &[DoctorCheckRun],
+    statuses: &[DoctorCommitStatus],
+    gaps: &[DoctorCollectionGap],
+) -> Result<CandidateSignals> {
+    Ok(CandidateSignals {
+        sha: sha.to_ascii_lowercase(),
+        check_runs: candidate_signal_surface(
+            !gaps
+                .iter()
+                .any(|gap| gap.surface == DoctorCollectionSurface::CheckRuns),
+            check_runs.len(),
+        )?,
+        commit_statuses: candidate_signal_surface(
+            !gaps
+                .iter()
+                .any(|gap| gap.surface == DoctorCollectionSurface::CommitStatuses),
+            statuses.len(),
+        )?,
+    })
+}
+
 fn collect_doctor_effective_requirements<A: GithubReadinessApi>(
     api: &mut A,
     budget: &mut ApiBudget,
@@ -1460,8 +1851,8 @@ fn collect_doctor_effective_requirements<A: GithubReadinessApi>(
     branch: &str,
     gaps: &mut Vec<DoctorCollectionGap>,
     requirements: &mut Vec<DoctorRequirement>,
-) -> Result<bool> {
-    let mut unsupported_check_target = false;
+) -> Result<DoctorTargetRules> {
+    let mut target_rules = DoctorTargetRules::default();
     for page in 1..=MAX_PAGES {
         let endpoint = format!(
             "repos/{repository_path}/rules/branches/{}?per_page={PAGE_SIZE}&page={page}",
@@ -1494,8 +1885,10 @@ fn collect_doctor_effective_requirements<A: GithubReadinessApi>(
             "GitHub returned more effective rules than the requested page size"
         );
         for rule in &rules {
-            if matches!(rule.kind.as_str(), "merge_queue" | "workflows") {
-                unsupported_check_target = true;
+            match rule.kind.as_str() {
+                "merge_queue" => target_rules.merge_queue = true,
+                "workflows" => target_rules.required_workflows = true,
+                _ => {}
             }
         }
         for rule in rules
@@ -1537,7 +1930,7 @@ fn collect_doctor_effective_requirements<A: GithubReadinessApi>(
             );
         }
     }
-    Ok(unsupported_check_target)
+    Ok(target_rules)
 }
 
 fn collect_doctor_classic_requirements<A: GithubReadinessApi>(
@@ -1617,6 +2010,42 @@ fn collect_doctor_classic_requirements<A: GithubReadinessApi>(
         }
     }
     Ok(())
+}
+
+fn collect_doctor_policy_snapshot<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    repository_url: &str,
+    branch: &str,
+) -> Result<DoctorPolicySnapshot> {
+    let mut visibility_gaps = Vec::new();
+    let mut requirements = Vec::new();
+    let target_rules = collect_doctor_effective_requirements(
+        api,
+        budget,
+        repository_path,
+        repository_url,
+        branch,
+        &mut visibility_gaps,
+        &mut requirements,
+    )?;
+    collect_doctor_classic_requirements(
+        api,
+        budget,
+        repository_path,
+        repository_url,
+        branch,
+        &mut visibility_gaps,
+        &mut requirements,
+    )?;
+    sort_doctor_requirements(&mut requirements);
+    sort_doctor_gaps(&mut visibility_gaps);
+    Ok(DoctorPolicySnapshot {
+        target_rules,
+        requirements,
+        visibility_gaps,
+    })
 }
 
 fn collect_doctor_check_runs<A: GithubReadinessApi>(
@@ -1790,10 +2219,10 @@ fn collect_doctor_statuses<A: GithubReadinessApi>(
     Ok(statuses)
 }
 
-pub fn collect_pull_request_doctor_snapshot<A: GithubReadinessApi>(
+pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
     request: PullRequestDoctorCollection<'_>,
     api: &mut A,
-) -> Result<PullRequestDoctorSnapshot> {
+) -> Result<PullRequestDoctorSnapshotV2> {
     validate_provider_url(request.provider_url)?;
     ensure!(
         !request.captured_at.is_empty(),
@@ -1847,105 +2276,239 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubReadinessApi>(
     validate_doctor_pull(&pull, request.pull_request_number, &pull_url)?;
 
     let mut gaps = Vec::new();
-    let mut requirements = Vec::new();
-    let unsupported_check_target = collect_doctor_effective_requirements(
+    let graphql_pull = collect_doctor_candidate_observation(
+        api,
+        &mut budget,
+        &owner,
+        &name,
+        &repository,
+        &pull,
+        &mut gaps,
+    )?;
+    let initial_policy = collect_doctor_policy_snapshot(
         api,
         &mut budget,
         &repository_path,
         &repository.html_url,
         &pull.base.reference,
-        &mut gaps,
-        &mut requirements,
     )?;
-    if unsupported_check_target {
+    let target_rules = initial_policy.target_rules;
+    let requirements = initial_policy.requirements.clone();
+    gaps.extend(initial_policy.visibility_gaps.iter().cloned());
+    if target_rules.required_workflows {
         add_doctor_gap(
             &mut gaps,
             DoctorCollectionSurface::Target,
-            "effective rules require a merge-queue or workflow target that this head-only Doctor does not evaluate"
+            "effective rules require workflows whose expected check identities this Doctor version does not yet collect"
                 .to_owned(),
         );
     }
-    collect_doctor_classic_requirements(
-        api,
-        &mut budget,
-        &repository_path,
-        &repository.html_url,
-        &pull.base.reference,
-        &mut gaps,
-        &mut requirements,
-    )?;
-    sort_doctor_requirements(&mut requirements);
-
-    let check_runs = collect_doctor_check_runs(
-        api,
-        &mut budget,
-        &repository_path,
-        &pull.head.sha,
-        &mut gaps,
-    )?;
-    let statuses = collect_doctor_statuses(
-        api,
-        &mut budget,
-        &repository_path,
-        &pull.head.sha,
-        &mut gaps,
-    )?;
-
-    if let Some(merge_commit_sha) = &pull.merge_commit_sha {
-        if merge_commit_sha.eq_ignore_ascii_case(&pull.head.sha) {
-            add_doctor_gap(
-                &mut gaps,
-                DoctorCollectionSurface::Target,
-                "GitHub returned the PR head as its test-merge SHA, so Doctor could not distinguish the active check target"
-                    .to_owned(),
-            );
-        } else {
-            let mut target_probe_gaps = Vec::new();
-            let merge_check_runs = collect_doctor_check_runs(
-                api,
-                &mut budget,
-                &repository_path,
-                merge_commit_sha,
-                &mut target_probe_gaps,
-            )?;
-            let merge_statuses = collect_doctor_statuses(
-                api,
-                &mut budget,
-                &repository_path,
-                merge_commit_sha,
-                &mut target_probe_gaps,
-            )?;
-            if target_probe_gaps.is_empty() {
-                if !merge_check_runs.is_empty() || !merge_statuses.is_empty() {
-                    add_doctor_gap(
-                        &mut gaps,
-                        DoctorCollectionSurface::Target,
-                        format!(
-                            "test-merge commit {merge_commit_sha} has status signals, so GitHub is not evaluating the PR head diagnosed by this version"
-                        ),
-                    );
-                }
+    if target_rules.merge_queue && graphql_pull.is_none() {
+        add_doctor_gap(
+            &mut gaps,
+            DoctorCollectionSurface::Target,
+            "the base branch uses a merge queue, but Doctor could not observe whether this pull request currently has a queue candidate"
+                .to_owned(),
+        );
+    }
+    let queue_entry = graphql_pull
+        .as_ref()
+        .and_then(|observation| observation.merge_queue_entry.as_ref());
+    let mut selection_signals = Vec::new();
+    let (mut evaluation, signal_sha, check_runs, statuses) = if let Some(entry) = queue_entry {
+        add_doctor_gap(
+            &mut gaps,
+            DoctorCollectionSurface::Target,
+            "merge-queue candidate identity came from GraphQL mergeQueueEntry.headCommit; this polling source is not yet cross-validated against a merge_group webhook delivery"
+                .to_owned(),
+        );
+        let check_runs = collect_doctor_check_runs(
+            api,
+            &mut budget,
+            &repository_path,
+            &entry.head_commit.oid,
+            &mut gaps,
+        )?;
+        let statuses = collect_doctor_statuses(
+            api,
+            &mut budget,
+            &repository_path,
+            &entry.head_commit.oid,
+            &mut gaps,
+        )?;
+        selection_signals.push(candidate_signals(
+            &entry.head_commit.oid,
+            &check_runs,
+            &statuses,
+            &gaps,
+        )?);
+        (
+            DoctorEvaluationTarget {
+                kind: DoctorEvaluationTargetKind::MergeGroup,
+                resolution: DoctorEvaluationTargetResolution::Provisional,
+                sha: entry.head_commit.oid.to_ascii_lowercase(),
+                base_sha: Some(entry.base_commit.oid.to_ascii_lowercase()),
+                queue_entry_id: Some(entry.id.clone()),
+                queue_state: Some(entry.state.to_ascii_lowercase()),
+            },
+            entry.head_commit.oid.clone(),
+            check_runs,
+            statuses,
+        )
+    } else if graphql_pull
+        .as_ref()
+        .is_some_and(|observation| observation.is_in_merge_queue)
+    {
+        add_doctor_gap(
+            &mut gaps,
+            DoctorCollectionSurface::Target,
+            "GitHub reports that the pull request is in the merge queue but did not expose its queue entry candidate"
+                .to_owned(),
+        );
+        let check_runs = collect_doctor_check_runs(
+            api,
+            &mut budget,
+            &repository_path,
+            &pull.head.sha,
+            &mut gaps,
+        )?;
+        let statuses = collect_doctor_statuses(
+            api,
+            &mut budget,
+            &repository_path,
+            &pull.head.sha,
+            &mut gaps,
+        )?;
+        selection_signals.push(candidate_signals(
+            &pull.head.sha,
+            &check_runs,
+            &statuses,
+            &gaps,
+        )?);
+        (
+            DoctorEvaluationTarget {
+                kind: DoctorEvaluationTargetKind::PrHead,
+                resolution: DoctorEvaluationTargetResolution::Provisional,
+                sha: pull.head.sha.to_ascii_lowercase(),
+                base_sha: None,
+                queue_entry_id: None,
+                queue_state: None,
+            },
+            pull.head.sha.clone(),
+            check_runs,
+            statuses,
+        )
+    } else {
+        let head_check_runs = collect_doctor_check_runs(
+            api,
+            &mut budget,
+            &repository_path,
+            &pull.head.sha,
+            &mut gaps,
+        )?;
+        let head_statuses = collect_doctor_statuses(
+            api,
+            &mut budget,
+            &repository_path,
+            &pull.head.sha,
+            &mut gaps,
+        )?;
+        selection_signals.push(candidate_signals(
+            &pull.head.sha,
+            &head_check_runs,
+            &head_statuses,
+            &gaps,
+        )?);
+        let test_merge_sha = graphql_pull
+            .as_ref()
+            .and_then(|observation| observation.potential_merge_commit.as_ref())
+            .map(|candidate| candidate.oid.as_str())
+            .or(pull.merge_commit_sha.as_deref());
+        let mut selected_test_merge = None;
+        if let Some(merge_commit_sha) = test_merge_sha {
+            if merge_commit_sha.eq_ignore_ascii_case(&pull.head.sha) {
+                add_doctor_gap(
+                    &mut gaps,
+                    DoctorCollectionSurface::Target,
+                    "GitHub returned the PR head as its test-merge SHA, so Doctor could not distinguish the active check target"
+                        .to_owned(),
+                );
             } else {
+                let mut target_probe_gaps = Vec::new();
+                let merge_check_runs = collect_doctor_check_runs(
+                    api,
+                    &mut budget,
+                    &repository_path,
+                    merge_commit_sha,
+                    &mut target_probe_gaps,
+                )?;
+                let merge_statuses = collect_doctor_statuses(
+                    api,
+                    &mut budget,
+                    &repository_path,
+                    merge_commit_sha,
+                    &mut target_probe_gaps,
+                )?;
+                selection_signals.push(candidate_signals(
+                    merge_commit_sha,
+                    &merge_check_runs,
+                    &merge_statuses,
+                    &target_probe_gaps,
+                )?);
+                let observed_test_merge_signal =
+                    !merge_check_runs.is_empty() || !merge_statuses.is_empty();
+                if observed_test_merge_signal {
+                    selected_test_merge = Some((
+                        DoctorEvaluationTarget {
+                            kind: DoctorEvaluationTargetKind::TestMerge,
+                            resolution: DoctorEvaluationTargetResolution::Selected,
+                            sha: merge_commit_sha.to_ascii_lowercase(),
+                            base_sha: Some(pull.base.sha.to_ascii_lowercase()),
+                            queue_entry_id: None,
+                            queue_state: None,
+                        },
+                        merge_commit_sha.to_owned(),
+                        merge_check_runs,
+                        merge_statuses,
+                    ));
+                }
                 for gap in target_probe_gaps {
                     add_doctor_gap(
                         &mut gaps,
                         DoctorCollectionSurface::Target,
                         format!(
-                            "could not determine whether GitHub is evaluating test-merge commit {merge_commit_sha}: {}",
+                            "could not completely inspect test-merge commit {merge_commit_sha}: {}",
                             gap.reason
                         ),
                     );
                 }
             }
+        } else {
+            add_doctor_gap(
+                &mut gaps,
+                DoctorCollectionSurface::Target,
+                "GitHub did not provide a test-merge SHA, so Doctor could not prove that the PR head is the active check target"
+                    .to_owned(),
+            );
         }
-    } else {
-        add_doctor_gap(
-            &mut gaps,
-            DoctorCollectionSurface::Target,
-            "GitHub did not provide a test-merge SHA, so Doctor could not prove that the PR head is the active check target"
-                .to_owned(),
-        );
-    }
+        if let Some(selected) = selected_test_merge {
+            selected
+        } else {
+            (
+                DoctorEvaluationTarget {
+                    kind: DoctorEvaluationTargetKind::PrHead,
+                    resolution: DoctorEvaluationTargetResolution::Provisional,
+                    sha: pull.head.sha.to_ascii_lowercase(),
+                    base_sha: None,
+                    queue_entry_id: None,
+                    queue_state: None,
+                },
+                pull.head.sha.clone(),
+                head_check_runs,
+                head_statuses,
+            )
+        }
+    };
 
     let final_pull_response = budget.get(api, &pull_endpoint)?;
     ensure!(
@@ -1958,13 +2521,78 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubReadinessApi>(
         final_pull == pull,
         "pull request target changed during collection; retry the doctor command"
     );
+    let final_graphql_pull = collect_doctor_candidate_observation(
+        api,
+        &mut budget,
+        &owner,
+        &name,
+        &repository,
+        &final_pull,
+        &mut gaps,
+    )
+    .context(
+        "failed to revalidate the pull-request evaluation candidate; retry the doctor command",
+    )?;
+    if graphql_pull.is_none() || final_graphql_pull.is_none() {
+        evaluation.resolution = DoctorEvaluationTargetResolution::Provisional;
+    }
+    if final_graphql_pull.is_none() {
+        add_doctor_gap(
+            &mut gaps,
+            DoctorCollectionSurface::Target,
+            "Doctor could not revalidate the pull-request evaluation candidate after collecting its signals; retry the doctor command"
+                .to_owned(),
+        );
+    }
 
-    gaps.sort_by(|left, right| {
-        doctor_surface_rank(&left.surface)
-            .cmp(&doctor_surface_rank(&right.surface))
-            .then_with(|| left.reason.cmp(&right.reason))
-    });
-    gaps.dedup_by(|left, right| left.surface == right.surface && left.reason == right.reason);
+    let candidate_selection = select_candidate(&CandidateSelectionInput {
+        before: candidate_target_identity(&pull, graphql_pull.as_ref(), target_rules),
+        after: candidate_target_identity(&final_pull, final_graphql_pull.as_ref(), target_rules),
+        signals: selection_signals,
+    })?;
+    match candidate_selection.status {
+        CandidateSelectionStatus::Retry => {
+            bail!(
+                "pull-request evaluation candidate changed during collection; retry the doctor command"
+            )
+        }
+        CandidateSelectionStatus::Inconclusive => ensure!(
+            evaluation.resolution == DoctorEvaluationTargetResolution::Provisional,
+            "candidate selector was inconclusive but collector marked the target selected"
+        ),
+        CandidateSelectionStatus::Selected => {
+            let candidate_kind = candidate_selection
+                .candidate_kind
+                .context("selected candidate is missing its kind")?;
+            let expected_kind = match candidate_kind {
+                CandidateKind::PrHead => DoctorEvaluationTargetKind::PrHead,
+                CandidateKind::TestMerge => DoctorEvaluationTargetKind::TestMerge,
+                CandidateKind::MergeGroup => DoctorEvaluationTargetKind::MergeGroup,
+            };
+            ensure!(
+                evaluation.kind == expected_kind
+                    && candidate_selection.sha.as_deref() == Some(evaluation.sha.as_str())
+                    && candidate_selection.base_sha == evaluation.base_sha
+                    && candidate_selection.queue_entry_id == evaluation.queue_entry_id,
+                "collector evaluation target disagrees with the benchmarked candidate selector"
+            );
+        }
+    }
+
+    let final_policy = collect_doctor_policy_snapshot(
+        api,
+        &mut budget,
+        &repository_path,
+        &repository.html_url,
+        &pull.base.reference,
+    )
+    .context("failed to revalidate base-branch policy; retry the doctor command")?;
+    ensure!(
+        final_policy == initial_policy,
+        "base-branch policy or its visibility changed during collection; retry the doctor command"
+    );
+
+    sort_doctor_gaps(&mut gaps);
     let collection = DoctorCollection {
         status: if gaps.is_empty() {
             DoctorCollectionStatus::Complete
@@ -1975,18 +2603,20 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubReadinessApi>(
         response_bytes: u64::try_from(budget.response_bytes)?,
         gaps,
     };
-    Ok(PullRequestDoctorSnapshot {
-        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA.to_owned(),
+    Ok(PullRequestDoctorSnapshotV2 {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA.to_owned(),
         captured_at: request.captured_at.to_owned(),
         provider_url: request.provider_url.to_owned(),
         repository: repository.full_name,
-        target: DoctorTarget {
+        target: DoctorTargetV2 {
             number: pull.number,
             url: pull.html_url,
             base_ref: pull.base.reference,
             base_sha: pull.base.sha.to_ascii_lowercase(),
             head_sha: pull.head.sha.to_ascii_lowercase(),
+            evaluation,
         },
+        signal_sha,
         collection,
         requirements,
         check_runs,

@@ -264,7 +264,7 @@ assert_native_inbox_forward_only() {
 TOP_LEVEL_HELP="$(bash "${extension_directory}/gh-stratadiff" --help)"
 assert_contains "${TOP_LEVEL_HELP}" 'inbox                      Find open PRs that need your review resumed'
 assert_contains "${TOP_LEVEL_HELP}" 'demo                       Open a deterministic offline Review Resume scenario'
-assert_contains "${TOP_LEVEL_HELP}" 'doctor <PR>                Inspect required-check signals on one exact PR head'
+assert_contains "${TOP_LEVEL_HELP}" "doctor <PR>                Diagnose required checks on GitHub's evaluation candidate"
 assert_contains "${TOP_LEVEL_HELP}" 'resume <PR>                Resume your latest completed review'
 DEMO_HELP="$(bash "${extension_directory}/gh-stratadiff" demo --help)"
 assert_contains "${DEMO_HELP}" 'Usage: gh stratadiff demo [options]'

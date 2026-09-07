@@ -1,0 +1,443 @@
+{
+  "cases": [
+    {
+      "description": "A merge-group target needs a required Actions job, but its workflow only listens to pull_request.",
+      "id": "merge-group-trigger-missing",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "checks_requested",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/a", "head_repository_is_fork": false, "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "mergeable_state": "mergeable", "number": 101},
+        "required_context": "ci",
+        "runs": [],
+        "target": {"kind": "merge_group", "sha": "1000000000000000000000000000000000000001"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-merge-group", "incident-codeql-1537", "incident-rtd-10021"]
+    },
+    {
+      "description": "The matching required job listens to merge_group checks_requested.",
+      "id": "merge-group-supported-control",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "checks_requested",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/a", "head_repository_is_fork": false, "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "mergeable_state": "mergeable", "number": 102},
+        "required_context": "ci",
+        "runs": [{"conclusion": null, "event": "merge_group", "head_sha": "2000000000000000000000000000000000000002", "status": "queued", "workflow_path": ".github/workflows/ci.yml"}],
+        "target": {"kind": "merge_group", "sha": "2000000000000000000000000000000000000002"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": {"types": ["checks_requested"]}, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-merge-group"]
+    },
+    {
+      "description": "A docs-only pull request is excluded by a required workflow's src path filter.",
+      "id": "path-filter-excluded",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["docs/guide.md"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "docs", "head_repository_is_fork": false, "head_sha": "3000000000000000000000000000000000000003", "mergeable_state": "mergeable", "number": 103},
+        "required_context": "test",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "3000000000000000000000000000000000000003"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": ["src/**"], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-skipped-checks", "incident-docs-8926", "incident-mantid-2505"]
+    },
+    {
+      "description": "A source change matches the required workflow's path filter.",
+      "id": "path-filter-match-control",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/main.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/src", "head_repository_is_fork": false, "head_sha": "4000000000000000000000000000000000000004", "mergeable_state": "mergeable", "number": 104},
+        "required_context": "test",
+        "runs": [{"conclusion": null, "event": "pull_request", "head_sha": "4000000000000000000000000000000000000004", "status": "queued", "workflow_path": ".github/workflows/test.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "4000000000000000000000000000000000000004"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": ["src/**"], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-skipped-checks"]
+    },
+    {
+      "description": "A later positive path pattern re-includes a security document after docs are excluded.",
+      "id": "path-negation-reinclude-control",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["docs/security/policy.md"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["policy"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "security-doc", "head_repository_is_fork": false, "head_sha": "5000000000000000000000000000000000000005", "mergeable_state": "mergeable", "number": 105},
+        "required_context": "policy",
+        "runs": [{"conclusion": null, "event": "pull_request", "head_sha": "5000000000000000000000000000000000000005", "status": "queued", "workflow_path": ".github/workflows/policy.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "5000000000000000000000000000000000000005"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "policy", "name": "policy", "name_static": true, "reusable": false}], "path": ".github/workflows/policy.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": ["**", "!docs/**", "docs/security/**"], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-workflow-syntax"]
+    },
+    {
+      "description": "The required workflow only targets main while the pull request targets release/v2.",
+      "id": "branch-filter-excluded",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "release/v2", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/release-fix", "head_repository_is_fork": false, "head_sha": "6000000000000000000000000000000000000006", "mergeable_state": "mergeable", "number": 106},
+        "required_context": "ci",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "6000000000000000000000000000000000000006"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": ["main"], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-workflow-syntax", "official-skipped-checks"]
+    },
+    {
+      "description": "pull_request.branches matches the base main branch even though the head is feature/x.",
+      "id": "branch-filter-base-not-head-control",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/x", "head_repository_is_fork": false, "head_sha": "7000000000000000000000000000000000000007", "mergeable_state": "mergeable", "number": 107},
+        "required_context": "ci",
+        "runs": [{"conclusion": null, "event": "pull_request", "head_sha": "7000000000000000000000000000000000000007", "status": "queued", "workflow_path": ".github/workflows/ci.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "7000000000000000000000000000000000000007"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": ["main"], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-events"]
+    },
+    {
+      "description": "A new exact head came from synchronize, but the workflow only accepts opened.",
+      "id": "activity-type-excludes-synchronize",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "synchronize",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/update", "head_repository_is_fork": false, "head_sha": "8000000000000000000000000000000000000008", "mergeable_state": "mergeable", "number": 108},
+        "required_context": "ci",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "8000000000000000000000000000000000000008"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": ["opened"]}}}
+        ]
+      },
+      "provenance": ["official-events"]
+    },
+    {
+      "description": "The workflow ran and the required job was skipped by its job-level condition, which reports success.",
+      "id": "job-condition-skipped-control",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["docs/readme.md"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "docs", "head_repository_is_fork": false, "head_sha": "9000000000000000000000000000000000000009", "mergeable_state": "mergeable", "number": 109},
+        "required_context": "test",
+        "runs": [{"conclusion": "skipped", "event": "pull_request", "head_sha": "9000000000000000000000000000000000000009", "status": "completed", "workflow_path": ".github/workflows/test.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "9000000000000000000000000000000000000009"},
+        "workflows": [
+          {"jobs": [{"condition": "changed_source", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-skipped-checks"]
+    },
+    {
+      "description": "A merge conflict prevents a pull_request workflow from starting.",
+      "id": "pull-request-merge-conflict",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "synchronize",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "conflict", "head_repository_is_fork": false, "head_sha": "a00000000000000000000000000000000000000a", "mergeable_state": "conflicting", "number": 110},
+        "required_context": "ci",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "a00000000000000000000000000000000000000a"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-events"]
+    },
+    {
+      "description": "The workflow that owns the required job is disabled manually.",
+      "id": "workflow-disabled",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "feature/disabled", "head_repository_is_fork": false, "head_sha": "b00000000000000000000000000000000000000b", "mergeable_state": "mergeable", "number": 111},
+        "required_context": "ci",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "b00000000000000000000000000000000000000b"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "disabled_manually", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-skipped-checks"]
+    },
+    {
+      "description": "An exact-head fork workflow run is explicitly awaiting maintainer approval.",
+      "id": "fork-approval-required",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "contributor:change", "head_repository_is_fork": true, "head_sha": "c00000000000000000000000000000000000000c", "mergeable_state": "mergeable", "number": 112},
+        "required_context": "ci",
+        "runs": [{"conclusion": "action_required", "event": "pull_request", "head_sha": "c00000000000000000000000000000000000000c", "status": "completed", "workflow_path": ".github/workflows/ci.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "c00000000000000000000000000000000000000c"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-fork-approval"]
+    },
+    {
+      "description": "The pull request comes from a fork, but no run or approval-state evidence was observable.",
+      "id": "fork-approval-possible",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": ["fork_approval_policy_unavailable"],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "contributor:change", "head_repository_is_fork": true, "head_sha": "d00000000000000000000000000000000000000d", "mergeable_state": "mergeable", "number": 113},
+        "required_context": "ci",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "d00000000000000000000000000000000000000d"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "ci", "name": "ci", "name_static": true, "reusable": false}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-fork-approval"]
+    },
+    {
+      "description": "Policy still requires test-old while the active workflow now emits the static job name test-new.",
+      "id": "required-job-renamed",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test-old"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "rename", "head_repository_is_fork": false, "head_sha": "e00000000000000000000000000000000000000e", "mergeable_state": "mergeable", "number": 114},
+        "required_context": "test-old",
+        "runs": [{"conclusion": "success", "event": "pull_request", "head_sha": "e00000000000000000000000000000000000000e", "status": "completed", "workflow_path": ".github/workflows/test.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "e00000000000000000000000000000000000000e"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test-new", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-branch-protection"]
+    },
+    {
+      "description": "Two active workflows declare the same static required job name.",
+      "id": "duplicate-job-name-ambiguous",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "duplicate", "head_repository_is_fork": false, "head_sha": "f00000000000000000000000000000000000000f", "mergeable_state": "mergeable", "number": 115},
+        "required_context": "test",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "f00000000000000000000000000000000000000f"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/a.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}},
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/b.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-branch-protection"]
+    },
+    {
+      "description": "The only possible producer uses a dynamic matrix job name, so static name matching is inconclusive.",
+      "id": "dynamic-job-name-unknown",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": ["dynamic_job_name"],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test (ubuntu)"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "matrix", "head_repository_is_fork": false, "head_sha": "0100000000000000000000000000000000000010", "mergeable_state": "mergeable", "number": 116},
+        "required_context": "test (ubuntu)",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "0100000000000000000000000000000000000010"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test (${{ matrix.os }})", "name_static": false, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-branch-protection"]
+    },
+    {
+      "description": "A third-party required provider is documented by observation as not supporting merge-group targets.",
+      "id": "third-party-merge-group-unsupported",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["docs/index.md"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "third-party",
+        "historical_check_names": ["Read the Docs"],
+        "last_activity": "checks_requested",
+        "provider_capability": "unsupported_merge_group",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "docs", "head_repository_is_fork": false, "head_sha": "1700000000000000000000000000000000000017", "mergeable_state": "mergeable", "number": 117},
+        "required_context": "Read the Docs",
+        "runs": [],
+        "target": {"kind": "merge_group", "sha": "1100000000000000000000000000000000000011"},
+        "workflows": []
+      },
+      "provenance": ["incident-rtd-10021", "incident-codeql-1537"]
+    },
+    {
+      "description": "A pull request exceeds GitHub's 300-file filter evaluation boundary, so a static exclusion claim is unsafe.",
+      "id": "path-filter-over-300-unknown",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": true, "paths": ["docs/001.md", "src/late-match.rs"], "total": 301},
+        "collection_gaps": ["github_path_filter_evaluation_truncated"],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "large-change", "head_repository_is_fork": false, "head_sha": "1200000000000000000000000000000000000012", "mergeable_state": "mergeable", "number": 118},
+        "required_context": "test",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "1200000000000000000000000000000000000012"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": ["src/**"], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-workflow-syntax"]
+    },
+    {
+      "description": "The workflow definition cannot be parsed, and startup evidence confirms it never instantiated the job.",
+      "id": "workflow-definition-invalid",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["ci"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "bad-yaml", "head_repository_is_fork": false, "head_sha": "1300000000000000000000000000000000000013", "mergeable_state": "mergeable", "number": 119},
+        "required_context": "ci",
+        "runs": [{"conclusion": "startup_failure", "event": "pull_request", "head_sha": "1300000000000000000000000000000000000013", "status": "completed", "workflow_path": ".github/workflows/ci.yml"}],
+        "target": {"kind": "pull_request_head", "sha": "1300000000000000000000000000000000000013"},
+        "workflows": [
+          {"jobs": [], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "invalid", "triggers": {"merge_group": null, "pull_request": null}}
+        ]
+      },
+      "provenance": ["official-workflow-syntax"]
+    },
+    {
+      "description": "A third-party provider is nominally compatible, but delivery or handler evidence is unavailable after no status appeared.",
+      "id": "provider-runtime-delivery-gap",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["engine/file.dart"], "total": 1},
+        "collection_gaps": ["provider_webhook_delivery_unavailable"],
+        "expected_app": "third-party",
+        "historical_check_names": ["Merge Queue Guard"],
+        "last_activity": "checks_requested",
+        "provider_capability": "unknown",
+        "pull_request": {"base_ref": "master", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "engine-change", "head_repository_is_fork": false, "head_sha": "1800000000000000000000000000000000000018", "mergeable_state": "mergeable", "number": 120},
+        "required_context": "Merge Queue Guard",
+        "runs": [],
+        "target": {"kind": "merge_group", "sha": "1400000000000000000000000000000000000014"},
+        "workflows": []
+      },
+      "provenance": ["incident-danger-1427", "incident-flutter-162882"]
+    },
+    {
+      "description": "A reusable workflow owns the emitted check name, which cannot be proven from the caller job alone.",
+      "id": "reusable-workflow-name-unknown",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["src/lib.rs"], "total": 1},
+        "collection_gaps": ["reusable_workflow_definition_unavailable"],
+        "expected_app": "github-actions",
+        "historical_check_names": ["shared-ci / test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "reuse", "head_repository_is_fork": false, "head_sha": "1500000000000000000000000000000000000015", "mergeable_state": "mergeable", "number": 121},
+        "required_context": "shared-ci / test",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "1500000000000000000000000000000000000015"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "shared", "name": "shared", "name_static": true, "reusable": true}], "path": ".github/workflows/ci.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-branch-protection"]
+    },
+    {
+      "description": "A workflow-level paths-ignore excludes a documentation-only change.",
+      "id": "paths-ignore-excluded",
+      "input": {
+        "changed_files": {"complete": true, "github_filter_file_limit_reached": false, "paths": ["docs/readme.md"], "total": 1},
+        "collection_gaps": [],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "opened",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "docs", "head_repository_is_fork": false, "head_sha": "1600000000000000000000000000000000000016", "mergeable_state": "mergeable", "number": 122},
+        "required_context": "test",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "1600000000000000000000000000000000000016"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": [], "paths_ignore": ["docs/**"], "types": []}}}
+        ]
+      },
+      "provenance": ["official-skipped-checks", "incident-docs-8926"]
+    }
+  ],
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-doctor-workflow-trigger-cases-v1"
+}

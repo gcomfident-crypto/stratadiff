@@ -1,7 +1,8 @@
 # StrataDiff
 
-**A `gh doctor` for stuck pull requests: inspect exact-head required signals, their producers, and
-the next evidence-gathering action behind “policy prohibits this merge.”**
+**A `gh doctor` for stuck pull requests: identify GitHub's exact evaluation candidate, inspect its
+required signals and producers, and show the next evidence-gathering action behind “policy
+prohibits this merge.”**
 
 StrataDiff starts as a read-only **PR Flight Recorder and required-check doctor**, then grows into a
 verifiable merge-proof control plane for GitHub. It does not replace
@@ -62,7 +63,7 @@ Cache described above.
 
 ## Pull Request Doctor
 
-The unreleased CLI now diagnoses the required checks on one exact, open pull-request head:
+The unreleased CLI now diagnoses required status-check signals on one exact, open pull request:
 
 ```console
 stratadiff doctor https://github.com/OWNER/REPOSITORY/pull/123
@@ -70,23 +71,34 @@ stratadiff doctor 123 -R OWNER/REPOSITORY --format json
 stratadiff doctor 123 -R OWNER/REPOSITORY --require-clear
 ```
 
-For each effective ruleset or classic branch-protection requirement, Doctor distinguishes
-`satisfied`, `pending`, `failed`, `missing`, `source_mismatch`, and `source_unknown`. It binds
-observed Check Runs and commit statuses to the current PR head SHA, honors an expected GitHub App
-ID, re-reads the PR to reject concurrent head or base drift, and emits next actions as argv arrays
-bound to that exact SHA. A canonical PR URL is checked against any explicit repository or hostname
-before the first provider request.
+The v2 report explicitly names the selected evaluation target as `pr_head`, `test_merge`, or
+`merge_group`, together with the exact SHA used to collect evidence. For each effective required
+status check from a ruleset or classic branch protection, Doctor distinguishes `satisfied`,
+`pending`, `failed`, `missing`, `source_mismatch`, and `source_unknown`. It honors an expected
+GitHub App ID and emits next actions as argv arrays bound to the evaluation SHA. REST and GraphQL
+target identity, effective rulesets, and classic branch protection are read again after collection;
+a concurrent candidate or policy change aborts the snapshot instead of mixing observations. A
+canonical PR URL is checked against any explicit repository or hostname before the first provider
+request.
 
-The global verdict is `checks_clear`, `checks_blocked`, or `inconclusive`. Incomplete policy or
-signal visibility can never become clear, and `--require-clear` writes the report before exiting
-unsuccessfully. This is intentionally a required-check diagnosis—not a claim that the PR is
-mergeable, reviewed, conflict-free, compliant, or safe. Workflow-trigger and `merge_group`
-root-cause mapping are the next vertical slice.
+For a PR that is not currently in a merge queue, Doctor follows GitHub's documented target rule:
+if the test-merge commit has any Check Run or legacy commit status, it selects `test_merge`.
+A missing test-merge SHA, an incomplete probe, or complete but empty test-merge signals leave the
+PR head provisional and make the result `inconclusive`; absence alone is not treated as proof that
+GitHub selected the head.
 
-This head-only research alpha probes GitHub's test-merge commit before issuing a clear or blocked
-verdict. If that commit already has any status signal, its SHA is unavailable, required-workflow or
-merge-queue rules apply, or effective rules cannot be read, Doctor returns `inconclusive` instead
-of treating the PR head as GitHub's active check target.
+For a queued PR, Doctor reads the current GraphQL `mergeQueueEntry`, records its entry ID, state,
+base commit, and head commit, and represents the entry head as a `merge_group` evaluation target.
+That polling-derived candidate has not yet been cross-validated against a delivered `merge_group`
+webhook, so every queued diagnosis remains `inconclusive`, even when all observed checks pass.
+Doctor also detects effective required-workflow rules, but this version does not collect or
+diagnose their expected workflow identities; their presence likewise keeps the result
+`inconclusive`.
+
+The global verdict is `checks_clear`, `checks_blocked`, or `inconclusive`. Incomplete policy,
+candidate, or signal visibility can never become clear, and `--require-clear` writes the report
+before exiting unsuccessfully. This is intentionally a required-status-check diagnosis—not a claim
+that the PR is mergeable, reviewed, conflict-free, compliant, or safe to merge.
 
 ## Merge Readiness Audit
 
