@@ -71,7 +71,7 @@ stratadiff doctor 123 -R OWNER/REPOSITORY --format json
 stratadiff doctor 123 -R OWNER/REPOSITORY --require-clear
 ```
 
-The v2 report explicitly names the selected evaluation target as `pr_head`, `test_merge`, or
+The v3 report explicitly names the selected evaluation target as `pr_head`, `test_merge`, or
 `merge_group`, together with the exact SHA used to collect evidence. For each effective required
 status check from a ruleset or classic branch protection, Doctor distinguishes `satisfied`,
 `pending`, `failed`, `missing`, `source_mismatch`, and `source_unknown`. It honors an expected
@@ -80,6 +80,14 @@ target identity, effective rulesets, and classic branch protection are read agai
 a concurrent candidate or policy change aborts the snapshot instead of mixing observations. A
 canonical PR URL is checked against any explicit repository or hostname before the first provider
 request.
+
+For a pinned GitHub Actions check missing from a merge-group candidate, v3 also follows an observed
+historical Check Run through its check suite, workflow run, exact job, and canonical workflow, then
+reads that workflow definition at the evaluation SHA. The producer collection is repeated and must
+remain identical. This evidence does not by itself prove that no second workflow can emit the same
+context and App identity: until Doctor can enumerate every workflow definition at the exact SHA, a
+selected producer without `merge_group` remains an explicit evidence gap rather than a claimed root
+cause.
 
 For a PR that is not currently in a merge queue, Doctor follows GitHub's documented target rule:
 if the test-merge commit has any Check Run or legacy commit status, it selects `test_merge`.
@@ -93,7 +101,10 @@ That polling-derived candidate has not yet been cross-validated against a delive
 webhook, so every queued diagnosis remains `inconclusive`, even when all observed checks pass.
 Doctor also detects effective required-workflow rules, but this version does not collect or
 diagnose their expected workflow identities; their presence likewise keeps the result
-`inconclusive`.
+`inconclusive`. The separate offline workflow-trigger corpus treats the path-filter boundary as
+version-dependent: 300 on GHES 3.17–3.21 and 3,000 on GitHub.com and GHES 3.22. Its v1 input does
+not bind a deployment version, so the over-300 case remains an explicit unknown; this is not
+evidence that the live collector already diagnoses that condition.
 
 The global verdict is `checks_clear`, `checks_blocked`, or `inconclusive`. Incomplete policy,
 candidate, or signal visibility can never become clear, and `--require-clear` writes the report

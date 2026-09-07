@@ -512,6 +512,10 @@ The host-workflow acceptance matrix must include these end-to-end cases:
 1. Ship the read-only Merge Readiness Audit and a non-blocking shadow Check before expanding the
    enforcement surface. Audit expected App sources, duplicate context names, `merge_group`
    coverage, path-filtered required workflows, overrides, final-push evidence, and repeated work.
+   GitHub.com's and GHES 3.22's path-filter boundary is 3,000 files, while GHES 3.17–3.21 use 300.
+   The Audit must bind the deployment/version before applying either limit and remain unknown above
+   300 when it cannot. The pull-files API returns at most 3,000 files, so a capped response does not
+   independently prove a complete ordered evaluation set.
 2. Close the merge-proof safety contract. Every successful gate must bind repository, PR, current
    base and head, final candidate SHA, independently established merge-group membership, provider
    evidence IDs and sources, scope, and policy generation. The webhook's head/base fields alone do

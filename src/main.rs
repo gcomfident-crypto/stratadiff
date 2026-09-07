@@ -16,7 +16,7 @@ use stratadiff::coverage::{
     verify_review_coverage_passport,
 };
 use stratadiff::doctor::{
-    DoctorVerdict, evaluate_pull_request_doctor_v2, render_pull_request_doctor_v2_markdown,
+    DoctorVerdict, evaluate_pull_request_doctor_v3, render_pull_request_doctor_v3_markdown,
 };
 use stratadiff::github::{
     MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
@@ -45,7 +45,7 @@ use stratadiff::readiness::{
 use stratadiff::readiness_audit::{
     GithubPullRequestDoctorApi, GithubReadinessApi, GithubReadinessApiResponse,
     MAX_READINESS_API_RESPONSE_BYTES, MergeReadinessCollection, PullRequestDoctorCollection,
-    collect_merge_readiness_snapshot, collect_pull_request_doctor_snapshot,
+    collect_merge_readiness_snapshot, collect_pull_request_doctor_snapshot_v3,
 };
 use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
@@ -827,7 +827,7 @@ fn run(command: Command) -> Result<()> {
                 started: Instant::now(),
             };
             let captured_at = current_utc_timestamp()?;
-            let snapshot = collect_pull_request_doctor_snapshot(
+            let snapshot = collect_pull_request_doctor_snapshot_v3(
                 PullRequestDoctorCollection {
                     provider_url: &selection.provider_url,
                     repository: &selection.repository,
@@ -836,10 +836,10 @@ fn run(command: Command) -> Result<()> {
                 },
                 &mut api,
             )?;
-            let report = evaluate_pull_request_doctor_v2(&snapshot)?;
+            let report = evaluate_pull_request_doctor_v3(&snapshot)?;
             let mut encoded = match (format, output.is_some()) {
                 (ReadinessOutput::Markdown, _) => {
-                    render_pull_request_doctor_v2_markdown(&report).into_bytes()
+                    render_pull_request_doctor_v3_markdown(&report).into_bytes()
                 }
                 (ReadinessOutput::Json, true) => serde_json::to_vec_pretty(&report)?,
                 (ReadinessOutput::Json, false) => serde_json::to_vec(&report)?,

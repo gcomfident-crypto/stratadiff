@@ -6,8 +6,8 @@
     "minimum_uncertain_cases": 4
   },
   "assets": {
-    "cases": {"path": "cases.json", "sha256": "4bac86a74057ae7deed6ba49d9a84202131a9dae59c6d51aa29b1d7b0590a55c"},
-    "oracle": {"path": "oracle.json", "sha256": "406ac09008b0024531b5347f5d6541456619160d20396c1692c055a74099e654"}
+    "cases": {"path": "cases.json", "sha256": "1aed32f590df4846ff922fd43b2ab501b27ab41ed50215d1587fcd05795249d1"},
+    "oracle": {"path": "oracle.json", "sha256": "497f1c2624312d7efe41aa00e162fd9480b5761a602187d53a5df689fad241aa"}
   },
   "claim_boundary": {
     "controlled_trigger_semantics_supported": true,
@@ -23,7 +23,7 @@
   "description": "A deterministic offline corpus for explaining absent required checks from workflow-trigger evidence.",
   "designation": "controlled_semantic_regression",
   "expected_summary": {
-    "cases": 22,
+    "cases": 23,
     "causes": {
       "duplicate_job_name_ambiguous": 1,
       "fork_approval_possible": 1,
@@ -39,11 +39,11 @@
       "workflow_definition_invalid": 1,
       "workflow_disabled": 1,
       "workflow_path_filter_excluded": 2,
-      "workflow_trigger_unknown": 3
+      "workflow_trigger_unknown": 4
     },
-    "confidence": {"certain": 15, "high": 2, "uncertain": 5},
+    "confidence": {"certain": 15, "high": 2, "uncertain": 6},
     "human_edits": 10,
-    "provenance_refs": 30
+    "provenance_refs": 35
   },
   "name": "Doctor Workflow Trigger v1",
   "provenance": [
@@ -71,9 +71,30 @@
     {
       "id": "official-workflow-syntax",
       "kind": "official_documentation",
-      "supports": ["base_branch_filter", "ordered_path_patterns", "three_hundred_file_limit"],
-      "title": "Workflow syntax for GitHub Actions",
-      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax"
+      "supports": ["base_branch_filter", "ordered_path_patterns", "github_com_three_thousand_file_filter_limit"],
+      "title": "Workflow syntax for GitHub Actions on GitHub.com",
+      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons"
+    },
+    {
+      "id": "official-workflow-syntax-ghes-3-21",
+      "kind": "official_documentation",
+      "supports": ["ghes_3_21_three_hundred_file_filter_limit"],
+      "title": "Workflow syntax for GitHub Actions on GHES 3.21",
+      "url": "https://docs.github.com/en/enterprise-server@3.21/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons"
+    },
+    {
+      "id": "official-workflow-syntax-ghes-3-22",
+      "kind": "official_documentation",
+      "supports": ["ghes_3_22_three_thousand_file_filter_limit"],
+      "title": "Workflow syntax for GitHub Actions on GHES 3.22",
+      "url": "https://docs.github.com/en/enterprise-server@3.22/actions/reference/workflows-and-actions/workflow-syntax#git-diff-comparisons"
+    },
+    {
+      "id": "official-pull-files",
+      "kind": "official_documentation",
+      "supports": ["pull_files_api_three_thousand_file_cap"],
+      "title": "List pull requests files",
+      "url": "https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#list-pull-requests-files"
     },
     {
       "id": "official-branch-protection",
@@ -145,7 +166,8 @@
     "merge-group-trigger-missing",
     "path-filter-excluded",
     "path-filter-match-control",
-    "path-filter-over-300-unknown",
+    "path-filter-over-300-version-unknown",
+    "path-filter-over-3000-api-cap-unknown",
     "path-negation-reinclude-control",
     "paths-ignore-excluded",
     "provider-runtime-delivery-gap",

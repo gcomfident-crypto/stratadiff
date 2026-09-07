@@ -15,12 +15,15 @@ product-market fit.
 
 ## Doctor Workflow Trigger v1
 
-[`doctor-workflow-trigger-v1/`](doctor-workflow-trigger-v1/) is a deterministic 22-case corpus for
+[`doctor-workflow-trigger-v1/`](doctor-workflow-trigger-v1/) is a deterministic 23-case corpus for
 explaining why an exact candidate never receives a required signal. It covers missing
 `merge_group`, path and base-branch filters, activity types, conflicts, disabled or invalid
 workflows, fork approval, job-name drift and ambiguity, third-party providers, runtime delivery
-gaps, and fail-closed dynamic cases. The independent verifier rejects fifteen mutation classes;
-the Rust classifier adapter is a separate product regression gate.
+gaps, and fail-closed dynamic cases, including the version-dependent path-filter boundary (300 on
+GHES 3.17–3.21; 3,000 on GitHub.com and GHES 3.22). Because the v1 input does not bind a deployment
+version, its over-300 case remains conservative; a separate over-3,000 case freezes the REST cap
+as an incomplete observation. The independent verifier rejects seventeen mutation
+classes; the Rust classifier adapter is a separate product regression gate.
 
 The cases encode documented GitHub behavior and six public incident families. They do not measure
 incident prevalence, production accuracy, developer time saved, adoption, revenue, or product fit.

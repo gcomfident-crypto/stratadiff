@@ -605,7 +605,10 @@ separate 100-session, 20-reviewer study remains required before a human-time or 
 
 - Inventory effective rulesets, expected App IDs, duplicate context names, workflow triggers, path
   filters, visible bypass actors, reviewer providers, and still-resolvable PR evidence. Record hidden
-  bypass configuration as unknown.
+  bypass configuration as unknown. GitHub.com's and GHES 3.22's path-filter boundary is 3,000 files,
+  while GHES 3.17–3.21 use 300; bind the deployment/version before applying either limit. If it is
+  unavailable, retain an unknown above 300. The pull-files endpoint returns at most 3,000 files, so
+  a capped response is not proof that the ordered evaluation set is complete.
 - Statically check whether required workflows declare `merge_group`. Audit a merge-group timeline or
   member set only from retained live events or other explicitly validated records. The `merge_group`
   webhook does not enumerate member PRs, and a first-time Audit cannot reconstruct an uncollected

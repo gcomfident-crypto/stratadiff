@@ -3,11 +3,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
+use crate::doctor_workflow::{
+    DoctorWorkflowTriggerDiagnosis, DoctorWorkflowTriggerInput, WorkflowExpectedApp,
+    WorkflowTargetKind, WorkflowTriggerCause, classify_workflow_trigger,
+};
+
 pub const PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA: &str = "stratadiff-pull-request-doctor-snapshot-v1";
 pub const PULL_REQUEST_DOCTOR_REPORT_SCHEMA: &str = "stratadiff-pull-request-doctor-v1";
 pub const PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA: &str =
     "stratadiff-pull-request-doctor-snapshot-v2";
 pub const PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA: &str = "stratadiff-pull-request-doctor-v2";
+pub const PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA: &str =
+    "stratadiff-pull-request-doctor-snapshot-v3";
+pub const PULL_REQUEST_DOCTOR_REPORT_V3_SCHEMA: &str = "stratadiff-pull-request-doctor-v3";
 
 const MAX_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 const MAX_COLLECTION_ITEMS: usize = 10_000;
@@ -167,6 +175,95 @@ pub struct PullRequestDoctorSnapshotV2 {
     pub statuses: Vec<DoctorCommitStatus>,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorWorkflowCollectionStatus {
+    NotApplicable,
+    Complete,
+    Partial,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowCollectionGap {
+    pub requirement: DoctorRequirementKey,
+    pub code: String,
+    pub reason: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum DoctorWorkflowProbeKind {
+    PullRequestHead,
+    TestMerge,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowProbe {
+    pub kind: DoctorWorkflowProbeKind,
+    pub sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowCollection {
+    pub status: DoctorWorkflowCollectionStatus,
+    pub api_calls: u64,
+    pub response_bytes: u64,
+    pub probes: Vec<DoctorWorkflowProbe>,
+    pub gaps: Vec<DoctorWorkflowCollectionGap>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowProducer {
+    pub source_sha: String,
+    pub check_run_id: u64,
+    pub check_run_api_url: String,
+    pub check_run_url: String,
+    pub check_name: String,
+    pub app_id: u64,
+    pub app_slug: String,
+    pub check_suite_id: u64,
+    pub workflow_run_id: u64,
+    pub workflow_run_attempt: u64,
+    pub workflow_run_url: String,
+    pub workflow_run_path: String,
+    pub workflow_job_id: u64,
+    pub workflow_job_url: String,
+    pub workflow_job_name: String,
+    pub workflow_job_check_run_url: String,
+    pub workflow_id: u64,
+    pub workflow_path: String,
+    pub workflow_url: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowTriggerInvestigation {
+    pub requirement: DoctorRequirementKey,
+    pub producer: Option<DoctorWorkflowProducer>,
+    pub input: Option<DoctorWorkflowTriggerInput>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PullRequestDoctorSnapshotV3 {
+    pub schema: String,
+    pub captured_at: String,
+    pub provider_url: String,
+    pub repository: String,
+    pub target: DoctorTargetV2,
+    pub signal_sha: String,
+    pub collection: DoctorCollection,
+    pub requirements: Vec<DoctorRequirement>,
+    pub check_runs: Vec<DoctorCheckRun>,
+    pub statuses: Vec<DoctorCommitStatus>,
+    pub workflow_collection: DoctorWorkflowCollection,
+    pub workflow_trigger_investigations: Vec<DoctorWorkflowTriggerInvestigation>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(deny_unknown_fields)]
 pub struct DoctorRequirementKey {
@@ -299,6 +396,33 @@ pub struct PullRequestDoctorReportV2 {
     pub summary: DoctorSummary,
     pub requirements: Vec<DoctorRequirementDiagnosis>,
     pub next_actions: Vec<DoctorNextAction>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowTriggerReport {
+    pub requirement: DoctorRequirementKey,
+    pub producer: Option<DoctorWorkflowProducer>,
+    pub diagnosis: Option<DoctorWorkflowTriggerDiagnosis>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PullRequestDoctorReportV3 {
+    pub schema: String,
+    pub tool_version: String,
+    pub generated_at: String,
+    pub provider_url: String,
+    pub repository: String,
+    pub target: DoctorTargetV2,
+    pub collection: DoctorCollection,
+    pub claim_boundary: DoctorClaimBoundary,
+    pub verdict: DoctorVerdict,
+    pub summary: DoctorSummary,
+    pub requirements: Vec<DoctorRequirementDiagnosis>,
+    pub next_actions: Vec<DoctorNextAction>,
+    pub workflow_collection: DoctorWorkflowCollection,
+    pub workflow_trigger_diagnoses: Vec<DoctorWorkflowTriggerReport>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1231,6 +1355,379 @@ pub fn evaluate_pull_request_doctor_v2(
     })
 }
 
+fn snapshot_v2_from_v3(snapshot: &PullRequestDoctorSnapshotV3) -> PullRequestDoctorSnapshotV2 {
+    PullRequestDoctorSnapshotV2 {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA.to_owned(),
+        captured_at: snapshot.captured_at.clone(),
+        provider_url: snapshot.provider_url.clone(),
+        repository: snapshot.repository.clone(),
+        target: snapshot.target.clone(),
+        signal_sha: snapshot.signal_sha.clone(),
+        collection: snapshot.collection.clone(),
+        requirements: snapshot.requirements.clone(),
+        check_runs: snapshot.check_runs.clone(),
+        statuses: snapshot.statuses.clone(),
+    }
+}
+
+fn validate_workflow_collection(
+    snapshot: &PullRequestDoctorSnapshotV3,
+    report: &PullRequestDoctorReportV2,
+) -> Result<()> {
+    ensure!(
+        snapshot.schema == PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA,
+        "unsupported pull-request doctor v3 snapshot schema"
+    );
+    ensure!(
+        snapshot.workflow_collection.api_calls <= MAX_JSON_INTEGER,
+        "workflow API call count must be a JSON-safe integer"
+    );
+    ensure!(
+        snapshot.workflow_collection.response_bytes <= MAX_JSON_INTEGER,
+        "workflow response byte count must be a JSON-safe integer"
+    );
+    ensure!(
+        snapshot.workflow_collection.api_calls <= snapshot.collection.api_calls
+            && snapshot.workflow_collection.response_bytes <= snapshot.collection.response_bytes,
+        "workflow collection budget must be a subset of the cumulative doctor budget"
+    );
+    ensure!(
+        snapshot.workflow_collection.gaps.len() <= MAX_COLLECTION_ITEMS,
+        "too many workflow collection gaps"
+    );
+    ensure!(
+        snapshot.workflow_trigger_investigations.len() <= MAX_COLLECTION_ITEMS,
+        "too many workflow trigger investigations"
+    );
+    match snapshot.workflow_collection.status {
+        DoctorWorkflowCollectionStatus::NotApplicable => ensure!(
+            snapshot.workflow_collection.api_calls == 0
+                && snapshot.workflow_collection.response_bytes == 0
+                && snapshot.workflow_collection.probes.is_empty()
+                && snapshot.workflow_collection.gaps.is_empty()
+                && snapshot.workflow_trigger_investigations.is_empty(),
+            "a not-applicable workflow collection cannot contain observations"
+        ),
+        DoctorWorkflowCollectionStatus::Complete => ensure!(
+            snapshot.workflow_collection.api_calls > 0
+                && snapshot.workflow_collection.gaps.is_empty()
+                && !snapshot.workflow_trigger_investigations.is_empty()
+                && snapshot
+                    .workflow_trigger_investigations
+                    .iter()
+                    .all(|investigation| investigation.input.is_some()),
+            "a complete workflow collection requires classified inputs without gaps"
+        ),
+        DoctorWorkflowCollectionStatus::Partial => ensure!(
+            !snapshot.workflow_collection.gaps.is_empty()
+                && !snapshot.workflow_trigger_investigations.is_empty(),
+            "a partial workflow collection must contain investigations and gaps"
+        ),
+    }
+
+    let requirement_statuses = report
+        .requirements
+        .iter()
+        .map(|diagnosis| (diagnosis.key.clone(), diagnosis.status))
+        .collect::<BTreeMap<_, _>>();
+    let eligible_keys = if snapshot.target.evaluation.kind == DoctorEvaluationTargetKind::MergeGroup
+    {
+        report
+            .requirements
+            .iter()
+            .filter(|diagnosis| {
+                diagnosis.status == DoctorRequirementStatus::Missing
+                    && diagnosis.key.expected_app_id.is_some()
+            })
+            .map(|diagnosis| diagnosis.key.clone())
+            .collect::<BTreeSet<_>>()
+    } else {
+        BTreeSet::new()
+    };
+    let mut probed_source_shas = BTreeSet::new();
+    let mut probe_kinds = BTreeSet::new();
+    for probe in &snapshot.workflow_collection.probes {
+        ensure!(
+            valid_sha(&probe.sha) && probe.sha != snapshot.signal_sha,
+            "workflow producer probe SHA must be a distinct lowercase full Git object ID"
+        );
+        ensure!(
+            probed_source_shas.insert(probe.sha.as_str()),
+            "duplicate workflow producer probe SHA"
+        );
+        ensure!(
+            probe_kinds.insert(probe.kind),
+            "duplicate workflow producer probe kind"
+        );
+        match probe.kind {
+            DoctorWorkflowProbeKind::PullRequestHead => ensure!(
+                probe.sha == snapshot.target.head_sha,
+                "pull-request-head producer probe must use the declared head SHA"
+            ),
+            DoctorWorkflowProbeKind::TestMerge => ensure!(
+                probe.sha != snapshot.target.head_sha
+                    && probe.sha != snapshot.target.base_sha
+                    && probe.sha != snapshot.signal_sha,
+                "test-merge producer probe must identify a distinct candidate"
+            ),
+        }
+    }
+    if !eligible_keys.is_empty()
+        && snapshot.workflow_collection.status != DoctorWorkflowCollectionStatus::Partial
+    {
+        ensure!(
+            probe_kinds.contains(&DoctorWorkflowProbeKind::PullRequestHead),
+            "complete workflow collection must probe the pull-request head"
+        );
+    }
+    let mut investigation_keys = BTreeSet::new();
+    for investigation in &snapshot.workflow_trigger_investigations {
+        ensure!(
+            investigation_keys.insert(investigation.requirement.clone()),
+            "duplicate workflow trigger investigation"
+        );
+        ensure!(
+            investigation.requirement.expected_app_id.is_some(),
+            "workflow trigger investigation must be pinned to an App"
+        );
+        ensure!(
+            requirement_statuses.get(&investigation.requirement)
+                == Some(&DoctorRequirementStatus::Missing),
+            "workflow trigger investigation must identify a missing required check"
+        );
+        ensure!(
+            snapshot.target.evaluation.kind == DoctorEvaluationTargetKind::MergeGroup,
+            "workflow trigger investigation currently supports only merge-group targets"
+        );
+
+        if let Some(producer) = &investigation.producer {
+            ensure!(
+                valid_sha(&producer.source_sha),
+                "workflow producer source SHA must be a lowercase full Git object ID"
+            );
+            ensure!(
+                probed_source_shas.contains(producer.source_sha.as_str()),
+                "workflow producer evidence must come from a declared probe SHA"
+            );
+            ensure!(
+                producer.check_run_id > 0
+                    && producer.check_run_id <= MAX_JSON_INTEGER
+                    && producer.check_suite_id > 0
+                    && producer.check_suite_id <= MAX_JSON_INTEGER
+                    && producer.workflow_run_id > 0
+                    && producer.workflow_run_id <= MAX_JSON_INTEGER
+                    && producer.workflow_run_attempt > 0
+                    && producer.workflow_run_attempt <= MAX_JSON_INTEGER
+                    && producer.workflow_job_id > 0
+                    && producer.workflow_job_id <= MAX_JSON_INTEGER
+                    && producer.workflow_id > 0
+                    && producer.workflow_id <= MAX_JSON_INTEGER,
+                "workflow producer IDs must be positive JSON-safe integers"
+            );
+            validate_url(
+                &producer.check_run_api_url,
+                "workflow producer check-run API URL",
+            )?;
+            validate_url(&producer.check_run_url, "workflow producer check-run URL")?;
+            validate_url(&producer.workflow_run_url, "workflow producer run URL")?;
+            validate_url(&producer.workflow_job_url, "workflow producer job URL")?;
+            validate_url(
+                &producer.workflow_job_check_run_url,
+                "workflow producer job check-run URL",
+            )?;
+            validate_url(&producer.workflow_url, "workflow producer URL")?;
+            bounded_nonempty(&producer.check_name, 255, "workflow producer check name")?;
+            bounded_nonempty(
+                &producer.workflow_job_name,
+                255,
+                "workflow producer job name",
+            )?;
+            bounded_nonempty(&producer.app_slug, 255, "workflow producer App slug")?;
+            bounded_nonempty(
+                &producer.workflow_run_path,
+                1_024,
+                "workflow producer run path",
+            )?;
+            ensure!(
+                producer.check_name == investigation.requirement.context
+                    && producer.workflow_job_name == investigation.requirement.context
+                    && producer.workflow_job_check_run_url == producer.check_run_api_url
+                    && producer.app_id
+                        == investigation
+                            .requirement
+                            .expected_app_id
+                            .context("workflow investigation is missing its expected App ID")?
+                    && producer.app_slug == "github-actions",
+                "workflow producer must match the required context and GitHub Actions App"
+            );
+            bounded_nonempty(&producer.workflow_path, 1_024, "workflow producer path")?;
+            ensure!(
+                producer.workflow_path.starts_with(".github/workflows/")
+                    && (producer.workflow_path.ends_with(".yml")
+                        || producer.workflow_path.ends_with(".yaml")),
+                "workflow producer path must identify a GitHub Actions workflow"
+            );
+            ensure!(
+                producer.workflow_run_path == producer.workflow_path
+                    || producer
+                        .workflow_run_path
+                        .strip_prefix(&producer.workflow_path)
+                        .is_some_and(|suffix| suffix.starts_with('@') && suffix.len() > 1),
+                "workflow producer run path must resolve to its canonical workflow path"
+            );
+        }
+
+        let has_keyed_gap = snapshot
+            .workflow_collection
+            .gaps
+            .iter()
+            .any(|gap| gap.requirement == investigation.requirement);
+        if let Some(input) = &investigation.input {
+            ensure!(
+                !has_keyed_gap,
+                "a classified workflow investigation cannot retain a blocking evidence gap"
+            );
+            ensure!(
+                investigation.producer.is_some(),
+                "classified workflow input must have an exact producer binding"
+            );
+            ensure!(
+                input.expected_app == WorkflowExpectedApp::GithubActions
+                    && input.required_context == investigation.requirement.context
+                    && input.target.kind == WorkflowTargetKind::MergeGroup
+                    && input.target.sha == snapshot.signal_sha
+                    && input.pull_request.number == snapshot.target.number
+                    && input.pull_request.base_ref == snapshot.target.base_ref
+                    && input.pull_request.base_sha == snapshot.target.base_sha
+                    && input.pull_request.head_sha == snapshot.target.head_sha,
+                "workflow classifier input is not bound to its required check and pull request"
+            );
+            ensure!(
+                !input.changed_files.complete
+                    && !input.changed_files.github_filter_file_limit_reached
+                    && input.changed_files.paths.is_empty()
+                    && input.changed_files.total == 0
+                    && input.collection_gaps.is_empty()
+                    && input.historical_check_names
+                        == vec![investigation.requirement.context.clone()]
+                    && input.last_activity == "not_applicable"
+                    && input.provider_capability
+                        == crate::doctor_workflow::WorkflowProviderCapability::NotApplicable
+                    && input.pull_request.mergeable_state
+                        == crate::doctor_workflow::WorkflowMergeableState::Unknown,
+                "live merge-group classifier input contains unsupported phase-one evidence"
+            );
+            let producer = investigation
+                .producer
+                .as_ref()
+                .context("classified workflow input is missing its producer")?;
+            ensure!(
+                input.workflows.len() == 1
+                    && input.workflows[0].path == producer.workflow_path
+                    && input.workflows[0].state == crate::doctor_workflow::WorkflowState::Active
+                    && input.workflows[0].syntax == crate::doctor_workflow::WorkflowSyntax::Valid
+                    && input.workflows[0]
+                        .jobs
+                        .iter()
+                        .all(|job| job.name_static && !job.reusable)
+                    && input.workflows[0]
+                        .jobs
+                        .iter()
+                        .filter(|job| job.name == investigation.requirement.context)
+                        .count()
+                        == 1
+                    && input.runs.iter().all(|run| {
+                        run.head_sha == snapshot.signal_sha
+                            && run.workflow_path == producer.workflow_path
+                    }),
+                "workflow classifier input must contain exactly its bound producer"
+            );
+            classify_workflow_trigger(input)?;
+        } else {
+            ensure!(
+                has_keyed_gap,
+                "an unclassified workflow investigation must identify its evidence gap"
+            );
+        }
+    }
+    ensure!(
+        investigation_keys == eligible_keys,
+        "workflow investigations must cover every pinned missing merge-group requirement exactly once"
+    );
+
+    let mut gap_identities = BTreeSet::new();
+    for gap in &snapshot.workflow_collection.gaps {
+        ensure!(
+            investigation_keys.contains(&gap.requirement),
+            "workflow collection gap does not identify an investigation"
+        );
+        bounded_nonempty(&gap.code, 128, "workflow collection gap code")?;
+        ensure!(
+            gap.code
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'),
+            "workflow collection gap code must use lowercase snake case"
+        );
+        bounded_nonempty(&gap.reason, 4_096, "workflow collection gap reason")?;
+        ensure!(
+            gap_identities.insert((
+                gap.requirement.clone(),
+                gap.code.clone(),
+                gap.reason.clone()
+            )),
+            "duplicate workflow collection gap"
+        );
+    }
+    Ok(())
+}
+
+pub fn evaluate_pull_request_doctor_v3(
+    snapshot: &PullRequestDoctorSnapshotV3,
+) -> Result<PullRequestDoctorReportV3> {
+    let report = evaluate_pull_request_doctor_v2(&snapshot_v2_from_v3(snapshot))?;
+    validate_workflow_collection(snapshot, &report)?;
+    let workflow_trigger_diagnoses = snapshot
+        .workflow_trigger_investigations
+        .iter()
+        .map(|investigation| {
+            let diagnosis = investigation
+                .input
+                .as_ref()
+                .map(classify_workflow_trigger)
+                .transpose()?;
+            ensure!(
+                diagnosis.as_ref().is_none_or(|diagnosis| matches!(
+                    diagnosis.cause_code,
+                    WorkflowTriggerCause::None | WorkflowTriggerCause::WorkflowTriggerUnknown
+                )),
+                "live workflow diagnosis produced a cause outside the v3 evidence contract"
+            );
+            Ok(DoctorWorkflowTriggerReport {
+                requirement: investigation.requirement.clone(),
+                producer: investigation.producer.clone(),
+                diagnosis,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(PullRequestDoctorReportV3 {
+        schema: PULL_REQUEST_DOCTOR_REPORT_V3_SCHEMA.to_owned(),
+        tool_version: report.tool_version,
+        generated_at: report.generated_at,
+        provider_url: report.provider_url,
+        repository: report.repository,
+        target: report.target,
+        collection: report.collection,
+        claim_boundary: report.claim_boundary,
+        verdict: report.verdict,
+        summary: report.summary,
+        requirements: report.requirements,
+        next_actions: report.next_actions,
+        workflow_collection: snapshot.workflow_collection.clone(),
+        workflow_trigger_diagnoses,
+    })
+}
+
 fn markdown_text(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
     for character in value.chars() {
@@ -1519,5 +2016,133 @@ pub fn render_pull_request_doctor_v2_markdown(report: &PullRequestDoctorReportV2
         &report.collection,
         "this exact evaluation target",
     );
+    output
+}
+
+fn workflow_cause_name(cause: crate::doctor_workflow::WorkflowTriggerCause) -> &'static str {
+    use crate::doctor_workflow::WorkflowTriggerCause;
+    match cause {
+        WorkflowTriggerCause::DuplicateJobNameAmbiguous => "duplicate_job_name_ambiguous",
+        WorkflowTriggerCause::ForkApprovalPossible => "fork_approval_possible",
+        WorkflowTriggerCause::ForkApprovalRequired => "fork_approval_required",
+        WorkflowTriggerCause::MergeGroupTriggerMissing => "merge_group_trigger_missing",
+        WorkflowTriggerCause::None => "none",
+        WorkflowTriggerCause::ProviderDidNotEmitMergeGroupStatus => {
+            "provider_did_not_emit_merge_group_status"
+        }
+        WorkflowTriggerCause::ProviderRuntimeDeliveryGap => "provider_runtime_delivery_gap",
+        WorkflowTriggerCause::PullRequestMergeConflict => "pull_request_merge_conflict",
+        WorkflowTriggerCause::RequiredContextNotProduced => "required_context_not_produced",
+        WorkflowTriggerCause::WorkflowActivityExcludesSynchronize => {
+            "workflow_activity_excludes_synchronize"
+        }
+        WorkflowTriggerCause::WorkflowBranchFilterExcluded => "workflow_branch_filter_excluded",
+        WorkflowTriggerCause::WorkflowDefinitionInvalid => "workflow_definition_invalid",
+        WorkflowTriggerCause::WorkflowDisabled => "workflow_disabled",
+        WorkflowTriggerCause::WorkflowPathFilterExcluded => "workflow_path_filter_excluded",
+        WorkflowTriggerCause::WorkflowTriggerUnknown => "workflow_trigger_unknown",
+    }
+}
+
+fn workflow_confidence_name(
+    confidence: crate::doctor_workflow::WorkflowTriggerConfidence,
+) -> &'static str {
+    use crate::doctor_workflow::WorkflowTriggerConfidence;
+    match confidence {
+        WorkflowTriggerConfidence::Certain => "certain",
+        WorkflowTriggerConfidence::High => "high",
+        WorkflowTriggerConfidence::Uncertain => "uncertain",
+    }
+}
+
+fn workflow_collection_status_name(status: DoctorWorkflowCollectionStatus) -> &'static str {
+    match status {
+        DoctorWorkflowCollectionStatus::NotApplicable => "not_applicable",
+        DoctorWorkflowCollectionStatus::Complete => "complete",
+        DoctorWorkflowCollectionStatus::Partial => "partial",
+    }
+}
+
+pub fn render_pull_request_doctor_v3_markdown(report: &PullRequestDoctorReportV3) -> String {
+    let base = PullRequestDoctorReportV2 {
+        schema: PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA.to_owned(),
+        tool_version: report.tool_version.clone(),
+        generated_at: report.generated_at.clone(),
+        provider_url: report.provider_url.clone(),
+        repository: report.repository.clone(),
+        target: report.target.clone(),
+        collection: report.collection.clone(),
+        claim_boundary: report.claim_boundary.clone(),
+        verdict: report.verdict,
+        summary: report.summary.clone(),
+        requirements: report.requirements.clone(),
+        next_actions: report.next_actions.clone(),
+    };
+    let mut output = render_pull_request_doctor_v2_markdown(&base);
+    if report.workflow_collection.status == DoctorWorkflowCollectionStatus::NotApplicable {
+        return output;
+    }
+
+    output.push_str("\n## Workflow trigger diagnoses\n\n");
+    output.push_str(&format!(
+        "- Collection: {} ({} API calls, {} response bytes)\n",
+        markdown_code(workflow_collection_status_name(
+            report.workflow_collection.status
+        )),
+        report.workflow_collection.api_calls,
+        report.workflow_collection.response_bytes,
+    ));
+    for trigger in &report.workflow_trigger_diagnoses {
+        output.push_str(&format!(
+            "\n### {}\n\n",
+            markdown_code(&trigger.requirement.context)
+        ));
+        if let Some(producer) = &trigger.producer {
+            output.push_str(&format!(
+                "- Producer: {} (workflow ID {}, check suite {})\n- Producer evidence SHA: {}\n- Check run: [#{}](<{}>)\n",
+                markdown_code(&producer.workflow_path),
+                producer.workflow_id,
+                producer.check_suite_id,
+                markdown_code(&producer.source_sha),
+                producer.check_run_id,
+                producer.check_run_url,
+            ));
+        } else {
+            output.push_str("- Producer: not proven\n");
+        }
+        if let Some(diagnosis) = &trigger.diagnosis {
+            output.push_str(&format!(
+                "- Cause: {}\n- Confidence: {}\n- Evidence: {}\n- Repair action: {}{}\n",
+                markdown_code(workflow_cause_name(diagnosis.cause_code)),
+                markdown_code(workflow_confidence_name(diagnosis.confidence)),
+                diagnosis
+                    .evidence
+                    .iter()
+                    .map(|item| markdown_code(item))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                markdown_code(&diagnosis.fix.action_code),
+                if diagnosis.fix.requires_human_edit {
+                    " (human edit required)"
+                } else {
+                    ""
+                },
+            ));
+        } else {
+            output.push_str("- Cause: not classified because required evidence was unavailable\n");
+        }
+        for gap in report
+            .workflow_collection
+            .gaps
+            .iter()
+            .filter(|gap| gap.requirement == trigger.requirement)
+        {
+            output.push_str(&format!(
+                "- Evidence gap {}: {}\n",
+                markdown_code(&gap.code),
+                markdown_text(&gap.reason),
+            ));
+        }
+    }
     output
 }

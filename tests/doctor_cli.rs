@@ -9,7 +9,7 @@ use std::{
     process::{Command, Output},
 };
 
-use stratadiff::doctor::{DoctorRequirementStatus, DoctorVerdict, PullRequestDoctorReportV2};
+use stratadiff::doctor::{DoctorRequirementStatus, DoctorVerdict, PullRequestDoctorReportV3};
 use tempfile::TempDir;
 
 const BASE_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -197,7 +197,7 @@ impl Fixture {
     }
 }
 
-fn parse_report(output: &Output) -> PullRequestDoctorReportV2 {
+fn parse_report(output: &Output) -> PullRequestDoctorReportV3 {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
         panic!(
             "invalid doctor JSON: {error}\nstdout:\n{}\nstderr:\n{}",
@@ -393,7 +393,7 @@ fn partial_policy_visibility_is_inconclusive_and_report_is_written_before_failur
 
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    let report: PullRequestDoctorReportV2 =
+    let report: PullRequestDoctorReportV3 =
         serde_json::from_slice(&fs::read(&output_path).unwrap()).unwrap();
     assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
     assert_eq!(report.summary.satisfied, 1);

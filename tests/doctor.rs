@@ -1,16 +1,29 @@
+#[allow(dead_code)]
 #[path = "../src/doctor.rs"]
 mod doctor;
+#[allow(dead_code)]
+#[path = "../src/doctor_workflow.rs"]
+mod doctor_workflow;
 
 use doctor::{
     DoctorActionCode, DoctorCheckRun, DoctorCollection, DoctorCollectionGap,
     DoctorCollectionStatus, DoctorCollectionSurface, DoctorCommitStatus, DoctorEvaluationTarget,
     DoctorEvaluationTargetKind, DoctorEvaluationTargetResolution, DoctorEvidenceKind,
-    DoctorPolicyKind, DoctorPolicyRef, DoctorRequirement, DoctorRequirementStatus, DoctorTarget,
-    DoctorTargetV2, DoctorVerdict, PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA,
-    PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA,
-    PullRequestDoctorSnapshot, PullRequestDoctorSnapshotV2, evaluate_pull_request_doctor,
-    evaluate_pull_request_doctor_v2, render_pull_request_doctor_markdown,
-    render_pull_request_doctor_v2_markdown,
+    DoctorPolicyKind, DoctorPolicyRef, DoctorRequirement, DoctorRequirementKey,
+    DoctorRequirementStatus, DoctorTarget, DoctorTargetV2, DoctorVerdict, DoctorWorkflowCollection,
+    DoctorWorkflowCollectionGap, DoctorWorkflowCollectionStatus, DoctorWorkflowProbe,
+    DoctorWorkflowProbeKind, DoctorWorkflowProducer, DoctorWorkflowTriggerInvestigation,
+    PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA,
+    PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA,
+    PullRequestDoctorSnapshot, PullRequestDoctorSnapshotV2, PullRequestDoctorSnapshotV3,
+    evaluate_pull_request_doctor, evaluate_pull_request_doctor_v2, evaluate_pull_request_doctor_v3,
+    render_pull_request_doctor_markdown, render_pull_request_doctor_v2_markdown,
+};
+use doctor_workflow::{
+    DoctorWorkflowTriggerInput, PullRequestWorkflowTrigger, WorkflowChangedFiles,
+    WorkflowDefinition, WorkflowExpectedApp, WorkflowJob, WorkflowMergeableState,
+    WorkflowProviderCapability, WorkflowState, WorkflowSyntax, WorkflowTarget, WorkflowTargetKind,
+    WorkflowTriggers,
 };
 
 const BASE_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -137,6 +150,118 @@ fn snapshot_v2(kind: DoctorEvaluationTargetKind) -> PullRequestDoctorSnapshotV2 
         requirements: legacy.requirements,
         check_runs: legacy.check_runs,
         statuses: legacy.statuses,
+    }
+}
+
+fn workflow_snapshot_v3() -> PullRequestDoctorSnapshotV3 {
+    let mut base = snapshot_v2(DoctorEvaluationTargetKind::MergeGroup);
+    base.check_runs.clear();
+    base.collection.api_calls = 40;
+    base.collection.response_bytes = 40_000;
+    let requirement = DoctorRequirementKey {
+        context: CONTEXT.to_owned(),
+        expected_app_id: Some(ACTIONS_APP_ID),
+    };
+    let workflow_path = ".github/workflows/ci.yml";
+    PullRequestDoctorSnapshotV3 {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA.to_owned(),
+        captured_at: base.captured_at,
+        provider_url: base.provider_url,
+        repository: base.repository,
+        target: base.target,
+        signal_sha: base.signal_sha,
+        collection: base.collection,
+        requirements: base.requirements,
+        check_runs: base.check_runs,
+        statuses: base.statuses,
+        workflow_collection: DoctorWorkflowCollection {
+            status: DoctorWorkflowCollectionStatus::Complete,
+            api_calls: 12,
+            response_bytes: 12_000,
+            probes: vec![DoctorWorkflowProbe {
+                kind: DoctorWorkflowProbeKind::PullRequestHead,
+                sha: HEAD_SHA.to_owned(),
+            }],
+            gaps: Vec::new(),
+        },
+        workflow_trigger_investigations: vec![DoctorWorkflowTriggerInvestigation {
+            requirement: requirement.clone(),
+            producer: Some(DoctorWorkflowProducer {
+                source_sha: HEAD_SHA.to_owned(),
+                check_run_id: 501,
+                check_run_api_url: "https://api.github.com/repos/acme/widgets/check-runs/501"
+                    .to_owned(),
+                check_run_url: "https://github.com/acme/widgets/actions/runs/701/job/801"
+                    .to_owned(),
+                check_name: CONTEXT.to_owned(),
+                app_id: ACTIONS_APP_ID,
+                app_slug: "github-actions".to_owned(),
+                check_suite_id: 601,
+                workflow_run_id: 701,
+                workflow_run_attempt: 1,
+                workflow_run_url: "https://github.com/acme/widgets/actions/runs/701".to_owned(),
+                workflow_run_path: format!("{workflow_path}@refs/pull/42/merge"),
+                workflow_job_id: 801,
+                workflow_job_url: "https://github.com/acme/widgets/actions/runs/701/job/801"
+                    .to_owned(),
+                workflow_job_name: CONTEXT.to_owned(),
+                workflow_job_check_run_url:
+                    "https://api.github.com/repos/acme/widgets/check-runs/501".to_owned(),
+                workflow_id: 901,
+                workflow_path: workflow_path.to_owned(),
+                workflow_url: "https://github.com/acme/widgets/actions/workflows/ci.yml".to_owned(),
+            }),
+            input: Some(DoctorWorkflowTriggerInput {
+                changed_files: WorkflowChangedFiles {
+                    complete: false,
+                    github_filter_file_limit_reached: false,
+                    paths: Vec::new(),
+                    total: 0,
+                },
+                collection_gaps: Vec::new(),
+                expected_app: WorkflowExpectedApp::GithubActions,
+                historical_check_names: vec![CONTEXT.to_owned()],
+                last_activity: "not_applicable".to_owned(),
+                provider_capability: WorkflowProviderCapability::NotApplicable,
+                pull_request: doctor_workflow::WorkflowPullRequest {
+                    base_ref: "main".to_owned(),
+                    base_sha: BASE_SHA.to_owned(),
+                    head_ref: "feature".to_owned(),
+                    head_repository_is_fork: false,
+                    head_sha: HEAD_SHA.to_owned(),
+                    mergeable_state: WorkflowMergeableState::Unknown,
+                    number: 42,
+                },
+                required_context: CONTEXT.to_owned(),
+                runs: Vec::new(),
+                target: WorkflowTarget {
+                    kind: WorkflowTargetKind::MergeGroup,
+                    sha: EVALUATION_SHA.to_owned(),
+                },
+                workflows: vec![WorkflowDefinition {
+                    jobs: vec![WorkflowJob {
+                        condition: "always".to_owned(),
+                        id: "ci".to_owned(),
+                        name: CONTEXT.to_owned(),
+                        name_static: true,
+                        reusable: false,
+                    }],
+                    path: workflow_path.to_owned(),
+                    state: WorkflowState::Active,
+                    syntax: WorkflowSyntax::Valid,
+                    triggers: WorkflowTriggers {
+                        merge_group: None,
+                        pull_request: Some(PullRequestWorkflowTrigger {
+                            branches: Vec::new(),
+                            branches_ignore: Vec::new(),
+                            paths: Vec::new(),
+                            paths_ignore: Vec::new(),
+                            types: Vec::new(),
+                        }),
+                    },
+                }],
+            }),
+        }],
     }
 }
 
@@ -734,4 +859,44 @@ fn provider_url_must_be_a_pure_https_origin() {
         input.provider_url = invalid.to_owned();
         assert!(evaluate_pull_request_doctor(&input).is_err(), "{invalid}");
     }
+}
+
+#[test]
+fn v3_rejects_a_missing_merge_group_trigger_without_complete_producer_inventory() {
+    let error = evaluate_pull_request_doctor_v3(&workflow_snapshot_v3()).unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("cause outside the v3 evidence contract")
+    );
+}
+
+#[test]
+fn v3_rejects_a_certain_diagnosis_when_the_same_requirement_has_a_gap() {
+    let mut snapshot = workflow_snapshot_v3();
+    snapshot.workflow_collection.status = DoctorWorkflowCollectionStatus::Partial;
+    snapshot.workflow_collection.gaps = vec![DoctorWorkflowCollectionGap {
+        requirement: snapshot.workflow_trigger_investigations[0]
+            .requirement
+            .clone(),
+        code: "target_workflow_runs_incomplete".to_owned(),
+        reason: "target run pagination was incomplete".to_owned(),
+    }];
+
+    let error = evaluate_pull_request_doctor_v3(&snapshot).unwrap_err();
+    assert!(error.to_string().contains("blocking evidence gap"));
+}
+
+#[test]
+fn v3_rejects_a_producer_outside_declared_pr_candidates() {
+    let mut snapshot = workflow_snapshot_v3();
+    snapshot.workflow_trigger_investigations[0]
+        .producer
+        .as_mut()
+        .unwrap()
+        .source_sha = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_owned();
+
+    let error = evaluate_pull_request_doctor_v3(&snapshot).unwrap_err();
+    assert!(error.to_string().contains("declared probe SHA"));
 }

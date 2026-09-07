@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map::Entry};
 
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -10,13 +10,24 @@ use crate::doctor::{
     DoctorCheckRun, DoctorCollection, DoctorCollectionGap, DoctorCollectionStatus,
     DoctorCollectionSurface, DoctorCommitStatus, DoctorEvaluationTarget,
     DoctorEvaluationTargetKind, DoctorEvaluationTargetResolution, DoctorPolicyKind,
-    DoctorPolicyRef, DoctorRequirement, DoctorTargetV2, PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA,
-    PullRequestDoctorSnapshotV2,
+    DoctorPolicyRef, DoctorRequirement, DoctorRequirementKey, DoctorRequirementStatus,
+    DoctorTargetV2, DoctorWorkflowCollection, DoctorWorkflowCollectionGap,
+    DoctorWorkflowCollectionStatus, DoctorWorkflowProbe, DoctorWorkflowProbeKind,
+    DoctorWorkflowProducer, DoctorWorkflowTriggerInvestigation,
+    PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA,
+    PullRequestDoctorSnapshotV2, PullRequestDoctorSnapshotV3, evaluate_pull_request_doctor_v2,
 };
 use crate::doctor_candidate::{
     CandidateKind, CandidateQueueEntry, CandidateSelectionInput, CandidateSelectionStatus,
     CandidateSignalCollectionStatus, CandidateSignalSurface, CandidateSignals,
     CandidateTargetIdentity, select_candidate,
+};
+use crate::doctor_workflow::{
+    DoctorWorkflowTriggerInput, MergeGroupWorkflowTrigger, PullRequestWorkflowTrigger,
+    WorkflowChangedFiles, WorkflowDefinition as DoctorWorkflowDefinition, WorkflowExpectedApp,
+    WorkflowJob, WorkflowMergeableState, WorkflowProviderCapability, WorkflowRunConclusion,
+    WorkflowRunEvent, WorkflowRunObservation, WorkflowRunStatus, WorkflowState, WorkflowSyntax,
+    WorkflowTarget, WorkflowTargetKind, WorkflowTriggers,
 };
 use crate::ownership::github_provider_hostname;
 use crate::readiness::{
@@ -295,7 +306,15 @@ struct ApiDoctorPullRef {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct ApiDoctorPullHead {
+    #[serde(rename = "ref")]
+    reference: Option<String>,
     sha: String,
+    repo: Option<ApiDoctorPullRepository>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorPullRepository {
+    full_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -397,6 +416,58 @@ struct ApiDoctorCheckRun {
     app: Option<ApiApp>,
     status: String,
     conclusion: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorProducerCheckRunList {
+    total_count: u64,
+    check_runs: Vec<ApiDoctorProducerCheckRun>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorProducerCheckRun {
+    id: u64,
+    url: String,
+    html_url: String,
+    name: String,
+    head_sha: String,
+    app: Option<ApiApp>,
+    check_suite: Option<ApiCheckSuite>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorWorkflowRunList {
+    total_count: u64,
+    workflow_runs: Vec<ApiDoctorWorkflowRun>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorWorkflowRun {
+    id: u64,
+    html_url: String,
+    workflow_id: u64,
+    path: String,
+    event: String,
+    head_sha: String,
+    check_suite_id: u64,
+    run_attempt: u64,
+    status: String,
+    conclusion: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorWorkflowJobList {
+    total_count: u64,
+    jobs: Vec<ApiDoctorWorkflowJob>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorWorkflowJob {
+    id: u64,
+    html_url: String,
+    name: String,
+    check_run_url: String,
+    run_attempt: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -637,6 +708,199 @@ pub fn parse_workflow_definition(bytes: &[u8]) -> Result<WorkflowDefinition> {
         _ => bail!("workflow on trigger must be a string, sequence, or mapping"),
     }
     Ok(definition)
+}
+
+fn doctor_pull_request_trigger(value: &YamlValue) -> Result<PullRequestWorkflowTrigger> {
+    match value {
+        YamlValue::Null => Ok(PullRequestWorkflowTrigger {
+            branches: Vec::new(),
+            branches_ignore: Vec::new(),
+            paths: Vec::new(),
+            paths_ignore: Vec::new(),
+            types: Vec::new(),
+        }),
+        YamlValue::Mapping(parameters) => Ok(PullRequestWorkflowTrigger {
+            branches: trigger_patterns(
+                parameters.get(YamlValue::String("branches".to_owned())),
+                "pull_request.branches",
+            )?,
+            branches_ignore: trigger_patterns(
+                parameters.get(YamlValue::String("branches-ignore".to_owned())),
+                "pull_request.branches-ignore",
+            )?,
+            paths: trigger_patterns(
+                parameters.get(YamlValue::String("paths".to_owned())),
+                "pull_request.paths",
+            )?,
+            paths_ignore: trigger_patterns(
+                parameters.get(YamlValue::String("paths-ignore".to_owned())),
+                "pull_request.paths-ignore",
+            )?,
+            types: trigger_patterns(
+                parameters.get(YamlValue::String("types".to_owned())),
+                "pull_request.types",
+            )?,
+        }),
+        _ => bail!("workflow trigger pull_request must be null or a mapping"),
+    }
+}
+
+fn doctor_merge_group_trigger(value: &YamlValue) -> Result<MergeGroupWorkflowTrigger> {
+    match value {
+        YamlValue::Null => Ok(MergeGroupWorkflowTrigger { types: Vec::new() }),
+        YamlValue::Mapping(parameters) => Ok(MergeGroupWorkflowTrigger {
+            types: trigger_patterns(
+                parameters.get(YamlValue::String("types".to_owned())),
+                "merge_group.types",
+            )?,
+        }),
+        _ => bail!("workflow trigger merge_group must be null or a mapping"),
+    }
+}
+
+fn set_doctor_scalar_trigger(triggers: &mut WorkflowTriggers, event: &str) {
+    match event {
+        "pull_request" => {
+            triggers.pull_request = Some(PullRequestWorkflowTrigger {
+                branches: Vec::new(),
+                branches_ignore: Vec::new(),
+                paths: Vec::new(),
+                paths_ignore: Vec::new(),
+                types: Vec::new(),
+            });
+        }
+        "merge_group" => {
+            triggers.merge_group = Some(MergeGroupWorkflowTrigger { types: Vec::new() });
+        }
+        _ => {}
+    }
+}
+
+fn doctor_workflow_triggers(value: &YamlValue) -> Result<WorkflowTriggers> {
+    let mut triggers = WorkflowTriggers {
+        merge_group: None,
+        pull_request: None,
+    };
+    match value {
+        YamlValue::String(event) => set_doctor_scalar_trigger(&mut triggers, event),
+        YamlValue::Sequence(events) => {
+            for event in events {
+                let event = event
+                    .as_str()
+                    .context("workflow on sequence contains a non-string event")?;
+                set_doctor_scalar_trigger(&mut triggers, event);
+            }
+        }
+        YamlValue::Mapping(events) => {
+            for (event, parameters) in events {
+                let event = event
+                    .as_str()
+                    .context("workflow on mapping contains a non-string event")?;
+                match event {
+                    "pull_request" => {
+                        triggers.pull_request = Some(doctor_pull_request_trigger(parameters)?);
+                    }
+                    "merge_group" => {
+                        triggers.merge_group = Some(doctor_merge_group_trigger(parameters)?);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => bail!("workflow on trigger must be a string, sequence, or mapping"),
+    }
+    Ok(triggers)
+}
+
+fn doctor_job_condition(job: &serde_yaml_ng::Mapping) -> Result<String> {
+    let Some(condition) = job.get(YamlValue::String("if".to_owned())) else {
+        return Ok("always".to_owned());
+    };
+    match condition {
+        YamlValue::String(_) | YamlValue::Bool(_) | YamlValue::Number(_) => {
+            Ok("conditional".to_owned())
+        }
+        _ => bail!("workflow job if condition must be a scalar"),
+    }
+}
+
+pub fn parse_doctor_workflow_definition(
+    bytes: &[u8],
+    path: &str,
+    state: WorkflowState,
+) -> Result<DoctorWorkflowDefinition> {
+    ensure!(
+        bytes.len() <= MAX_WORKFLOW_DEFINITION_BYTES,
+        "workflow definition bytes limit exceeded: observed {}, limit {MAX_WORKFLOW_DEFINITION_BYTES}",
+        bytes.len()
+    );
+    let root: YamlValue =
+        serde_yaml_ng::from_slice(bytes).context("failed to decode workflow YAML")?;
+    let mapping = root
+        .as_mapping()
+        .context("workflow YAML root must be a mapping")?;
+    let on = mapping
+        .get(YamlValue::String("on".to_owned()))
+        .context("workflow YAML is missing its on trigger")?;
+    let jobs = mapping
+        .get(YamlValue::String("jobs".to_owned()))
+        .and_then(YamlValue::as_mapping)
+        .context("workflow YAML jobs must be a mapping")?;
+    ensure!(
+        jobs.len() <= MAX_WORKFLOW_TRIGGER_PATTERNS,
+        "too many workflow jobs"
+    );
+
+    let mut parsed_jobs = Vec::new();
+    for (id, job) in jobs {
+        let id = id
+            .as_str()
+            .context("workflow job ID must be a string")?
+            .to_owned();
+        ensure!(
+            !id.is_empty() && id.len() <= 255 && !id.chars().any(char::is_control),
+            "workflow job ID is malformed"
+        );
+        let job = job
+            .as_mapping()
+            .context("workflow job definition must be a mapping")?;
+        let name = match job.get(YamlValue::String("name".to_owned())) {
+            Some(value) => value
+                .as_str()
+                .context("workflow job name must be a string")?
+                .to_owned(),
+            None => id.clone(),
+        };
+        ensure!(
+            !name.is_empty() && name.len() <= 255 && !name.chars().any(char::is_control),
+            "workflow job name is malformed"
+        );
+        let has_matrix = job
+            .get(YamlValue::String("strategy".to_owned()))
+            .and_then(YamlValue::as_mapping)
+            .is_some_and(|strategy| strategy.contains_key(YamlValue::String("matrix".to_owned())));
+        let name_static = !name.contains("${{") && !has_matrix;
+        parsed_jobs.push(WorkflowJob {
+            condition: doctor_job_condition(job)?,
+            id,
+            name: if name_static {
+                name
+            } else {
+                "<dynamic>".to_owned()
+            },
+            name_static,
+            reusable: job.contains_key(YamlValue::String("uses".to_owned())),
+        });
+    }
+    parsed_jobs.sort_by(|left, right| left.id.cmp(&right.id));
+
+    Ok(DoctorWorkflowDefinition {
+        jobs: parsed_jobs,
+        path: path.to_owned(),
+        state,
+        syntax: WorkflowSyntax::Valid,
+        triggers: doctor_workflow_triggers(on)?,
+    })
 }
 
 fn set_scalar_trigger(definition: &mut WorkflowDefinition, event: &str) -> Result<()> {
@@ -1491,6 +1755,14 @@ fn validate_doctor_pull(
         valid_doctor_sha(&pull.head.sha),
         "GitHub pull request head SHA must be a lowercase full Git object ID"
     );
+    if let Some(head_ref) = &pull.head.reference {
+        ensure!(
+            !head_ref.is_empty()
+                && head_ref.len() <= 255
+                && !head_ref.chars().any(char::is_control),
+            "GitHub pull request head ref is malformed"
+        );
+    }
     if let Some(merge_commit_sha) = &pull.merge_commit_sha {
         ensure!(
             valid_doctor_sha(merge_commit_sha),
@@ -2219,9 +2491,10 @@ fn collect_doctor_statuses<A: GithubReadinessApi>(
     Ok(statuses)
 }
 
-pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
+fn collect_pull_request_doctor_snapshot_with_budget<A: GithubPullRequestDoctorApi>(
     request: PullRequestDoctorCollection<'_>,
     api: &mut A,
+    budget: &mut ApiBudget,
 ) -> Result<PullRequestDoctorSnapshotV2> {
     validate_provider_url(request.provider_url)?;
     ensure!(
@@ -2242,7 +2515,6 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
         "repos/{repository_path}/pulls/{}",
         request.pull_request_number
     );
-    let mut budget = ApiBudget::new();
     let pull_response = budget.get(api, &pull_endpoint)?;
     ensure!(
         successful(&pull_response),
@@ -2278,7 +2550,7 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
     let mut gaps = Vec::new();
     let graphql_pull = collect_doctor_candidate_observation(
         api,
-        &mut budget,
+        budget,
         &owner,
         &name,
         &repository,
@@ -2287,7 +2559,7 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
     )?;
     let initial_policy = collect_doctor_policy_snapshot(
         api,
-        &mut budget,
+        budget,
         &repository_path,
         &repository.html_url,
         &pull.base.reference,
@@ -2324,14 +2596,14 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
         );
         let check_runs = collect_doctor_check_runs(
             api,
-            &mut budget,
+            budget,
             &repository_path,
             &entry.head_commit.oid,
             &mut gaps,
         )?;
         let statuses = collect_doctor_statuses(
             api,
-            &mut budget,
+            budget,
             &repository_path,
             &entry.head_commit.oid,
             &mut gaps,
@@ -2365,20 +2637,10 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
             "GitHub reports that the pull request is in the merge queue but did not expose its queue entry candidate"
                 .to_owned(),
         );
-        let check_runs = collect_doctor_check_runs(
-            api,
-            &mut budget,
-            &repository_path,
-            &pull.head.sha,
-            &mut gaps,
-        )?;
-        let statuses = collect_doctor_statuses(
-            api,
-            &mut budget,
-            &repository_path,
-            &pull.head.sha,
-            &mut gaps,
-        )?;
+        let check_runs =
+            collect_doctor_check_runs(api, budget, &repository_path, &pull.head.sha, &mut gaps)?;
+        let statuses =
+            collect_doctor_statuses(api, budget, &repository_path, &pull.head.sha, &mut gaps)?;
         selection_signals.push(candidate_signals(
             &pull.head.sha,
             &check_runs,
@@ -2399,20 +2661,10 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
             statuses,
         )
     } else {
-        let head_check_runs = collect_doctor_check_runs(
-            api,
-            &mut budget,
-            &repository_path,
-            &pull.head.sha,
-            &mut gaps,
-        )?;
-        let head_statuses = collect_doctor_statuses(
-            api,
-            &mut budget,
-            &repository_path,
-            &pull.head.sha,
-            &mut gaps,
-        )?;
+        let head_check_runs =
+            collect_doctor_check_runs(api, budget, &repository_path, &pull.head.sha, &mut gaps)?;
+        let head_statuses =
+            collect_doctor_statuses(api, budget, &repository_path, &pull.head.sha, &mut gaps)?;
         selection_signals.push(candidate_signals(
             &pull.head.sha,
             &head_check_runs,
@@ -2437,14 +2689,14 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
                 let mut target_probe_gaps = Vec::new();
                 let merge_check_runs = collect_doctor_check_runs(
                     api,
-                    &mut budget,
+                    budget,
                     &repository_path,
                     merge_commit_sha,
                     &mut target_probe_gaps,
                 )?;
                 let merge_statuses = collect_doctor_statuses(
                     api,
-                    &mut budget,
+                    budget,
                     &repository_path,
                     merge_commit_sha,
                     &mut target_probe_gaps,
@@ -2523,7 +2775,7 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
     );
     let final_graphql_pull = collect_doctor_candidate_observation(
         api,
-        &mut budget,
+        budget,
         &owner,
         &name,
         &repository,
@@ -2581,7 +2833,7 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
 
     let final_policy = collect_doctor_policy_snapshot(
         api,
-        &mut budget,
+        budget,
         &repository_path,
         &repository.html_url,
         &pull.base.reference,
@@ -2622,4 +2874,1074 @@ pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
         check_runs,
         statuses,
     })
+}
+
+pub fn collect_pull_request_doctor_snapshot<A: GithubPullRequestDoctorApi>(
+    request: PullRequestDoctorCollection<'_>,
+    api: &mut A,
+) -> Result<PullRequestDoctorSnapshotV2> {
+    let mut budget = ApiBudget::new();
+    collect_pull_request_doctor_snapshot_with_budget(request, api, &mut budget)
+}
+
+const MAX_DOCTOR_WORKFLOW_INVESTIGATIONS: usize = 25;
+
+fn collect_doctor_producer_check_runs<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    sha: &str,
+    check_name: &str,
+    app_id: u64,
+) -> Result<(Vec<ApiDoctorProducerCheckRun>, Option<String>)> {
+    let mut check_runs = Vec::new();
+    let mut ids = BTreeSet::new();
+    let mut expected_total = None;
+    for page in 1..=MAX_PAGES {
+        let endpoint = format!(
+            "repos/{repository_path}/commits/{}/check-runs?check_name={}&app_id={app_id}&filter=all&per_page={PAGE_SIZE}&page={page}",
+            encode_path_component(sha),
+            encode_path_component(check_name),
+        );
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            return Ok((
+                check_runs,
+                Some(format!(
+                    "GitHub returned HTTP {} while reading producer check runs on {sha}",
+                    response.status
+                )),
+            ));
+        }
+        let page_body: ApiDoctorProducerCheckRunList = parse_json(&response.body, &endpoint)?;
+        if let Some(total) = expected_total {
+            if total != page_body.total_count {
+                return Ok((
+                    check_runs,
+                    Some("producer check-run total_count changed during collection".to_owned()),
+                ));
+            }
+        } else {
+            expected_total = Some(page_body.total_count);
+        }
+        let page_len = page_body.check_runs.len();
+        for check in page_body.check_runs {
+            ensure!(
+                check.head_sha.eq_ignore_ascii_case(sha),
+                "GitHub returned a producer check run for a different SHA"
+            );
+            ensure!(
+                check.name == check_name && check.app.as_ref().is_some_and(|app| app.id == app_id),
+                "GitHub returned a producer check run outside the exact name and App filter"
+            );
+            if !ids.insert(check.id) {
+                return Ok((
+                    check_runs,
+                    Some(format!(
+                        "GitHub returned duplicate producer check-run ID {}",
+                        check.id
+                    )),
+                ));
+            }
+            check_runs.push(check);
+        }
+        let observed = u64::try_from(check_runs.len())?;
+        if observed == page_body.total_count {
+            break;
+        }
+        if observed > page_body.total_count || page_len < PAGE_SIZE {
+            return Ok((
+                check_runs,
+                Some("producer check-run response declared a different result count".to_owned()),
+            ));
+        }
+        if page == MAX_PAGES {
+            return Ok((
+                check_runs,
+                Some(format!(
+                    "producer check-run pagination exceeded {MAX_PAGES} pages"
+                )),
+            ));
+        }
+    }
+    check_runs.sort_by_key(|check| check.id);
+    Ok((check_runs, None))
+}
+
+fn collect_doctor_workflow_runs<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    sha: &str,
+    check_suite_id: Option<u64>,
+) -> Result<(Vec<ApiDoctorWorkflowRun>, Option<String>)> {
+    let mut runs = Vec::new();
+    let mut ids = BTreeSet::new();
+    let mut expected_total = None;
+    for page in 1..=MAX_PAGES {
+        let endpoint = match check_suite_id {
+            Some(check_suite_id) => format!(
+                "repos/{repository_path}/actions/runs?check_suite_id={check_suite_id}&per_page={PAGE_SIZE}&page={page}"
+            ),
+            None => format!(
+                "repos/{repository_path}/actions/runs?head_sha={}&per_page={PAGE_SIZE}&page={page}",
+                encode_path_component(sha)
+            ),
+        };
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            return Ok((
+                runs,
+                Some(format!(
+                    "GitHub returned HTTP {} while reading workflow runs on {sha}",
+                    response.status
+                )),
+            ));
+        }
+        let page_body: ApiDoctorWorkflowRunList = parse_json(&response.body, &endpoint)?;
+        if let Some(total) = expected_total {
+            if total != page_body.total_count {
+                return Ok((
+                    runs,
+                    Some("workflow-run total_count changed during collection".to_owned()),
+                ));
+            }
+        } else {
+            expected_total = Some(page_body.total_count);
+        }
+        let page_len = page_body.workflow_runs.len();
+        for run in page_body.workflow_runs {
+            ensure!(
+                run.head_sha.eq_ignore_ascii_case(sha),
+                "GitHub returned a workflow run for a different SHA"
+            );
+            if let Some(check_suite_id) = check_suite_id {
+                ensure!(
+                    run.check_suite_id == check_suite_id,
+                    "GitHub returned a workflow run for a different check suite"
+                );
+            }
+            ensure!(run.run_attempt > 0, "workflow run attempt must be positive");
+            ensure!(
+                !run.path.is_empty() && !run.event.is_empty() && !run.status.is_empty(),
+                "GitHub returned malformed workflow-run identity"
+            );
+            ensure!(
+                ids.insert(run.id),
+                "GitHub returned a duplicate workflow-run ID"
+            );
+            runs.push(run);
+        }
+        let observed = u64::try_from(runs.len())?;
+        if observed == page_body.total_count {
+            break;
+        }
+        if observed > page_body.total_count || page_len < PAGE_SIZE {
+            return Ok((
+                runs,
+                Some("workflow-run response declared a different result count".to_owned()),
+            ));
+        }
+        if page == MAX_PAGES {
+            return Ok((
+                runs,
+                Some(format!(
+                    "workflow-run pagination exceeded {MAX_PAGES} pages"
+                )),
+            ));
+        }
+    }
+    runs.sort_by_key(|run| run.id);
+    Ok((runs, None))
+}
+
+fn collect_doctor_workflow_jobs<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    run_id: u64,
+) -> Result<(Vec<ApiDoctorWorkflowJob>, Option<String>)> {
+    let mut jobs = Vec::new();
+    let mut ids = BTreeSet::new();
+    let mut expected_total = None;
+    for page in 1..=MAX_PAGES {
+        let endpoint = format!(
+            "repos/{repository_path}/actions/runs/{run_id}/jobs?filter=all&per_page={PAGE_SIZE}&page={page}"
+        );
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            return Ok((
+                jobs,
+                Some(format!(
+                    "GitHub returned HTTP {} while reading jobs for workflow run {run_id}",
+                    response.status
+                )),
+            ));
+        }
+        let page_body: ApiDoctorWorkflowJobList = parse_json(&response.body, &endpoint)?;
+        if let Some(total) = expected_total {
+            if total != page_body.total_count {
+                return Ok((
+                    jobs,
+                    Some("workflow-job total_count changed during collection".to_owned()),
+                ));
+            }
+        } else {
+            expected_total = Some(page_body.total_count);
+        }
+        let page_len = page_body.jobs.len();
+        for job in page_body.jobs {
+            ensure!(job.run_attempt > 0, "workflow job attempt must be positive");
+            ensure!(
+                !job.name.is_empty() && !job.check_run_url.is_empty(),
+                "GitHub returned malformed workflow-job identity"
+            );
+            ensure!(
+                ids.insert(job.id),
+                "GitHub returned a duplicate workflow-job ID"
+            );
+            jobs.push(job);
+        }
+        let observed = u64::try_from(jobs.len())?;
+        if observed == page_body.total_count {
+            break;
+        }
+        if observed > page_body.total_count || page_len < PAGE_SIZE {
+            return Ok((
+                jobs,
+                Some("workflow-job response declared a different result count".to_owned()),
+            ));
+        }
+        if page == MAX_PAGES {
+            return Ok((
+                jobs,
+                Some(format!(
+                    "workflow-job pagination exceeded {MAX_PAGES} pages"
+                )),
+            ));
+        }
+    }
+    jobs.sort_by_key(|job| job.id);
+    Ok((jobs, None))
+}
+
+fn doctor_workflow_state(value: &str) -> Option<WorkflowState> {
+    match value {
+        "active" => Some(WorkflowState::Active),
+        "disabled_inactivity" => Some(WorkflowState::DisabledInactivity),
+        "disabled_manually" => Some(WorkflowState::DisabledManually),
+        _ => None,
+    }
+}
+
+fn doctor_run_status(value: &str) -> Option<WorkflowRunStatus> {
+    match value {
+        "completed" => Some(WorkflowRunStatus::Completed),
+        "in_progress" => Some(WorkflowRunStatus::InProgress),
+        "pending" => Some(WorkflowRunStatus::Pending),
+        "queued" => Some(WorkflowRunStatus::Queued),
+        "requested" => Some(WorkflowRunStatus::Requested),
+        "waiting" => Some(WorkflowRunStatus::Waiting),
+        _ => None,
+    }
+}
+
+fn doctor_run_conclusion(value: &str) -> Option<WorkflowRunConclusion> {
+    match value {
+        "action_required" => Some(WorkflowRunConclusion::ActionRequired),
+        "cancelled" => Some(WorkflowRunConclusion::Cancelled),
+        "failure" => Some(WorkflowRunConclusion::Failure),
+        "neutral" => Some(WorkflowRunConclusion::Neutral),
+        "skipped" => Some(WorkflowRunConclusion::Skipped),
+        "stale" => Some(WorkflowRunConclusion::Stale),
+        "startup_failure" => Some(WorkflowRunConclusion::StartupFailure),
+        "success" => Some(WorkflowRunConclusion::Success),
+        "timed_out" => Some(WorkflowRunConclusion::TimedOut),
+        _ => None,
+    }
+}
+
+fn doctor_run_observation(run: &ApiDoctorWorkflowRun) -> Option<WorkflowRunObservation> {
+    let event = match run.event.as_str() {
+        "merge_group" => WorkflowRunEvent::MergeGroup,
+        "pull_request" => WorkflowRunEvent::PullRequest,
+        _ => return None,
+    };
+    let status = doctor_run_status(&run.status)?;
+    let conclusion = match run.conclusion.as_deref() {
+        Some(value) => Some(doctor_run_conclusion(value)?),
+        None => None,
+    };
+    Some(WorkflowRunObservation {
+        conclusion,
+        event,
+        head_sha: run.head_sha.to_ascii_lowercase(),
+        status,
+        workflow_path: run.path.clone(),
+    })
+}
+
+fn add_workflow_gap(
+    gaps: &mut Vec<DoctorWorkflowCollectionGap>,
+    requirement: &DoctorRequirementKey,
+    code: &str,
+    reason: impl Into<String>,
+) {
+    gaps.push(DoctorWorkflowCollectionGap {
+        requirement: requirement.clone(),
+        code: code.to_owned(),
+        reason: reason.into(),
+    });
+}
+
+fn workflow_run_path_matches(run_path: &str, workflow_path: &str) -> bool {
+    run_path == workflow_path
+        || run_path
+            .strip_prefix(workflow_path)
+            .is_some_and(|suffix| suffix.starts_with('@') && suffix.len() > 1)
+}
+
+fn v3_from_v2(
+    snapshot: PullRequestDoctorSnapshotV2,
+    workflow_collection: DoctorWorkflowCollection,
+    workflow_trigger_investigations: Vec<DoctorWorkflowTriggerInvestigation>,
+) -> PullRequestDoctorSnapshotV3 {
+    PullRequestDoctorSnapshotV3 {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA.to_owned(),
+        captured_at: snapshot.captured_at,
+        provider_url: snapshot.provider_url,
+        repository: snapshot.repository,
+        target: snapshot.target,
+        signal_sha: snapshot.signal_sha,
+        collection: snapshot.collection,
+        requirements: snapshot.requirements,
+        check_runs: snapshot.check_runs,
+        statuses: snapshot.statuses,
+        workflow_collection,
+        workflow_trigger_investigations,
+    }
+}
+
+fn doctor_snapshot_semantics_equal(
+    before: &PullRequestDoctorSnapshotV2,
+    after: &PullRequestDoctorSnapshotV2,
+) -> bool {
+    before.schema == after.schema
+        && before.captured_at == after.captured_at
+        && before.provider_url == after.provider_url
+        && before.repository == after.repository
+        && before.target == after.target
+        && before.signal_sha == after.signal_sha
+        && before.collection.status == after.collection.status
+        && before.collection.gaps == after.collection.gaps
+        && before.requirements == after.requirements
+        && before.check_runs == after.check_runs
+        && before.statuses == after.statuses
+}
+
+fn not_applicable_workflow_collection() -> DoctorWorkflowCollection {
+    DoctorWorkflowCollection {
+        status: DoctorWorkflowCollectionStatus::NotApplicable,
+        api_calls: 0,
+        response_bytes: 0,
+        probes: Vec::new(),
+        gaps: Vec::new(),
+    }
+}
+
+fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
+    request: &PullRequestDoctorCollection<'_>,
+    snapshot: &PullRequestDoctorSnapshotV2,
+    requirements: &[DoctorRequirementKey],
+    api: &mut A,
+    budget: &mut ApiBudget,
+) -> Result<(
+    DoctorWorkflowCollection,
+    Vec<DoctorWorkflowTriggerInvestigation>,
+)> {
+    let starting_requests = budget.requests;
+    let starting_response_bytes = budget.response_bytes;
+    let mut gaps = Vec::new();
+    let mut investigations = requirements
+        .iter()
+        .map(|requirement| DoctorWorkflowTriggerInvestigation {
+            requirement: requirement.clone(),
+            producer: None,
+            input: None,
+        })
+        .collect::<Vec<_>>();
+    if investigations.len() > MAX_DOCTOR_WORKFLOW_INVESTIGATIONS {
+        for requirement in requirements {
+            add_workflow_gap(
+                &mut gaps,
+                requirement,
+                "investigation_limit_exceeded",
+                format!(
+                    "Doctor limits one run to {MAX_DOCTOR_WORKFLOW_INVESTIGATIONS} pinned missing checks"
+                ),
+            );
+        }
+        return Ok((
+            DoctorWorkflowCollection {
+                status: DoctorWorkflowCollectionStatus::Partial,
+                api_calls: 0,
+                response_bytes: 0,
+                probes: Vec::new(),
+                gaps,
+            },
+            investigations,
+        ));
+    }
+
+    let (owner, name) = parse_repository(request.repository)?;
+    let repository_path = format!(
+        "{}/{}",
+        encode_path_component(&owner),
+        encode_path_component(&name)
+    );
+    let pull_endpoint = format!(
+        "repos/{repository_path}/pulls/{}",
+        request.pull_request_number
+    );
+    let pull_response = budget.get(api, &pull_endpoint)?;
+    if !successful(&pull_response) {
+        for requirement in requirements {
+            add_workflow_gap(
+                &mut gaps,
+                requirement,
+                "producer_candidate_unavailable",
+                format!(
+                    "GitHub returned HTTP {} while refreshing producer candidates",
+                    pull_response.status
+                ),
+            );
+        }
+        return Ok((
+            DoctorWorkflowCollection {
+                status: DoctorWorkflowCollectionStatus::Partial,
+                api_calls: u64::try_from(budget.requests - starting_requests)?,
+                response_bytes: u64::try_from(budget.response_bytes - starting_response_bytes)?,
+                probes: Vec::new(),
+                gaps,
+            },
+            investigations,
+        ));
+    }
+    let pull: ApiDoctorPullRequest = parse_json(&pull_response.body, &pull_endpoint)?;
+    validate_doctor_pull(&pull, snapshot.target.number, &snapshot.target.url)?;
+    ensure!(
+        pull.base.reference == snapshot.target.base_ref
+            && pull
+                .base
+                .sha
+                .eq_ignore_ascii_case(&snapshot.target.base_sha)
+            && pull
+                .head
+                .sha
+                .eq_ignore_ascii_case(&snapshot.target.head_sha),
+        "pull request changed before workflow producer collection; retry the doctor command"
+    );
+
+    let declared_probes = expected_workflow_probes(&pull, &snapshot.signal_sha);
+    ensure!(
+        !declared_probes.is_empty(),
+        "merge-group workflow diagnosis requires a distinct producer candidate"
+    );
+
+    let (target_runs, target_run_gap) =
+        collect_doctor_workflow_runs(api, budget, &repository_path, &snapshot.signal_sha, None)?;
+    if let Some(reason) = &target_run_gap {
+        for requirement in requirements {
+            add_workflow_gap(
+                &mut gaps,
+                requirement,
+                "target_workflow_runs_incomplete",
+                reason,
+            );
+        }
+    }
+
+    let mut run_cache: BTreeMap<
+        (String, u64),
+        std::result::Result<Vec<ApiDoctorWorkflowRun>, String>,
+    > = BTreeMap::new();
+    let mut job_cache: BTreeMap<u64, std::result::Result<Vec<ApiDoctorWorkflowJob>, String>> =
+        BTreeMap::new();
+    for investigation in &mut investigations {
+        let expected_app_id = investigation
+            .requirement
+            .expected_app_id
+            .context("workflow investigation requires a pinned App ID")?;
+        let mut matching_checks = Vec::new();
+        let mut producer_checks_complete = true;
+        for probe in &declared_probes {
+            let (checks, gap) = collect_doctor_producer_check_runs(
+                api,
+                budget,
+                &repository_path,
+                &probe.sha,
+                &investigation.requirement.context,
+                expected_app_id,
+            )?;
+            if let Some(reason) = gap {
+                producer_checks_complete = false;
+                add_workflow_gap(
+                    &mut gaps,
+                    &investigation.requirement,
+                    "producer_check_runs_incomplete",
+                    format!("{}: {reason}", probe.sha),
+                );
+            }
+            for check in checks {
+                if check
+                    .app
+                    .as_ref()
+                    .is_some_and(|app| app.slug == "github-actions")
+                {
+                    matching_checks.push((probe.sha.clone(), check));
+                }
+            }
+        }
+        if !producer_checks_complete {
+            continue;
+        }
+        if matching_checks.is_empty() {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "github_actions_producer_not_observed",
+                "No prior candidate exposed the required context from the pinned GitHub Actions App",
+            );
+            continue;
+        }
+        if matching_checks
+            .iter()
+            .any(|(_, check)| check.check_suite.is_none())
+        {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "producer_check_suite_missing",
+                "A matching GitHub Actions check run did not expose check_suite.id",
+            );
+            continue;
+        }
+
+        let mut links = Vec::new();
+        let mut run_lookup_failed = false;
+        for (source_sha, check) in matching_checks {
+            let check_suite_id = check
+                .check_suite
+                .as_ref()
+                .context("matching producer check is missing check_suite.id")?
+                .id;
+            let cache_key = (source_sha.clone(), check_suite_id);
+            if let Entry::Vacant(entry) = run_cache.entry(cache_key.clone()) {
+                let (runs, gap) = collect_doctor_workflow_runs(
+                    api,
+                    budget,
+                    &repository_path,
+                    &source_sha,
+                    Some(check_suite_id),
+                )?;
+                let value = match gap {
+                    Some(reason) => Err(reason),
+                    None => Ok(runs),
+                };
+                entry.insert(value);
+            }
+            match &run_cache[&cache_key] {
+                Ok(runs) if runs.len() == 1 => {
+                    let run = runs[0].clone();
+                    if let Entry::Vacant(entry) = job_cache.entry(run.id) {
+                        let (jobs, gap) =
+                            collect_doctor_workflow_jobs(api, budget, &repository_path, run.id)?;
+                        let value = match gap {
+                            Some(reason) => Err(reason),
+                            None => Ok(jobs),
+                        };
+                        entry.insert(value);
+                    }
+                    match &job_cache[&run.id] {
+                        Ok(jobs) => {
+                            let matching_jobs = jobs
+                                .iter()
+                                .filter(|job| {
+                                    job.check_run_url == check.url && job.name == check.name
+                                })
+                                .cloned()
+                                .collect::<Vec<_>>();
+                            if matching_jobs.len() == 1 {
+                                links.push((source_sha, check, run, matching_jobs[0].clone()));
+                            } else {
+                                run_lookup_failed = true;
+                                add_workflow_gap(
+                                    &mut gaps,
+                                    &investigation.requirement,
+                                    "producer_workflow_job_ambiguous",
+                                    format!(
+                                        "workflow run {} exposed {} jobs linked to check run {}",
+                                        run.id,
+                                        matching_jobs.len(),
+                                        check.id
+                                    ),
+                                );
+                            }
+                        }
+                        Err(reason) => {
+                            run_lookup_failed = true;
+                            add_workflow_gap(
+                                &mut gaps,
+                                &investigation.requirement,
+                                "producer_workflow_jobs_incomplete",
+                                reason,
+                            );
+                        }
+                    }
+                }
+                Ok(runs) => {
+                    run_lookup_failed = true;
+                    add_workflow_gap(
+                        &mut gaps,
+                        &investigation.requirement,
+                        "producer_workflow_run_ambiguous",
+                        format!(
+                            "check suite {check_suite_id} resolved to {} workflow runs",
+                            runs.len()
+                        ),
+                    );
+                }
+                Err(reason) => {
+                    run_lookup_failed = true;
+                    add_workflow_gap(
+                        &mut gaps,
+                        &investigation.requirement,
+                        "producer_workflow_runs_incomplete",
+                        reason,
+                    );
+                }
+            }
+        }
+        if run_lookup_failed || links.is_empty() {
+            continue;
+        }
+        let workflow_ids = links
+            .iter()
+            .map(|(_, _, run, _)| run.workflow_id)
+            .collect::<BTreeSet<_>>();
+        if workflow_ids.len() != 1 {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "producer_workflow_ambiguous",
+                "Matching check suites resolved to more than one workflow",
+            );
+            continue;
+        }
+        let (source_sha, check, run, job) = links[0].clone();
+        let workflow_endpoint = format!(
+            "repos/{repository_path}/actions/workflows/{}",
+            run.workflow_id
+        );
+        let workflow_response = budget.get(api, &workflow_endpoint)?;
+        if !successful(&workflow_response) {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_metadata_unavailable",
+                format!(
+                    "GitHub returned HTTP {} for workflow {}",
+                    workflow_response.status, run.workflow_id
+                ),
+            );
+            continue;
+        }
+        let workflow: ApiWorkflow = parse_json(&workflow_response.body, &workflow_endpoint)?;
+        if workflow.id != run.workflow_id
+            || links.iter().any(|(_, _, linked_run, _)| {
+                linked_run.workflow_id != workflow.id
+                    || !workflow_run_path_matches(&linked_run.path, &workflow.path)
+            })
+        {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_identity_mismatch",
+                "Workflow run identity did not match canonical workflow metadata",
+            );
+            continue;
+        }
+        let producer = DoctorWorkflowProducer {
+            source_sha,
+            check_run_id: check.id,
+            check_run_api_url: check.url,
+            check_run_url: check.html_url,
+            check_name: check.name,
+            app_id: check
+                .app
+                .as_ref()
+                .context("matching producer check is missing its App")?
+                .id,
+            app_slug: check
+                .app
+                .as_ref()
+                .context("matching producer check is missing its App")?
+                .slug
+                .clone(),
+            check_suite_id: check
+                .check_suite
+                .context("matching producer check is missing check_suite.id")?
+                .id,
+            workflow_run_id: run.id,
+            workflow_run_attempt: job.run_attempt,
+            workflow_run_url: run.html_url,
+            workflow_run_path: run.path,
+            workflow_job_id: job.id,
+            workflow_job_url: job.html_url,
+            workflow_job_name: job.name,
+            workflow_job_check_run_url: job.check_run_url,
+            workflow_id: workflow.id,
+            workflow_path: workflow.path.clone(),
+            workflow_url: workflow.html_url.clone(),
+        };
+        investigation.producer = Some(producer);
+
+        let Some(state) = doctor_workflow_state(&workflow.state) else {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_state_unsupported",
+                format!(
+                    "Workflow {} reported unsupported state {}",
+                    workflow.path, workflow.state
+                ),
+            );
+            continue;
+        };
+        if state != WorkflowState::Active {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_disabled_outside_v3_scope",
+                format!(
+                    "Workflow {} is {}; v3 only classifies active workflow triggers",
+                    workflow.path, workflow.state
+                ),
+            );
+            continue;
+        }
+        let content_endpoint = format!(
+            "repos/{repository_path}/contents/{}?ref={}",
+            encode_repository_path(&workflow.path),
+            encode_path_component(&snapshot.signal_sha)
+        );
+        let content_response = budget.get(api, &content_endpoint)?;
+        if !successful(&content_response) {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_definition_unavailable",
+                format!(
+                    "GitHub returned HTTP {} for {} at evaluation SHA {}",
+                    content_response.status, workflow.path, snapshot.signal_sha
+                ),
+            );
+            continue;
+        }
+        let content: ApiContent = parse_json(&content_response.body, &content_endpoint)?;
+        let bytes = match decode_workflow_content(content) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                add_workflow_gap(
+                    &mut gaps,
+                    &investigation.requirement,
+                    "workflow_definition_invalid",
+                    format!("{}: {error:#}", workflow.path),
+                );
+                continue;
+            }
+        };
+        let definition = match parse_doctor_workflow_definition(&bytes, &workflow.path, state) {
+            Ok(definition) => definition,
+            Err(error) => {
+                add_workflow_gap(
+                    &mut gaps,
+                    &investigation.requirement,
+                    "workflow_definition_invalid",
+                    format!("{}: {error:#}", workflow.path),
+                );
+                continue;
+            }
+        };
+        let matching_jobs = definition
+            .jobs
+            .iter()
+            .filter(|job| job.name_static && job.name == investigation.requirement.context)
+            .count();
+        if matching_jobs != 1
+            || definition
+                .jobs
+                .iter()
+                .any(|job| !job.name_static || job.reusable)
+        {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_job_mapping_unresolved",
+                "The workflow does not expose one unambiguous static job for the required context",
+            );
+            continue;
+        }
+        if definition.triggers.merge_group.is_none() {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "producer_exclusivity_unproven",
+                "The observed historical producer lacks merge_group, but Doctor has not enumerated every exact-SHA workflow that could emit the same required context",
+            );
+            continue;
+        }
+        let Some(head_ref) = pull.head.reference.clone() else {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "pull_request_head_ref_unavailable",
+                "GitHub did not expose the pull-request head ref",
+            );
+            continue;
+        };
+        let Some(head_repository) = pull.head.repo.as_ref() else {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "pull_request_head_repository_unavailable",
+                "GitHub did not expose the pull-request head repository",
+            );
+            continue;
+        };
+
+        let mut run_gaps = Vec::new();
+        let mut observed_runs = Vec::new();
+        for target_run in target_runs
+            .iter()
+            .filter(|target_run| target_run.workflow_id == workflow.id)
+        {
+            if !workflow_run_path_matches(&target_run.path, &workflow.path) {
+                run_gaps.push("target_workflow_path_mismatch".to_owned());
+                continue;
+            }
+            let mut normalized = target_run.clone();
+            normalized.path = workflow.path.clone();
+            match doctor_run_observation(&normalized) {
+                Some(observation) => observed_runs.push(observation),
+                None if matches!(target_run.event.as_str(), "merge_group" | "pull_request") => {
+                    run_gaps.push("target_workflow_run_state_unknown".to_owned());
+                }
+                None => {}
+            }
+        }
+        if definition.triggers.merge_group.is_none()
+            && observed_runs
+                .iter()
+                .any(|run| run.event == WorkflowRunEvent::MergeGroup)
+        {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_trigger_evidence_conflict",
+                "An exact-candidate merge_group run conflicts with the collected workflow definition",
+            );
+            continue;
+        }
+        for code in &run_gaps {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                code,
+                "An exact-candidate workflow run could not be normalized safely",
+            );
+        }
+        if target_run_gap.is_some() {
+            run_gaps.push("target_workflow_runs_incomplete".to_owned());
+        }
+        run_gaps.sort();
+        run_gaps.dedup();
+        if !run_gaps.is_empty() {
+            continue;
+        }
+        investigation.input = Some(DoctorWorkflowTriggerInput {
+            changed_files: WorkflowChangedFiles {
+                complete: false,
+                github_filter_file_limit_reached: false,
+                paths: Vec::new(),
+                total: 0,
+            },
+            collection_gaps: run_gaps,
+            expected_app: WorkflowExpectedApp::GithubActions,
+            historical_check_names: vec![investigation.requirement.context.clone()],
+            last_activity: "not_applicable".to_owned(),
+            provider_capability: WorkflowProviderCapability::NotApplicable,
+            pull_request: crate::doctor_workflow::WorkflowPullRequest {
+                base_ref: pull.base.reference.clone(),
+                base_sha: pull.base.sha.to_ascii_lowercase(),
+                head_ref,
+                head_repository_is_fork: !head_repository
+                    .full_name
+                    .eq_ignore_ascii_case(request.repository),
+                head_sha: pull.head.sha.to_ascii_lowercase(),
+                mergeable_state: WorkflowMergeableState::Unknown,
+                number: pull.number,
+            },
+            required_context: investigation.requirement.context.clone(),
+            runs: observed_runs,
+            target: WorkflowTarget {
+                kind: WorkflowTargetKind::MergeGroup,
+                sha: snapshot.signal_sha.clone(),
+            },
+            workflows: vec![definition],
+        });
+    }
+
+    let final_pull_response = budget.get(api, &pull_endpoint)?;
+    ensure!(
+        successful(&final_pull_response),
+        "GitHub returned HTTP {} while revalidating workflow producer candidates",
+        final_pull_response.status
+    );
+    let final_pull: ApiDoctorPullRequest = parse_json(&final_pull_response.body, &pull_endpoint)?;
+    ensure!(
+        final_pull == pull,
+        "pull request producer candidates changed during workflow collection; retry the doctor command"
+    );
+    gaps.sort_by(|left, right| {
+        left.requirement
+            .cmp(&right.requirement)
+            .then_with(|| left.code.cmp(&right.code))
+            .then_with(|| left.reason.cmp(&right.reason))
+    });
+    gaps.dedup();
+    let complete = gaps.is_empty() && investigations.iter().all(|item| item.input.is_some());
+    Ok((
+        DoctorWorkflowCollection {
+            status: if complete {
+                DoctorWorkflowCollectionStatus::Complete
+            } else {
+                DoctorWorkflowCollectionStatus::Partial
+            },
+            api_calls: u64::try_from(budget.requests - starting_requests)?,
+            response_bytes: u64::try_from(budget.response_bytes - starting_response_bytes)?,
+            probes: declared_probes,
+            gaps,
+        },
+        investigations,
+    ))
+}
+
+fn expected_workflow_probes(
+    pull: &ApiDoctorPullRequest,
+    signal_sha: &str,
+) -> Vec<DoctorWorkflowProbe> {
+    let mut probes = Vec::new();
+    if let Some(test_merge_sha) = &pull.merge_commit_sha
+        && !test_merge_sha.eq_ignore_ascii_case(signal_sha)
+        && !test_merge_sha.eq_ignore_ascii_case(&pull.head.sha)
+        && !test_merge_sha.eq_ignore_ascii_case(&pull.base.sha)
+    {
+        probes.push(DoctorWorkflowProbe {
+            kind: DoctorWorkflowProbeKind::TestMerge,
+            sha: test_merge_sha.to_ascii_lowercase(),
+        });
+    }
+    if !pull.head.sha.eq_ignore_ascii_case(signal_sha) {
+        probes.push(DoctorWorkflowProbe {
+            kind: DoctorWorkflowProbeKind::PullRequestHead,
+            sha: pull.head.sha.to_ascii_lowercase(),
+        });
+    }
+    probes
+}
+
+fn doctor_workflow_semantics_equal(
+    before_collection: &DoctorWorkflowCollection,
+    before_investigations: &[DoctorWorkflowTriggerInvestigation],
+    after_collection: &DoctorWorkflowCollection,
+    after_investigations: &[DoctorWorkflowTriggerInvestigation],
+) -> bool {
+    before_collection.status == after_collection.status
+        && before_collection.probes == after_collection.probes
+        && before_collection.gaps == after_collection.gaps
+        && before_investigations == after_investigations
+}
+
+pub fn collect_pull_request_doctor_snapshot_v3<A: GithubPullRequestDoctorApi>(
+    request: PullRequestDoctorCollection<'_>,
+    api: &mut A,
+) -> Result<PullRequestDoctorSnapshotV3> {
+    let mut budget = ApiBudget::new();
+    let initial =
+        collect_pull_request_doctor_snapshot_with_budget(request.clone(), api, &mut budget)?;
+    let initial_report = evaluate_pull_request_doctor_v2(&initial)?;
+    let requirements = if initial.target.evaluation.kind == DoctorEvaluationTargetKind::MergeGroup {
+        initial_report
+            .requirements
+            .iter()
+            .filter(|diagnosis| {
+                diagnosis.status == DoctorRequirementStatus::Missing
+                    && diagnosis.key.expected_app_id.is_some()
+            })
+            .map(|diagnosis| diagnosis.key.clone())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if requirements.is_empty() {
+        return Ok(v3_from_v2(
+            initial,
+            not_applicable_workflow_collection(),
+            Vec::new(),
+        ));
+    }
+
+    let (first_workflow_collection, first_investigations) = collect_doctor_workflow_investigations(
+        &request,
+        &initial,
+        &requirements,
+        api,
+        &mut budget,
+    )?;
+    let middle =
+        collect_pull_request_doctor_snapshot_with_budget(request.clone(), api, &mut budget)?;
+    ensure!(
+        doctor_snapshot_semantics_equal(&initial, &middle),
+        "pull-request doctor evidence changed during workflow diagnosis; retry the doctor command"
+    );
+    let (mut workflow_collection, investigations) =
+        collect_doctor_workflow_investigations(&request, &middle, &requirements, api, &mut budget)?;
+    ensure!(
+        doctor_workflow_semantics_equal(
+            &first_workflow_collection,
+            &first_investigations,
+            &workflow_collection,
+            &investigations,
+        ),
+        "workflow producer evidence changed during diagnosis; retry the doctor command"
+    );
+    workflow_collection.api_calls = first_workflow_collection
+        .api_calls
+        .checked_add(workflow_collection.api_calls)
+        .context("workflow API call count overflow")?;
+    workflow_collection.response_bytes = first_workflow_collection
+        .response_bytes
+        .checked_add(workflow_collection.response_bytes)
+        .context("workflow response byte count overflow")?;
+    let mut revalidated =
+        collect_pull_request_doctor_snapshot_with_budget(request.clone(), api, &mut budget)?;
+    ensure!(
+        doctor_snapshot_semantics_equal(&initial, &revalidated)
+            && doctor_snapshot_semantics_equal(&middle, &revalidated),
+        "pull-request doctor evidence changed during final revalidation; retry the doctor command"
+    );
+    revalidated.collection.api_calls = u64::try_from(budget.requests)?;
+    revalidated.collection.response_bytes = u64::try_from(budget.response_bytes)?;
+    Ok(v3_from_v2(revalidated, workflow_collection, investigations))
 }

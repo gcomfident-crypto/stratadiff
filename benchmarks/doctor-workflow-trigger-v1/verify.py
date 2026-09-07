@@ -280,7 +280,7 @@ def validate_case(value: object, index: int, provenance_ids: set[str]) -> dict[s
             data["provider_capability"] == "not_applicable",
             f"{label} Actions case cannot assert third-party capability",
         )
-    validate_string_array(data["collection_gaps"], f"{label}.input.collection_gaps")
+    gaps = validate_string_array(data["collection_gaps"], f"{label}.input.collection_gaps")
     validate_string_array(data["historical_check_names"], f"{label}.input.historical_check_names")
     require_string(data["last_activity"], f"{label}.input.last_activity")
     require_string(data["required_context"], f"{label}.input.required_context")
@@ -302,7 +302,11 @@ def validate_case(value: object, index: int, provenance_ids: set[str]) -> dict[s
     if not limit_reached:
         require(total == len(paths), f"{label} non-truncated paths must be complete")
     else:
-        require(total > 300, f"{label} filter limit requires more than 300 files")
+        require(total > 300, f"{label} version-unbound filter limit requires more than 300 files")
+    if "github_pull_files_api_capped" in gaps:
+        require(limit_reached, f"{label} capped pull-files response must reach the filter limit")
+        require(total > 3_000, f"{label} pull-files API cap requires more than 3,000 files")
+        require(not changed["complete"], f"{label} capped pull-files response cannot be complete")
 
     pr = require_object(data["pull_request"], f"{label}.input.pull_request")
     require_exact_keys(
@@ -1018,10 +1022,20 @@ def command_self_test(arguments: argparse.Namespace) -> None:
     dynamic_rename["cases"]["dynamic-job-name-unknown"]["cause_code"] = "required_context_not_produced"
     expect_failure(lambda: validate_mutation(cases_asset, dynamic_rename, manifest), "dynamic name miscalled rename")
 
-    false_complete = copy.deepcopy(cases_asset)
-    large_case = find_case(false_complete, "path-filter-over-300-unknown")
+    erased_limit = copy.deepcopy(cases_asset)
+    large_case = find_case(erased_limit, "path-filter-over-300-version-unknown")
     large_case["input"]["changed_files"]["github_filter_file_limit_reached"] = False
-    expect_failure(lambda: validate_mutation(false_complete, oracle, manifest), "300-file boundary erased")
+    expect_failure(lambda: validate_mutation(erased_limit, oracle, manifest), "version-dependent path-filter boundary erased")
+
+    at_api_cap = copy.deepcopy(cases_asset)
+    large_case = find_case(at_api_cap, "path-filter-over-3000-api-cap-unknown")
+    large_case["input"]["changed_files"]["total"] = 3_000
+    expect_failure(lambda: validate_mutation(at_api_cap, oracle, manifest), "3,000-file API threshold made inclusive")
+
+    claimed_complete = copy.deepcopy(cases_asset)
+    large_case = find_case(claimed_complete, "path-filter-over-3000-api-cap-unknown")
+    large_case["input"]["changed_files"]["complete"] = True
+    expect_failure(lambda: validate_mutation(claimed_complete, oracle, manifest), "capped pull-files response called complete")
 
     weak_boundary = copy.deepcopy(manifest)
     weak_boundary["claim_boundary"]["production_accuracy_supported"] = True
@@ -1055,7 +1069,7 @@ def command_self_test(arguments: argparse.Namespace) -> None:
     checksum_text = CHECKSUMS.read_text(encoding="utf-8").replace("README.md", "README-copy.md", 1)
     expect_failure(lambda: parse_checksum_text(checksum_text), "checksum file substitution")
 
-    print("self-test passed: 15 integrity and fail-closed mutations rejected")
+    print("self-test passed: 17 integrity and fail-closed mutations rejected")
 
 
 def parser() -> argparse.ArgumentParser:

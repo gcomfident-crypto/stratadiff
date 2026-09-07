@@ -5,7 +5,7 @@ This bundle is a deterministic, network-free benchmark for one narrow question:
 > When a required check is absent on an exact pull-request or merge-group target, can Doctor
 > identify a workflow-trigger cause without claiming more than the collected evidence proves?
 
-It contains 22 controlled cases. Inputs live in `cases.json`; expected diagnoses live only in
+It contains 23 controlled cases. Inputs live in `cases.json`; expected diagnoses live only in
 `oracle.json`. `verify.py` is an independent reference evaluator and imports no StrataDiff code.
 The fixtures are constructed from documented GitHub semantics and public incident reports; they
 are not copied production payloads and contain no source, patch, logs, credentials, or personal
@@ -25,7 +25,7 @@ data.
 - stale required job/check name and duplicate job-name ambiguity
 - dynamic or reusable job names that must remain unknown
 - third-party merge-group incompatibility and runtime delivery gaps
-- GitHub's 300-file path-filter evaluation boundary
+- GitHub's version-dependent path-filter evaluation boundary
 
 ## Bundle layout
 
@@ -63,6 +63,12 @@ the failure modes occur in real projects; they do not establish prevalence. In p
   ambiguous.
 - GitHub's fork approval documentation requires a maintainer action, but a fork alone does not
   prove approval is the blocker.
+- GitHub.com and GHES 3.22 document a 3,000-file path-filter boundary, while GHES 3.17–3.21
+  document a 300-file boundary. The pull-files REST endpoint returns at most 3,000 files. Because
+  this v1 input schema does not bind a deployment/version, the benchmark conservatively keeps an
+  over-300 observation uncertain instead of claiming that a path filter excluded the workflow.
+  A future version-aware collector may use 3,000 only after proving GitHub.com or GHES 3.22+; if
+  it receives the API maximum without independent completeness evidence, it must retain the gap.
 
 Public incidents include GitHub Docs' path-filter FAQ, Mantid Imaging's merge-queue/path-filter
 deadlock, missing merge-group statuses from CodeQL and Read the Docs, Danger's split between a

@@ -340,8 +340,8 @@
       "provenance": ["incident-rtd-10021", "incident-codeql-1537"]
     },
     {
-      "description": "A pull request exceeds GitHub's 300-file filter evaluation boundary, so a static exclusion claim is unsafe.",
-      "id": "path-filter-over-300-unknown",
+      "description": "A pull request exceeds the 300-file path-filter boundary used by GHES 3.17–3.21, but the observation does not bind a GitHub deployment version, so a static exclusion claim is unsafe.",
+      "id": "path-filter-over-300-version-unknown",
       "input": {
         "changed_files": {"complete": true, "github_filter_file_limit_reached": true, "paths": ["docs/001.md", "src/late-match.rs"], "total": 301},
         "collection_gaps": ["github_path_filter_evaluation_truncated"],
@@ -357,7 +357,27 @@
           {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": ["src/**"], "paths_ignore": [], "types": []}}}
         ]
       },
-      "provenance": ["official-workflow-syntax"]
+      "provenance": ["official-workflow-syntax", "official-workflow-syntax-ghes-3-21", "official-workflow-syntax-ghes-3-22"]
+    },
+    {
+      "description": "A pull request exceeds the 3,000-file path-filter boundary and the pull-files REST response cap, so the complete ordered evaluation set is not observable from that API response.",
+      "id": "path-filter-over-3000-api-cap-unknown",
+      "input": {
+        "changed_files": {"complete": false, "github_filter_file_limit_reached": true, "paths": ["docs/0001.md", "src/late-match.rs"], "total": 3001},
+        "collection_gaps": ["github_path_filter_evaluation_truncated", "github_pull_files_api_capped"],
+        "expected_app": "github-actions",
+        "historical_check_names": ["test"],
+        "last_activity": "synchronize",
+        "provider_capability": "not_applicable",
+        "pull_request": {"base_ref": "main", "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "head_ref": "very-large-change", "head_repository_is_fork": false, "head_sha": "2200000000000000000000000000000000000022", "mergeable_state": "mergeable", "number": 122},
+        "required_context": "test",
+        "runs": [],
+        "target": {"kind": "pull_request_head", "sha": "2200000000000000000000000000000000000022"},
+        "workflows": [
+          {"jobs": [{"condition": "always", "id": "test", "name": "test", "name_static": true, "reusable": false}], "path": ".github/workflows/test.yml", "state": "active", "syntax": "valid", "triggers": {"merge_group": null, "pull_request": {"branches": [], "branches_ignore": [], "paths": ["src/**"], "paths_ignore": [], "types": []}}}
+        ]
+      },
+      "provenance": ["official-pull-files", "official-workflow-syntax", "official-workflow-syntax-ghes-3-22"]
     },
     {
       "description": "The workflow definition cannot be parsed, and startup evidence confirms it never instantiated the job.",

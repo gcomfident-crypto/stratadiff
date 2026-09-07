@@ -119,12 +119,19 @@
       "fix": {"action_code": "replace_or_ungate_unsupported_provider", "argv": [], "requires_human_edit": true},
       "target_sha": "1100000000000000000000000000000000000011"
     },
-    "path-filter-over-300-unknown": {
+    "path-filter-over-300-version-unknown": {
       "cause_code": "workflow_trigger_unknown",
       "confidence": "uncertain",
       "evidence": ["changed_files:301", "github_filter_limit:reached", "gap:github_path_filter_evaluation_truncated"],
       "fix": {"action_code": "inspect_github_filter_evaluation", "argv": [], "requires_human_edit": false},
       "target_sha": "1200000000000000000000000000000000000012"
+    },
+    "path-filter-over-3000-api-cap-unknown": {
+      "cause_code": "workflow_trigger_unknown",
+      "confidence": "uncertain",
+      "evidence": ["changed_files:3001", "github_filter_limit:reached", "gap:github_path_filter_evaluation_truncated"],
+      "fix": {"action_code": "inspect_github_filter_evaluation", "argv": [], "requires_human_edit": false},
+      "target_sha": "2200000000000000000000000000000000000022"
     },
     "workflow-definition-invalid": {
       "cause_code": "workflow_definition_invalid",
