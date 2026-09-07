@@ -1,0 +1,64 @@
+{
+  "schema": "stratadiff-merge-readiness-audit-v1",
+  "tool_version": "0.5.0",
+  "generated_at": "2026-09-07T17:59:51Z",
+  "scope": {
+    "provider_url": "https://github.com",
+    "repository": "gcomfident-crypto/stratadiff",
+    "default_branch": "main",
+    "default_branch_head_sha": "b318e730a1a2599151460694b3e96cca7ad13ae5",
+    "sampled_pull_requests": 0
+  },
+  "collection": {
+    "status": "complete",
+    "api_calls": 5,
+    "response_bytes": 7370,
+    "gaps": []
+  },
+  "privacy": {
+    "repository_source_collected": false,
+    "workflow_definitions_collected": true,
+    "pull_request_text_collected": true,
+    "check_run_output_text_collected": true,
+    "commit_status_description_collected": true,
+    "review_text_collected": false,
+    "commit_messages_collected": true
+  },
+  "claim_boundary": {
+    "current_configuration_snapshot_supported": true,
+    "historical_configuration_at_merge_supported": false,
+    "merge_safety_supported": false,
+    "workflow_runtime_semantics_supported": false,
+    "cost_savings_supported": false
+  },
+  "summary": {
+    "verdict": "action_required",
+    "findings": 1,
+    "high_findings": 1,
+    "medium_findings": 0,
+    "unknowns": 0,
+    "required_checks": 0,
+    "sampled_pull_requests": 0,
+    "fully_observed_pull_requests": 0
+  },
+  "findings": [
+    {
+      "rule": "default_branch_unprotected",
+      "severity": "high",
+      "title": "The default branch has no observed pull-request or required-check gate",
+      "explanation": "GitHub reported no classic branch protection, pull-request rule, or required check for main. Other effective rules do not establish pull-request or required-check enforcement.",
+      "contexts": [],
+      "workflow_paths": [],
+      "rulesets": [],
+      "evidence": [
+        {
+          "kind": "repository",
+          "url": "https://github.com/gcomfident-crypto/stratadiff",
+          "description": "default branch main at b318e730a1a2599151460694b3e96cca7ad13ae5 has no observed pull-request or required-check enforcement"
+        }
+      ],
+      "remediation": "Protect the default branch with classic branch protection or an active pull-request or required-check rule, then capture a new snapshot."
+    }
+  ],
+  "unknowns": []
+}

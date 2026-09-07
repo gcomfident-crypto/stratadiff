@@ -1,0 +1,153 @@
+{
+  "assets": [
+    {
+      "collection_status": "partial",
+      "path": "reports/actions-runner.json",
+      "repository": "actions/runner",
+      "sha256": "4d26e7a165e4e8b8ba0e3b80c6f021a59354b5242e8355b019f5b9127496fa8f",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/astral-ruff.json",
+      "repository": "astral-sh/ruff",
+      "sha256": "861163af186d7b7c62604f7fee0edf41f97e9f100f0ba48ced075cf52aaa5bd7",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/cli-cli.json",
+      "repository": "cli/cli",
+      "sha256": "553d1d2812fe400d89d643d1d5feec48fb3fb4fe7873aa69a403f9d37bee07a8",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/danger-js.json",
+      "repository": "danger/danger-js",
+      "sha256": "734e0b3700a260c2cc7ea97ab196469eea77abc132003d68b80655a5940cb2a9",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/dcoapp.json",
+      "repository": "dcoapp/app",
+      "sha256": "dc60fe1dd13582bd53f4ec6bb94a0143c5f09704c99f65c0ce05b9178639b70a",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/github-codeql-action.json",
+      "repository": "github/codeql-action",
+      "sha256": "d14ce8bfc114dd83ac45798b213f1aa6797ebae04a0dde39bcbf1c7227d50acd",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/github-docs.json",
+      "repository": "github/docs",
+      "sha256": "4b25085eef76bb401dcb3449cba998844080885a8d8e8407dc952ba3af882a52",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/kubernetes.json",
+      "repository": "kubernetes/kubernetes",
+      "sha256": "608e7781ca8f012899999957a1ce50ba8c149372bb79be6899bcff0b1ba8c6ef",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/policy-bot.json",
+      "repository": "palantir/policy-bot",
+      "sha256": "a555511298ac0b388f1f052e190ecf8f00d8262be5c06c36044c8cd2b7666eac",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/readthedocs.json",
+      "repository": "readthedocs/readthedocs.org",
+      "sha256": "813b7b628aa88af4162208ca72605e20ea0c1f4b7ac2a42daa4cdc4e5a77eccb",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/rust-lang-rust.json",
+      "repository": "rust-lang/rust",
+      "sha256": "33ec4a6e94308bed4ace2cdcfba231f5fb81b4c45c4a2f515c89ca15602662d8",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    },
+    {
+      "collection_status": "complete",
+      "path": "reports/stratadiff.json",
+      "repository": "gcomfident-crypto/stratadiff",
+      "sha256": "b1c0a1cb24fb3332842ac278c80ed78cf8665e3446224763c159640058c23581",
+      "verdict": "action_required",
+      "viewer_permission": "ADMIN"
+    },
+    {
+      "collection_status": "partial",
+      "path": "reports/vitejs-vite.json",
+      "repository": "vitejs/vite",
+      "sha256": "9a344b7d62caf77a3abaf628ee9e571a7cccd2341c6318403ce05ff3f82ebf3f",
+      "verdict": "inconclusive",
+      "viewer_permission": "READ"
+    }
+  ],
+  "build": {
+    "cargo_lock_sha256": "787fe9a6855a7ebba1fb08ee1791aa78c4aeb4f9fde05473caf917cc8970d466",
+    "git_revision": "b318e730a1a2599151460694b3e96cca7ad13ae5",
+    "tool_version": "0.5.0"
+  },
+  "capture": {
+    "command_template": "stratadiff readiness-audit -R OWNER/REPOSITORY --format json",
+    "provider_url": "https://github.com",
+    "window_end": "2026-09-07T17:59:51Z",
+    "window_start": "2026-09-07T17:56:16Z"
+  },
+  "claim_boundary": [
+    "This convenience-selected capture diagnoses API feasibility and permission behavior; it is not a random or representative repository sample.",
+    "The reports are outputs of the implementation under test, so they are not independent accuracy ground truth.",
+    "The READ and ADMIN permission labels were observed separately at capture time and are not independently derivable from the report payloads.",
+    "A point-in-time report cannot prove historical merge safety, workflow runtime behavior, prevalence, cost savings, or product-market fit.",
+    "Partial collection must remain inconclusive; absence of another finding is never interpreted as readiness."
+  ],
+  "dataset_version": "1.0.0",
+  "description": "A frozen 13-repository permission and feasibility diagnostic for the StrataDiff merge-readiness collector.",
+  "expected_summary": {
+    "action_required": 1,
+    "admin_permission_reports": 1,
+    "api_calls": 97,
+    "complete": 1,
+    "findings": 1,
+    "inconclusive": 12,
+    "partial": 12,
+    "read_permission_reports": 12,
+    "reports": 13,
+    "required_checks": 37,
+    "response_bytes": 4762769,
+    "sampled_pull_requests": 2,
+    "source_unresolved_unknowns": 1,
+    "unknowns": 13
+  },
+  "license": "MIT; linked third-party repository metadata remains subject to its upstream terms",
+  "name": "Merge Readiness Audit v1",
+  "schema": "stratadiff-merge-readiness-benchmark-manifest-v1",
+  "selection": {
+    "designation": "convenience_selected_feasibility_diagnostic",
+    "external_repository_count": 12,
+    "owned_control_count": 1,
+    "randomized": false
+  }
+}

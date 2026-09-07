@@ -1,0 +1,65 @@
+{
+  "schema": "stratadiff-merge-readiness-audit-v1",
+  "tool_version": "0.5.0",
+  "generated_at": "2026-09-07T17:56:16Z",
+  "scope": {
+    "provider_url": "https://github.com",
+    "repository": "github/docs",
+    "default_branch": "main",
+    "default_branch_head_sha": "831337b0fed60b90a72e2711a41dfcad72b5f288",
+    "sampled_pull_requests": 1
+  },
+  "collection": {
+    "status": "partial",
+    "api_calls": 18,
+    "response_bytes": 2103166,
+    "gaps": [
+      {
+        "surface": "effective_rules",
+        "reason": "GitHub marks the default branch protected, but classic branch protection was absent or unreadable"
+      }
+    ]
+  },
+  "privacy": {
+    "repository_source_collected": false,
+    "workflow_definitions_collected": true,
+    "pull_request_text_collected": true,
+    "check_run_output_text_collected": true,
+    "commit_status_description_collected": true,
+    "review_text_collected": false,
+    "commit_messages_collected": true
+  },
+  "claim_boundary": {
+    "current_configuration_snapshot_supported": true,
+    "historical_configuration_at_merge_supported": false,
+    "merge_safety_supported": false,
+    "workflow_runtime_semantics_supported": false,
+    "cost_savings_supported": false
+  },
+  "summary": {
+    "verdict": "inconclusive",
+    "findings": 0,
+    "high_findings": 0,
+    "medium_findings": 0,
+    "unknowns": 1,
+    "required_checks": 34,
+    "sampled_pull_requests": 1,
+    "fully_observed_pull_requests": 1
+  },
+  "findings": [],
+  "unknowns": [
+    {
+      "code": "collection_incomplete",
+      "context": null,
+      "workflow_path": null,
+      "reason": "One or more GitHub surfaces were not collected completely; absence of another finding is not a clean result.",
+      "evidence": [
+        {
+          "kind": "repository",
+          "url": "https://github.com/github/docs",
+          "description": "repository whose readiness snapshot is incomplete"
+        }
+      ]
+    }
+  ]
+}

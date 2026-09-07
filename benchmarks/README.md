@@ -1,5 +1,17 @@
 # Benchmark artifacts
 
+## Merge Readiness Audit v1
+
+[`merge-readiness-audit-v1/`](merge-readiness-audit-v1/) freezes 13 live GitHub readiness reports
+as a permission and feasibility diagnostic. All 12 public repositories observed with READ access
+remain partial and inconclusive because effective branch-protection evidence was unreadable; the
+owned ADMIN control is complete and reports an unprotected default branch. The network-free
+verifier binds report hashes, summary arithmetic, output shape, and fail-closed behavior.
+
+This convenience-selected capture is not independent accuracy ground truth or a prevalence sample.
+It establishes that repository-admin evidence is required for a complete static policy audit and
+motivates exact-PR diagnosis as the lower-permission product entry.
+
 ## Review Churn Census v1
 
 [`review-churn-census-v1/`](review-churn-census-v1/) freezes a pilot-informed, prospective

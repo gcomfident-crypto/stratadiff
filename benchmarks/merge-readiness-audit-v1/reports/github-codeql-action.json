@@ -1,0 +1,65 @@
+{
+  "schema": "stratadiff-merge-readiness-audit-v1",
+  "tool_version": "0.5.0",
+  "generated_at": "2026-09-07T17:59:51Z",
+  "scope": {
+    "provider_url": "https://github.com",
+    "repository": "github/codeql-action",
+    "default_branch": "main",
+    "default_branch_head_sha": "313a0b99225f41fe3a5666e8fa7b2d8048c194ec",
+    "sampled_pull_requests": 0
+  },
+  "collection": {
+    "status": "partial",
+    "api_calls": 7,
+    "response_bytes": 55311,
+    "gaps": [
+      {
+        "surface": "effective_rules",
+        "reason": "GitHub marks the default branch protected, but classic branch protection was absent or unreadable"
+      }
+    ]
+  },
+  "privacy": {
+    "repository_source_collected": false,
+    "workflow_definitions_collected": true,
+    "pull_request_text_collected": true,
+    "check_run_output_text_collected": true,
+    "commit_status_description_collected": true,
+    "review_text_collected": false,
+    "commit_messages_collected": true
+  },
+  "claim_boundary": {
+    "current_configuration_snapshot_supported": true,
+    "historical_configuration_at_merge_supported": false,
+    "merge_safety_supported": false,
+    "workflow_runtime_semantics_supported": false,
+    "cost_savings_supported": false
+  },
+  "summary": {
+    "verdict": "inconclusive",
+    "findings": 0,
+    "high_findings": 0,
+    "medium_findings": 0,
+    "unknowns": 1,
+    "required_checks": 0,
+    "sampled_pull_requests": 0,
+    "fully_observed_pull_requests": 0
+  },
+  "findings": [],
+  "unknowns": [
+    {
+      "code": "collection_incomplete",
+      "context": null,
+      "workflow_path": null,
+      "reason": "One or more GitHub surfaces were not collected completely; absence of another finding is not a clean result.",
+      "evidence": [
+        {
+          "kind": "repository",
+          "url": "https://github.com/github/codeql-action",
+          "description": "repository whose readiness snapshot is incomplete"
+        }
+      ]
+    }
+  ]
+}

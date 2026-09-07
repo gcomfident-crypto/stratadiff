@@ -46,6 +46,8 @@ python3 -B benchmarks/review-inbox-global-v1/verify.py verify
 python3 -B benchmarks/review-inbox-global-v1/verify.py self-test
 (cd benchmarks/review-inbox-global-v1 && sha256sum -c SHA256SUMS)
 cargo test --test review_inbox_global_v1 --locked
+python3 -B benchmarks/merge-readiness-audit-v1/verify.py verify
+(cd benchmarks/merge-readiness-audit-v1 && sha256sum -c SHA256SUMS)
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
