@@ -1093,7 +1093,7 @@ fn is_object_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn current_utc_timestamp() -> Result<String> {
+pub fn current_utc_timestamp() -> Result<String> {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock is before the Unix epoch")?

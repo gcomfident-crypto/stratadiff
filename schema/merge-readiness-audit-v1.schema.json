@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/merge-readiness-audit-v1.schema.json",
+  "title": "StrataDiff Merge Readiness Audit v1",
+  "description": "A bounded audit of current GitHub branch rules, required-check publishers, workflow triggers, and recent exact-head observations. It is not a historical policy reconstruction or a code-safety verdict.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "generated_at",
+    "scope",
+    "collection",
+    "privacy",
+    "claim_boundary",
+    "summary",
+    "findings",
+    "unknowns"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-merge-readiness-audit-v1" },
+    "tool_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "privacy": { "$ref": "#/$defs/privacy" },
+    "claim_boundary": { "$ref": "#/$defs/claim_boundary" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "findings": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "unknowns": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/unknown" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "verdict": { "const": "action_required" } },
+            "required": ["verdict"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": { "properties": { "findings": { "minItems": 1 } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "summary": {
+            "properties": { "verdict": { "const": "no_observed_risk" } },
+            "required": ["verdict"]
+          }
+        },
+        "required": ["summary"]
+      },
+      "then": {
+        "properties": {
+          "collection": {
+            "properties": { "status": { "const": "complete" } },
+            "required": ["status"]
+          },
+          "findings": { "maxItems": 0 },
+          "unknowns": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "collection": {
+            "properties": { "status": { "const": "partial" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["collection"]
+      },
+      "then": {
+        "properties": {
+          "summary": {
+            "properties": {
+              "verdict": { "enum": ["action_required", "inconclusive"] }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https://\\S+$",
+      "maxLength": 2048
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "bounded_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_url",
+        "repository",
+        "default_branch",
+        "default_branch_head_sha",
+        "sampled_pull_requests"
+      ],
+      "properties": {
+        "provider_url": { "$ref": "#/$defs/url" },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+          "maxLength": 202
+        },
+        "default_branch": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "default_branch_head_sha": { "$ref": "#/$defs/object_id" },
+        "sampled_pull_requests": { "$ref": "#/$defs/count" }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "api_calls", "response_bytes", "gaps"],
+      "properties": {
+        "status": { "enum": ["complete", "partial"] },
+        "api_calls": { "$ref": "#/$defs/count" },
+        "response_bytes": { "$ref": "#/$defs/count" },
+        "gaps": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["surface", "reason"],
+            "properties": {
+              "surface": {
+                "enum": [
+                  "repository",
+                  "effective_rules",
+                  "rulesets",
+                  "workflows",
+                  "workflow_definitions",
+                  "pull_requests",
+                  "check_runs",
+                  "commit_statuses",
+                  "workflow_runs"
+                ]
+              },
+              "reason": { "$ref": "#/$defs/bounded_text" }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "complete" } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "gaps": { "maxItems": 0 } } },
+          "else": { "properties": { "gaps": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "privacy": {
+      "type": "object",
+      "description": "Conservative data-exposure declaration for this collector. A true value means an upstream endpoint can return that category, even when StrataDiff discards it instead of serializing it into the snapshot or report.",
+      "additionalProperties": false,
+      "required": [
+        "repository_source_collected",
+        "workflow_definitions_collected",
+        "pull_request_text_collected",
+        "check_run_output_text_collected",
+        "commit_status_description_collected",
+        "review_text_collected",
+        "commit_messages_collected"
+      ],
+      "properties": {
+        "repository_source_collected": { "const": false },
+        "workflow_definitions_collected": { "const": true },
+        "pull_request_text_collected": { "const": true },
+        "check_run_output_text_collected": { "const": true },
+        "commit_status_description_collected": { "const": true },
+        "review_text_collected": { "const": false },
+        "commit_messages_collected": { "const": true }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "current_configuration_snapshot_supported",
+        "historical_configuration_at_merge_supported",
+        "merge_safety_supported",
+        "workflow_runtime_semantics_supported",
+        "cost_savings_supported"
+      ],
+      "properties": {
+        "current_configuration_snapshot_supported": { "const": true },
+        "historical_configuration_at_merge_supported": { "const": false },
+        "merge_safety_supported": { "const": false },
+        "workflow_runtime_semantics_supported": { "const": false },
+        "cost_savings_supported": { "const": false }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "findings",
+        "high_findings",
+        "medium_findings",
+        "unknowns",
+        "required_checks",
+        "sampled_pull_requests",
+        "fully_observed_pull_requests"
+      ],
+      "properties": {
+        "verdict": {
+          "enum": ["action_required", "no_observed_risk", "inconclusive"]
+        },
+        "findings": { "$ref": "#/$defs/count" },
+        "high_findings": { "$ref": "#/$defs/count" },
+        "medium_findings": { "$ref": "#/$defs/count" },
+        "unknowns": { "$ref": "#/$defs/count" },
+        "required_checks": { "$ref": "#/$defs/count" },
+        "sampled_pull_requests": { "$ref": "#/$defs/count" },
+        "fully_observed_pull_requests": { "$ref": "#/$defs/count" }
+      }
+    },
+    "ruleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "url", "source_type", "source"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "name": { "$ref": "#/$defs/bounded_text" },
+        "url": { "$ref": "#/$defs/url" },
+        "source_type": { "$ref": "#/$defs/bounded_text" },
+        "source": { "$ref": "#/$defs/bounded_text" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "url", "description"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "repository",
+            "ruleset",
+            "workflow",
+            "pull_request",
+            "check_run",
+            "workflow_run",
+            "commit_status"
+          ]
+        },
+        "url": { "$ref": "#/$defs/url" },
+        "description": { "$ref": "#/$defs/bounded_text" }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule",
+        "severity",
+        "title",
+        "explanation",
+        "contexts",
+        "workflow_paths",
+        "rulesets",
+        "evidence",
+        "remediation"
+      ],
+      "properties": {
+        "rule": {
+          "enum": [
+            "default_branch_unprotected",
+            "required_check_source_unpinned",
+            "required_check_source_mismatch",
+            "required_check_source_ambiguous",
+            "merge_group_trigger_missing",
+            "path_filtered_required_workflow"
+          ]
+        },
+        "severity": { "enum": ["high", "medium"] },
+        "title": { "$ref": "#/$defs/bounded_text" },
+        "explanation": { "$ref": "#/$defs/bounded_text" },
+        "contexts": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "type": "string", "minLength": 1, "maxLength": 255 }
+        },
+        "workflow_paths": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+        },
+        "rulesets": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": { "$ref": "#/$defs/ruleset" }
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "remediation": { "$ref": "#/$defs/bounded_text" }
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "context", "workflow_path", "reason", "evidence"],
+      "properties": {
+        "code": {
+          "enum": [
+            "collection_incomplete",
+            "required_check_never_observed",
+            "required_check_missing_on_sampled_head",
+            "required_check_source_unresolved",
+            "workflow_mapping_unavailable",
+            "workflow_definition_unavailable",
+            "external_merge_group_support_unobserved"
+          ]
+        },
+        "context": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 255 },
+            { "type": "null" }
+          ]
+        },
+        "workflow_path": {
+          "oneOf": [
+            { "type": "string", "minLength": 1, "maxLength": 1024 },
+            { "type": "null" }
+          ]
+        },
+        "reason": { "$ref": "#/$defs/bounded_text" },
+        "evidence": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    }
+  }
+}

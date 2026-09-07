@@ -1,30 +1,39 @@
-# Market evidence: final-input review coverage without per-push waste
+# Market evidence: verifiable merge proof across reviewers and candidate SHAs
 
-Evidence captured: **2026-09-06**. This is a point-in-time, auditable product-research snapshot.
-Issue votes, reactions, comments, labels, and states can change. Public issue reports are
-self-selected evidence of a failure mode or demand; they are not prevalence, willingness-to-pay,
-retention, or market-size estimates. Vendor documentation establishes documented behavior, not
-independent accuracy or adoption.
+Evidence captured: **2026-09-06**, with a competitor and platform refresh on **2026-09-08**. This is
+a point-in-time, auditable product-research snapshot. Issue votes, reactions, comments, labels, and
+states can change. Public issue reports are self-selected evidence of a failure mode or demand;
+they are not prevalence, willingness-to-pay, retention, or market-size estimates. Vendor
+documentation establishes documented behavior, not independent accuracy or adoption.
 
 ## Decision
 
-The recurring commercial job is not “show a nicer diff” or “sell another reviewer model.” It is:
+The original single-provider thesis is falsified strongly enough to change the product. The
+recurring commercial job is not “show a nicer diff,” “sell another reviewer model,” or “stop
+CodeRabbit from approving an old head.” It is:
 
-> Keep automated review enabled for the PR state that can merge without paying to review every
-> unstable intermediate state.
+> Produce one independently inspectable record of which configured review and Check evidence is
+> bound to the exact code GitHub is about to merge, even when the PR head and merge-queue candidate
+> have different SHAs.
 
-The strongest initial segment is teams already paying for AI or multi-model review, with several
-pushes per PR, finite review credits, stale in-flight jobs, or follow-up coverage gaps. Stacked PR,
-frequent rebase, strict review protection, and expensive CI make that pain sharper. The evidence
-does not support a claim that every pull request or every developer has this problem.
+The strongest initial segment is a GitHub Cloud team with multiple AI, policy, CI, or human review
+signals; required checks; and either strict up-to-date protection or a merge queue. Several pushes
+per PR, finite review credits, stacked changes, and expensive CI sharpen the pain. The evidence does
+not yet show how often these teams need a cross-provider proof or whether they will pay for it.
 
-The primary wedge is a **Final-Head Review Governor** that supersedes obsolete work and withholds its
-required success until trusted evidence covers the still-live `(base SHA, head SHA)` pair. Review
-Cache may then reduce an open reviewer's input to `skip`, `residue`, `full`, or `blocked`; Review
-Resume lets a person inspect the exact evidence and remaining work. Every unsupported or ambiguous
-case remains visible. StrataDiff neither reviews code nor restores a GitHub approval. The automation
-path remains an alpha thesis until live end-to-end trials and the frozen transition evaluation
-establish its safety and economic value.
+The primary wedge is therefore a **Review Evidence Control Plane** whose output is a verifiable
+merge proof. It records provider, review object, reviewed head, scope, policy generation, override
+provenance, and source App; it evaluates PR-head obligations separately from a synthetic
+`merge_group`; and it withholds its required success whenever evidence is missing, stale,
+ambiguous, or from the wrong source. Review Cache may reduce an open reviewer's input to `skip`,
+`residue`, `full`, or `blocked`, and Review Resume may explain remaining work, but neither is the
+merge authority. The hosted path remains an alpha thesis until live multi-provider, ruleset, and
+merge-queue trials establish correctness and user value.
+
+**No-Go:** a standalone “CodeRabbit stale-approval guard.” CodeRabbit's current official contract
+already verifies that the latest commit was reviewed, the current head belongs to the reviewed
+commits, and the head did not change immediately before approval. Building more infrastructure for
+that claim alone would duplicate a fast-moving incumbent.
 
 ## Evidence-strength labels
 
@@ -37,6 +46,38 @@ establish its safety and economic value.
 - **Individual case:** one reproducible report. It proves possibility, not frequency.
 - **Platform fact:** current official documentation. It describes a mechanism or incumbent
   capability, not demand for StrataDiff.
+
+## 2026-09-08 falsification and platform update
+
+The following evidence is more decision-relevant than an unverified “stale AI approval” story. The
+official sources establish platform or vendor behavior; community discussions establish concrete
+reported failures only.
+
+| Evidence | Current fact | Product decision |
+|---|---|---|
+| [GitHub required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks), accessed 2026-09-08 | Required checks from earlier commits do not satisfy the latest commit SHA. When a test-merge commit has status, that candidate—not merely the PR head—must pass. A check and commit status with the same name must both pass. | Do not claim GitHub blindly accepts an old green SHA. Model PR head and final candidate explicitly. |
+| [GitHub protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches), accessed 2026-09-08 | A required check can be pinned to an expected GitHub App; another actor's same-named result does not satisfy it. GitHub also warns that duplicate job names across workflows are ambiguous. | Stable Check identity and explicit source pinning are configuration hygiene, not novel product primitives. Rulesets use optional `integration_id`; branch protection uses `checks[].app_id`. Those fields authenticate the result source, not the review semantics behind it; if they are unset, do not claim App-bound enforcement. |
+| [GitHub merge-queue configuration](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue), accessed 2026-09-08 | Actions must handle `merge_group`; third-party CI must handle `gh-readonly-queue/{base}`. The temporary candidate has a different SHA from the PR. | The proof target is the final candidate. Never copy a PR-head green result onto a merge-group SHA without a declared, independently checked carry rule. |
+| [GitHub protected review behavior](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-pull-request-reviews-before-merging), accessed 2026-09-08 | GitHub can dismiss approvals when its recorded diff changes and can require approval of the most recent reviewable push. | A generic stale-human-approval guard is also not a sufficient wedge. |
+| [Copilot code-review documentation](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review) and [2026-09-01 launch note](https://github.blog/changelog/2026-09-01-copilot-code-review-can-now-approve-pull-requests/) | Copilot does not re-review a new push unless configured to do so; it may repeat resolved feedback. Its public-preview approval is dismissed after a new commit. | Copilot needs reliable orchestration and evidence normalization, not a duplicate stale-approval feature. Its native capability may improve quickly. |
+| [GitHub Community #190754](https://github.com/orgs/community/discussions/190754), created 2026-03-27, with reports through 2026-07-15 | One public PR repeated the same incorrect suggestion across three or four review rounds; commenters report the same failure and loss of trust. GitHub's own documentation acknowledges repetition is possible. | Finding disposition and deduplication are real follow-on jobs. This does not prove demand for a merge gate. |
+| [GitHub Community #206810](https://github.com/orgs/community/discussions/206810), created 2026-09-04 | A public MLflow report found 78 Copilot reviews among 100 recent PRs, all `COMMENTED`; 18 displayed “Approval recommended” despite approval settings being enabled. | Evaluate API objects, not UI prose. This is one user-reported public-preview failure and not an official GitHub incident or prevalence estimate. |
+| [CodeRabbit Request Changes Workflow](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow), modified 2026-09-01 | CodeRabbit requires a completed review of the latest commit, checks that current HEAD is among reviewed commits, and rechecks HEAD immediately before approval. A rate-limited or changed head remains pending. Explicit `approve`/`resolve` commands can override latest-review and pre-merge-check requirements while still checking HEAD. | **No-Go:** do not sell a CodeRabbit stale-head guard. Treat CodeRabbit as one evidence producer and make override policy and provenance explicit across providers. |
+| [CodeRabbit automatic-review controls](https://docs.coderabbit.ai/configuration/auto-review), modified 2026-08-31 | Incremental review is on by default but auto-pauses after five reviewed commits; each eligible push consumes review allowance, and the vendor recommends earlier pause/manual review for active branches. | Cost, noise, and final-coverage tension are credible. Measure safe coalescing and carry; do not assume savings. |
+| GitHub Community [#103114](https://github.com/orgs/community/discussions/103114), created 2024-02-02 with reports through 2026-05-18, and [#43988](https://github.com/orgs/community/discussions/43988), with a 2026-04-16 adoption-blocking report | Required checks for PR and merge queue remain coupled in reported workflows, causing duplicate expensive runs or stuck queues and awkward same-name/conditional workarounds. | A canonical aggregate Check plus configuration audit is a stronger acquisition wedge than another reviewer. These reports do not quantify GitHub-wide frequency. |
+| Graphite [merge queue](https://graphite.com/docs/graphite-merge-queue), modified 2026-01-22, and [setup](https://graphite.com/docs/set-up-merge-queue), modified 2026-06-22 | Graphite's queue optimizes stack throughput but is incompatible with GitHub's native queue; its fast modes can require App bypass permissions, and one repository has one trunk queue. | Do not build another queue. Remain a neutral proof layer that can sit beside the team's chosen merge path. Absence of a documented Graphite proof contract is not proof that no private capability exists. |
+
+The strongest counter-evidence is CodeRabbit's exact-head contract plus GitHub's latest-SHA and
+expected-App enforcement. It removes the original single-provider security wedge. The public
+evidence does show duplicated work, queue configuration brittleness, review noise, and preview
+reliability problems; it does **not** yet establish willingness to pay for cross-provider
+attestation. That demand must be measured before deeper control-plane scope is justified.
+
+GitHub's [`merge_group` webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#merge_group)
+identifies the synthetic head and base but does not enumerate the member pull requests. A live proof
+therefore needs separately validated queue/PR observations and must fail closed when membership
+cannot be established. A first-time historical scan can check workflow triggers and still-resolvable
+objects, but it cannot reconstruct an uncollected merge-group membership timeline.
 
 ## Real pain evidence
 
@@ -136,45 +177,57 @@ The repository's separate 500-PR Review Churn Census found checkpoint drift in 8
 reviewer/PR checkpoints. That bounded panel supports an event-driven product, not a universal daily
 workflow. It must not be blended with self-selected issue votes to manufacture a market-size claim.
 
-## Primary product wedge: Final-Head Review Governor
+## Primary product wedge: Review Evidence Control Plane
 
 ### User-visible contract
 
-For every reviewable PR input, publish one quiet required state instead of one bot narrative per
-push:
+For every protected PR, publish one quiet, App-bound required state that explains the evidence for
+the current merge candidate instead of treating each provider's comments, reviews, and checks as
+interchangeable:
 
 ```text
-StrataDiff Final Input — waiting
-3 intermediate revisions superseded; review will start after the branch stabilizes
+StrataDiff Merge Proof — collecting
+PR head a842…: CodeRabbit complete; Copilot pending; policy generation 17
 
-StrataDiff Final Input — verified
-base 91f3… + head a842… reviewed by CodeRabbit; 2 candidate runs avoided
+StrataDiff Merge Proof — verified
+merge group e19c…: 2 PR heads bound; 3 required evidence snapshots verified; no override
 ```
 
 The state machine is deliberately small:
 
-1. **Waiting:** the PR is draft, moving, or waiting for a declared eligibility signal. This is not
-   a clean result.
-2. **Reviewing:** one leased provider run is bound to the current base/head pair.
-3. **Verified:** trusted completion and substantive review evidence cover that same still-live pair.
-4. **Blocking:** the reviewer requested changes or evidence is invalid, incomplete, or timed out.
-5. **Stale:** head or base changed; the earlier result cannot satisfy the current gate.
+1. **Collecting:** at least one policy obligation is pending, rate-limited, or not yet observable.
+   This is not a clean result.
+2. **Verifying:** versioned, content-addressed evidence snapshots are being checked against the
+   current PR head, provider identity, policy generation, and any separately established merge-group
+   membership.
+3. **Verified:** every required obligation is supported for this exact candidate by an allowed
+   source and declared carry rule.
+4. **Blocking:** a reviewer requested changes, an override violates policy, or evidence is missing,
+   invalid, incomplete, timed out, or contradictory.
+5. **Superseded or quarantined:** a newer head, base, policy generation, or unrouteable signed event
+   invalidated the observation; old work cannot make a later candidate green.
 
-The initial CodeRabbit adapter is unofficial and cannot cache CodeRabbit's private context. Its
-safe job is dispatch plus evidence verification. Incremental `skip` or `residue` is reserved for a
-reviewer whose complete input closure and signed result contract are available to Review Cache.
+The CodeRabbit adapter is one input adapter, not the product boundary. Because CodeRabbit already
+documents exact-head protection, its safe role is to contribute a provenance-bound evidence
+snapshot to a multi-reviewer policy. Incremental `skip` or `residue` remains reserved for reviewers whose
+complete input closure and result contract are available to Review Cache. A UI statement such as
+“approval recommended” is never substituted for the provider's actual review or Check object.
 
 ### Immediate implementation implication
 
-The transparent Action alpha must never execute pull-request code and must bind both base and head
-around every evidence read. A head-only commit status is insufficient when the target branch moves.
-The deployable configuration must either force the PR head to update before merge or reconcile
-every open PR affected by a base push, overwriting a stale success before it can merge. A production
-App must add a dedicated expected-source identity, durable dispatch leases, and merge-queue support.
+The transparent Action alpha must never execute pull-request code and must bind every evidence read
+to repository, PR, head, base, provider, evidence object, scope, and policy generation. A production
+App must publish a fixed Check name from the expected App identity and treat a `merge_group` as a
+new candidate whose SHA and member set are established from retained live observations and
+separately validated PR/commit relations. The webhook alone is not membership evidence; unavailable
+membership fails closed. PR-head evidence may carry only through a declared proof; it is never
+copied because the queue entry “belongs to the same PR.”
 
-The first public proof must include a same-head/base-moved case, a head race, a retarget, a provider
-pause or rate limit, `CHANGES_REQUESTED`, and a successful review. It must report actual provider
-invocations and latency; the current three-PR replay's billed-invocation count is only a proxy.
+The first public proof must include two real providers, a same-head/base-moved case, a head race,
+retarget, provider pause or rate limit, explicit override, `CHANGES_REQUESTED`, a same-name result
+from the wrong App, and merge groups containing one and multiple PRs. It must report actual provider
+invocations, CI runs, latency, and every fail-closed reason; the current three-PR replay's billed-
+invocation count remains only a proxy.
 
 ## Secondary product wedge: Verified Review Resume Check
 
@@ -244,19 +297,26 @@ The minimum event-driven vertical slice is:
 
 ### Primary ICP
 
-- GitHub teams already paying for CodeRabbit or another automated reviewer and seeing several head
-  updates, duplicate summaries, quota pressure, or cancelled review work per PR.
-- A DevEx/platform/security owner who can install a required Check and compare actual invocation,
-  latency, and cost telemetry before and after the pilot.
-- GitHub teams already using stacked PRs, Graphite, `gh-stack`, frequent rebases, or curated
-  force-push workflows.
-- Repositories with stale-review dismissal, latest-push approval, merge queues, CODEOWNERS, or
-  multiple required reviewers.
-- Monorepos or projects where CI/deployment reruns and specialist review round-trips are expensive.
+- GitHub Cloud teams, initially about 20–300 engineers and at least 100 PRs per month, that already
+  combine two or more AI, policy, CI, or human review obligations.
+- A DevEx, platform, or security owner who controls rulesets, can install a read-only audit or
+  shadow Check, and can compare real invocation, CI-minute, latency, and override telemetry.
+- Repositories using strict up-to-date checks or native merge queue, especially with stacks,
+  frequent rebases, expensive CI, scarce CODEOWNERS, or agent-authored PRs.
+- Teams that need to answer “which exact candidate did each required reviewer cover?” for incident
+  review or internal change-control evidence, without replacing their current reviewer products.
 
-Use the Governor in observation mode plus `gh stratadiff audit` to qualify each repository. A
-low-churn or low-cost repository should receive an honest “not useful here” result rather than an
-installation pitch.
+Use a read-only **Merge Readiness Audit** and non-blocking shadow Check to qualify each repository.
+The audit should identify wrong-source or duplicate check names, missing `merge_group` triggers,
+path-filtered required workflows, final pushes without required evidence, repeated provider runs,
+and policy overrides. A low-churn, single-reviewer, correctly configured repository should receive
+an honest “not useful here” result rather than an enforcement pitch.
+
+The primary job is:
+
+> When an AI- or human-authored change reaches the merge boundary, prove that the exact PR head and
+> final merge candidate satisfy every configured review obligation, without rerunning unchanged
+> work merely to compensate for missing provenance.
 
 ### Poor initial fit
 
@@ -272,18 +332,43 @@ installation pitch.
 These are proposed go/no-go gates, not achieved results. Freeze the protocol and thresholds before
 examining pilot outcomes.
 
-### 1. Live Governor trial
+### 0. Retrospective PR audit and demand test
 
-Run the pinned Action first on a sacrificial repository, then in at least five consenting reviewer
-workflows. Preserve the complete event, dispatch, provider-evidence, and gate ledger for every
-eligible base/head transition. Measure actual provider invocations, cancellations, review latency,
-added merge latency, billed cost or tokens where exposed, final-input coverage, and every false or
-stale gate.
+Build a non-mutating analyzer over at least 500 consecutive public or consenting private PR
+timelines that use Copilot, CodeRabbit, or both. Record review `commit_id`, check-run source App,
+PR-head SHAs, pushes after the last completed review, duplicate review/CI runs, explicit overrides,
+and missing or ambiguous objects. Record merge-group SHAs and membership only when retained events
+or still-resolvable records establish them; otherwise report that dimension as unknown. Pre-register
+the primary demand test: at least 10% of qualified PRs must contain an actionable proof or
+configuration gap and at least 30% of surfaced findings must cause an administrator to fix
+configuration, request evidence, or keep shadow mode. If fewer than 2% contain an actionable gap,
+stop leading with stale evidence.
 
-**Governor gate:** zero successful states on a stale or incomplete base/head input; zero uncovered
-merges when the check is configured as required; and a measured reduction in at least one buyer
-metric—provider invocations, billed cost, or obsolete queue time—without worse final-input coverage.
-Five pilots establish feasibility, not a population saving estimate.
+The analyzer must also record its permission and field visibility. GitHub's
+[rules endpoints](https://docs.github.com/en/rest/repos/rules?apiVersion=2022-11-28) can return
+effective rules with metadata access, while branch-protection and
+[rule-suite](https://docs.github.com/en/rest/repos/rule-suites?apiVersion=2022-11-28) reads require
+repository Administration read. Rule-suite history is limited to the API's hour, day, week, or month
+window. GitHub withholds `bypass_actors` unless the caller has ruleset write access, so an omitted
+bypass list is unknown rather than evidence that no bypass exists. The direct per-ref Check Runs
+endpoint considers only the 1,000 most recent Check Suites; use separate suite enumeration beyond
+that bound or mark collection incomplete.
+
+### 1. Live merge-proof trial
+
+Run the dedicated App first on a sacrificial organization with a ruleset pinned to its
+`integration_id`, then in shadow mode on at least five consenting repositories. Use real Copilot and
+CodeRabbit evidence where available and preserve the complete event, evidence, policy-generation,
+candidate, override, Check, and repair ledger. Exercise at least 80 cases: push during review,
+force-push, retarget, close/reopen, duplicated and reordered delivery, POST response loss, wrong-App
+same-name check, path-filtered workflow, one- and multi-PR merge groups, reordering, eviction,
+destruction, base-only drift, and a semantic conflict.
+
+**Merge-proof gate:** zero successful states on a stale, incomplete, wrong-source, wrong-policy, or
+wrong-candidate input; zero uncovered merges when the Check is required; p95 convergence below 30
+seconds and p99 below 60 seconds after complete evidence; recovery from a missed delivery below five
+minutes at p99; and a measured reduction in at least one buyer metric without worse final-candidate
+coverage. Five pilots establish feasibility, not a population saving estimate.
 
 ### 2. Prospective correctness corpus
 
@@ -329,24 +414,25 @@ margin, the product fails.
 Measure the complete denominator:
 
 ```text
-eligible checkpoint drift
-  -> Check delivered
-  -> Check viewed
-  -> Resume opened
-  -> later human review submitted on current head
+repository connected
+  -> retrospective Audit completed with unknowns explicit
+  -> actionable finding acknowledged
+  -> non-blocking shadow proof active
+  -> administrator requests enforcement
+  -> verified final-candidate merge
 ```
 
-Also report checkpoint recovery rate, unknown/fail-closed rate, p50/p95 event-to-Check latency,
-analysis latency, network and storage use, reviewer override reasons, and 28-day repeat use among
-reviewers who encounter at least a second eligible event.
+Also report complete-audit rate, actionable finding rate, finding disposition, shadow-to-enforce
+conversion, unknown/fail-closed rate, p50/p95 event-to-Check latency, repair time, provider and CI
+invocations avoided, override reasons, and 28-day verified-merge retention.
 
 **Operational gate:** at least 95% of prospectively captured, complete-evidence events produce a
 Check within two minutes at p95; every failure remains visible and actionable. Do not count cases
 with missing prerequisites in that success denominator—report them separately.
 
-**Retention gate:** do not promote beyond design partners until reviewers voluntarily complete
-repeat Resume loops when another eligible event occurs. Freeze a numeric repeat-use threshold only
-after the first baseline cohort; changing it after inspecting outcomes invalidates the gate.
+**Retention gate:** do not promote beyond design partners until at least three of five repositories
+request enforcement after a two-week shadow period and continue producing verified merges in week
+four. Freeze any later threshold before its cohort begins.
 
 ### 5. Promotion and enforcement gate
 
@@ -356,7 +442,9 @@ are true:
 - the live Governor gate passes across at least five consenting workflows;
 - the integrity and human-value gates pass on the frozen protocol;
 - same-head base movement and merge-queue behavior have explicit, tested invalidation paths;
-- the gate is bound to a dedicated expected App source rather than a shared Actions identity;
+- the gate is bound to a dedicated expected App source rather than a shared Actions identity, while
+  provider semantics are validated separately;
+- at least two reviewer adapters feed one policy and every override retains actor and reason;
 - no unresolved factual misclassification is known;
 - event-time retention, deletion, encryption, and source-processing boundaries are documented;
 - a clean install reaches the first useful residue without a manually supplied SHA;
@@ -370,11 +458,14 @@ rather than widening claims.
 
 Safe external wording:
 
-> StrataDiff schedules review for a stable PR revision and verifies provider evidence against the
-> still-live base/head input. For reviewers with a declared closed input contract, it can also
-> compile an evidence-backed incremental payload; everything unsupported stays in review.
+> StrataDiff combines provenance-bound evidence from configured reviewers into one App-bound Check
+> for the current PR head or merge-group candidate. It fails closed on missing, stale, wrong-source,
+> contradictory, or unsupported evidence and exposes the exact reason for independent inspection.
 
-Do not claim current benchmark dispatch proxies are real savings, that CodeRabbit private context
-is cached, that a person read every carried byte, that carried code is behaviorally equivalent or
-safe, that an approval remains valid, that most PRs need the product, or that cost, reviewer time,
-and defect recall improve before prospective pilots supply those results.
+Do not claim that CodeRabbit currently approves stale heads, that GitHub accepts an earlier SHA or
+lacks expected-App binding, that absence from public Graphite documentation proves absence of a
+private capability, or that Copilot's public-preview bug is permanent. Do not claim current
+benchmark dispatch proxies are real savings, that a person read every carried byte, that carried
+code is behaviorally equivalent or safe, that a proof means “bug free,” that most PRs need the
+product, or that cost, reviewer time, and defect recall improve before prospective pilots supply
+those results.

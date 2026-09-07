@@ -1,26 +1,28 @@
 # StrataDiff
 
-**Do not pay to review a commit that will never merge. Do not merge a final commit that was never
-reviewed.**
+**One required Check that reports which configured review and CI evidence applies—and whether it
+still covers the code GitHub is about to merge.**
 
-StrataDiff is a proposed **Final-Head Review Governor** for GitHub. It sits in front of an existing
-AI, policy, or human review workflow and owns two jobs:
-
-1. **Dispatch:** supersede work for obsolete PR revisions, wait while a branch is still moving, and
-   launch one review for the latest eligible revision instead of one expensive run per push.
-2. **Final-head proof:** accept a merge signal only when trusted provider evidence is bound to the
-   PR's still-current immutable `(base SHA, head SHA)` pair. Waiting, stale, incomplete, or
-   `CHANGES_REQUESTED` evidence never becomes green.
+StrataDiff is a proposed **verifiable merge-proof control plane** for GitHub. It does not replace
+Copilot, CodeRabbit, Graphite AI, a policy bot, CI, or a human reviewer. It captures their observable
+evidence as versioned, content-addressed snapshots, binds each snapshot to exact PR-head inputs,
+evaluates one versioned policy, and publishes a dedicated GitHub App Check for the actual final
+candidate—including a merge queue's synthetic `merge_group` SHA.
 
 ```text
-PR updates -> supersede / wait -> existing reviewer -> verify exact review input -> required check -> merge
+reviewers + CI -> versioned evidence snapshots -> policy for PR head -> merge-group proof -> App-bound Check
 ```
 
-StrataDiff does not compete with reviewer models. Teams keep CodeRabbit or another reviewer; the
-Governor decides *when* it is worth running and proves *what exact PR revision* actually completed.
-Behind that gate, Review Cache can compile a signed `skip`, `residue`, `full`, or `blocked` input for
-reviewers that support incremental context. Review Resume is the local inspection and recovery UI
-for a person who wants to see why evidence carried or what still needs attention.
+The former primary pitch—“protect CodeRabbit from approving a stale head”—is a **No-Go**. CodeRabbit
+now [documents an exact-head approval check](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow),
+while GitHub already requires checks on the latest SHA and can bind a required check to one expected
+App source. That binding authenticates which App produced the required result; it does not establish
+what the App reviewed or whether its judgment is correct. The remaining product job is composition:
+reject missing, stale, wrong-source, overridden, or unroutable evidence across reviewers; explain the
+decision; and safely carry only independently verifiable facts from a PR head to a different merge
+candidate. Dispatch debouncing and Review Cache can reduce repeated work, while Review Resume
+remains the local inspection and recovery surface. Neither optimization is itself proof that a
+candidate is safe to merge.
 
 ## What has been measured
 
@@ -56,6 +58,25 @@ gates pass, the App is not production-ready.
 The latest immutable release is [`v0.4.1`](https://github.com/gcomfident-crypto/stratadiff/releases/tag/v0.4.1).
 It contains the earlier local Review Resume product; it does **not** contain the Governor or Review
 Cache described above.
+
+## Merge Readiness Audit
+
+The unreleased CLI can inspect current GitHub rulesets, required Check sources, recent exact PR
+heads, and the Actions workflows that produced those checks:
+
+```console
+stratadiff readiness-audit -R OWNER/REPOSITORY
+stratadiff readiness-audit -R OWNER/REPOSITORY --format json --snapshot-output snapshot.json
+stratadiff readiness-audit -R OWNER/REPOSITORY --fail-on-findings
+```
+
+The result is `action_required`, `no_observed_risk`, or `inconclusive`; incomplete or inaccessible
+policy surfaces never become a clean result. This is a bounded view of current configuration, not a
+proof of historical merge policy or code safety. Collection is read-only. GitHub's REST pull-list
+response includes PR title and body fields, so the report truthfully declares PR text as collected
+even though StrataDiff discards those fields and never serializes them into its snapshot or report.
+The same conservative disclosure covers Check output text, commit-status descriptions, and commit
+messages that GitHub may include in the wider REST responses used by this alpha collector.
 
 ## Review Resume: inspect the remaining delta
 
@@ -207,9 +228,14 @@ production safety rate or evidence that reviewers save time.
 
 The [ReviewTransition-30 tooling](tools/review-transition/README.md) now exposes resumable,
 remote-free Git materialization, independent oracle generation, and two-copy offline product
-replay. The 30-case provider observation is frozen, but no complete 30-case materialization,
-oracle, or replay artifact is checked in; partial engineering runs remain explicitly
-`not_evaluated` and are not benchmark completion evidence.
+replay. The first complete clean-release run materialized all 30 frozen real histories and produced
+two independently generated, byte-identical replay bundles: all 30 cases were deterministic and
+all 30 conformed to the independent oracle. Across 749 current change identities, the oracle found
+528 exact carries, 37 four-way replay carries, and 184 identities that still require review. The
+compact [evaluation record](benchmarks/review-transition-30/evaluation-v1.0.0.json) pins the clean
+binary and every input/output digest. The 5.9 GiB materialization, full oracle, and replay payloads
+are not checked in, so this is auditable run provenance rather than a self-contained reproducible
+bundle; it also does not establish human-priority accuracy or reviewer-time savings.
 
 ## Quick start
 

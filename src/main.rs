@@ -27,7 +27,7 @@ use stratadiff::github_check::{
 use stratadiff::github_ownership::{
     GITHUB_API_VERSION, GithubOwnershipApi, GithubOwnershipApiResponse, GithubOwnershipMediaType,
     MAX_GITHUB_OWNERSHIP_API_RESPONSE_BYTES, collect_github_ownership_snapshot,
-    write_github_ownership_snapshot,
+    current_utc_timestamp, write_github_ownership_snapshot,
 };
 use stratadiff::ledger::{
     GithubReviewLedger, GithubWebhookIngest, IngestOutcome, MAX_GITHUB_LEDGER_BYTES,
@@ -35,6 +35,13 @@ use stratadiff::ledger::{
 };
 use stratadiff::ownership::{
     GithubOwnershipSnapshot, MAX_OWNERSHIP_SNAPSHOT_BYTES, github_provider_hostname,
+};
+use stratadiff::readiness::{
+    AuditVerdict, evaluate_merge_readiness, render_merge_readiness_markdown,
+};
+use stratadiff::readiness_audit::{
+    GithubReadinessApi, GithubReadinessApiResponse, MAX_READINESS_API_RESPONSE_BYTES,
+    MergeReadinessCollection, collect_merge_readiness_snapshot,
 };
 use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
@@ -71,6 +78,7 @@ const THIRD_PARTY_NOTICES: &str = include_str!("../THIRD_PARTY_NOTICES.txt");
 const GITHUB_API_HEADER_BYTES: usize = 64 * 1024;
 const GITHUB_API_TIMEOUT: Duration = Duration::from_secs(30);
 const GITHUB_OWNERSHIP_TOTAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+const GITHUB_READINESS_TOTAL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 #[derive(Debug, Parser)]
 #[command(name = "stratadiff")]
@@ -83,6 +91,30 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Audit current branch rules, required-check sources, and sampled exact PR heads.
+    ReadinessAudit {
+        /// Canonical GitHub repository in OWNER/REPO form.
+        #[arg(short = 'R', long)]
+        repository: String,
+        /// GitHub or GitHub Enterprise Server hostname.
+        #[arg(long, default_value = "github.com")]
+        hostname: String,
+        /// Maximum recent open or merged pull requests to sample.
+        #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u8).range(1..=25))]
+        limit: u8,
+        /// Render a human-readable Markdown report or stable JSON.
+        #[arg(long, value_enum, default_value_t = ReadinessOutput::Markdown)]
+        format: ReadinessOutput,
+        /// Write the report to this path instead of stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Also retain the complete bounded GitHub observation snapshot as JSON.
+        #[arg(long)]
+        snapshot_output: Option<PathBuf>,
+        /// Exit unsuccessfully after writing the report when an actionable finding exists.
+        #[arg(long)]
+        fail_on_findings: bool,
+    },
     /// Find open pull requests where one reviewer's completed checkpoint has moved.
     Inbox(inbox::InboxArgs),
     /// Resume one reviewer's latest completed GitHub review from exact Git evidence.
@@ -546,6 +578,12 @@ enum ReviewOutput {
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
+enum ReadinessOutput {
+    Markdown,
+    Json,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
 enum GithubCheckpointOutput {
     Sha,
     Json,
@@ -618,6 +656,75 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::ReadinessAudit {
+            repository,
+            hostname,
+            limit,
+            format,
+            output,
+            snapshot_output,
+            fail_on_findings,
+        } => {
+            if let (Some(output), Some(snapshot_output)) = (&output, &snapshot_output) {
+                ensure!(
+                    output != snapshot_output,
+                    "report and snapshot output paths must differ"
+                );
+            }
+            let provider_url = format!("https://{hostname}");
+            let canonical_hostname = github_provider_hostname(&provider_url)?.to_owned();
+            let mut api = GhCliReadinessApi {
+                hostname: canonical_hostname,
+                started: Instant::now(),
+            };
+            let captured_at = current_utc_timestamp()?;
+            let snapshot = collect_merge_readiness_snapshot(
+                MergeReadinessCollection {
+                    provider_url: &provider_url,
+                    repository: &repository,
+                    captured_at: &captured_at,
+                    pull_request_limit: usize::from(limit),
+                },
+                &mut api,
+            )?;
+            if let Some(path) = snapshot_output {
+                let mut encoded = serde_json::to_vec_pretty(&snapshot)?;
+                encoded.push(b'\n');
+                std::fs::write(&path, encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+            }
+            let report = evaluate_merge_readiness(&snapshot)?;
+            let mut encoded = match (format, output.is_some()) {
+                (ReadinessOutput::Markdown, _) => {
+                    render_merge_readiness_markdown(&report).into_bytes()
+                }
+                (ReadinessOutput::Json, true) => serde_json::to_vec_pretty(&report)?,
+                (ReadinessOutput::Json, false) => serde_json::to_vec(&report)?,
+            };
+            if let Some(path) = output {
+                if !encoded.ends_with(b"\n") {
+                    encoded.push(b'\n');
+                }
+                std::fs::write(&path, &encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+            } else {
+                let mut stdout = std::io::stdout().lock();
+                match format {
+                    ReadinessOutput::Markdown => stdout.write_all(&encoded)?,
+                    ReadinessOutput::Json => {
+                        stdout.write_all(escape_terminal_unsafe_json(&encoded).as_bytes())?;
+                        stdout.write_all(b"\n")?;
+                    }
+                }
+            }
+            if fail_on_findings {
+                ensure!(
+                    report.summary.verdict != AuditVerdict::ActionRequired,
+                    "merge-readiness audit found {} actionable issue(s)",
+                    report.summary.findings
+                );
+            }
+        }
         Command::Inbox(args) => inbox::run(args)?,
         Command::Resume(args) => resume::run(args)?,
         Command::ValueReport(args) => value_funnel::run(args)?,
@@ -1461,6 +1568,159 @@ fn run(command: Command) -> Result<()> {
         }
     }
     Ok(())
+}
+
+struct GhCliReadinessApi {
+    hostname: String,
+    started: Instant,
+}
+
+impl GithubReadinessApi for GhCliReadinessApi {
+    fn get(&mut self, endpoint: &str) -> Result<GithubReadinessApiResponse> {
+        let remaining = GITHUB_READINESS_TOTAL_TIMEOUT
+            .checked_sub(self.started.elapsed())
+            .context("GitHub readiness collection exceeded its 10-minute deadline")?;
+        ensure!(
+            !remaining.is_zero(),
+            "GitHub readiness collection exceeded its 10-minute deadline"
+        );
+        let mut command = ProcessCommand::new("gh");
+        command
+            .arg("api")
+            .arg("--include")
+            .arg("--method")
+            .arg("GET")
+            .arg("--hostname")
+            .arg(&self.hostname)
+            .arg("--header")
+            .arg("Accept: application/vnd.github+json")
+            .arg("--header")
+            .arg(format!("X-GitHub-Api-Version: {GITHUB_API_VERSION}"))
+            .arg(endpoint)
+            .env_remove("GH_DEBUG")
+            .env_remove("DEBUG")
+            .env_remove("CLICOLOR")
+            .env_remove("CLICOLOR_FORCE")
+            .env_remove("FORCE_COLOR")
+            .env_remove("GH_FORCE_TTY")
+            .env("GH_PROMPT_DISABLED", "1")
+            .env("GH_PAGER", "cat")
+            .env("NO_COLOR", "1");
+        let output = run_bounded_process(
+            &mut command,
+            MAX_READINESS_API_RESPONSE_BYTES + GITHUB_API_HEADER_BYTES + 4,
+            64 * 1024,
+            remaining.min(GITHUB_API_TIMEOUT),
+            "gh api",
+            None,
+        )?;
+        let response = match parse_gh_readiness_included_response(&output.stdout, endpoint) {
+            Ok(response) => response,
+            Err(error) if !output.status.success() => bail!(
+                "gh api failed for {endpoint} with {}: {}; response parse error: {error:#}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim_end()
+            ),
+            Err(error) => return Err(error),
+        };
+        if !output.status.success() && successful_http_status(response.status) {
+            bail!(
+                "gh api failed for {endpoint} with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim_end()
+            );
+        }
+        Ok(response)
+    }
+}
+
+fn successful_http_status(status: u16) -> bool {
+    (200..300).contains(&status)
+}
+
+fn parse_gh_readiness_included_response(
+    included: &[u8],
+    endpoint: &str,
+) -> Result<GithubReadinessApiResponse> {
+    let (header_end, delimiter_len) = find_header_boundary(included)
+        .context("gh api --include response did not contain a header boundary")?;
+    ensure!(
+        header_end <= GITHUB_API_HEADER_BYTES,
+        "gh api response headers exceeded {GITHUB_API_HEADER_BYTES} bytes"
+    );
+    let body = included[header_end + delimiter_len..].to_vec();
+    ensure!(
+        body.len() <= MAX_READINESS_API_RESPONSE_BYTES,
+        "gh api response body bytes limit exceeded for {endpoint}: observed {}, limit {MAX_READINESS_API_RESPONSE_BYTES}",
+        body.len()
+    );
+    let headers = std::str::from_utf8(&included[..header_end])
+        .context("gh api response headers were not valid UTF-8")?;
+    let mut lines = headers.lines();
+    let status_line = lines
+        .next()
+        .context("gh api response status line is missing")?;
+    let mut status_parts = status_line.trim_end_matches('\r').split_ascii_whitespace();
+    let protocol = status_parts.next().unwrap_or_default();
+    let status = status_parts
+        .next()
+        .context("gh api response status is missing")?
+        .parse::<u16>()
+        .context("gh api response status is invalid")?;
+    ensure!(
+        protocol.starts_with("HTTP/") && (100..=599).contains(&status),
+        "gh api returned a malformed included status for {endpoint}: {status_line}"
+    );
+
+    let mut content_type = None;
+    let mut link_header = None;
+    let mut selected_api_version = None;
+    for line in lines {
+        let line = line.trim_end_matches('\r');
+        ensure!(
+            !line.is_empty() && !line.starts_with([' ', '\t']),
+            "gh api returned a malformed response header for {endpoint}"
+        );
+        let (name, value) = line
+            .split_once(':')
+            .context("gh api returned a malformed response header")?;
+        let value = value.trim();
+        if name.eq_ignore_ascii_case("content-type") {
+            ensure!(
+                content_type.replace(value).is_none(),
+                "gh api returned duplicate Content-Type headers for {endpoint}"
+            );
+        } else if name.eq_ignore_ascii_case("link") {
+            ensure!(
+                link_header.replace(value.to_owned()).is_none(),
+                "gh api returned duplicate Link headers for {endpoint}"
+            );
+        } else if name.eq_ignore_ascii_case("x-github-api-version-selected") {
+            ensure!(
+                selected_api_version.replace(value).is_none(),
+                "gh api returned duplicate X-GitHub-Api-Version-Selected headers for {endpoint}"
+            );
+        }
+    }
+    let content_type = content_type.context("gh api response is missing Content-Type")?;
+    ensure!(
+        content_type
+            .split(';')
+            .next()
+            .is_some_and(|value| value.trim().eq_ignore_ascii_case("application/json")),
+        "gh api returned unsupported Content-Type {content_type} for {endpoint}"
+    );
+    let selected_api_version =
+        selected_api_version.context("gh api response is missing X-GitHub-Api-Version-Selected")?;
+    ensure!(
+        selected_api_version == GITHUB_API_VERSION,
+        "gh api selected version {selected_api_version} for {endpoint}, expected {GITHUB_API_VERSION}"
+    );
+    Ok(GithubReadinessApiResponse {
+        status,
+        body,
+        link_header,
+    })
 }
 
 struct GhCliOwnershipApi {
