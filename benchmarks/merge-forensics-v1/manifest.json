@@ -1,0 +1,214 @@
+{
+  "acceptance_gates": {
+    "expected_metrics": {
+      "abstention_precision": {
+        "basis_points": 10000,
+        "denominator": 7,
+        "numerator": 7,
+        "status": "defined"
+      },
+      "abstention_recall": {
+        "basis_points": 10000,
+        "denominator": 7,
+        "numerator": 7,
+        "status": "defined"
+      },
+      "evidence_entailment": {
+        "basis_points": 10000,
+        "denominator": 14,
+        "numerator": 14,
+        "status": "defined"
+      },
+      "exact_case_rate": {
+        "basis_points": 10000,
+        "denominator": 12,
+        "numerator": 12,
+        "status": "defined"
+      },
+      "exact_target_accuracy": {
+        "basis_points": 10000,
+        "denominator": 10,
+        "numerator": 10,
+        "status": "defined"
+      },
+      "false_checks_clear_rate": {
+        "basis_points": 0,
+        "denominator": 10,
+        "numerator": 0,
+        "status": "defined"
+      },
+      "false_confident_rate": {
+        "basis_points": 0,
+        "denominator": 3,
+        "numerator": 0,
+        "status": "defined"
+      },
+      "forbidden_action_rate": {
+        "basis_points": 0,
+        "denominator": 12,
+        "numerator": 0,
+        "status": "defined"
+      },
+      "required_evidence_recall": {
+        "basis_points": 10000,
+        "denominator": 14,
+        "numerator": 14,
+        "status": "defined"
+      },
+      "requirement_accuracy": {
+        "basis_points": 10000,
+        "denominator": 10,
+        "numerator": 10,
+        "status": "defined"
+      },
+      "retry_precision": {
+        "basis_points": 10000,
+        "denominator": 2,
+        "numerator": 2,
+        "status": "defined"
+      },
+      "retry_recall": {
+        "basis_points": 10000,
+        "denominator": 2,
+        "numerator": 2,
+        "status": "defined"
+      },
+      "selective_accuracy": {
+        "basis_points": 10000,
+        "denominator": 3,
+        "numerator": 3,
+        "status": "defined"
+      },
+      "selective_coverage": {
+        "basis_points": 2500,
+        "denominator": 12,
+        "numerator": 3,
+        "status": "defined"
+      }
+    },
+    "minimum_cases": 12
+  },
+  "assets": {
+    "baseline-predictions.json": {
+      "bytes": 16250,
+      "path": "baseline-predictions.json",
+      "sha256": "194ae21321760dd652414ac8f48b59b229bf871d1ddc0ca608245cf24c64f85a"
+    },
+    "cases.json": {
+      "bytes": 857,
+      "path": "cases.json",
+      "sha256": "6f4035c48c3667b9374cef5aaf9270423189fc816c60f59e3aea7f4018983b1f"
+    },
+    "oracle.json": {
+      "bytes": 24282,
+      "path": "oracle.json",
+      "sha256": "042fed134d389bc63cb0210e6ad4f1d306f79f7f0d813c4c6447e50313426d52"
+    },
+    "transcripts.json": {
+      "bytes": 217486,
+      "path": "transcripts.json",
+      "sha256": "d4867b4826a63fdffca3b50b46d9e25919c55494be3c1dd6522d99a6c7738dc3"
+    }
+  },
+  "claim_boundary": {
+    "controlled_collector_report_replay_supported": true,
+    "end_to_end_gh_cli_transport_supported": false,
+    "failure_prevalence_supported": false,
+    "live_api_currentness_supported": false,
+    "market_demand_supported": false,
+    "merge_safety_supported": false,
+    "production_accuracy_supported": false
+  },
+  "coverage": {
+    "requirement_statuses": [
+      "missing",
+      "source_mismatch"
+    ],
+    "scenario_categories": [
+      "candidate_drift",
+      "complete_unique_producer",
+      "default_branch_only_definition",
+      "dynamic_matrix",
+      "exact_job_link_mismatch",
+      "expected_app_mismatch",
+      "inventory_cap",
+      "merge_group_run_control",
+      "producer_drift",
+      "provider_unknown",
+      "reusable_workflow",
+      "second_static_producer"
+    ]
+  },
+  "dataset_license": "MIT",
+  "dataset_version": "1.0.0",
+  "designation": "controlled_raw_provider_replay",
+  "name": "MergeForensicsBench v1",
+  "provenance": [
+    {
+      "id": "actions-setup-node-1107",
+      "kind": "public_incident",
+      "url": "https://github.com/actions/setup-node/issues/1107"
+    },
+    {
+      "id": "cargo-dist-1069",
+      "kind": "public_incident",
+      "url": "https://github.com/axodotdev/cargo-dist/issues/1069"
+    },
+    {
+      "id": "comfy-desktop-1483",
+      "kind": "public_incident",
+      "url": "https://github.com/Comfy-Org/desktop/issues/1483"
+    },
+    {
+      "id": "danger-js-1427",
+      "kind": "public_incident",
+      "url": "https://github.com/danger/danger-js/issues/1427"
+    },
+    {
+      "id": "github-actions-merge-group-docs",
+      "kind": "official_documentation",
+      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#merge_group"
+    },
+    {
+      "id": "github-actions-runs-rest-docs",
+      "kind": "official_documentation",
+      "url": "https://docs.github.com/en/rest/actions/workflow-runs#list-workflow-runs-for-a-repository"
+    },
+    {
+      "id": "github-checks-rest-docs",
+      "kind": "official_documentation",
+      "url": "https://docs.github.com/en/rest/checks/runs#list-check-runs-for-a-git-reference"
+    },
+    {
+      "id": "github-contents-rest-docs",
+      "kind": "official_documentation",
+      "url": "https://docs.github.com/en/rest/repos/contents#get-repository-content"
+    },
+    {
+      "id": "github-merge-queue-docs",
+      "kind": "official_documentation",
+      "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue"
+    },
+    {
+      "id": "github-required-checks-docs",
+      "kind": "official_documentation",
+      "url": "https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches"
+    },
+    {
+      "id": "opamp-go-320",
+      "kind": "public_incident",
+      "url": "https://github.com/open-telemetry/opamp-go/issues/320"
+    },
+    {
+      "id": "openml-python-1573",
+      "kind": "public_incident",
+      "url": "https://github.com/openml/openml-python/issues/1573"
+    },
+    {
+      "id": "prow-915",
+      "kind": "public_incident",
+      "url": "https://github.com/kubernetes/test-infra/issues/915"
+    }
+  ],
+  "schema": "stratadiff-merge-forensics-manifest-v1"
+}

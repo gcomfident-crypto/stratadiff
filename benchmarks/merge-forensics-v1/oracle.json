@@ -1,0 +1,833 @@
+{
+  "cases": {
+    "c001": {
+      "expected": {
+        "action_code": "add_merge_group_trigger",
+        "allowed_action_codes": [
+          "add_merge_group_trigger",
+          "complete_collection"
+        ],
+        "cause_code": "merge_group_trigger_missing",
+        "confidence": "certain",
+        "disposition": "diagnose",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          },
+          {
+            "kind": "diagnosis_evidence",
+            "value": "target:merge_group"
+          },
+          {
+            "kind": "diagnosis_evidence",
+            "value": "workflow:.github/workflows/ci.yml"
+          },
+          {
+            "kind": "diagnosis_evidence",
+            "value": "trigger:merge_group_absent"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "merge_group_trigger_missing",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "identifiable",
+        "cause": "identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c002": {
+      "expected": {
+        "action_code": "none",
+        "allowed_action_codes": [
+          "complete_collection",
+          "none"
+        ],
+        "cause_code": "none",
+        "confidence": "certain",
+        "disposition": "no_cause",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          },
+          {
+            "kind": "diagnosis_evidence",
+            "value": "target:merge_group"
+          },
+          {
+            "kind": "diagnosis_evidence",
+            "value": "trigger:merge_group_checks_requested"
+          },
+          {
+            "kind": "diagnosis_evidence",
+            "value": "run:queued"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "none",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "identifiable",
+        "cause": "identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c003": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "merge_group_trigger_missing"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "merge_group_trigger_missing",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c004": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "merge_group_trigger_missing"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "merge_group_trigger_missing",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c005": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "merge_group_trigger_missing"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "merge_group_trigger_missing",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c006": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "merge_group_trigger_missing"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "merge_group_trigger_missing",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c007": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "merge_group_trigger_missing"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "merge_group_trigger_missing",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c008": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "retry",
+        "error_kind": "target_drift",
+        "required_evidence": [],
+        "verdict_allowlist": []
+      },
+      "forbidden": {
+        "action_codes": [
+          "add_merge_group_trigger",
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "candidate_rebuilt"
+        ],
+        "verdicts": [
+          "checks_clear",
+          "checks_blocked"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "candidate_rebuilt",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "ffffffffffffffffffffffffffffffffffffffff"
+        }
+      },
+      "identifiability": {
+        "action": "retry_required",
+        "cause": "retry_required",
+        "requirement": "retry_required",
+        "target": "retry_required"
+      }
+    },
+    "c009": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "retry",
+        "error_kind": "producer_drift",
+        "required_evidence": [],
+        "verdict_allowlist": []
+      },
+      "forbidden": {
+        "action_codes": [
+          "add_merge_group_trigger",
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "producer_evidence_drift"
+        ],
+        "verdicts": [
+          "checks_clear",
+          "checks_blocked"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "producer_evidence_drift",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "retry_required",
+        "cause": "retry_required",
+        "requirement": "retry_required",
+        "target": "retry_required"
+      }
+    },
+    "c010": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": "required_check_source_mismatch",
+        "confidence": null,
+        "disposition": "diagnose",
+        "required_evidence": [
+          {
+            "app_id": 99999,
+            "context": "ci",
+            "id": "401",
+            "kind": "check_run",
+            "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "required_check_source_mismatch",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "source_mismatch"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "identifiable",
+        "cause": "identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c011": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "check_name": "ci",
+            "check_run_id": 501,
+            "check_suite_id": 601,
+            "kind": "producer_binding",
+            "source_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "workflow_id": 901,
+            "workflow_job_id": 801,
+            "workflow_path": ".github/workflows/ci.yml",
+            "workflow_run_id": 701,
+            "workflow_run_path": ".github/workflows/ci.yml@refs/pull/17/merge"
+          }
+        ],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "workflow_definition_absent_from_candidate"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "workflow_definition_absent_from_candidate",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 15368,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    },
+    "c012": {
+      "expected": {
+        "action_code": null,
+        "allowed_action_codes": [
+          "complete_collection"
+        ],
+        "cause_code": null,
+        "confidence": null,
+        "disposition": "abstain",
+        "required_evidence": [],
+        "verdict_allowlist": [
+          "inconclusive"
+        ]
+      },
+      "forbidden": {
+        "action_codes": [
+          "enable_workflow",
+          "replace_or_ungate_unsupported_provider",
+          "synchronize_required_context"
+        ],
+        "cause_codes": [
+          "provider_internal_failure"
+        ],
+        "verdicts": [
+          "checks_clear"
+        ]
+      },
+      "ground_truth": {
+        "cause_code": "provider_internal_failure",
+        "requirement": {
+          "context": "ci",
+          "expected_app_id": 4242,
+          "policies": [
+            {
+              "id": "70",
+              "kind": "ruleset",
+              "name": "ruleset 70",
+              "url": "https://github.com/acme/merge-lab/rules/70"
+            }
+          ],
+          "status": "missing"
+        },
+        "target": {
+          "base_sha": "dddddddddddddddddddddddddddddddddddddddd",
+          "kind": "merge_group",
+          "queue_entry_id": "MQE_merge_forensics_17",
+          "queue_state": "awaiting_checks",
+          "resolution": "provisional",
+          "sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      },
+      "identifiability": {
+        "action": "not_identifiable",
+        "cause": "not_identifiable",
+        "requirement": "identifiable",
+        "target": "identifiable"
+      }
+    }
+  },
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-merge-forensics-oracle-v1"
+}

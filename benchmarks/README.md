@@ -1,5 +1,18 @@
 # Benchmark artifacts
 
+## Merge Forensics v1
+
+[`merge-forensics-v1/`](merge-forensics-v1/) replays twelve opaque, strictly ordered raw GitHub
+REST/GraphQL transcripts through the production Pull Request Doctor collector and evaluator. It
+separates provider observations from the oracle and scores exact-target selection, required-check
+status, selective cause accuracy, abstention and retry behavior, evidence entailment, false-clear
+risk, and forbidden repair actions. The cases pair decisive controls with incomplete, ambiguous,
+wrong-source, and drifting evidence.
+
+This controlled corpus exercises the collector/report path and detects false confidence. It does
+not measure incident prevalence, live API compatibility, developer time saved, adoption, or
+product-market fit.
+
 ## Pull Request Candidate v1
 
 [`pull-request-candidate-v1/`](pull-request-candidate-v1/) is a deterministic ten-case corpus for

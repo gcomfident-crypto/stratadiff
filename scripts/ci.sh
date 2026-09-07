@@ -60,6 +60,10 @@ python3 -B benchmarks/doctor-workflow-trigger-v1/verify.py verify
 python3 -B benchmarks/doctor-workflow-trigger-v1/verify.py self-test
 (cd benchmarks/doctor-workflow-trigger-v1 && sha256sum -c SHA256SUMS)
 cargo test --test doctor_workflow --locked
+python3 -B benchmarks/merge-forensics-v1/verify.py verify
+python3 -B benchmarks/merge-forensics-v1/verify.py self-test
+(cd benchmarks/merge-forensics-v1 && sha256sum -c SHA256SUMS)
+cargo test --test merge_forensics_v1 --locked
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

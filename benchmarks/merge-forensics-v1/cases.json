@@ -1,0 +1,54 @@
+{
+  "cases": [
+    {
+      "id": "c001",
+      "transcript_id": "t001"
+    },
+    {
+      "id": "c002",
+      "transcript_id": "t002"
+    },
+    {
+      "id": "c003",
+      "transcript_id": "t003"
+    },
+    {
+      "id": "c004",
+      "transcript_id": "t004"
+    },
+    {
+      "id": "c005",
+      "transcript_id": "t005"
+    },
+    {
+      "id": "c006",
+      "transcript_id": "t006"
+    },
+    {
+      "id": "c007",
+      "transcript_id": "t007"
+    },
+    {
+      "id": "c008",
+      "transcript_id": "t008"
+    },
+    {
+      "id": "c009",
+      "transcript_id": "t009"
+    },
+    {
+      "id": "c010",
+      "transcript_id": "t010"
+    },
+    {
+      "id": "c011",
+      "transcript_id": "t011"
+    },
+    {
+      "id": "c012",
+      "transcript_id": "t012"
+    }
+  ],
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-merge-forensics-cases-v1"
+}
