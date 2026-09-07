@@ -9,6 +9,7 @@ import {
   HEAD_B,
   createStore,
   deliver,
+  deliverRaw,
   issueCommentPayload,
   mergeGroupPayload,
   pullPayload,
@@ -366,18 +367,280 @@ describe("transactional webhook projection", () => {
       new Date("2026-09-07T13:00:02.000Z"),
       30,
     );
-    expect(evaluationLease).not.toBeNull();
-    expect(
-      await store.commitPairGate(
-        evaluationLease!,
-        decision.state,
-        decision.summary,
-        new Date("2026-09-07T13:00:03.000Z"),
-      ),
-    ).toBe(true);
+    expect(evaluationLease).toBeNull();
     expect(await store.findActiveGate(99, "pull_request", "pr:6")).toMatchObject({
       desiredState: "failure",
+      quarantined: true,
     });
+  });
+
+  it("persists an unscoped signed delivery and quarantines every active gate", async () => {
+    const { store, service, pool } = await harness();
+    await deliver(
+      service,
+      "global-pr-one",
+      "pull_request",
+      pullPayload({
+        number: 8,
+        baseSha: BASE_A,
+        headSha: HEAD_A,
+        updatedAt: "2026-09-07T12:00:00.000Z",
+      }),
+    );
+    const secondPayload = pullPayload({
+      number: 9,
+      baseSha: BASE_B,
+      headSha: HEAD_B,
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    });
+    secondPayload["repository"] = {
+      id: 100,
+      name: "other",
+      full_name: "elsewhere/other",
+      owner: { login: "elsewhere" },
+    };
+    await deliver(service, "global-pr-two", "pull_request", secondPayload);
+    const mergePayload = mergeGroupPayload("checks_requested", HEAD_B);
+    mergePayload["repository"] = {
+      id: 100,
+      name: "other",
+      full_name: "elsewhere/other",
+      owner: { login: "elsewhere" },
+    };
+    await deliver(service, "global-merge", "merge_group", mergePayload);
+
+    const firstGate = await store.findActiveGate(99, "pull_request", "pr:8");
+    const secondGate = await store.findActiveGate(100, "pull_request", "pr:9");
+    const mergeGate = await store.findActiveGate(
+      100,
+      "merge_group",
+      "merge-group:refs/heads/gh-readonly-queue/main/pr-1-deadbeef",
+    );
+    await commitCoveredGate(store, firstGate!.pairId!, firstGate!.epoch, "covered-worker");
+    const coveredGate = await store.getGateSubject(firstGate!.id);
+    const stalePublicationLease = await store.acquireGateLease(
+      coveredGate!.id,
+      coveredGate!.epoch,
+      coveredGate!.revision,
+      "pre-quarantine-publisher",
+      new Date("2026-09-07T13:00:00.000Z"),
+      30,
+    );
+    expect(stalePublicationLease).not.toBeNull();
+    const staleLease = await store.acquirePairLease(
+      secondGate!.pairId!,
+      secondGate!.epoch,
+      "pre-quarantine-worker",
+      new Date("2026-09-07T13:00:00.000Z"),
+      30,
+    );
+    expect(staleLease).not.toBeNull();
+
+    const invalidBody = Buffer.from("{not-json");
+    const result = await deliverRaw(service, "global-invalid-json", "pull_request", invalidBody);
+    expect(result).toMatchObject({ duplicate: false, disposition: "applied" });
+    expect(new Set(result.touchedSubjects)).toEqual(
+      new Set([firstGate!.id, secondGate!.id, mergeGate!.id]),
+    );
+
+    expect(await store.findActiveGate(99, "pull_request", "pr:8")).toMatchObject({
+      desiredState: "failure",
+      quarantined: true,
+      quarantineDeliveryId: "global-invalid-json",
+    });
+    expect(await store.findActiveGate(100, "pull_request", "pr:9")).toMatchObject({
+      desiredState: "failure",
+      quarantined: true,
+    });
+    expect(
+      await store.findActiveGate(
+        100,
+        "merge_group",
+        "merge-group:refs/heads/gh-readonly-queue/main/pr-1-deadbeef",
+      ),
+    ).toMatchObject({ desiredState: "failure", quarantined: true });
+    expect(await store.loadPairSnapshot(firstGate!.pairId!, firstGate!.epoch)).toMatchObject({
+      quarantined: true,
+      quarantineDeliveryId: "global-invalid-json",
+      dispatch: { state: "abandoned", evidenceDeadlineAt: null },
+    });
+    expect(await store.loadPairSnapshot(secondGate!.pairId!, secondGate!.epoch)).toMatchObject({
+      quarantined: true,
+      dispatch: null,
+    });
+    expect(
+      await store.commitPairGate(
+        staleLease!,
+        "success",
+        "stale success",
+        new Date("2026-09-07T13:00:01.000Z"),
+      ),
+    ).toBe(false);
+    expect(
+      await store.acquirePairLease(
+        secondGate!.pairId!,
+        secondGate!.epoch,
+        "future-worker",
+        new Date("2026-09-07T13:00:01.000Z"),
+        30,
+      ),
+    ).toBeNull();
+    expect(
+      await store.authorizeSuccessPublication(
+        stalePublicationLease!,
+        null,
+        new Date("2026-09-07T13:00:01.000Z"),
+      ),
+    ).toBe("stale");
+    expect(
+      await store.commitGatePublication(
+        stalePublicationLease!,
+        12_345,
+        "success",
+        new Date("2026-09-07T13:00:01.000Z"),
+      ),
+    ).toBe(false);
+
+    const client = await pool.connect();
+    try {
+      const delivery = await client.query(
+        `SELECT scope, error_code, installation_id, repository_id
+           FROM webhook_delivery WHERE delivery_id = $1`,
+        ["global-invalid-json"],
+      );
+      expect(delivery.rows[0]).toMatchObject({
+        scope: "global",
+        error_code: "invalid_json",
+        installation_id: null,
+        repository_id: null,
+      });
+    } finally {
+      client.release();
+    }
+
+    const revision = (await store.findActiveGate(99, "pull_request", "pr:8"))!.revision;
+    expect(await deliverRaw(service, "global-invalid-json", "pull_request", invalidBody)).toMatchObject({
+      duplicate: true,
+      disposition: "applied",
+    });
+    expect((await store.findActiveGate(99, "pull_request", "pr:8"))!.revision).toBe(revision);
+
+    const laterComment = issueCommentPayload({ number: 9, action: "created" });
+    laterComment["repository"] = secondPayload["repository"]!;
+    expect(await deliver(service, "post-quarantine-evidence", "issue_comment", laterComment)).toMatchObject({
+      disposition: "stale",
+    });
+    await store.reconcileOpenPullRequests(
+      {
+        installationId: 71,
+        repositoryId: 100,
+        fullName: "elsewhere/other",
+        owner: "elsewhere",
+        name: "other",
+      },
+      [
+        {
+          number: 9,
+          baseSha: BASE_B,
+          headSha: HEAD_B,
+          state: "open",
+          merged: false,
+          draft: false,
+          sourceUpdatedAt: new Date("2026-09-07T12:05:00.000Z"),
+        },
+      ],
+      "global-invalid-json",
+      new Date("2026-09-07T13:00:02.000Z"),
+    );
+    expect(await store.findActiveGate(100, "pull_request", "pr:9")).toMatchObject({
+      desiredState: "failure",
+      quarantined: true,
+    });
+
+    expect(
+      await deliver(
+        service,
+        "post-quarantine-new-head",
+        "pull_request",
+        {
+          ...pullPayload({
+            number: 9,
+            baseSha: BASE_B,
+            headSha: HEAD_A,
+            updatedAt: "2026-09-07T12:06:00.000Z",
+          }),
+          repository: secondPayload["repository"],
+        },
+      ),
+    ).toMatchObject({ disposition: "applied" });
+    expect(await store.findActiveGate(100, "pull_request", "pr:9")).toMatchObject({
+      headSha: HEAD_A,
+      epoch: 2,
+      desiredState: "revoked",
+      quarantined: false,
+      quarantineDeliveryId: null,
+    });
+    expect(await store.getGateSubject(secondGate!.id)).toMatchObject({
+      active: false,
+      desiredState: "failure",
+      quarantined: true,
+    });
+  });
+
+  it("globally quarantines malformed repository envelopes and delivery collisions", async () => {
+    const { store, service, pool } = await harness();
+    const original = pullPayload({
+      number: 10,
+      baseSha: BASE_A,
+      headSha: HEAD_A,
+      updatedAt: "2026-09-07T12:00:00.000Z",
+    });
+    await deliver(service, "collision-delivery", "pull_request", original);
+    const gate = await store.findActiveGate(99, "pull_request", "pr:10");
+
+    const malformedRepository = Buffer.from(
+      JSON.stringify({ action: "synchronize", installation: { id: 71 }, repository: { id: "bad" } }),
+    );
+    expect(
+      await deliverRaw(service, "bad-repository", "pull_request", malformedRepository),
+    ).toMatchObject({ duplicate: false, disposition: "applied" });
+    expect(await store.findActiveGate(99, "pull_request", "pr:10")).toMatchObject({
+      desiredState: "failure",
+      quarantined: true,
+    });
+
+    const collisionBody = Buffer.from("{different-signed-body");
+    expect(
+      await deliverRaw(service, "collision-delivery", "pull_request", collisionBody),
+    ).toMatchObject({ duplicate: false, disposition: "applied" });
+    const afterCollision = await store.getGateSubject(gate!.id);
+    expect(afterCollision).toMatchObject({ desiredState: "failure", quarantined: true });
+    const collisionRevision = afterCollision!.revision;
+    expect(
+      await deliverRaw(service, "collision-delivery", "pull_request", collisionBody),
+    ).toMatchObject({ duplicate: true, disposition: "applied" });
+    expect((await store.getGateSubject(gate!.id))!.revision).toBe(collisionRevision);
+
+    const client = await pool.connect();
+    try {
+      const badRepositoryDelivery = await client.query(
+        `SELECT scope, error_code FROM webhook_delivery WHERE delivery_id = $1`,
+        ["bad-repository"],
+      );
+      expect(badRepositoryDelivery.rows[0]).toMatchObject({
+        scope: "global",
+        error_code: "invalid_repository_envelope",
+      });
+      const collision = await client.query(
+        `SELECT event_name, payload_sha256
+           FROM webhook_delivery_collision WHERE delivery_id = $1`,
+        ["collision-delivery"],
+      );
+      expect(collision.rowCount).toBe(1);
+      expect(collision.rows[0]?.event_name).toBe("pull_request");
+    } finally {
+      client.release();
+    }
   });
 
   it("persists a dispatch plan and adopts its comment after a webhook advances the fence", async () => {

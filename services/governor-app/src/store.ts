@@ -9,6 +9,7 @@ import type {
   GateState,
   GateSubject,
   GithubImpact,
+  IngestDisposition,
   IngestRequest,
   IngestResult,
   JsonObject,
@@ -19,6 +20,7 @@ import type {
   PairSnapshot,
   PullPairRef,
   RepositoryRef,
+  UnscopedQuarantineRequest,
 } from "./types.js";
 
 interface DatabaseClient {
@@ -45,6 +47,8 @@ interface PairRow extends QueryResultRow {
   epoch: string;
   fence: string;
   active: boolean;
+  quarantined: boolean;
+  quarantine_delivery_id: string | null;
   draft: boolean;
   pull_state: "open" | "closed";
   source_updated_at: Date;
@@ -64,6 +68,8 @@ interface GateRow extends QueryResultRow {
   head_sha: string;
   base_sha: string;
   active: boolean;
+  quarantined: boolean;
+  quarantine_delivery_id: string | null;
   desired_state: GateState;
   desired_summary: string;
   check_run_id: string | null;
@@ -80,7 +86,9 @@ interface CountRow extends QueryResultRow {
 }
 
 interface DeliveryRow extends QueryResultRow {
+  event_name: string;
   payload_sha256: string;
+  disposition: "processing" | IngestDisposition;
 }
 
 interface LeaseRow extends QueryResultRow {
@@ -122,8 +130,26 @@ interface EvidenceRow extends QueryResultRow {
   facts: JsonObject;
 }
 
+interface DeliveryEnvelope {
+  deliveryId: string;
+  eventName: string;
+  payloadSha256: string;
+  receivedAt: Date;
+  repository: RepositoryRef | null;
+  errorCode: UnscopedQuarantineRequest["errorCode"] | null;
+}
+
+type DeliveryClaim =
+  | { kind: "new" }
+  | { kind: "duplicate"; disposition: IngestDisposition }
+  | { kind: "collision" }
+  | { kind: "duplicate_collision" };
+
 export interface GovernorStore {
   ingest(request: IngestRequest): Promise<IngestResult>;
+  quarantineUnscopedSignedDelivery(
+    request: UnscopedQuarantineRequest,
+  ): Promise<IngestResult>;
 }
 
 function int(value: string | number): number {
@@ -141,6 +167,8 @@ function advisoryKey(repositoryId: number, subjectType: string, subjectKey: stri
   return digest.readBigInt64BE().toString();
 }
 
+const GLOBAL_INGEST_LOCK = advisoryKey(0, "global", "signed-webhook-ingest");
+
 function gateFromRow(row: GateRow): GateSubject {
   return {
     id: row.id,
@@ -155,6 +183,8 @@ function gateFromRow(row: GateRow): GateSubject {
     headSha: row.head_sha,
     baseSha: row.base_sha,
     active: row.active,
+    quarantined: row.quarantined,
+    quarantineDeliveryId: row.quarantine_delivery_id,
     desiredState: row.desired_state,
     desiredSummary: row.desired_summary,
     checkRunId: row.check_run_id === null ? null : int(row.check_run_id),
@@ -188,41 +218,24 @@ export class PgGovernorStore implements GovernorStore {
 
   async ingest(request: IngestRequest): Promise<IngestResult> {
     return this.#transaction(async (client) => {
-      const existing = await client.query<DeliveryRow>(
-        "SELECT payload_sha256 FROM webhook_delivery WHERE delivery_id = $1",
-        [request.deliveryId],
-      );
-      if (existing.rowCount !== 0) {
-        if (existing.rows[0]?.payload_sha256 !== request.payloadSha256) {
-          throw new Error("delivery ID was reused with a different payload");
-        }
-        return { duplicate: true, disposition: "ignored", touchedSubjects: [] };
+      await this.#lockGlobalIngest(client);
+      const claim = await this.#claimDelivery(client, {
+        deliveryId: request.deliveryId,
+        eventName: request.eventName,
+        payloadSha256: request.payloadSha256,
+        receivedAt: request.receivedAt,
+        repository: request.impact.repository,
+        errorCode: null,
+      });
+      if (claim.kind === "duplicate") {
+        return { duplicate: true, disposition: claim.disposition, touchedSubjects: [] };
       }
-      const inserted = await client.query(
-        `INSERT INTO webhook_delivery (
-           delivery_id, event_name, installation_id, repository_id,
-           payload_sha256, received_at
-         ) VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (delivery_id) DO NOTHING
-         RETURNING delivery_id`,
-        [
-          request.deliveryId,
-          request.eventName,
-          request.impact.repository.installationId,
-          request.impact.repository.repositoryId,
-          request.payloadSha256,
-          request.receivedAt,
-        ],
-      );
-      if (inserted.rowCount === 0) {
-        const raced = await client.query<DeliveryRow>(
-          "SELECT payload_sha256 FROM webhook_delivery WHERE delivery_id = $1",
-          [request.deliveryId],
-        );
-        if (raced.rows[0]?.payload_sha256 !== request.payloadSha256) {
-          throw new Error("delivery ID was reused with a different payload");
-        }
-        return { duplicate: true, disposition: "ignored", touchedSubjects: [] };
+      if (claim.kind === "duplicate_collision") {
+        return { duplicate: true, disposition: "applied", touchedSubjects: [] };
+      }
+      if (claim.kind === "collision") {
+        const outcome = await this.#quarantineAll(client, request);
+        return { duplicate: false, ...outcome };
       }
 
       const outcome = await this.#applyImpact(client, request);
@@ -234,6 +247,92 @@ export class PgGovernorStore implements GovernorStore {
       );
       return { duplicate: false, ...outcome };
     });
+  }
+
+  async quarantineUnscopedSignedDelivery(
+    request: UnscopedQuarantineRequest,
+  ): Promise<IngestResult> {
+    return this.#transaction(async (client) => {
+      await this.#lockGlobalIngest(client);
+      const claim = await this.#claimDelivery(client, {
+        ...request,
+        repository: null,
+      });
+      if (claim.kind === "duplicate") {
+        return { duplicate: true, disposition: claim.disposition, touchedSubjects: [] };
+      }
+      if (claim.kind === "duplicate_collision") {
+        return { duplicate: true, disposition: "applied", touchedSubjects: [] };
+      }
+      const outcome = await this.#quarantineAll(client, request);
+      if (claim.kind === "new") {
+        await client.query(
+          `UPDATE webhook_delivery
+              SET processed_at = $2, disposition = 'applied'
+            WHERE delivery_id = $1`,
+          [request.deliveryId, request.receivedAt],
+        );
+      }
+      return { duplicate: false, ...outcome };
+    });
+  }
+
+  async #lockGlobalIngest(client: DatabaseClient): Promise<void> {
+    await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [GLOBAL_INGEST_LOCK]);
+  }
+
+  async #claimDelivery(
+    client: DatabaseClient,
+    request: DeliveryEnvelope,
+  ): Promise<DeliveryClaim> {
+    const existing = await client.query<DeliveryRow>(
+      `SELECT event_name, payload_sha256, disposition
+         FROM webhook_delivery
+        WHERE delivery_id = $1
+        FOR UPDATE`,
+      [request.deliveryId],
+    );
+    const row = existing.rows[0];
+    if (row !== undefined) {
+      if (row.event_name === request.eventName && row.payload_sha256 === request.payloadSha256) {
+        if (row.disposition === "processing") {
+          throw new Error("persisted webhook delivery is still processing");
+        }
+        return { kind: "duplicate", disposition: row.disposition };
+      }
+      const existingCollision = await client.query(
+        `SELECT delivery_id FROM webhook_delivery_collision
+          WHERE delivery_id = $1 AND event_name = $2 AND payload_sha256 = $3`,
+        [request.deliveryId, request.eventName, request.payloadSha256],
+      );
+      if (existingCollision.rowCount !== 0) {
+        return { kind: "duplicate_collision" };
+      }
+      await client.query(
+        `INSERT INTO webhook_delivery_collision (
+           delivery_id, event_name, payload_sha256, received_at
+         ) VALUES ($1, $2, $3, $4)`,
+        [request.deliveryId, request.eventName, request.payloadSha256, request.receivedAt],
+      );
+      return { kind: "collision" };
+    }
+    await client.query(
+      `INSERT INTO webhook_delivery (
+         delivery_id, event_name, installation_id, repository_id,
+         payload_sha256, received_at, scope, error_code
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        request.deliveryId,
+        request.eventName,
+        request.repository?.installationId ?? null,
+        request.repository?.repositoryId ?? null,
+        request.payloadSha256,
+        request.receivedAt,
+        request.repository === null ? "global" : "repository",
+        request.errorCode,
+      ],
+    );
+    return { kind: "new" };
   }
 
   async #applyImpact(
@@ -255,6 +354,64 @@ export class PgGovernorStore implements GovernorStore {
       case "ignored":
         return { disposition: "ignored", touchedSubjects: [] };
     }
+  }
+
+  async #quarantineAll(
+    client: DatabaseClient,
+    request: Pick<IngestRequest, "deliveryId" | "receivedAt">,
+  ): Promise<Omit<IngestResult, "duplicate">> {
+    const pairs = await client.query<PairRow>(
+      `SELECT * FROM pr_pair
+        WHERE active
+        ORDER BY repository_id, pull_number
+        FOR UPDATE`,
+    );
+    for (const pair of pairs.rows) {
+      await client.query(
+        `UPDATE pr_pair
+            SET quarantined = true, quarantine_delivery_id = $2,
+                fence = fence + 1, lease_owner = NULL, lease_expires_at = NULL,
+                last_delivery_id = $2, updated_at = $3
+          WHERE id = $1`,
+        [pair.id, request.deliveryId, request.receivedAt],
+      );
+      await client.query(
+        `UPDATE dispatch
+            SET state = 'abandoned', evidence_deadline_at = NULL, updated_at = $3
+          WHERE pair_id = $1 AND pair_epoch = $2 AND state <> 'abandoned'`,
+        [pair.id, int(pair.epoch), request.receivedAt],
+      );
+    }
+
+    const gates = await client.query<GateRow>(
+      `SELECT * FROM gate_subject
+        WHERE active
+        ORDER BY repository_id, subject_type, subject_key
+        FOR UPDATE`,
+    );
+    const touchedSubjects: string[] = [];
+    for (const current of gates.rows) {
+      const result = await client.query<GateRow>(
+        `UPDATE gate_subject
+            SET quarantined = true, quarantine_delivery_id = $2,
+                desired_state = 'failure',
+                desired_summary = 'An authenticated webhook could not be scoped; this gate is quarantined.',
+                revision = revision + 1, fence = fence + 1,
+                lease_owner = NULL, lease_expires_at = NULL,
+                last_delivery_id = $2, updated_at = $3
+          WHERE id = $1
+          RETURNING *`,
+        [current.id, request.deliveryId, request.receivedAt],
+      );
+      const row = result.rows[0];
+      if (row === undefined) {
+        throw new Error(`active gate subject disappeared during global quarantine: ${current.id}`);
+      }
+      const gate = gateFromRow(row);
+      await this.#enqueueGatePublication(client, gate, request.receivedAt);
+      touchedSubjects.push(gate.id);
+    }
+    return { disposition: "applied", touchedSubjects };
   }
 
   async #applyPullRequest(
@@ -322,6 +479,17 @@ export class PgGovernorStore implements GovernorStore {
           pair.state === "open",
         ],
       );
+      if (current.quarantined) {
+        const gate = await this.#revokeCurrentPairGate(
+          client,
+          current.id,
+          request,
+          "This review epoch remains quarantined after an unscoped authenticated webhook.",
+          pair.state === "open",
+          "failure",
+        );
+        return { disposition: "applied", touchedSubjects: [gate.id] };
+      }
       const gate = await this.#revokeCurrentPairGate(
         client,
         current.id,
@@ -404,7 +572,8 @@ export class PgGovernorStore implements GovernorStore {
             SET installation_id = $2, repository_full_name = $3, epoch = $4,
                 fence = fence + 1, lease_owner = NULL, lease_expires_at = NULL,
                 active = $5, draft = $6, pull_state = $7,
-                source_updated_at = $8, last_delivery_id = $9, updated_at = $10
+                source_updated_at = $8, last_delivery_id = $9, updated_at = $10,
+                quarantined = false, quarantine_delivery_id = NULL
           WHERE id = $1`,
         [
           pairId,
@@ -527,7 +696,11 @@ export class PgGovernorStore implements GovernorStore {
       [impact.repository.repositoryId, impact.pullNumber],
     );
     const pair = pairResult.rows[0];
-    if (pair === undefined || (impact.expectedHeadSha !== null && impact.expectedHeadSha !== pair.head_sha)) {
+    if (
+      pair === undefined ||
+      pair.quarantined ||
+      (impact.expectedHeadSha !== null && impact.expectedHeadSha !== pair.head_sha)
+    ) {
       return { disposition: "stale", touchedSubjects: [] };
     }
     const gate = await this.#invalidatePairForEvidence(client, pair, request);
@@ -543,7 +716,7 @@ export class PgGovernorStore implements GovernorStore {
   ): Promise<Omit<IngestResult, "duplicate">> {
     const pairs = await client.query<PairRow>(
       `SELECT * FROM pr_pair
-        WHERE repository_id = $1 AND head_sha = $2 AND active
+        WHERE repository_id = $1 AND head_sha = $2 AND active AND NOT quarantined
         ORDER BY pull_number
         FOR UPDATE`,
       [impact.repository.repositoryId, impact.headSha],
@@ -641,7 +814,8 @@ export class PgGovernorStore implements GovernorStore {
       if (malformed) {
         await client.query(
           `UPDATE pr_pair
-              SET fence = fence + 1, lease_owner = NULL, lease_expires_at = NULL,
+              SET quarantined = true, quarantine_delivery_id = $2,
+                  fence = fence + 1, lease_owner = NULL, lease_expires_at = NULL,
                   last_delivery_id = $2, updated_at = $3
             WHERE id = $1`,
           [pair.id, request.deliveryId, request.receivedAt],
@@ -652,6 +826,12 @@ export class PgGovernorStore implements GovernorStore {
             WHERE pair_id = $1 AND pair_epoch = $2 AND state <> 'abandoned'`,
           [pair.id, int(pair.epoch), request.receivedAt],
         );
+        await client.query(
+          `UPDATE gate_subject
+              SET quarantined = true, quarantine_delivery_id = $2
+            WHERE pair_id = $1 AND active`,
+          [pair.id, request.deliveryId],
+        );
         gate = await this.#revokeCurrentPairGate(
           client,
           pair.id,
@@ -660,6 +840,8 @@ export class PgGovernorStore implements GovernorStore {
           true,
           "failure",
         );
+      } else if (pair.quarantined) {
+        continue;
       } else {
         gate = await this.#invalidatePairForEvidence(client, pair, request);
       }
@@ -672,17 +854,23 @@ export class PgGovernorStore implements GovernorStore {
       [repository.repositoryId],
     );
     for (const mergeGroup of mergeGroups.rows) {
+      if (!malformed && mergeGroup.quarantined) {
+        continue;
+      }
       const result = await client.query<GateRow>(
         `UPDATE gate_subject
-            SET desired_state = $2,
-                desired_summary = $3,
+            SET quarantined = CASE WHEN $2::boolean THEN true ELSE quarantined END,
+                quarantine_delivery_id = CASE WHEN $2::boolean THEN $5 ELSE quarantine_delivery_id END,
+                desired_state = $3,
+                desired_summary = $4,
                 revision = revision + 1, fence = fence + 1,
                 lease_owner = NULL, lease_expires_at = NULL,
-                last_delivery_id = $4, updated_at = $5
+                last_delivery_id = $5, updated_at = $6
           WHERE id = $1
           RETURNING *`,
         [
           mergeGroup.id,
+          malformed,
           malformed ? "failure" : "revoked",
           malformed
             ? "Malformed signed webhook quarantined this merge-group gate."
@@ -734,6 +922,14 @@ export class PgGovernorStore implements GovernorStore {
       [impact.repository.repositoryId, subjectKey],
     );
     const current = currentResult.rows[0];
+    if (
+      impact.action === "checks_requested" &&
+      current !== undefined &&
+      current.head_sha === impact.headSha &&
+      current.quarantined
+    ) {
+      return { disposition: "applied", touchedSubjects: [] };
+    }
     if (impact.action === "destroyed") {
       if (current === undefined || current.head_sha !== impact.headSha) {
         const historical = await client.query<GateRow>(
@@ -988,7 +1184,7 @@ export class PgGovernorStore implements GovernorStore {
         `UPDATE pr_pair
             SET fence = fence + 1, lease_owner = $3, lease_expires_at = $4,
                 updated_at = $5
-          WHERE id = $1 AND epoch = $2 AND active
+          WHERE id = $1 AND epoch = $2 AND active AND NOT quarantined
             AND (lease_owner IS NULL OR lease_expires_at <= $5 OR lease_owner = $3)
           RETURNING id, epoch, fence, lease_expires_at`,
         [pairId, expectedEpoch, workerId, expiresAt, now],
@@ -1017,7 +1213,7 @@ export class PgGovernorStore implements GovernorStore {
         `UPDATE pr_pair
             SET lease_expires_at = $5, updated_at = $6
           WHERE id = $1 AND epoch = $2 AND fence = $3 AND lease_owner = $4
-            AND lease_expires_at > $6 AND active
+            AND lease_expires_at > $6 AND active AND NOT quarantined
           RETURNING id, epoch, fence, lease_expires_at`,
         [lease.pairId, lease.epoch, lease.fence, lease.workerId, expiresAt, now],
       ),
@@ -1045,7 +1241,7 @@ export class PgGovernorStore implements GovernorStore {
         `UPDATE pr_pair
             SET lease_owner = NULL, lease_expires_at = NULL, updated_at = $5
           WHERE id = $1 AND epoch = $2 AND fence = $3 AND lease_owner = $4
-            AND lease_expires_at > $5 AND active
+            AND lease_expires_at > $5 AND active AND NOT quarantined
           RETURNING *`,
         [lease.pairId, lease.epoch, lease.fence, lease.workerId, now],
       );
@@ -1094,7 +1290,7 @@ export class PgGovernorStore implements GovernorStore {
       const pair = await client.query<PairRow>(
         `SELECT * FROM pr_pair
           WHERE id = $1 AND epoch = $2 AND fence = $3 AND lease_owner = $4
-            AND lease_expires_at > $5 AND active
+            AND lease_expires_at > $5 AND active AND NOT quarantined
           FOR UPDATE`,
         [lease.pairId, lease.epoch, lease.fence, lease.workerId, now],
       );
@@ -1119,7 +1315,7 @@ export class PgGovernorStore implements GovernorStore {
         `UPDATE pr_pair
             SET updated_at = $5
           WHERE id = $1 AND epoch = $2 AND fence = $3 AND lease_owner = $4
-            AND lease_expires_at > $5 AND active
+            AND lease_expires_at > $5 AND active AND NOT quarantined
           RETURNING *`,
         [lease.pairId, lease.epoch, lease.fence, lease.workerId, now],
       );
@@ -1147,7 +1343,7 @@ export class PgGovernorStore implements GovernorStore {
     return this.#transaction(async (client) => {
       const pair = await client.query<PairRow>(
         `SELECT * FROM pr_pair
-          WHERE id = $1 AND epoch = $2 AND active
+          WHERE id = $1 AND epoch = $2 AND active AND NOT quarantined
           FOR UPDATE`,
         [lease.pairId, lease.epoch],
       );
@@ -1242,6 +1438,8 @@ export class PgGovernorStore implements GovernorStore {
         headSha: pair.head_sha,
         epoch: int(pair.epoch),
         active: pair.active,
+        quarantined: pair.quarantined,
+        quarantineDeliveryId: pair.quarantine_delivery_id,
         draft: pair.draft,
         state: pair.pull_state,
         dispatch:
@@ -1366,11 +1564,19 @@ export class PgGovernorStore implements GovernorStore {
         ],
       );
       const row = result.rows[0];
-      if (row === undefined || row.desired_state !== "success") {
+      if (row === undefined || row.desired_state !== "success" || row.quarantined) {
         return "stale";
       }
       if (row.pair_id === null) {
         throw new Error("pull-request success gate is missing its pair binding");
+      }
+      const pair = await client.query(
+        `SELECT id FROM pr_pair
+          WHERE id = $1 AND epoch = $2 AND active AND NOT quarantined`,
+        [row.pair_id, lease.epoch],
+      );
+      if (pair.rowCount !== 1) {
+        return "stale";
       }
       const deadline = await client.query<DeadlineRow>(
         `SELECT evidence_deadline_at > statement_timestamp() AS deadline_valid
@@ -1600,6 +1806,7 @@ export class PgGovernorStore implements GovernorStore {
     now: Date,
   ): Promise<void> {
     await this.#transaction(async (client) => {
+      await this.#lockGlobalIngest(client);
       const openNumbers = new Set(pulls.map((pull) => pull.number));
       const observed = await client.query<{ pull_number: number } & QueryResultRow>(
         `SELECT pull_number FROM pr_pair
@@ -1678,7 +1885,12 @@ export class PgGovernorStore implements GovernorStore {
             [repository.repositoryId, pull.number],
           );
           const pair = pairResult.rows[0];
-          if (pair !== undefined && pair.base_sha === pull.baseSha && pair.head_sha === pull.headSha) {
+          if (
+            pair !== undefined &&
+            !pair.quarantined &&
+            pair.base_sha === pull.baseSha &&
+            pair.head_sha === pull.headSha
+          ) {
             const gateResult = await client.query<GateRow>(
               `SELECT * FROM gate_subject WHERE pair_id = $1 AND active`,
               [pair.id],

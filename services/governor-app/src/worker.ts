@@ -293,7 +293,7 @@ export class GovernorWorker {
     );
     if (lease === null) {
       const current = await this.#store.loadPairSnapshot(pairId, epoch);
-      if (current !== null && current.active) {
+      if (current !== null && current.active && !current.quarantined) {
         throw new Error("pair lease is currently held by another worker");
       }
       return;
@@ -342,7 +342,11 @@ export class GovernorWorker {
     const pairId = string(outbox.payload, "pairId");
     const epoch = integer(outbox.payload, "epoch");
     const beforeLease = await this.#store.loadPairSnapshot(pairId, epoch);
-    if (beforeLease === null || beforeLease.dispatch?.state === "sent") {
+    if (
+      beforeLease === null ||
+      beforeLease.quarantined ||
+      beforeLease.dispatch?.state === "sent"
+    ) {
       return;
     }
     let lease = await this.#store.acquirePairLease(
@@ -354,13 +358,24 @@ export class GovernorWorker {
     );
     if (lease === null) {
       const current = await this.#store.loadPairSnapshot(pairId, epoch);
-      if (current !== null && current.active && current.dispatch?.state !== "sent") {
+      if (
+        current !== null &&
+        current.active &&
+        !current.quarantined &&
+        current.dispatch?.state !== "sent"
+      ) {
         throw new Error("pair lease is currently held by another worker");
       }
       return;
     }
     let snapshot = await this.#store.loadPairSnapshot(pairId, epoch);
-    if (snapshot === null || snapshot.draft || snapshot.state !== "open" || !snapshot.active) {
+    if (
+      snapshot === null ||
+      snapshot.quarantined ||
+      snapshot.draft ||
+      snapshot.state !== "open" ||
+      !snapshot.active
+    ) {
       return;
     }
     const liveBefore = await this.#github.getPullRequest(

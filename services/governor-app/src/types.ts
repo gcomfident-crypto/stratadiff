@@ -86,9 +86,19 @@ export interface IngestRequest {
   impact: GithubImpact;
 }
 
+export interface UnscopedQuarantineRequest {
+  deliveryId: string;
+  eventName: string;
+  payloadSha256: string;
+  receivedAt: Date;
+  errorCode: "invalid_json" | "invalid_repository_envelope";
+}
+
+export type IngestDisposition = "applied" | "ignored" | "stale";
+
 export interface IngestResult {
   duplicate: boolean;
-  disposition: "applied" | "ignored" | "stale";
+  disposition: IngestDisposition;
   touchedSubjects: string[];
 }
 
@@ -124,6 +134,8 @@ export interface GateSubject {
   headSha: string;
   baseSha: string;
   active: boolean;
+  quarantined: boolean;
+  quarantineDeliveryId: string | null;
   desiredState: GateState;
   desiredSummary: string;
   checkRunId: number | null;
@@ -157,6 +169,8 @@ export interface PairSnapshot {
   headSha: string;
   epoch: number;
   active: boolean;
+  quarantined: boolean;
+  quarantineDeliveryId: string | null;
   draft: boolean;
   state: "open" | "closed";
   dispatch: DispatchRecord | null;

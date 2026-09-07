@@ -73,6 +73,13 @@ export function evaluatePair(
   snapshot: PairSnapshot,
   now: Date,
 ): PairDecision {
+  if (snapshot.quarantined) {
+    return {
+      state: "failure",
+      summary: "This review epoch is quarantined after an unscoped authenticated webhook.",
+      needsDispatch: false,
+    };
+  }
   if (!snapshot.active || snapshot.state === "closed") {
     return {
       state: "failure",

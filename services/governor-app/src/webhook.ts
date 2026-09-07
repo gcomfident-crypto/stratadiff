@@ -46,11 +46,19 @@ export class WebhookService {
       throw new WebhookRequestError(400, "X-GitHub-Event is invalid");
     }
 
+    const payloadSha256 = webhookPayloadSha256(rawBody);
+    const receivedAt = this.#now();
     let payload: unknown;
     try {
       payload = JSON.parse(rawBody.toString("utf8")) as unknown;
     } catch {
-      throw new WebhookRequestError(400, "webhook body is not valid JSON");
+      return this.#store.quarantineUnscopedSignedDelivery({
+        deliveryId: headers.deliveryId,
+        eventName: headers.eventName,
+        payloadSha256,
+        receivedAt,
+        errorCode: "invalid_json",
+      });
     }
     let impact;
     try {
@@ -58,16 +66,21 @@ export class WebhookService {
     } catch {
       try {
         impact = failClosedImpact(headers.eventName, payload);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "invalid webhook payload";
-        throw new WebhookRequestError(400, message);
+      } catch {
+        return this.#store.quarantineUnscopedSignedDelivery({
+          deliveryId: headers.deliveryId,
+          eventName: headers.eventName,
+          payloadSha256,
+          receivedAt,
+          errorCode: "invalid_repository_envelope",
+        });
       }
     }
     return this.#store.ingest({
       deliveryId: headers.deliveryId,
       eventName: headers.eventName,
-      payloadSha256: webhookPayloadSha256(rawBody),
-      receivedAt: this.#now(),
+      payloadSha256,
+      receivedAt,
       impact,
     });
   }

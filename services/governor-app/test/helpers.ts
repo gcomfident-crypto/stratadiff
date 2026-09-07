@@ -136,6 +136,15 @@ export async function deliver(
   payload: Record<string, unknown>,
 ) {
   const body = Buffer.from(JSON.stringify(payload));
+  return deliverRaw(service, deliveryId, eventName, body);
+}
+
+export async function deliverRaw(
+  service: WebhookService,
+  deliveryId: string,
+  eventName: string,
+  body: Buffer,
+) {
   const signature = `sha256=${createHmac("sha256", SECRET).update(body).digest("hex")}`;
   return service.receive({ signature, deliveryId, eventName }, body);
 }

@@ -37,9 +37,10 @@ implemented; it fails closed instead of borrowing PR evidence.
 
 ## Database and delivery model
 
-`migrations/001_initial.sql` creates:
+The migrations create:
 
-- `webhook_delivery`, keyed by `X-GitHub-Delivery`, for HMAC-verified idempotency;
+- `webhook_delivery`, keyed by `X-GitHub-Delivery`, plus collision records for HMAC-verified
+  idempotency;
 - `pr_pair`, uniquely binding repository, PR, base, and head with monotonic epoch and fence fields;
 - `dispatch` and `evidence`, both bound to the pair epoch;
 - `gate_subject`, separating PR and merge-group Check Runs; and
@@ -51,6 +52,12 @@ check. Workers acquire expiring leases with monotonically increasing fencing tok
 compare pair/subject ID, epoch, fence, owner, and expiry; an expired worker cannot commit after a
 new event or worker advances the fence. Evidence updates are source-time ordered, and equal-time
 deletion/dismissal tombstones cannot be replaced by delayed positive deliveries.
+
+If an authenticated delivery is not valid JSON or its repository envelope cannot be decoded, the
+delivery digest and error class are persisted without retaining its body. Because it cannot be
+scoped safely, every active pair and merge-group gate is quarantined globally. Existing dispatches
+are abandoned, leases are fenced, and later same-epoch evidence or reconciliation cannot restore
+success; recovery requires a genuinely new input epoch or a future explicit operator redrive.
 
 Before posting the provider command, the worker durably moves a dispatch from `planned` to
 `attempting`. Once that transition commits, retries only search for and adopt the exact-body App
@@ -101,9 +108,10 @@ npm run build
 ```
 
 The unit tests use an in-memory PostgreSQL-compatible adapter and injected GitHub transport. They
-make no calls to GitHub and cover HMAC verification, delivery deduplication, stale delivery
-ordering, same-SHA PR isolation, immediate revocation, lease fencing, merge-group head binding,
-Checks API identity, and pagination beyond 300 open PRs. The separate integration suite applies
+make no calls to GitHub and cover HMAC verification, delivery deduplication and collision
+detection, global malformed-delivery quarantine, stale delivery ordering, same-SHA PR isolation,
+immediate revocation, lease fencing, merge-group head binding, Checks API identity, and pagination
+beyond 300 open PRs. The separate integration suite applies
 the production migrations to a real PostgreSQL server. It deterministically holds one outbox row
 lock while a second worker claims work, and verifies outbox and pair lease expiry/fencing against
 the real transaction engine. CI runs that suite on PostgreSQL 17.
@@ -113,11 +121,9 @@ redrive/dead-letter operations, an operator UI, and merge-group-native provider
 evidence. Those are deployment gates beyond this runnable development MVP; do not claim production
 validation until the live installation/ruleset/merge-queue paths have been exercised.
 
-Two cross-system boundaries are also intentionally unresolved. A correctly signed body that is
-not valid JSON, or whose repository identity cannot be decoded, cannot yet be routed to a specific
-repository and therefore returns `400` without globally revoking existing gates. Repository
-reconciliation also lacks a generation compare-and-swap between its GitHub list snapshot and its
-database write. Finally, GitHub Checks offers no transaction shared with PostgreSQL, so a stale
+Two cross-system boundaries are also intentionally unresolved. Repository reconciliation lacks a
+generation compare-and-swap between its GitHub list snapshot and its database write. GitHub Checks
+also offers no transaction shared with PostgreSQL, so a stale
 publisher can only be detected and compensated after an external write; the service reuses the
 canonical Check Run for compensation, but this is not proof of a zero-duration green race. These
 are explicit blockers for deployment as a required merge control.

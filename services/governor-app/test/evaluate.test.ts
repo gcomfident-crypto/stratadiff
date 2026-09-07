@@ -44,6 +44,8 @@ function snapshot(
     headSha: HEAD_A,
     epoch: 1,
     active: true,
+    quarantined: false,
+    quarantineDeliveryId: null,
     draft: false,
     state: "open",
     dispatch: {
@@ -89,6 +91,16 @@ describe("pair evidence decisions", () => {
     expect(
       evaluatePair(snapshot(completeEvidence()), new Date("2026-09-07T12:05:00.000Z")),
     ).toMatchObject({ state: "success" });
+  });
+
+  it("never reopens a quarantined epoch with otherwise complete evidence", () => {
+    const quarantined = snapshot(completeEvidence());
+    quarantined.quarantined = true;
+    quarantined.quarantineDeliveryId = "global-invalid-json";
+    expect(evaluatePair(quarantined, new Date("2026-09-07T12:05:00.000Z"))).toMatchObject({
+      state: "failure",
+      needsDispatch: false,
+    });
   });
 
   it("keeps an uncertain dispatch fail-closed without requesting another POST", () => {

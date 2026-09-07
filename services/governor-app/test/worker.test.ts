@@ -38,6 +38,8 @@ function pair(dispatch: PairSnapshot["dispatch"] = null): PairSnapshot {
     headSha: HEAD_A,
     epoch: 1,
     active: true,
+    quarantined: false,
+    quarantineDeliveryId: null,
     draft: false,
     state: "open",
     dispatch,
@@ -141,6 +143,8 @@ describe("outbox worker fencing", () => {
       headSha: HEAD_A,
       baseSha: BASE_A,
       active: true,
+      quarantined: false,
+      quarantineDeliveryId: null,
       desiredState: "success",
       desiredSummary: "covered",
       checkRunId: null,
@@ -191,6 +195,26 @@ describe("outbox worker fencing", () => {
       completeOutbox,
     });
     await worker(store).processOne();
+    expect(completeOutbox).toHaveBeenCalledOnce();
+  });
+
+  it("completes stale dispatch work for a quarantined epoch without calling GitHub", async () => {
+    const quarantined = pair();
+    quarantined.quarantined = true;
+    quarantined.quarantineDeliveryId = "global-invalid-json";
+    const completeOutbox = vi.fn(async () => true);
+    const store = fakeStore({
+      claimOutbox: vi.fn(async () => outbox("dispatch_review")),
+      loadPairSnapshot: vi.fn(async () => quarantined),
+      completeOutbox,
+    });
+    const github = fakeGithub();
+
+    await worker(store, github).processOne();
+
+    expect(github.getPullRequest).not.toHaveBeenCalled();
+    expect(github.findIssueComment).not.toHaveBeenCalled();
+    expect(github.createIssueComment).not.toHaveBeenCalled();
     expect(completeOutbox).toHaveBeenCalledOnce();
   });
 
