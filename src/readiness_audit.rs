@@ -3174,6 +3174,12 @@ fn collect_doctor_workflow_inventory<A: GithubReadinessApi>(
             )),
         ));
     }
+    if directory_response.link_header.is_some() {
+        return Ok((
+            None,
+            Some("workflow directory response advertised another page".to_owned()),
+        ));
+    }
     let entries: Vec<ApiDoctorWorkflowDirectoryEntry> =
         parse_json(&directory_response.body, &directory_endpoint)?;
     if entries.len() >= MAX_DOCTOR_WORKFLOW_DIRECTORY_ENTRIES {
@@ -3722,6 +3728,18 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
                 &investigation.requirement,
                 "workflow_identity_mismatch",
                 "Workflow run identity did not match canonical workflow metadata",
+            );
+            continue;
+        }
+        if !direct_workflow_path(&workflow.path) {
+            add_workflow_gap(
+                &mut gaps,
+                &investigation.requirement,
+                "workflow_path_unsupported",
+                format!(
+                    "Workflow {} is not a direct .github/workflows YAML file",
+                    workflow.path
+                ),
             );
             continue;
         }
