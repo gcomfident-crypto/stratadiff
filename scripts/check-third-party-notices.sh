@@ -19,6 +19,10 @@ cd -- "${stratadiff_repository_root}"
 cargo about generate --locked --fail \
   --output-file "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.txt" \
   about.hbs
+tr -d '\r' < "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.txt" \
+  > "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.normalized.txt"
+mv -- "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.normalized.txt" \
+  "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.txt"
 cmp THIRD_PARTY_NOTICES.txt "${stratadiff_temporary_directory}/THIRD_PARTY_NOTICES.txt"
 
 if grep -Fq '<copyright holders>' THIRD_PARTY_NOTICES.txt; then

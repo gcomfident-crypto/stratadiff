@@ -17,6 +17,10 @@ cd -- "${stratadiff_repository_root}"
 cargo about generate --locked --fail \
   --output-file THIRD_PARTY_NOTICES.txt \
   about.hbs
+stratadiff_normalized_notices="$(mktemp "${TMPDIR:-/tmp}/stratadiff-notices-normalized-XXXXXX")"
+trap 'rm -f -- "${stratadiff_normalized_notices}"' EXIT
+tr -d '\r' < THIRD_PARTY_NOTICES.txt > "${stratadiff_normalized_notices}"
+mv -- "${stratadiff_normalized_notices}" THIRD_PARTY_NOTICES.txt
 
 if grep -Fq '<copyright holders>' THIRD_PARTY_NOTICES.txt; then
   echo "THIRD_PARTY_NOTICES.txt contains an unresolved copyright placeholder" >&2
