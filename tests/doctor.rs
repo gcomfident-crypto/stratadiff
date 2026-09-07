@@ -11,8 +11,9 @@ use doctor::{
     DoctorEvaluationTargetKind, DoctorEvaluationTargetResolution, DoctorEvidenceKind,
     DoctorPolicyKind, DoctorPolicyRef, DoctorRequirement, DoctorRequirementKey,
     DoctorRequirementStatus, DoctorTarget, DoctorTargetV2, DoctorVerdict, DoctorWorkflowCollection,
-    DoctorWorkflowCollectionGap, DoctorWorkflowCollectionStatus, DoctorWorkflowProbe,
-    DoctorWorkflowProbeKind, DoctorWorkflowProducer, DoctorWorkflowTriggerInvestigation,
+    DoctorWorkflowCollectionGap, DoctorWorkflowCollectionStatus, DoctorWorkflowInventory,
+    DoctorWorkflowInventoryFile, DoctorWorkflowProbe, DoctorWorkflowProbeKind,
+    DoctorWorkflowProducer, DoctorWorkflowTriggerInvestigation,
     PULL_REQUEST_DOCTOR_REPORT_V2_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA,
     PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA,
     PullRequestDoctorSnapshot, PullRequestDoctorSnapshotV2, PullRequestDoctorSnapshotV3,
@@ -178,6 +179,30 @@ fn workflow_snapshot_v3() -> PullRequestDoctorSnapshotV3 {
             status: DoctorWorkflowCollectionStatus::Complete,
             api_calls: 12,
             response_bytes: 12_000,
+            inventory: Some(DoctorWorkflowInventory {
+                sha: EVALUATION_SHA.to_owned(),
+                files: vec![DoctorWorkflowInventoryFile {
+                    blob_sha: "ffffffffffffffffffffffffffffffffffffffff".to_owned(),
+                    jobs: vec![WorkflowJob {
+                        condition: "always".to_owned(),
+                        id: "ci".to_owned(),
+                        name: CONTEXT.to_owned(),
+                        name_static: true,
+                        reusable: false,
+                    }],
+                    path: workflow_path.to_owned(),
+                    triggers: WorkflowTriggers {
+                        merge_group: None,
+                        pull_request: Some(PullRequestWorkflowTrigger {
+                            branches: Vec::new(),
+                            branches_ignore: Vec::new(),
+                            paths: Vec::new(),
+                            paths_ignore: Vec::new(),
+                            types: Vec::new(),
+                        }),
+                    },
+                }],
+            }),
             probes: vec![DoctorWorkflowProbe {
                 kind: DoctorWorkflowProbeKind::PullRequestHead,
                 sha: HEAD_SHA.to_owned(),
@@ -862,14 +887,50 @@ fn provider_url_must_be_a_pure_https_origin() {
 }
 
 #[test]
-fn v3_rejects_a_missing_merge_group_trigger_without_complete_producer_inventory() {
-    let error = evaluate_pull_request_doctor_v3(&workflow_snapshot_v3()).unwrap_err();
+fn v3_reports_a_missing_merge_group_trigger_with_unique_exact_sha_producer() {
+    let report = evaluate_pull_request_doctor_v3(&workflow_snapshot_v3()).unwrap();
 
-    assert!(
-        error
-            .to_string()
-            .contains("cause outside the v3 evidence contract")
+    assert_eq!(
+        report.workflow_trigger_diagnoses[0]
+            .diagnosis
+            .as_ref()
+            .unwrap()
+            .cause_code,
+        doctor_workflow::WorkflowTriggerCause::MergeGroupTriggerMissing
     );
+}
+
+#[test]
+fn v3_requires_an_exact_sha_inventory_for_complete_collection() {
+    let mut snapshot = workflow_snapshot_v3();
+    snapshot.workflow_collection.inventory = None;
+
+    let error = evaluate_pull_request_doctor_v3(&snapshot).unwrap_err();
+    assert!(error.to_string().contains("complete workflow collection"));
+}
+
+#[test]
+fn v3_rejects_a_duplicate_exact_sha_producer() {
+    let mut snapshot = workflow_snapshot_v3();
+    let mut duplicate = snapshot
+        .workflow_collection
+        .inventory
+        .as_ref()
+        .unwrap()
+        .files[0]
+        .clone();
+    duplicate.path = ".github/workflows/duplicate.yml".to_owned();
+    duplicate.blob_sha = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_owned();
+    snapshot
+        .workflow_collection
+        .inventory
+        .as_mut()
+        .unwrap()
+        .files
+        .push(duplicate);
+
+    let error = evaluate_pull_request_doctor_v3(&snapshot).unwrap_err();
+    assert!(error.to_string().contains("not unique"));
 }
 
 #[test]

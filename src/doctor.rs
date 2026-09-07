@@ -4,8 +4,8 @@ use anyhow::{Context, Result, ensure};
 use serde::{Deserialize, Serialize};
 
 use crate::doctor_workflow::{
-    DoctorWorkflowTriggerDiagnosis, DoctorWorkflowTriggerInput, WorkflowExpectedApp,
-    WorkflowTargetKind, WorkflowTriggerCause, classify_workflow_trigger,
+    DoctorWorkflowTriggerDiagnosis, DoctorWorkflowTriggerInput, WorkflowExpectedApp, WorkflowJob,
+    WorkflowTargetKind, WorkflowTriggerCause, WorkflowTriggers, classify_workflow_trigger,
 };
 
 pub const PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA: &str = "stratadiff-pull-request-doctor-snapshot-v1";
@@ -191,6 +191,22 @@ pub struct DoctorWorkflowCollectionGap {
     pub reason: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowInventoryFile {
+    pub blob_sha: String,
+    pub jobs: Vec<WorkflowJob>,
+    pub path: String,
+    pub triggers: WorkflowTriggers,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DoctorWorkflowInventory {
+    pub sha: String,
+    pub files: Vec<DoctorWorkflowInventoryFile>,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum DoctorWorkflowProbeKind {
@@ -211,6 +227,7 @@ pub struct DoctorWorkflowCollection {
     pub status: DoctorWorkflowCollectionStatus,
     pub api_calls: u64,
     pub response_bytes: u64,
+    pub inventory: Option<DoctorWorkflowInventory>,
     pub probes: Vec<DoctorWorkflowProbe>,
     pub gaps: Vec<DoctorWorkflowCollectionGap>,
 }
@@ -450,6 +467,17 @@ fn valid_sha(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn valid_workflow_path(value: &str) -> bool {
+    value
+        .strip_prefix(".github/workflows/")
+        .is_some_and(|name| {
+            !name.is_empty()
+                && !name.contains('/')
+                && !matches!(name, "." | "..")
+                && (name.ends_with(".yml") || name.ends_with(".yaml"))
+        })
 }
 
 fn valid_repository(value: &str) -> bool {
@@ -1399,10 +1427,58 @@ fn validate_workflow_collection(
         snapshot.workflow_trigger_investigations.len() <= MAX_COLLECTION_ITEMS,
         "too many workflow trigger investigations"
     );
+    let mut inventory_files = BTreeMap::new();
+    if let Some(inventory) = &snapshot.workflow_collection.inventory {
+        ensure!(
+            inventory.sha == snapshot.signal_sha && valid_sha(&inventory.sha),
+            "workflow inventory must be bound to the exact evaluation SHA"
+        );
+        ensure!(
+            inventory.files.len() <= MAX_COLLECTION_ITEMS,
+            "too many workflow inventory files"
+        );
+        let mut previous_path = None;
+        for file in &inventory.files {
+            ensure!(
+                valid_sha(&file.blob_sha),
+                "workflow inventory blob SHA must be a lowercase full Git object ID"
+            );
+            ensure!(
+                valid_workflow_path(&file.path),
+                "workflow inventory path is not a direct workflow file"
+            );
+            if let Some(previous) = previous_path {
+                ensure!(
+                    previous < file.path.as_str(),
+                    "workflow inventory files must be unique and sorted"
+                );
+            }
+            previous_path = Some(file.path.as_str());
+            ensure!(
+                file.jobs.len() <= MAX_COLLECTION_ITEMS,
+                "too many jobs in a workflow inventory file"
+            );
+            let mut job_ids = BTreeSet::new();
+            for job in &file.jobs {
+                bounded_nonempty(&job.id, 255, "workflow inventory job ID")?;
+                bounded_nonempty(&job.name, 255, "workflow inventory job name")?;
+                bounded_nonempty(&job.condition, 255, "workflow inventory job condition")?;
+                ensure!(
+                    job_ids.insert(job.id.as_str()),
+                    "workflow inventory job IDs must be unique per file"
+                );
+            }
+            ensure!(
+                inventory_files.insert(file.path.as_str(), file).is_none(),
+                "duplicate workflow inventory path"
+            );
+        }
+    }
     match snapshot.workflow_collection.status {
         DoctorWorkflowCollectionStatus::NotApplicable => ensure!(
             snapshot.workflow_collection.api_calls == 0
                 && snapshot.workflow_collection.response_bytes == 0
+                && snapshot.workflow_collection.inventory.is_none()
                 && snapshot.workflow_collection.probes.is_empty()
                 && snapshot.workflow_collection.gaps.is_empty()
                 && snapshot.workflow_trigger_investigations.is_empty(),
@@ -1410,6 +1486,7 @@ fn validate_workflow_collection(
         ),
         DoctorWorkflowCollectionStatus::Complete => ensure!(
             snapshot.workflow_collection.api_calls > 0
+                && snapshot.workflow_collection.inventory.is_some()
                 && snapshot.workflow_collection.gaps.is_empty()
                 && !snapshot.workflow_trigger_investigations.is_empty()
                 && snapshot
@@ -1562,9 +1639,7 @@ fn validate_workflow_collection(
             );
             bounded_nonempty(&producer.workflow_path, 1_024, "workflow producer path")?;
             ensure!(
-                producer.workflow_path.starts_with(".github/workflows/")
-                    && (producer.workflow_path.ends_with(".yml")
-                        || producer.workflow_path.ends_with(".yaml")),
+                valid_workflow_path(&producer.workflow_path),
                 "workflow producer path must identify a GitHub Actions workflow"
             );
             ensure!(
@@ -1642,6 +1717,41 @@ fn validate_workflow_collection(
                     }),
                 "workflow classifier input must contain exactly its bound producer"
             );
+            let inventory = snapshot
+                .workflow_collection
+                .inventory
+                .as_ref()
+                .context("classified workflow input is missing its exact-SHA inventory")?;
+            let inventory_file = inventory_files
+                .get(producer.workflow_path.as_str())
+                .context("bound producer is absent from the exact-SHA workflow inventory")?;
+            ensure!(
+                inventory_file.jobs == input.workflows[0].jobs
+                    && inventory_file.triggers == input.workflows[0].triggers,
+                "bound producer definition differs from the exact-SHA workflow inventory"
+            );
+            ensure!(
+                inventory
+                    .files
+                    .iter()
+                    .all(|file| file.jobs.iter().all(|job| job.name_static && !job.reusable)),
+                "classified workflow input requires a fully resolved producer inventory"
+            );
+            let matching_inventory_jobs = inventory
+                .files
+                .iter()
+                .flat_map(|file| {
+                    file.jobs.iter().filter_map(move |job| {
+                        (job.name == investigation.requirement.context)
+                            .then_some((file.path.as_str(), job.id.as_str()))
+                    })
+                })
+                .collect::<Vec<_>>();
+            ensure!(
+                matching_inventory_jobs.len() == 1
+                    && matching_inventory_jobs[0].0 == producer.workflow_path,
+                "classified workflow producer is not unique in the exact-SHA inventory"
+            );
             classify_workflow_trigger(input)?;
         } else {
             ensure!(
@@ -1698,7 +1808,9 @@ pub fn evaluate_pull_request_doctor_v3(
             ensure!(
                 diagnosis.as_ref().is_none_or(|diagnosis| matches!(
                     diagnosis.cause_code,
-                    WorkflowTriggerCause::None | WorkflowTriggerCause::WorkflowTriggerUnknown
+                    WorkflowTriggerCause::MergeGroupTriggerMissing
+                        | WorkflowTriggerCause::None
+                        | WorkflowTriggerCause::WorkflowTriggerUnknown
                 )),
                 "live workflow diagnosis produced a cause outside the v3 evidence contract"
             );

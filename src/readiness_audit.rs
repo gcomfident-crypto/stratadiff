@@ -12,10 +12,11 @@ use crate::doctor::{
     DoctorEvaluationTargetKind, DoctorEvaluationTargetResolution, DoctorPolicyKind,
     DoctorPolicyRef, DoctorRequirement, DoctorRequirementKey, DoctorRequirementStatus,
     DoctorTargetV2, DoctorWorkflowCollection, DoctorWorkflowCollectionGap,
-    DoctorWorkflowCollectionStatus, DoctorWorkflowProbe, DoctorWorkflowProbeKind,
-    DoctorWorkflowProducer, DoctorWorkflowTriggerInvestigation,
-    PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA, PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA,
-    PullRequestDoctorSnapshotV2, PullRequestDoctorSnapshotV3, evaluate_pull_request_doctor_v2,
+    DoctorWorkflowCollectionStatus, DoctorWorkflowInventory, DoctorWorkflowInventoryFile,
+    DoctorWorkflowProbe, DoctorWorkflowProbeKind, DoctorWorkflowProducer,
+    DoctorWorkflowTriggerInvestigation, PULL_REQUEST_DOCTOR_SNAPSHOT_V2_SCHEMA,
+    PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA, PullRequestDoctorSnapshotV2,
+    PullRequestDoctorSnapshotV3, evaluate_pull_request_doctor_v2,
 };
 use crate::doctor_candidate::{
     CandidateKind, CandidateQueueEntry, CandidateSelectionInput, CandidateSelectionStatus,
@@ -48,6 +49,7 @@ const MAX_PAGES: usize = 10;
 const MAX_LINK_HEADER_BYTES: usize = 16 * 1024;
 const MAX_WORKFLOW_TRIGGER_PATTERNS: usize = 1_000;
 const MAX_WORKFLOW_TRIGGER_PATTERN_BYTES: usize = 4 * 1024;
+const MAX_DOCTOR_WORKFLOW_DIRECTORY_ENTRIES: usize = 100;
 const DOCTOR_CANDIDATE_QUERY: &str = concat!(
     "query StrataDiffPullRequestCandidate($owner:String!,$name:String!,$number:Int!){",
     "repository(owner:$owner,name:$name){nameWithOwner url pullRequest(number:$number){",
@@ -264,6 +266,24 @@ struct ApiContent {
     kind: String,
     encoding: String,
     content: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorWorkflowDirectoryEntry {
+    #[serde(rename = "type")]
+    kind: String,
+    path: String,
+    sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiDoctorWorkflowContent {
+    #[serde(rename = "type")]
+    kind: String,
+    encoding: String,
+    content: String,
+    path: String,
+    sha: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -3125,6 +3145,124 @@ fn collect_doctor_workflow_jobs<A: GithubReadinessApi>(
     Ok((jobs, None))
 }
 
+fn direct_workflow_path(path: &str) -> bool {
+    path.strip_prefix(".github/workflows/").is_some_and(|name| {
+        !name.is_empty()
+            && !name.contains('/')
+            && !matches!(name, "." | "..")
+            && (name.ends_with(".yml") || name.ends_with(".yaml"))
+    })
+}
+
+fn collect_doctor_workflow_inventory<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    signal_sha: &str,
+) -> Result<(Option<DoctorWorkflowInventory>, Option<String>)> {
+    let directory_endpoint = format!(
+        "repos/{repository_path}/contents/.github/workflows?ref={}",
+        encode_path_component(signal_sha)
+    );
+    let directory_response = budget.get(api, &directory_endpoint)?;
+    if !successful(&directory_response) {
+        return Ok((
+            None,
+            Some(format!(
+                "GitHub returned HTTP {} while listing workflows at evaluation SHA {signal_sha}",
+                directory_response.status
+            )),
+        ));
+    }
+    let entries: Vec<ApiDoctorWorkflowDirectoryEntry> =
+        parse_json(&directory_response.body, &directory_endpoint)?;
+    if entries.len() >= MAX_DOCTOR_WORKFLOW_DIRECTORY_ENTRIES {
+        return Ok((
+            None,
+            Some(format!(
+                "workflow directory contains at least {MAX_DOCTOR_WORKFLOW_DIRECTORY_ENTRIES} entries; completeness is not proven"
+            )),
+        ));
+    }
+
+    let mut files = Vec::new();
+    let mut paths = BTreeSet::new();
+    for entry in entries {
+        ensure!(
+            entry.path.starts_with(".github/workflows/"),
+            "GitHub returned a workflow-directory entry outside the requested directory"
+        );
+        if !(entry.path.ends_with(".yml") || entry.path.ends_with(".yaml")) {
+            continue;
+        }
+        if entry.kind != "file" || !direct_workflow_path(&entry.path) {
+            return Ok((
+                None,
+                Some(format!(
+                    "workflow entry {} is not a direct regular workflow file",
+                    entry.path
+                )),
+            ));
+        }
+        ensure!(
+            valid_doctor_sha(&entry.sha),
+            "GitHub returned a workflow file with an invalid blob SHA"
+        );
+        ensure!(
+            paths.insert(entry.path.clone()),
+            "GitHub returned a duplicate workflow path"
+        );
+
+        let content_endpoint = format!(
+            "repos/{repository_path}/contents/{}?ref={}",
+            encode_repository_path(&entry.path),
+            encode_path_component(signal_sha)
+        );
+        let content_response = budget.get(api, &content_endpoint)?;
+        if !successful(&content_response) {
+            return Ok((
+                None,
+                Some(format!(
+                    "GitHub returned HTTP {} for {} at evaluation SHA {signal_sha}",
+                    content_response.status, entry.path
+                )),
+            ));
+        }
+        let content: ApiDoctorWorkflowContent =
+            parse_json(&content_response.body, &content_endpoint)?;
+        ensure!(
+            content.path == entry.path && content.sha == entry.sha,
+            "workflow content identity did not match its exact-SHA directory entry"
+        );
+        let bytes = decode_workflow_content(ApiContent {
+            kind: content.kind,
+            encoding: content.encoding,
+            content: content.content,
+        })?;
+        let definition =
+            match parse_doctor_workflow_definition(&bytes, &entry.path, WorkflowState::Active) {
+                Ok(definition) => definition,
+                Err(error) => {
+                    return Ok((None, Some(format!("{}: {error:#}", entry.path))));
+                }
+            };
+        files.push(DoctorWorkflowInventoryFile {
+            blob_sha: entry.sha.to_ascii_lowercase(),
+            jobs: definition.jobs,
+            path: definition.path,
+            triggers: definition.triggers,
+        });
+    }
+    files.sort_by(|left, right| left.path.cmp(&right.path));
+    Ok((
+        Some(DoctorWorkflowInventory {
+            sha: signal_sha.to_owned(),
+            files,
+        }),
+        None,
+    ))
+}
+
 fn doctor_workflow_state(value: &str) -> Option<WorkflowState> {
     match value {
         "active" => Some(WorkflowState::Active),
@@ -3244,6 +3382,7 @@ fn not_applicable_workflow_collection() -> DoctorWorkflowCollection {
         status: DoctorWorkflowCollectionStatus::NotApplicable,
         api_calls: 0,
         response_bytes: 0,
+        inventory: None,
         probes: Vec::new(),
         gaps: Vec::new(),
     }
@@ -3286,6 +3425,7 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
                 status: DoctorWorkflowCollectionStatus::Partial,
                 api_calls: 0,
                 response_bytes: 0,
+                inventory: None,
                 probes: Vec::new(),
                 gaps,
             },
@@ -3321,6 +3461,7 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
                 status: DoctorWorkflowCollectionStatus::Partial,
                 api_calls: u64::try_from(budget.requests - starting_requests)?,
                 response_bytes: u64::try_from(budget.response_bytes - starting_response_bytes)?,
+                inventory: None,
                 probes: Vec::new(),
                 gaps,
             },
@@ -3347,6 +3488,19 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
         !declared_probes.is_empty(),
         "merge-group workflow diagnosis requires a distinct producer candidate"
     );
+
+    let (workflow_inventory, workflow_inventory_gap) =
+        collect_doctor_workflow_inventory(api, budget, &repository_path, &snapshot.signal_sha)?;
+    if let Some(reason) = &workflow_inventory_gap {
+        for requirement in requirements {
+            add_workflow_gap(
+                &mut gaps,
+                requirement,
+                "workflow_inventory_incomplete",
+                reason,
+            );
+        }
+    }
 
     let (target_runs, target_run_gap) =
         collect_doctor_workflow_runs(api, budget, &repository_path, &snapshot.signal_sha, None)?;
@@ -3630,77 +3784,68 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
             );
             continue;
         }
-        let content_endpoint = format!(
-            "repos/{repository_path}/contents/{}?ref={}",
-            encode_repository_path(&workflow.path),
-            encode_path_component(&snapshot.signal_sha)
-        );
-        let content_response = budget.get(api, &content_endpoint)?;
-        if !successful(&content_response) {
+        let Some(inventory) = &workflow_inventory else {
+            continue;
+        };
+        let Some(inventory_file) = inventory
+            .files
+            .iter()
+            .find(|file| file.path == workflow.path)
+        else {
             add_workflow_gap(
                 &mut gaps,
                 &investigation.requirement,
-                "workflow_definition_unavailable",
+                "workflow_definition_absent_from_inventory",
                 format!(
-                    "GitHub returned HTTP {} for {} at evaluation SHA {}",
-                    content_response.status, workflow.path, snapshot.signal_sha
+                    "Workflow {} is absent from the exact-SHA workflow inventory",
+                    workflow.path
                 ),
             );
             continue;
-        }
-        let content: ApiContent = parse_json(&content_response.body, &content_endpoint)?;
-        let bytes = match decode_workflow_content(content) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                add_workflow_gap(
-                    &mut gaps,
-                    &investigation.requirement,
-                    "workflow_definition_invalid",
-                    format!("{}: {error:#}", workflow.path),
-                );
-                continue;
-            }
         };
-        let definition = match parse_doctor_workflow_definition(&bytes, &workflow.path, state) {
-            Ok(definition) => definition,
-            Err(error) => {
-                add_workflow_gap(
-                    &mut gaps,
-                    &investigation.requirement,
-                    "workflow_definition_invalid",
-                    format!("{}: {error:#}", workflow.path),
-                );
-                continue;
-            }
-        };
-        let matching_jobs = definition
-            .jobs
+        if inventory
+            .files
             .iter()
-            .filter(|job| job.name_static && job.name == investigation.requirement.context)
-            .count();
-        if matching_jobs != 1
-            || definition
-                .jobs
-                .iter()
-                .any(|job| !job.name_static || job.reusable)
+            .flat_map(|file| &file.jobs)
+            .any(|job| !job.name_static || job.reusable)
         {
             add_workflow_gap(
                 &mut gaps,
                 &investigation.requirement,
-                "workflow_job_mapping_unresolved",
-                "The workflow does not expose one unambiguous static job for the required context",
+                "workflow_inventory_job_mapping_unresolved",
+                "The exact-SHA inventory contains a dynamic job name or reusable workflow job",
             );
             continue;
         }
-        if definition.triggers.merge_group.is_none() {
+        let required_context = investigation.requirement.context.as_str();
+        let matching_jobs = inventory
+            .files
+            .iter()
+            .flat_map(|file| {
+                file.jobs.iter().filter_map(move |job| {
+                    (job.name == required_context).then_some((file.path.as_str(), job.id.as_str()))
+                })
+            })
+            .collect::<Vec<_>>();
+        if matching_jobs.len() != 1 || matching_jobs[0].0 != workflow.path {
             add_workflow_gap(
                 &mut gaps,
                 &investigation.requirement,
-                "producer_exclusivity_unproven",
-                "The observed historical producer lacks merge_group, but Doctor has not enumerated every exact-SHA workflow that could emit the same required context",
+                "workflow_producer_not_unique",
+                format!(
+                    "The exact-SHA inventory resolved {} static jobs for the required context",
+                    matching_jobs.len()
+                ),
             );
             continue;
         }
+        let definition = DoctorWorkflowDefinition {
+            jobs: inventory_file.jobs.clone(),
+            path: inventory_file.path.clone(),
+            state,
+            syntax: WorkflowSyntax::Valid,
+            triggers: inventory_file.triggers.clone(),
+        };
         let Some(head_ref) = pull.head.reference.clone() else {
             add_workflow_gap(
                 &mut gaps,
@@ -3830,6 +3975,7 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
             },
             api_calls: u64::try_from(budget.requests - starting_requests)?,
             response_bytes: u64::try_from(budget.response_bytes - starting_response_bytes)?,
+            inventory: workflow_inventory,
             probes: declared_probes,
             gaps,
         },
@@ -3868,6 +4014,7 @@ fn doctor_workflow_semantics_equal(
     after_investigations: &[DoctorWorkflowTriggerInvestigation],
 ) -> bool {
     before_collection.status == after_collection.status
+        && before_collection.inventory == after_collection.inventory
         && before_collection.probes == after_collection.probes
         && before_collection.gaps == after_collection.gaps
         && before_investigations == after_investigations
