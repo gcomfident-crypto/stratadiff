@@ -10,6 +10,13 @@ export interface RepositoryRef {
   name: string;
 }
 
+export interface RepositorySnapshotToken {
+  repository: RepositoryRef;
+  generation: number;
+}
+
+export type RepositoryReconcileResult = "applied" | "stale";
+
 export interface PullPairRef {
   number: number;
   baseSha: string;

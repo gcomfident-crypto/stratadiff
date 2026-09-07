@@ -70,6 +70,38 @@ class ClaimBarrierPool implements DatabasePool {
   }
 }
 
+class GlobalIngestSignalPool implements DatabasePool {
+  readonly globalIngestLocked = deferred();
+  readonly #pool: pg.Pool;
+  #signalled = false;
+
+  constructor(realPool: pg.Pool) {
+    this.#pool = realPool;
+  }
+
+  async connect() {
+    const client = await this.#pool.connect();
+    return {
+      query: async <R extends QueryResultRow = QueryResultRow>(
+        text: string,
+        values?: unknown[],
+      ): Promise<QueryResult<R>> => {
+        const result = await client.query<R>(text, values);
+        if (!this.#signalled && text.includes("SELECT pg_advisory_xact_lock")) {
+          this.#signalled = true;
+          this.globalIngestLocked.resolve();
+        }
+        return result;
+      },
+      release: () => client.release(),
+    };
+  }
+
+  async end(): Promise<void> {
+    await this.#pool.end();
+  }
+}
+
 async function ingestPull(
   target: PgGovernorStore,
   options: {
@@ -124,7 +156,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await pool.query(
-    "TRUNCATE TABLE webhook_delivery, pr_pair, dispatch, evidence, gate_subject, outbox RESTART IDENTITY CASCADE",
+    "TRUNCATE TABLE webhook_delivery, pr_pair, dispatch, evidence, gate_subject, outbox, repository_reconcile_generation RESTART IDENTITY CASCADE",
   );
 });
 
@@ -249,5 +281,80 @@ describe("real PostgreSQL worker fencing", () => {
       desiredState: "revoked",
       desiredSummary: "Pull request state changed; re-evaluating final-head evidence.",
     });
+  });
+
+  it("rejects a repository snapshot invalidated by a concurrent pull-request event", async () => {
+    await ingestPull(store, {
+      deliveryId: "snapshot-existing-pull",
+      pullNumber: 5,
+      sourceUpdatedAt: new Date(START.valueOf() - 60_000),
+      receivedAt: START,
+    });
+    const repository = {
+      installationId: 71,
+      repositoryId: 99,
+      fullName: "acme/repo",
+      owner: "acme",
+      name: "repo",
+    };
+    const staleToken = await store.beginRepositorySnapshot(repository, START);
+
+    const generationLock = await pool.connect();
+    await generationLock.query("BEGIN");
+    let generationLockReleased = false;
+    try {
+      await generationLock.query(
+        `SELECT generation FROM repository_reconcile_generation
+          WHERE repository_id = $1
+          FOR UPDATE`,
+        [repository.repositoryId],
+      );
+      const signalledPool = new GlobalIngestSignalPool(pool);
+      const concurrentStore = new PgGovernorStore(signalledPool);
+      const newPull = ingestPull(concurrentStore, {
+        deliveryId: "snapshot-concurrent-pull",
+        pullNumber: 6,
+        sourceUpdatedAt: new Date(START.valueOf() + 1_000),
+        receivedAt: new Date(START.valueOf() + 1_000),
+      });
+      await signalledPool.globalIngestLocked.promise;
+
+      const staleReconcile = store.reconcileOpenPullRequests(
+        staleToken,
+        [],
+        "snapshot-existing-pull",
+        new Date(START.valueOf() + 2_000),
+      );
+      await generationLock.query("COMMIT");
+      generationLockReleased = true;
+
+      await newPull;
+      expect(await staleReconcile).toBe("stale");
+    } finally {
+      if (!generationLockReleased) {
+        await generationLock.query("ROLLBACK");
+      }
+      generationLock.release();
+    }
+
+    expect(await store.findActiveGate(99, "pull_request", "pr:5")).not.toBeNull();
+    expect(await store.findActiveGate(99, "pull_request", "pr:6")).not.toBeNull();
+    const activePairs = await pool.query<{ pull_number: number }>(
+      `SELECT pull_number FROM pr_pair
+        WHERE repository_id = $1 AND active
+        ORDER BY pull_number`,
+      [repository.repositoryId],
+    );
+    expect(activePairs.rows.map((row) => row.pull_number)).toEqual([5, 6]);
+    const generation = await pool.query<{ generation: string }>(
+      `SELECT generation FROM repository_reconcile_generation
+        WHERE repository_id = $1`,
+      [repository.repositoryId],
+    );
+    const generationRow = generation.rows[0];
+    if (generationRow === undefined) {
+      throw new Error("repository generation disappeared during the concurrency test");
+    }
+    expect(Number(generationRow.generation)).toBe(staleToken.generation + 1);
   });
 });

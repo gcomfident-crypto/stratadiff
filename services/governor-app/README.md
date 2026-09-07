@@ -43,7 +43,8 @@ The migrations create:
   idempotency;
 - `pr_pair`, uniquely binding repository, PR, base, and head with monotonic epoch and fence fields;
 - `dispatch` and `evidence`, both bound to the pair epoch;
-- `gate_subject`, separating PR and merge-group Check Runs; and
+- `gate_subject`, separating PR and merge-group Check Runs;
+- `repository_reconcile_generation`, fencing GitHub list snapshots against concurrent webhooks; and
 - `outbox`, so webhook projection and work scheduling commit atomically.
 
 Each relevant delivery first changes the desired gate to `revoked` in the same transaction that
@@ -65,9 +66,13 @@ comment; they never issue another paid command. This makes an uncertain POST at-
 after the transition but before the request leaves the process intentionally remains fail-closed
 and needs operator redrive.
 
-Push handling revokes every currently open subject and queues a repository reconciliation. The
-GitHub client requests open PRs in 100-item pages until an actually short page is returned; there is
-no 256-PR matrix ceiling.
+Push handling revokes every currently open subject and queues a repository reconciliation. Before
+calling GitHub, a worker advances the repository generation and records that token. The GitHub
+client requests open PRs in 100-item pages until an actually short page is returned; there is no
+256-PR matrix ceiling. The database consumes the token with a compare-and-swap before changing any
+pair, gate, evidence, dispatch, or outbox row. A pull-request event, push, scoped malformed event,
+global quarantine, or newer list attempt invalidates an older token. Stale work leaves all business
+rows untouched and retries the same durable outbox item with a fresh list snapshot.
 
 ## Run
 
@@ -110,23 +115,23 @@ npm run build
 The unit tests use an in-memory PostgreSQL-compatible adapter and injected GitHub transport. They
 make no calls to GitHub and cover HMAC verification, delivery deduplication and collision
 detection, global malformed-delivery quarantine, stale delivery ordering, same-SHA PR isolation,
-immediate revocation, lease fencing, merge-group head binding, Checks API identity, and pagination
-beyond 300 open PRs. The separate integration suite applies
+immediate revocation, repository snapshot CAS, lease fencing, merge-group head binding, Checks API
+identity, and pagination beyond 300 open PRs. The separate integration suite applies
 the production migrations to a real PostgreSQL server. It deterministically holds one outbox row
-lock while a second worker claims work, and verifies outbox and pair lease expiry/fencing against
-the real transaction engine. CI runs that suite on PostgreSQL 17.
+lock while a second worker claims work, races a repository snapshot against a pull-request event,
+and verifies outbox, pair, and repository-generation fencing against the real transaction engine.
+CI runs that suite on PostgreSQL 17.
 
 Still not done: a live GitHub App installation E2E, a live PostgreSQL concurrency soak, delivery
 redrive/dead-letter operations, an operator UI, and merge-group-native provider
 evidence. Those are deployment gates beyond this runnable development MVP; do not claim production
 validation until the live installation/ruleset/merge-queue paths have been exercised.
 
-Two cross-system boundaries are also intentionally unresolved. Repository reconciliation lacks a
-generation compare-and-swap between its GitHub list snapshot and its database write. GitHub Checks
-also offers no transaction shared with PostgreSQL, so a stale
+One cross-system boundary remains intentionally unresolved. GitHub Checks offers no transaction
+shared with PostgreSQL, so a stale
 publisher can only be detected and compensated after an external write; the service reuses the
 canonical Check Run for compensation, but this is not proof of a zero-duration green race. These
-are explicit blockers for deployment as a required merge control.
+conditions remain explicit blockers for deployment as a required merge control.
 
 The unit suite's PostgreSQL adapter does not implement `FOR UPDATE SKIP LOCKED`; only
 `npm run test:postgres` is evidence for that lock path. The deterministic integration gate proves

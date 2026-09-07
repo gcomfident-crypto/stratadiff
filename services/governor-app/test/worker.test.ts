@@ -87,7 +87,8 @@ function fakeStore(overrides: Partial<WorkerStore>): WorkerStore {
     planDispatch: vi.fn(async () => true),
     beginDispatchAttempt: vi.fn(async () => true),
     adoptDispatch: vi.fn(async () => true),
-    reconcileOpenPullRequests: vi.fn(async () => undefined),
+    beginRepositorySnapshot: vi.fn(async (repository) => ({ repository, generation: 1 })),
+    reconcileOpenPullRequests: vi.fn(async () => "applied" as const),
     ...overrides,
   };
 }
@@ -315,6 +316,97 @@ describe("outbox worker fencing", () => {
       new Date("2026-09-07T13:00:01.000Z"),
       1_800,
       NOW,
+    );
+  });
+
+  it("takes a repository generation before fetching and applies that exact snapshot token", async () => {
+    const repository = {
+      installationId: 71,
+      repositoryId: 99,
+      fullName: "acme/repo",
+      owner: "acme",
+      name: "repo",
+    };
+    const token = { repository, generation: 7 };
+    const work: OutboxLease = {
+      ...outbox("reconcile_repository"),
+      aggregateId: null,
+      aggregateEpoch: null,
+      payload: {
+        installationId: repository.installationId,
+        repositoryId: repository.repositoryId,
+        repositoryFullName: repository.fullName,
+        owner: repository.owner,
+        name: repository.name,
+        deliveryId: "push-delivery",
+      },
+    };
+    const beginRepositorySnapshot = vi.fn(async () => token);
+    const reconcileOpenPullRequests = vi.fn(async () => "applied" as const);
+    const listOpenPullRequests = vi.fn(async () => [live()]);
+    const store = fakeStore({
+      claimOutbox: vi.fn(async () => work),
+      beginRepositorySnapshot,
+      reconcileOpenPullRequests,
+    });
+
+    await worker(store, fakeGithub({ listOpenPullRequests })).processOne();
+
+    expect(beginRepositorySnapshot).toHaveBeenCalledWith(repository, NOW);
+    expect(listOpenPullRequests).toHaveBeenCalledWith(repository);
+    expect(reconcileOpenPullRequests).toHaveBeenCalledWith(
+      token,
+      [live()],
+      "push-delivery",
+      NOW,
+    );
+    expect(beginRepositorySnapshot.mock.invocationCallOrder[0]).toBeLessThan(
+      listOpenPullRequests.mock.invocationCallOrder[0]!,
+    );
+    expect(listOpenPullRequests.mock.invocationCallOrder[0]).toBeLessThan(
+      reconcileOpenPullRequests.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("retries a push outbox item when its repository snapshot became stale", async () => {
+    const repository = {
+      installationId: 71,
+      repositoryId: 99,
+      fullName: "acme/repo",
+      owner: "acme",
+      name: "repo",
+    };
+    const work: OutboxLease = {
+      ...outbox("reconcile_repository"),
+      aggregateId: null,
+      aggregateEpoch: null,
+      payload: {
+        installationId: repository.installationId,
+        repositoryId: repository.repositoryId,
+        repositoryFullName: repository.fullName,
+        owner: repository.owner,
+        name: repository.name,
+        deliveryId: "push-delivery",
+      },
+    };
+    const completeOutbox = vi.fn(async () => true);
+    const failOutbox = vi.fn(async () => true);
+    const store = fakeStore({
+      claimOutbox: vi.fn(async () => work),
+      beginRepositorySnapshot: vi.fn(async () => ({ repository, generation: 7 })),
+      reconcileOpenPullRequests: vi.fn(async () => "stale" as const),
+      completeOutbox,
+      failOutbox,
+    });
+
+    await worker(store).processOne();
+
+    expect(completeOutbox).not.toHaveBeenCalled();
+    expect(failOutbox).toHaveBeenCalledWith(
+      work,
+      "repository snapshot was invalidated before reconciliation",
+      NOW,
+      5,
     );
   });
 });

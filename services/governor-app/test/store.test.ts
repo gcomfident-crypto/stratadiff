@@ -125,6 +125,181 @@ describe("transactional webhook projection", () => {
     expect(await store.findActiveGate(99, "pull_request", "pr:1")).toBeNull();
   });
 
+  it("rejects a stale repository list snapshot without any business-table writes", async () => {
+    const { store, service, pool } = await harness();
+    await deliver(
+      service,
+      "snapshot-initial-pull",
+      "pull_request",
+      pullPayload({
+        number: 11,
+        baseSha: BASE_A,
+        headSha: HEAD_A,
+        updatedAt: "2026-09-07T12:00:00.000Z",
+      }),
+    );
+    const repository = {
+      installationId: 71,
+      repositoryId: 99,
+      fullName: "acme/repo",
+      owner: "acme",
+      name: "repo",
+    };
+    const staleToken = await store.beginRepositorySnapshot(
+      repository,
+      new Date("2026-09-07T13:00:00.000Z"),
+    );
+
+    await deliver(
+      service,
+      "snapshot-new-head",
+      "pull_request",
+      pullPayload({
+        number: 11,
+        baseSha: BASE_A,
+        headSha: HEAD_B,
+        updatedAt: "2026-09-07T12:01:00.000Z",
+      }),
+    );
+
+    const readBusinessState = async () => {
+      const client = await pool.connect();
+      try {
+        const deliveries = await client.query(
+          "SELECT * FROM webhook_delivery ORDER BY delivery_id",
+        );
+        const collisions = await client.query(
+          "SELECT * FROM webhook_delivery_collision ORDER BY delivery_id, event_name, payload_sha256",
+        );
+        const generations = await client.query(
+          "SELECT * FROM repository_reconcile_generation ORDER BY repository_id",
+        );
+        const pairs = await client.query(
+          "SELECT * FROM pr_pair ORDER BY pull_number, epoch",
+        );
+        const gates = await client.query(
+          "SELECT * FROM gate_subject ORDER BY subject_key, epoch",
+        );
+        const dispatches = await client.query(
+          "SELECT * FROM dispatch ORDER BY pair_id, pair_epoch",
+        );
+        const evidence = await client.query(
+          "SELECT * FROM evidence ORDER BY pair_id, pair_epoch, kind, source_id",
+        );
+        const outbox = await client.query("SELECT * FROM outbox ORDER BY id");
+        return {
+          deliveries: deliveries.rows,
+          collisions: collisions.rows,
+          generations: generations.rows,
+          pairs: pairs.rows,
+          gates: gates.rows,
+          dispatches: dispatches.rows,
+          evidence: evidence.rows,
+          outbox: outbox.rows,
+        };
+      } finally {
+        client.release();
+      }
+    };
+    const before = await readBusinessState();
+
+    expect(
+      await store.reconcileOpenPullRequests(
+        staleToken,
+        [],
+        "snapshot-new-head",
+        new Date("2026-09-07T13:00:01.000Z"),
+      ),
+    ).toBe("stale");
+
+    expect(await readBusinessState()).toEqual(before);
+    expect(await store.findActiveGate(99, "pull_request", "pr:11")).toMatchObject({
+      active: true,
+      headSha: HEAD_B,
+      epoch: 2,
+    });
+
+    const currentToken = await store.beginRepositorySnapshot(
+      repository,
+      new Date("2026-09-07T13:00:02.000Z"),
+    );
+    expect(currentToken.generation).toBeGreaterThan(staleToken.generation);
+    expect(
+      await store.reconcileOpenPullRequests(
+        currentToken,
+        [],
+        "snapshot-new-head",
+        new Date("2026-09-07T13:00:03.000Z"),
+      ),
+    ).toBe("applied");
+    expect(await store.findActiveGate(99, "pull_request", "pr:11")).toBeNull();
+  });
+
+  it("invalidates a pre-push snapshot and deduplicates its retryable reconcile work", async () => {
+    const { store, service, pool } = await harness();
+    await deliver(
+      service,
+      "pre-push-pull",
+      "pull_request",
+      pullPayload({
+        number: 12,
+        baseSha: BASE_A,
+        headSha: HEAD_A,
+        updatedAt: "2026-09-07T12:00:00.000Z",
+      }),
+    );
+    const repository = {
+      installationId: 71,
+      repositoryId: 99,
+      fullName: "acme/repo",
+      owner: "acme",
+      name: "repo",
+    };
+    const staleToken = await store.beginRepositorySnapshot(
+      repository,
+      new Date("2026-09-07T13:00:00.000Z"),
+    );
+    const push = {
+      installation: { id: 71 },
+      repository: {
+        id: 99,
+        name: "repo",
+        full_name: "acme/repo",
+        owner: { login: "acme" },
+      },
+    };
+
+    expect(await deliver(service, "snapshot-push", "push", push)).toMatchObject({
+      duplicate: false,
+      disposition: "applied",
+    });
+    expect(await deliver(service, "snapshot-push", "push", push)).toMatchObject({
+      duplicate: true,
+      disposition: "applied",
+    });
+    expect(
+      await store.reconcileOpenPullRequests(
+        staleToken,
+        [],
+        "snapshot-push",
+        new Date("2026-09-07T13:00:01.000Z"),
+      ),
+    ).toBe("stale");
+    expect(await store.findActiveGate(99, "pull_request", "pr:12")).not.toBeNull();
+
+    const client = await pool.connect();
+    try {
+      const reconcileWork = await client.query(
+        `SELECT id FROM outbox
+          WHERE topic = 'reconcile_repository'
+            AND dedupe_key = 'reconcile:99:snapshot-push'`,
+      );
+      expect(reconcileWork.rowCount).toBe(1);
+    } finally {
+      client.release();
+    }
+  });
+
   it("keeps same-SHA pull requests isolated and revokes only the affected gate", async () => {
     const { store, service } = await harness();
     await deliver(
@@ -335,7 +510,7 @@ describe("transactional webhook projection", () => {
       dispatch: { state: "abandoned", evidenceDeadlineAt: null },
     });
 
-    await store.reconcileOpenPullRequests(
+    const malformedSnapshot = await store.beginRepositorySnapshot(
       {
         installationId: 71,
         repositoryId: 99,
@@ -343,6 +518,10 @@ describe("transactional webhook projection", () => {
         owner: "acme",
         name: "repo",
       },
+      new Date("2026-09-07T13:00:01.000Z"),
+    );
+    await store.reconcileOpenPullRequests(
+      malformedSnapshot,
       [
         {
           number: 6,
@@ -435,6 +614,16 @@ describe("transactional webhook projection", () => {
       30,
     );
     expect(staleLease).not.toBeNull();
+    const preQuarantineSnapshot = await store.beginRepositorySnapshot(
+      {
+        installationId: 71,
+        repositoryId: 100,
+        fullName: "elsewhere/other",
+        owner: "elsewhere",
+        name: "other",
+      },
+      new Date("2026-09-07T13:00:00.000Z"),
+    );
 
     const invalidBody = Buffer.from("{not-json");
     const result = await deliverRaw(service, "global-invalid-json", "pull_request", invalidBody);
@@ -500,6 +689,14 @@ describe("transactional webhook projection", () => {
         new Date("2026-09-07T13:00:01.000Z"),
       ),
     ).toBe(false);
+    expect(
+      await store.reconcileOpenPullRequests(
+        preQuarantineSnapshot,
+        [],
+        "global-invalid-json",
+        new Date("2026-09-07T13:00:01.000Z"),
+      ),
+    ).toBe("stale");
 
     const client = await pool.connect();
     try {
@@ -530,7 +727,7 @@ describe("transactional webhook projection", () => {
     expect(await deliver(service, "post-quarantine-evidence", "issue_comment", laterComment)).toMatchObject({
       disposition: "stale",
     });
-    await store.reconcileOpenPullRequests(
+    const quarantinedSnapshot = await store.beginRepositorySnapshot(
       {
         installationId: 71,
         repositoryId: 100,
@@ -538,6 +735,10 @@ describe("transactional webhook projection", () => {
         owner: "elsewhere",
         name: "other",
       },
+      new Date("2026-09-07T13:00:02.000Z"),
+    );
+    await store.reconcileOpenPullRequests(
+      quarantinedSnapshot,
       [
         {
           number: 9,

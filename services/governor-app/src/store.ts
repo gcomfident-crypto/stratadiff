@@ -19,7 +19,9 @@ import type {
   PairLease,
   PairSnapshot,
   PullPairRef,
+  RepositoryReconcileResult,
   RepositoryRef,
+  RepositorySnapshotToken,
   UnscopedQuarantineRequest,
 } from "./types.js";
 
@@ -83,6 +85,10 @@ interface DeadlineRow extends QueryResultRow {
 
 interface CountRow extends QueryResultRow {
   next_epoch: string;
+}
+
+interface GenerationRow extends QueryResultRow {
+  generation: string;
 }
 
 interface DeliveryRow extends QueryResultRow {
@@ -281,6 +287,38 @@ export class PgGovernorStore implements GovernorStore {
     await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [GLOBAL_INGEST_LOCK]);
   }
 
+  async #advanceRepositoryGeneration(
+    client: DatabaseClient,
+    repositoryId: number,
+    now: Date,
+  ): Promise<number> {
+    const result = await client.query<GenerationRow>(
+      `INSERT INTO repository_reconcile_generation (repository_id, generation, updated_at)
+       VALUES ($1, 1, $2)
+       ON CONFLICT (repository_id) DO UPDATE
+         SET generation = repository_reconcile_generation.generation + 1,
+             updated_at = EXCLUDED.updated_at
+       RETURNING generation`,
+      [repositoryId, now],
+    );
+    const row = result.rows[0];
+    if (row === undefined) {
+      throw new Error(`failed to advance repository generation for ${repositoryId}`);
+    }
+    return int(row.generation);
+  }
+
+  async #advanceAllRepositoryGenerations(
+    client: DatabaseClient,
+    now: Date,
+  ): Promise<void> {
+    await client.query(
+      `UPDATE repository_reconcile_generation
+          SET generation = generation + 1, updated_at = $1`,
+      [now],
+    );
+  }
+
   async #claimDelivery(
     client: DatabaseClient,
     request: DeliveryEnvelope,
@@ -360,6 +398,7 @@ export class PgGovernorStore implements GovernorStore {
     client: DatabaseClient,
     request: Pick<IngestRequest, "deliveryId" | "receivedAt">,
   ): Promise<Omit<IngestResult, "duplicate">> {
+    await this.#advanceAllRepositoryGenerations(client, request.receivedAt);
     const pairs = await client.query<PairRow>(
       `SELECT * FROM pr_pair
         WHERE active
@@ -419,6 +458,7 @@ export class PgGovernorStore implements GovernorStore {
     repository: RepositoryRef,
     pair: PullPairRef,
     request: IngestRequest,
+    advanceRepositoryGeneration = true,
   ): Promise<Omit<IngestResult, "duplicate">> {
     await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [
       advisoryKey(repository.repositoryId, "pull_request", String(pair.number)),
@@ -452,6 +492,14 @@ export class PgGovernorStore implements GovernorStore {
       pair.sourceUpdatedAt < new Date(current.source_updated_at)
     ) {
       return { disposition: "stale", touchedSubjects: [] };
+    }
+
+    if (advanceRepositoryGeneration) {
+      await this.#advanceRepositoryGeneration(
+        client,
+        repository.repositoryId,
+        request.receivedAt,
+      );
     }
 
     if (
@@ -801,6 +849,11 @@ export class PgGovernorStore implements GovernorStore {
     const malformed =
       request.impact.kind === "repository_reconcile" &&
       request.impact.reason === "malformed_signed_event";
+    await this.#advanceRepositoryGeneration(
+      client,
+      repository.repositoryId,
+      request.receivedAt,
+    );
     const pairs = await client.query<PairRow>(
       `SELECT * FROM pr_pair
         WHERE repository_id = $1 AND active
@@ -1799,14 +1852,39 @@ export class PgGovernorStore implements GovernorStore {
     return result.rowCount === 1;
   }
 
-  async reconcileOpenPullRequests(
+  async beginRepositorySnapshot(
     repository: RepositoryRef,
+    now: Date,
+  ): Promise<RepositorySnapshotToken> {
+    const generation = await this.#transaction(async (client) => {
+      await this.#lockGlobalIngest(client);
+      return this.#advanceRepositoryGeneration(client, repository.repositoryId, now);
+    });
+    return {
+      repository: { ...repository },
+      generation,
+    };
+  }
+
+  async reconcileOpenPullRequests(
+    token: RepositorySnapshotToken,
     pulls: LivePullRequest[],
     deliveryId: string,
     now: Date,
-  ): Promise<void> {
-    await this.#transaction(async (client) => {
+  ): Promise<RepositoryReconcileResult> {
+    return this.#transaction(async (client) => {
       await this.#lockGlobalIngest(client);
+      const claimed = await client.query<GenerationRow>(
+        `UPDATE repository_reconcile_generation
+            SET generation = generation + 1, updated_at = $3
+          WHERE repository_id = $1 AND generation = $2
+          RETURNING generation`,
+        [token.repository.repositoryId, token.generation, now],
+      );
+      if (claimed.rowCount !== 1) {
+        return "stale";
+      }
+      const repository = token.repository;
       const openNumbers = new Set(pulls.map((pull) => pull.number));
       const observed = await client.query<{ pull_number: number } & QueryResultRow>(
         `SELECT pull_number FROM pr_pair
@@ -1877,7 +1955,7 @@ export class PgGovernorStore implements GovernorStore {
             reason: "internal",
           },
         };
-        const result = await this.#applyPullRequest(client, repository, pull, request);
+        const result = await this.#applyPullRequest(client, repository, pull, request, false);
         if (result.disposition === "stale") {
           const pairResult = await client.query<PairRow>(
             `SELECT * FROM pr_pair
@@ -1909,6 +1987,7 @@ export class PgGovernorStore implements GovernorStore {
           }
         }
       }
+      return "applied";
     });
   }
 }

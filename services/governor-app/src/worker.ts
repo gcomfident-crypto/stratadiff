@@ -28,6 +28,7 @@ export type WorkerStore = Pick<
   | "planDispatch"
   | "beginDispatchAttempt"
   | "adoptDispatch"
+  | "beginRepositorySnapshot"
   | "reconcileOpenPullRequests"
 >;
 
@@ -505,12 +506,19 @@ export class GovernorWorker {
       owner: string(outbox.payload, "owner"),
       name: string(outbox.payload, "name"),
     };
-    const pulls = await this.#github.listOpenPullRequests(repository);
-    await this.#store.reconcileOpenPullRequests(
+    const token = await this.#store.beginRepositorySnapshot(
       repository,
+      this.#options.now(),
+    );
+    const pulls = await this.#github.listOpenPullRequests(repository);
+    const result = await this.#store.reconcileOpenPullRequests(
+      token,
       pulls,
       string(outbox.payload, "deliveryId"),
       this.#options.now(),
     );
+    if (result === "stale") {
+      throw new Error("repository snapshot was invalidated before reconciliation");
+    }
   }
 }
