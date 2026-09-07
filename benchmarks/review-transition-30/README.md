@@ -34,3 +34,16 @@ the frozen plan and protocol. It does not authenticate GitHub as the historical 
 provider exposes only one merge-base candidate per comparison, so this artifact does not prove A
 or C. The 19 ancestry-routed cases still require offline-complete Git history and unique
 `git merge-base --all` results; none is currently a product pass or an acquisition failure.
+
+## Clean product replay
+
+[`evaluation-v1.0.0.json`](evaluation-v1.0.0.json) records the first complete clean-release replay
+against all 30 materialized histories. Two independently generated replay bundles each executed
+every case twice. Both bundles passed the verifier, all 30 cases were byte-deterministic and
+oracle-conformant, and the two canonical bundle hashes were identical.
+
+Across the frozen cases, the independent oracle classified 749 current change identities: 528
+exact identity carries, 37 four-way replay carries, and 184 identities that still require review.
+All 185 retired checkpoint changes were resolved. These are policy-conformance measurements, not
+human-priority labels or evidence of reviewer-time savings. The evaluation also does not validate
+the hosted GitHub App, ruleset, or merge-queue control plane.

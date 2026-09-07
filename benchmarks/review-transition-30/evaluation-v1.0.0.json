@@ -1,0 +1,56 @@
+{
+  "schema": "stratadiff-review-transition-clean-evaluation-v1",
+  "captured_at": "2026-09-07T16:22:31Z",
+  "bindings": {
+    "plan_sha256": "d0287a0319c7e2dd7298e7a141b00be0dbfc2db8dfd75ac2a42259ceb072fdb9",
+    "protocol_sha256": "b804e08ff34d69e4e4d7820abe35d9bb27b82165db6a5f5af3dbd2177c29c194",
+    "provider_observation_sha256": "4c2a5e813c905016993e540578c339185cafc8fbc0c73360d9722edca50995b5",
+    "materialization_sha256": "a27052c2e5c32dac2b50df7386ffe5986d3522d09c662a6ee0ab2491a9b90c11",
+    "oracle_sha256": "73e4bc0942812cfb4ca8f3826dc382f3fc8f159f9cb7316111cb4634a34d9e9b",
+    "replay_a_sha256": "602fd6e26a58843591bfc89436f8a8d9155e063cfaf65d6fed87523ba9b72747",
+    "replay_b_sha256": "602fd6e26a58843591bfc89436f8a8d9155e063cfaf65d6fed87523ba9b72747"
+  },
+  "product_build": {
+    "binary_sha256": "996a10d31d01bfbd051747bf9a2da3f5aa2c745106bc1e325888b6bc127253fe",
+    "build_profile": "release",
+    "cargo_lock_sha256": "351fb3a31c34eba2f81cab48d11289412b1d9d7b5ba666d45a30c2bc1713b4fa",
+    "engine_version": "0.5.0",
+    "git_dirty": false,
+    "git_revision": "d5dceb7f47bb1ff25a053ed5a10c25ee6dbe1358",
+    "rustc_version": "rustc 1.98.1 (48a229cea 2026-09-01)"
+  },
+  "acquisition": {
+    "failed": 0,
+    "materialized": 30,
+    "selected_cases": 30
+  },
+  "oracle_totals": {
+    "base_drift_obligations": 22556,
+    "current_change_identities": 749,
+    "exact_identity_carries": 528,
+    "four_way_replay_carries": 37,
+    "needs_review_identities": 184,
+    "retired_checkpoint_changes": 185,
+    "unresolved_retired_changes": 0
+  },
+  "product_replay": {
+    "independent_bundles": 2,
+    "executions_per_case_per_bundle": 2,
+    "bundle_bytes_equal": true,
+    "deterministic_cases_per_bundle": 30,
+    "evaluated_cases_per_bundle": 30,
+    "failed_cases_per_bundle": 0,
+    "oracle_conformant_cases_per_bundle": 30,
+    "verified_bundles": 2
+  },
+  "claim_boundary": {
+    "establishes": "The pinned clean release build deterministically conforms to the independent file-identity and four-way-replay oracle on all 30 frozen real-history transitions.",
+    "does_not_establish": [
+      "human-priority accuracy",
+      "semantic safety of carried changes",
+      "reviewer-time savings",
+      "population prevalence",
+      "hosted GitHub App or merge-queue correctness"
+    ]
+  }
+}
