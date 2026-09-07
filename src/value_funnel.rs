@@ -1717,9 +1717,11 @@ mod tests {
         std::fs::hard_link(&path, directory.path().join("alias.jsonl")).unwrap();
 
         let error = read_log_path(&path).err().unwrap();
-        assert!(error
-            .to_string()
-            .contains("value log must not have multiple hard links"));
+        assert!(
+            error
+                .to_string()
+                .contains("value log must not have multiple hard links")
+        );
     }
 
     #[test]
