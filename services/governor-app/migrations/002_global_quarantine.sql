@@ -1,8 +1,7 @@
 ALTER TABLE webhook_delivery
     ALTER COLUMN installation_id DROP NOT NULL,
     ALTER COLUMN repository_id DROP NOT NULL,
-    ADD COLUMN scope text NOT NULL DEFAULT 'repository'
-        CHECK (scope IN ('repository', 'global')),
+    ADD COLUMN scope text NOT NULL DEFAULT 'repository',
     ADD COLUMN error_code text;
 
 ALTER TABLE webhook_delivery
