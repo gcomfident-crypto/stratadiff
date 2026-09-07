@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/pull-request-doctor-v1.schema.json",
+  "title": "StrataDiff pull-request doctor report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "generated_at",
+    "provider_url",
+    "repository",
+    "target",
+    "collection",
+    "claim_boundary",
+    "verdict",
+    "summary",
+    "requirements",
+    "next_actions"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-pull-request-doctor-v1" },
+    "tool_version": { "$ref": "#/$defs/text_255" },
+    "generated_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "provider_url": { "$ref": "#/$defs/provider_origin" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+      "maxLength": 202
+    },
+    "target": { "$ref": "#/$defs/target" },
+    "collection": { "$ref": "#/$defs/collection" },
+    "claim_boundary": { "$ref": "#/$defs/claim_boundary" },
+    "verdict": { "enum": ["checks_clear", "checks_blocked", "inconclusive"] },
+    "summary": { "$ref": "#/$defs/summary" },
+    "requirements": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/diagnosis" }
+    },
+    "next_actions": {
+      "type": "array",
+      "maxItems": 10001,
+      "items": { "$ref": "#/$defs/action" }
+    }
+  },
+  "$defs": {
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "positive_id": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "text_64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "text_255": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "bounded_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "https_url": {
+      "type": "string",
+      "pattern": "^https://[^\\s<>\\\"']+$",
+      "maxLength": 2048
+    },
+    "provider_origin": {
+      "type": "string",
+      "pattern": "^https://[^\\s<>\\\"'/@?#]+$",
+      "maxLength": 2048
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "nullable_app_id": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/positive_id" }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["number", "url", "base_ref", "base_sha", "head_sha"],
+      "properties": {
+        "number": { "$ref": "#/$defs/positive_id" },
+        "url": { "$ref": "#/$defs/https_url" },
+        "base_ref": { "$ref": "#/$defs/text_255" },
+        "base_sha": { "$ref": "#/$defs/object_id" },
+        "head_sha": { "$ref": "#/$defs/object_id" }
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["surface", "reason"],
+      "properties": {
+        "surface": {
+          "enum": ["target", "requirements", "check_runs", "commit_statuses"]
+        },
+        "reason": { "$ref": "#/$defs/bounded_text" }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "api_calls", "response_bytes", "gaps"],
+      "properties": {
+        "status": { "enum": ["complete", "partial"] },
+        "api_calls": { "$ref": "#/$defs/count" },
+        "response_bytes": { "$ref": "#/$defs/count" },
+        "gaps": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/gap" }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "complete" } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "gaps": { "maxItems": 0 } } },
+          "else": { "properties": { "gaps": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "name", "url"],
+      "properties": {
+        "kind": { "enum": ["ruleset", "branch_protection"] },
+        "id": { "$ref": "#/$defs/text_255" },
+        "name": { "$ref": "#/$defs/text_255" },
+        "url": { "$ref": "#/$defs/https_url" }
+      }
+    },
+    "requirement_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context", "expected_app_id"],
+      "properties": {
+        "context": { "$ref": "#/$defs/text_255" },
+        "expected_app_id": { "$ref": "#/$defs/nullable_app_id" }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "url",
+        "sha",
+        "context",
+        "app_id",
+        "producer",
+        "status",
+        "conclusion"
+      ],
+      "properties": {
+        "kind": { "enum": ["check_run", "commit_status"] },
+        "id": { "$ref": "#/$defs/text_255" },
+        "url": { "$ref": "#/$defs/https_url" },
+        "sha": { "$ref": "#/$defs/object_id" },
+        "context": { "$ref": "#/$defs/text_255" },
+        "app_id": { "$ref": "#/$defs/nullable_app_id" },
+        "producer": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/text_255" }
+          ]
+        },
+        "status": { "$ref": "#/$defs/text_64" },
+        "conclusion": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/text_64" }
+          ]
+        }
+      }
+    },
+    "diagnosis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "status", "explanation", "policies", "evidence"],
+      "properties": {
+        "key": { "$ref": "#/$defs/requirement_key" },
+        "status": {
+          "enum": [
+            "satisfied",
+            "pending",
+            "failed",
+            "missing",
+            "source_mismatch",
+            "source_unknown"
+          ]
+        },
+        "explanation": { "$ref": "#/$defs/bounded_text" },
+        "policies": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/policy" }
+        },
+        "evidence": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirements",
+        "satisfied",
+        "pending",
+        "failed",
+        "missing",
+        "source_mismatch",
+        "source_unknown"
+      ],
+      "properties": {
+        "requirements": { "$ref": "#/$defs/count" },
+        "satisfied": { "$ref": "#/$defs/count" },
+        "pending": { "$ref": "#/$defs/count" },
+        "failed": { "$ref": "#/$defs/count" },
+        "missing": { "$ref": "#/$defs/count" },
+        "source_mismatch": { "$ref": "#/$defs/count" },
+        "source_unknown": { "$ref": "#/$defs/count" }
+      }
+    },
+    "claim_boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required_check_readiness_supported",
+        "mergeability_supported",
+        "review_requirements_supported",
+        "compliance_supported",
+        "code_safety_supported"
+      ],
+      "properties": {
+        "required_check_readiness_supported": { "type": "boolean" },
+        "mergeability_supported": { "const": false },
+        "review_requirements_supported": { "const": false },
+        "compliance_supported": { "const": false },
+        "code_safety_supported": { "const": false }
+      }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "requirement", "title", "rationale", "argv"],
+      "properties": {
+        "code": {
+          "enum": [
+            "wait_for_check",
+            "inspect_failed_check",
+            "restore_required_check",
+            "fix_required_check_source",
+            "resolve_source_identity",
+            "complete_collection"
+          ]
+        },
+        "requirement": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/requirement_key" }
+          ]
+        },
+        "title": { "$ref": "#/$defs/bounded_text" },
+        "rationale": { "$ref": "#/$defs/bounded_text" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+          }
+        }
+      }
+    }
+  }
+}

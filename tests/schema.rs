@@ -102,6 +102,7 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/review-cache-reviewer-manifest-v1.schema.json"),
         include_str!("../schema/review-cache-result-v1.schema.json"),
         include_str!("../schema/merge-readiness-audit-v1.schema.json"),
+        include_str!("../schema/pull-request-doctor-v1.schema.json"),
         include_str!("../actions/review-governor/evidence-v1.schema.json"),
         include_str!("../tools/review-transition/review-context-v1.schema.json"),
         include_str!("../tools/review-transition/review-input-v1.schema.json"),

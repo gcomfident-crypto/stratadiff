@@ -5,6 +5,7 @@ pub mod diffbenchmark_case;
 pub mod diffbenchmark_eval;
 pub mod diffbenchmark_materialization;
 pub mod diffbenchmark_prediction;
+pub mod doctor;
 pub mod github;
 pub mod github_check;
 pub mod github_ownership;

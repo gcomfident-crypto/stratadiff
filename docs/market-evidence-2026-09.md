@@ -10,25 +10,25 @@ documentation establishes documented behavior, not independent accuracy or adopt
 
 The original single-provider thesis is falsified strongly enough to change the product. The
 recurring commercial job is not “show a nicer diff,” “sell another reviewer model,” or “stop
-CodeRabbit from approving an old head.” It is:
+CodeRabbit from approving an old head.” The immediate job is:
 
-> Produce one independently inspectable record of which configured review and Check evidence is
-> bound to the exact code GitHub is about to merge, even when the PR head and merge-queue candidate
-> have different SHAs.
+> Explain why this exact PR or merge-queue candidate is blocked: which effective rule expects which
+> context from which producer, what appeared on the exact SHA, what never appeared, and what the
+> developer should do next.
 
 The strongest initial segment is a GitHub Cloud team with multiple AI, policy, CI, or human review
 signals; required checks; and either strict up-to-date protection or a merge queue. Several pushes
 per PR, finite review credits, stacked changes, and expensive CI sharpen the pain. The evidence does
 not yet show how often these teams need a cross-provider proof or whether they will pay for it.
 
-The primary wedge is therefore a **Review Evidence Control Plane** whose output is a verifiable
-merge proof. It records provider, review object, reviewed head, scope, policy generation, override
-provenance, and source App; it evaluates PR-head obligations separately from a synthetic
-`merge_group`; and it withholds its required success whenever evidence is missing, stale,
-ambiguous, or from the wrong source. Review Cache may reduce an open reviewer's input to `skip`,
-`residue`, `full`, or `blocked`, and Review Resume may explain remaining work, but neither is the
-merge authority. The hosted path remains an alpha thesis until live multi-provider, ruleset, and
-merge-queue trials establish correctness and user value.
+The primary acquisition wedge is therefore **Pull Request Doctor**, a read-only command that works
+before an App install and produces an exact-head diagnostic bundle. Repeated incident evidence can
+then justify the broader **Review Evidence Control Plane**: record provider, review object, reviewed
+head, scope, policy generation, override provenance, and source App; evaluate PR-head obligations
+separately from a synthetic `merge_group`; and withhold required success whenever evidence is
+missing, stale, ambiguous, or from the wrong source. Review Cache and Review Resume remain
+optimization and recovery surfaces, not merge authority. The hosted path remains an alpha thesis
+until live multi-provider, ruleset, and merge-queue trials establish correctness and user value.
 
 **No-Go:** a standalone “CodeRabbit stale-approval guard.” CodeRabbit's current official contract
 already verifies that the latest commit was reviewed, the current head belongs to the reviewed
@@ -66,6 +66,20 @@ reported failures only.
 | [CodeRabbit automatic-review controls](https://docs.coderabbit.ai/configuration/auto-review), modified 2026-08-31 | Incremental review is on by default but auto-pauses after five reviewed commits; each eligible push consumes review allowance, and the vendor recommends earlier pause/manual review for active branches. | Cost, noise, and final-coverage tension are credible. Measure safe coalescing and carry; do not assume savings. |
 | GitHub Community [#103114](https://github.com/orgs/community/discussions/103114), created 2024-02-02 with reports through 2026-05-18, and [#43988](https://github.com/orgs/community/discussions/43988), with a 2026-04-16 adoption-blocking report | Required checks for PR and merge queue remain coupled in reported workflows, causing duplicate expensive runs or stuck queues and awkward same-name/conditional workarounds. | A canonical aggregate Check plus configuration audit is a stronger acquisition wedge than another reviewer. These reports do not quantify GitHub-wide frequency. |
 | Graphite [merge queue](https://graphite.com/docs/graphite-merge-queue), modified 2026-01-22, and [setup](https://graphite.com/docs/set-up-merge-queue), modified 2026-06-22 | Graphite's queue optimizes stack throughput but is incompatible with GitHub's native queue; its fast modes can require App bypass permissions, and one repository has one trunk queue. | Do not build another queue. Remain a neutral proof layer that can sit beside the team's chosen merge path. Absence of a documented Graphite proof contract is not proof that no private capability exists. |
+
+### Stuck-PR incident cluster
+
+These reports make the first Doctor cause codes concrete. They prove that the failures occur, not
+how often they occur or that a separate product will be adopted.
+
+| Evidence | Observed failure | Doctor implication |
+|---|---|---|
+| [CodeQL Action #1537](https://github.com/github/codeql-action/issues/1537), [Read the Docs #10021](https://github.com/readthedocs/readthedocs.org/issues/10021), and [Danger JS #1427](https://github.com/danger/danger-js/issues/1427) | Independent projects report merge queues waiting forever because a required producer never publishes the expected status for the synthetic candidate. CodeQL #1537 had 43 reactions at capture. | Trace required context → producer → exact candidate SHA → absent event. |
+| [GitHub Docs #8926](https://github.com/github/docs/issues/8926) and current [required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks) | A workflow skipped by path or branch filtering can leave its required check pending forever, while a skipped job reports success. | Distinguish workflow-trigger reachability from job-level conditions and offer a patch preview. |
+| [Kubernetes SIG Prow #915](https://github.com/kubernetes-sigs/prow/issues/915) | A successful same-name Check can still fail policy when the requirement is bound to another App. | Preserve expected and observed App IDs; context strings alone are not identity. |
+| [GitHub CLI #9839](https://github.com/cli/cli/issues/9839) | The CLI can collapse the reason to “base branch policy prohibits this merge.” | This generic error is the high-intent entry moment for one-command root-cause diagnosis. |
+| [Flutter #162882](https://github.com/flutter/flutter/issues/162882) and [LLVM #151135](https://github.com/llvm/llvm-project/issues/151135) | Flutter reports completed state that never reached the gate; LLVM reports repeated rebases cancelling and rerunning CI. | The later flight recorder must separate producer failure, never-scheduled work, lost completion, and superseded candidates, then quantify duplicated work. |
+| GitHub Rule Insights [announcement/discussion #205972](https://github.com/orgs/community/discussions/205972) | GitHub now provides native rule pass/fail/bypass insight and Evaluate mode for eligible rulesets. | **No-Go:** a ruleset dashboard or generic shadow mode is not differentiated. Win on pre-merge, cross-surface, exact-candidate root cause. |
 
 The strongest counter-evidence is CodeRabbit's exact-head contract plus GitHub's latest-SHA and
 expected-App enforcement. It removes the original single-provider security wedge. The public
@@ -151,6 +165,9 @@ or selective approval Check is already occupied product territory.
 | Gerrit | [Review UI documentation](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#normal-and-rebase-edits) compares arbitrary patch sets, identifies rebase edits using both parents, and omits files changed only by rebase. [Label copy conditions](https://gerrit-review.googlesource.com/Documentation/config-labels.html#label_copyCondition) copy votes for configured kinds such as `NO_CHANGE`, `NO_CODE_CHANGE`, and `TRIVIAL_REBASE`. Gerrit also documents a [hazardous stacked squash](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#hazardous-rebases) whose inter-patch-set diff is empty while parent content enters implicitly. | Gerrit demonstrates that review carry is a mature policy primitive and that two-snapshot interdiff can still hide parent influx. StrataDiff's opportunity is a GitHub-native, portable four-snapshot proof, not invention of rebase-aware review. |
 | Reviewable | [File review documentation](https://docs.reviewable.io/files) tracks each reviewer × file × immutable revision, retains force-pushed revisions using repository refs, compares a reviewer's last-reviewed revision with latest, and heuristically maps rebased commits. Its maintainer declined cross-revision line-review carry because it is “too imprecise and much too likely to hide unreviewed lines” ([issue comment](https://github.com/Reviewable/Reviewable/issues/414#issuecomment-1611899307), 2023-06-28). | Persistent review memory is not novel. Conservative line or hunk carry is safety-sensitive; explicit proof and abstention are necessary but still need human validation. |
 | Aviator FlexReview | [Validation documentation](https://docs.aviator.co/flexreview/concepts/validation-in-flexreview) publishes a GitHub status check, stores each approver's owned-file state at the approved commit, and selectively dismisses approvals when those files change. | A coverage Check and owner-selective validation are not unique. Differentiate on exact cross-rewrite reconstruction, dropped reviewed work, base-influx evidence, local execution, and independently verifiable artifacts. |
+| Mergify | [`mergify config simulate`](https://docs.mergify.com/configuration/file-format/#validation-and-troubleshooting) evaluates its configuration against a PR without executing actions; its conditions can qualify a Check by GitHub App and its queue surfaces blocking conditions. | Do not claim a generic policy simulator, App-qualified check name, or replacement queue as novel. Doctor must explain GitHub-native policy plus external producers it does not own. |
+| Aviator Verify | [Verify](https://docs.aviator.co/verify) and its [audit trail](https://docs.aviator.co/verify/concepts/audit-trails-and-compliance) already connect intent, criteria, evidence, verdict, and reviewer decision. | “Immutable proof” alone is occupied positioning. StrataDiff must win on exact-candidate interoperability and operational root cause, not audit-language marketing. |
+| Datadog PR Gates | [PR Gates](https://docs.datadoghq.com/pr_gates/) already offers non-blocking rollout and failure context for Datadog security, coverage, and flaky-test signals; its setup documentation says a required gate is incompatible with repositories using GitHub merge queue. | A vendor-specific shadow Check exists. Doctor can add value by detecting that documented incompatibility before a team turns it into a permanent blocker. |
 
 “Not documented” is not treated as proof that a vendor lacks a capability. No independently audited
 accuracy, adoption, saved-time, or retention result was found for the vendor mechanisms above.
@@ -177,7 +194,7 @@ The repository's separate 500-PR Review Churn Census found checkpoint drift in 8
 reviewer/PR checkpoints. That bounded panel supports an event-driven product, not a universal daily
 workflow. It must not be blended with self-selected issue votes to manufacture a market-size claim.
 
-## Primary product wedge: Review Evidence Control Plane
+## Long-term product: Review Evidence Control Plane
 
 ### User-visible contract
 

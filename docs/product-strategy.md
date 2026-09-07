@@ -10,20 +10,20 @@ maintained in the [September 2026 market-evidence snapshot](market-evidence-2026
 
 ## Decision in one sentence
 
-**StrataDiff should become the verifiable merge-proof control plane behind existing AI, policy,
-CI, and human reviewers: canonicalize observable provider objects into versioned, content-addressed
-evidence snapshots, evaluate one versioned policy for the current PR head and the final
-`merge_group` candidate, and publish one dedicated App-bound Check. Review Cache is an optional
-input optimizer and Review Resume is the human explanation surface. The durable moat is
-interoperability, deterministic evidence carry, strict replay, and the real-history failure
-corpus—not another reviewer model or merge queue.**
+**StrataDiff should enter as the `gh doctor` for a stuck pull request: bind effective policy,
+required contexts, producer App identity, and observed signals to one exact PR or `merge_group`
+SHA, then name the blocker and smallest safe next action. Repeated diagnoses become the flight
+recorder and, only after shadow validation, the verifiable merge-proof control plane. The durable
+moat is cross-provider evidence lineage and a real-incident failure corpus—not another reviewer
+model, merge queue, rules dashboard, or generic composite Check.**
 
 This is deliberately not another AI reviewer. AI reviewers generate judgments; GitHub supplies
 SHA, ruleset, review, and Check primitives. StrataDiff's job is to prove how those facts compose.
-For a platform owner, the first value experience is a read-only repository audit followed by a
-non-blocking shadow proof. For a person, `stratadiff resume <PR-URL>` remains the local explanation
-and recovery flow. A route never manufactures or restores a code-host approval, and an open context
-closure can never reuse a model verdict.
+For a developer, the first value experience is one read-only `doctor <PR-URL>` command at the
+moment GitHub gives only a generic policy failure. For a platform owner, repeated incident bundles
+lead to an admin-level repository preflight and then a non-blocking shadow proof. `stratadiff
+resume <PR-URL>` remains the local review-recovery flow. A route never manufactures or restores a
+code-host approval, and an open context closure can never reuse a model verdict.
 
 ### Explicit No-Go correction
 
@@ -43,8 +43,10 @@ from PR heads to a different synthetic merge candidate. If teams do not need tha
 host and reviewer-native controls are sufficient and StrataDiff should say so.
 
 The released CLI remains useful but is no longer the primary acquisition assumption. New public
-evidence of per-push AI review spend, repeated comments, merge-queue duplication, and ruleset
-friction makes a read-only Audit followed by a hosted shadow Check the faster falsification path.
+evidence of checks that never schedule, expected-App drift, merge-queue event gaps, lost completion
+signals, and opaque host errors makes an exact-PR Doctor the faster falsification path. A repository
+Audit requires broader administrative visibility and follows only after the incident-level value is
+visible; a hosted shadow Check follows after both.
 It must share the same transition proof rather than branch into a heuristic cache product. On a
 machine with Git, an authenticated `gh`, and a verified StrataDiff binary, the human explanation
 flow still starts outside any checkout:
@@ -93,12 +95,13 @@ The complete result is in
 time saved, issue recall, willingness to pay, or GitHub-wide prevalence.
 
 The census narrows the human Resume opportunity, while the 2026-09-08 platform review also narrows
-the single-reviewer Governor. The first acquisition surface is now a **Merge Readiness Audit**:
-inventory rulesets, expected App sources, duplicate check names, missing `merge_group` triggers,
-path-filtered required workflows, reviewer coverage, overrides, and repeated work. Qualified
-repositories can then run one non-blocking composite proof in shadow mode. Review Cache, Inbox, and
-Resume remain optimization, explanation, and recovery surfaces; they are not expected to create the
-high-frequency habit on their own.
+the single-reviewer Governor. The first acquisition surface is now **Pull Request Doctor**: answer
+why this exact PR head is blocked before asking for admin access or an App install. The repository
+Audit then inventories rulesets, expected App sources, duplicate check names, missing `merge_group`
+triggers, path-filtered required workflows, reviewer coverage, overrides, and repeated work for a
+qualified team. Only then should the repository run a non-blocking composite proof in shadow mode.
+Review Cache, Inbox, and Resume remain optimization, explanation, and recovery surfaces; they are
+not expected to create the high-frequency habit on their own.
 
 “Read-only” means the Audit performs no mutation, not that every field is available with low
 privilege. GitHub's [rules API](https://docs.github.com/en/rest/repos/rules?apiVersion=2022-11-28)
@@ -383,8 +386,9 @@ worked on semantic diffing, refactoring analysis, or review workflow.
 | Moderne / OpenRewrite | Deterministic source recipes with [recipe tests](https://docs.openrewrite.org/authoring-recipes/recipe-testing) and knowledge of the transformation that was requested. | For recipe-produced changes, producer provenance can be stronger than post-hoc inference. Import the recipe attestation; focus StrataDiff on vendor-neutral verification of changes from any source. |
 | Static analysis and security scanners | Find known bug and vulnerability classes. | These tools answer “what may be wrong?” StrataDiff answers “what factual transformation can be replayed or checked?” Neither replaces the other. |
 
-The defensible product loop is: **read-only Audit → non-blocking shadow proof → measured remediation
-and savings → opt-in required Check → portable evidence ledger**. Resume and conservative residue
+The defensible product loop is: **exact-PR Doctor → admin preflight Audit → non-blocking shadow
+proof → measured remediation and savings → opt-in required Check → portable evidence ledger**.
+Resume and conservative residue
 explain or reduce work inside that loop. Any competitor can copy a summary; provider interoperability,
 strict failure behavior, final-candidate binding, offline replay, and accumulated adversarial lineage
 must provide the trust advantage.

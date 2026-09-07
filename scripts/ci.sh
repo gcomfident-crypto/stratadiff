@@ -48,6 +48,10 @@ python3 -B benchmarks/review-inbox-global-v1/verify.py self-test
 cargo test --test review_inbox_global_v1 --locked
 python3 -B benchmarks/merge-readiness-audit-v1/verify.py verify
 (cd benchmarks/merge-readiness-audit-v1 && sha256sum -c SHA256SUMS)
+python3 -B benchmarks/pull-request-doctor-v1/verify.py verify
+python3 -B benchmarks/pull-request-doctor-v1/verify.py self-test
+(cd benchmarks/pull-request-doctor-v1 && sha256sum -c SHA256SUMS)
+cargo test --test pull_request_doctor_v1 --locked
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings

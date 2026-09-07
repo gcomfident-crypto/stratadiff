@@ -6,6 +6,12 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use serde_yaml_ng::Value as YamlValue;
 
+use crate::doctor::{
+    DoctorCheckRun, DoctorCollection, DoctorCollectionGap, DoctorCollectionStatus,
+    DoctorCollectionSurface, DoctorCommitStatus, DoctorPolicyKind, DoctorPolicyRef,
+    DoctorRequirement, DoctorTarget, PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA,
+    PullRequestDoctorSnapshot,
+};
 use crate::ownership::github_provider_hostname;
 use crate::readiness::{
     BranchPolicySnapshot, CheckRunSnapshot, CollectionGap, CollectionStatus, CollectionSurface,
@@ -43,6 +49,14 @@ pub struct MergeReadinessCollection<'a> {
     pub repository: &'a str,
     pub captured_at: &'a str,
     pub pull_request_limit: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct PullRequestDoctorCollection<'a> {
+    pub provider_url: &'a str,
+    pub repository: &'a str,
+    pub captured_at: &'a str,
+    pub pull_request_number: u64,
 }
 
 #[derive(Debug)]
@@ -209,6 +223,64 @@ struct ApiPullHead {
     sha: String,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorPullRequest {
+    number: u64,
+    html_url: String,
+    state: String,
+    merge_commit_sha: Option<String>,
+    base: ApiDoctorPullRef,
+    head: ApiDoctorPullHead,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorPullRef {
+    #[serde(rename = "ref")]
+    reference: String,
+    sha: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorPullHead {
+    sha: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiBranchProtection {
+    required_status_checks: Option<ApiClassicRequiredStatusChecks>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiClassicRequiredStatusChecks {
+    #[serde(default)]
+    contexts: Vec<String>,
+    #[serde(default)]
+    checks: Vec<ApiClassicRequiredCheck>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiClassicRequiredCheck {
+    context: String,
+    app_id: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorCheckRunList {
+    total_count: u64,
+    check_runs: Vec<ApiDoctorCheckRun>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ApiDoctorCheckRun {
+    id: u64,
+    html_url: String,
+    name: String,
+    head_sha: String,
+    app: Option<ApiApp>,
+    status: String,
+    conclusion: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 struct ApiCheckRunList {
     total_count: u64,
@@ -284,6 +356,7 @@ fn parse_repository(value: &str) -> Result<(String, String)> {
 
 fn valid_repository_component(value: &str) -> bool {
     !value.is_empty()
+        && !matches!(value, "." | "..")
         && value.len() <= 100
         && value
             .bytes()
@@ -1233,5 +1306,690 @@ pub fn collect_merge_readiness_snapshot<A: GithubReadinessApi>(
         branch_policy,
         workflows,
         pull_requests,
+    })
+}
+
+fn add_doctor_gap(
+    gaps: &mut Vec<DoctorCollectionGap>,
+    surface: DoctorCollectionSurface,
+    reason: String,
+) {
+    gaps.push(DoctorCollectionGap { surface, reason });
+}
+
+fn doctor_surface_rank(surface: &DoctorCollectionSurface) -> u8 {
+    match surface {
+        DoctorCollectionSurface::Target => 0,
+        DoctorCollectionSurface::Requirements => 1,
+        DoctorCollectionSurface::CheckRuns => 2,
+        DoctorCollectionSurface::CommitStatuses => 3,
+    }
+}
+
+fn doctor_policy_kind_rank(kind: &DoctorPolicyKind) -> u8 {
+    match kind {
+        DoctorPolicyKind::Ruleset => 0,
+        DoctorPolicyKind::BranchProtection => 1,
+    }
+}
+
+fn validate_doctor_pull(
+    pull: &ApiDoctorPullRequest,
+    expected_number: u64,
+    expected_url: &str,
+) -> Result<()> {
+    ensure!(
+        pull.number == expected_number,
+        "GitHub pull request number does not match the requested pull request"
+    );
+    ensure!(
+        pull.html_url == expected_url,
+        "GitHub pull request URL does not match the requested provider and repository"
+    );
+    ensure!(
+        pull.state == "open",
+        "pull-request doctor requires an open pull request"
+    );
+    ensure!(
+        !pull.base.reference.is_empty()
+            && pull.base.reference.len() <= 255
+            && !pull.base.reference.chars().any(char::is_control),
+        "GitHub pull request base ref is malformed"
+    );
+    ensure!(
+        valid_doctor_sha(&pull.base.sha),
+        "GitHub pull request base SHA must be a lowercase full Git object ID"
+    );
+    ensure!(
+        valid_doctor_sha(&pull.head.sha),
+        "GitHub pull request head SHA must be a lowercase full Git object ID"
+    );
+    if let Some(merge_commit_sha) = &pull.merge_commit_sha {
+        ensure!(
+            valid_doctor_sha(merge_commit_sha),
+            "GitHub pull request test-merge SHA must be a lowercase full Git object ID"
+        );
+    }
+    Ok(())
+}
+
+fn valid_doctor_sha(value: &str) -> bool {
+    matches!(value.len(), 40 | 64)
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn doctor_ruleset_policy(rule: &ApiEffectiveRule, repository_url: &str) -> DoctorPolicyRef {
+    DoctorPolicyRef {
+        kind: DoctorPolicyKind::Ruleset,
+        id: rule.ruleset_id.to_string(),
+        name: format!("ruleset {}", rule.ruleset_id),
+        url: format!("{repository_url}/rules/{}", rule.ruleset_id),
+    }
+}
+
+fn doctor_branch_protection_policy(branch: &str, repository_url: &str) -> DoctorPolicyRef {
+    DoctorPolicyRef {
+        kind: DoctorPolicyKind::BranchProtection,
+        id: branch.to_owned(),
+        name: format!("Branch protection for {branch}"),
+        url: format!("{repository_url}/settings/branches"),
+    }
+}
+
+fn add_doctor_requirement(
+    requirements: &mut Vec<DoctorRequirement>,
+    context: String,
+    expected_app_id: Option<u64>,
+    policy: DoctorPolicyRef,
+) -> Result<()> {
+    ensure!(
+        !context.is_empty(),
+        "required check context must not be empty"
+    );
+    if let Some(requirement) = requirements.iter_mut().find(|requirement| {
+        requirement.context == context && requirement.expected_app_id == expected_app_id
+    }) {
+        if !requirement.policies.iter().any(|candidate| {
+            candidate.kind == policy.kind
+                && candidate.id == policy.id
+                && candidate.name == policy.name
+                && candidate.url == policy.url
+        }) {
+            requirement.policies.push(policy);
+        }
+    } else {
+        requirements.push(DoctorRequirement {
+            context,
+            expected_app_id,
+            policies: vec![policy],
+        });
+    }
+    Ok(())
+}
+
+fn sort_doctor_requirements(requirements: &mut [DoctorRequirement]) {
+    for requirement in requirements.iter_mut() {
+        requirement.policies.sort_by(|left, right| {
+            doctor_policy_kind_rank(&left.kind)
+                .cmp(&doctor_policy_kind_rank(&right.kind))
+                .then_with(|| left.id.cmp(&right.id))
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.url.cmp(&right.url))
+        });
+        requirement.policies.dedup_by(|left, right| {
+            left.kind == right.kind
+                && left.id == right.id
+                && left.name == right.name
+                && left.url == right.url
+        });
+    }
+    requirements.sort_by(|left, right| {
+        left.context
+            .cmp(&right.context)
+            .then_with(|| left.expected_app_id.cmp(&right.expected_app_id))
+    });
+}
+
+fn collect_doctor_effective_requirements<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    repository_url: &str,
+    branch: &str,
+    gaps: &mut Vec<DoctorCollectionGap>,
+    requirements: &mut Vec<DoctorRequirement>,
+) -> Result<bool> {
+    let mut unsupported_check_target = false;
+    for page in 1..=MAX_PAGES {
+        let endpoint = format!(
+            "repos/{repository_path}/rules/branches/{}?per_page={PAGE_SIZE}&page={page}",
+            encode_path_component(branch)
+        );
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::Requirements,
+                format!(
+                    "GitHub returned HTTP {} while reading effective rules for base branch {branch}",
+                    response.status
+                ),
+            );
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::Target,
+                "effective rules were not visible, so Doctor could not exclude merge-queue or required-workflow targets"
+                    .to_owned(),
+            );
+            break;
+        }
+
+        let rules: Vec<ApiEffectiveRule> = parse_json(&response.body, &endpoint)?;
+        let rule_count = rules.len();
+        let has_next = has_next_page(response.link_header.as_deref());
+        ensure!(
+            rule_count <= PAGE_SIZE,
+            "GitHub returned more effective rules than the requested page size"
+        );
+        for rule in &rules {
+            if matches!(rule.kind.as_str(), "merge_queue" | "workflows") {
+                unsupported_check_target = true;
+            }
+        }
+        for rule in rules
+            .iter()
+            .filter(|rule| rule.kind == "required_status_checks")
+        {
+            let parameters = rule
+                .parameters
+                .clone()
+                .context("required_status_checks rule is missing parameters")?;
+            let parameters: ApiRequiredChecksParameters = serde_json::from_value(parameters)
+                .context("failed to decode required_status_checks parameters")?;
+            let policy = doctor_ruleset_policy(rule, repository_url);
+            for check in parameters.required_status_checks {
+                add_doctor_requirement(
+                    requirements,
+                    check.context,
+                    check.integration_id,
+                    policy.clone(),
+                )?;
+            }
+        }
+        if has_next && rule_count == 0 {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::Requirements,
+                "effective-rule pagination returned an empty page with a next link".to_owned(),
+            );
+            break;
+        }
+        if !has_next {
+            break;
+        }
+        if page == MAX_PAGES {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::Requirements,
+                format!("effective-rule pagination exceeded {MAX_PAGES} pages"),
+            );
+        }
+    }
+    Ok(unsupported_check_target)
+}
+
+fn collect_doctor_classic_requirements<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    repository_url: &str,
+    branch: &str,
+    gaps: &mut Vec<DoctorCollectionGap>,
+    requirements: &mut Vec<DoctorRequirement>,
+) -> Result<()> {
+    let branch_endpoint = format!(
+        "repos/{repository_path}/branches/{}",
+        encode_path_component(branch)
+    );
+    let branch_response = budget.get(api, &branch_endpoint)?;
+    let branch_protected = if successful(&branch_response) {
+        let summary: ApiBranchSummary = parse_json(&branch_response.body, &branch_endpoint)?;
+        ensure!(
+            summary.name == branch,
+            "GitHub branch identity does not match the pull request base ref"
+        );
+        Some(summary.protected)
+    } else {
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Requirements,
+            format!(
+                "GitHub returned HTTP {} while reading base branch {branch}",
+                branch_response.status
+            ),
+        );
+        None
+    };
+
+    if branch_protected == Some(false) {
+        return Ok(());
+    }
+
+    let protection_endpoint = format!(
+        "repos/{repository_path}/branches/{}/protection",
+        encode_path_component(branch)
+    );
+    let protection_response = budget.get(api, &protection_endpoint)?;
+    if !successful(&protection_response) {
+        add_doctor_gap(
+            gaps,
+            DoctorCollectionSurface::Requirements,
+            format!(
+                "GitHub returned HTTP {} while reading classic branch protection for base branch {branch}; the policy may be absent or not visible to this token",
+                protection_response.status
+            ),
+        );
+        return Ok(());
+    }
+    let protection: ApiBranchProtection =
+        parse_json(&protection_response.body, &protection_endpoint)?;
+    let Some(required) = protection.required_status_checks else {
+        return Ok(());
+    };
+    let policy = doctor_branch_protection_policy(branch, repository_url);
+    let mut contexts_with_checks = BTreeSet::new();
+    for check in required.checks {
+        let expected_app_id = match check.app_id {
+            None | Some(-1) => None,
+            Some(value) => Some(
+                u64::try_from(value)
+                    .context("classic branch protection check has a negative app_id")?,
+            ),
+        };
+        contexts_with_checks.insert(check.context.clone());
+        add_doctor_requirement(requirements, check.context, expected_app_id, policy.clone())?;
+    }
+    for context in required.contexts {
+        if !contexts_with_checks.contains(&context) {
+            add_doctor_requirement(requirements, context, None, policy.clone())?;
+        }
+    }
+    Ok(())
+}
+
+fn collect_doctor_check_runs<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    head_sha: &str,
+    gaps: &mut Vec<DoctorCollectionGap>,
+) -> Result<Vec<DoctorCheckRun>> {
+    let mut check_runs = Vec::new();
+    let mut ids = BTreeSet::new();
+    let mut expected_total = None;
+    for page in 1..=MAX_PAGES {
+        let endpoint = format!(
+            "repos/{repository_path}/commits/{}/check-runs?filter=latest&per_page={PAGE_SIZE}&page={page}",
+            encode_path_component(head_sha)
+        );
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CheckRuns,
+                format!("GitHub returned HTTP {} for {endpoint}", response.status),
+            );
+            break;
+        }
+        let page_body: ApiDoctorCheckRunList = parse_json(&response.body, &endpoint)?;
+        if let Some(total) = expected_total {
+            if total != page_body.total_count {
+                add_doctor_gap(
+                    gaps,
+                    DoctorCollectionSurface::CheckRuns,
+                    "check-run total_count changed during collection".to_owned(),
+                );
+                break;
+            }
+        } else {
+            expected_total = Some(page_body.total_count);
+        }
+        let page_len = page_body.check_runs.len();
+        for check in page_body.check_runs {
+            ensure!(
+                check.head_sha.eq_ignore_ascii_case(head_sha),
+                "GitHub returned a check run for a different head SHA"
+            );
+            if !ids.insert(check.id) {
+                add_doctor_gap(
+                    gaps,
+                    DoctorCollectionSurface::CheckRuns,
+                    format!("GitHub returned duplicate check-run ID {}", check.id),
+                );
+                continue;
+            }
+            check_runs.push(DoctorCheckRun {
+                id: check.id,
+                url: check.html_url,
+                name: check.name,
+                app_id: check.app.as_ref().map(|app| app.id),
+                app_slug: check.app.map(|app| app.slug),
+                status: check.status,
+                conclusion: check.conclusion,
+            });
+        }
+        let observed = u64::try_from(check_runs.len())?;
+        if observed == page_body.total_count {
+            break;
+        }
+        if observed > page_body.total_count {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CheckRuns,
+                "check-run response returned more unique results than total_count".to_owned(),
+            );
+            break;
+        }
+        if page_len < PAGE_SIZE {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CheckRuns,
+                "check-run response declared more results than it returned".to_owned(),
+            );
+            break;
+        }
+        if page == MAX_PAGES {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CheckRuns,
+                format!("check-run pagination exceeded {MAX_PAGES} pages"),
+            );
+        }
+    }
+    check_runs.sort_by(|left, right| {
+        left.name
+            .cmp(&right.name)
+            .then_with(|| left.app_id.cmp(&right.app_id))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(check_runs)
+}
+
+fn collect_doctor_statuses<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    head_sha: &str,
+    gaps: &mut Vec<DoctorCollectionGap>,
+) -> Result<Vec<DoctorCommitStatus>> {
+    let mut statuses = Vec::new();
+    let mut contexts = BTreeSet::new();
+    let mut ids = BTreeSet::new();
+    for page in 1..=MAX_PAGES {
+        let endpoint = format!(
+            "repos/{repository_path}/commits/{}/statuses?per_page={PAGE_SIZE}&page={page}",
+            encode_path_component(head_sha)
+        );
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CommitStatuses,
+                format!("GitHub returned HTTP {} for {endpoint}", response.status),
+            );
+            break;
+        }
+        let batch: Vec<ApiCommitStatus> = parse_json(&response.body, &endpoint)?;
+        let page_len = batch.len();
+        for status in batch {
+            if !ids.insert(status.id) {
+                add_doctor_gap(
+                    gaps,
+                    DoctorCollectionSurface::CommitStatuses,
+                    format!("GitHub returned duplicate commit-status ID {}", status.id),
+                );
+                continue;
+            }
+            if contexts.insert(status.context.clone()) {
+                statuses.push(DoctorCommitStatus {
+                    id: status.id,
+                    url: status.url,
+                    context: status.context,
+                    creator_id: status.creator.as_ref().map(|creator| creator.id),
+                    creator_login: status.creator.map(|creator| creator.login),
+                    state: status.state,
+                });
+            }
+        }
+        if !has_next_page(response.link_header.as_deref()) {
+            break;
+        }
+        if page_len == 0 {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CommitStatuses,
+                "commit-status pagination returned an empty page with a next link".to_owned(),
+            );
+            break;
+        }
+        if page == MAX_PAGES {
+            add_doctor_gap(
+                gaps,
+                DoctorCollectionSurface::CommitStatuses,
+                format!("commit-status pagination exceeded {MAX_PAGES} pages"),
+            );
+        }
+    }
+    statuses.sort_by(|left, right| {
+        left.context
+            .cmp(&right.context)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(statuses)
+}
+
+pub fn collect_pull_request_doctor_snapshot<A: GithubReadinessApi>(
+    request: PullRequestDoctorCollection<'_>,
+    api: &mut A,
+) -> Result<PullRequestDoctorSnapshot> {
+    validate_provider_url(request.provider_url)?;
+    ensure!(
+        !request.captured_at.is_empty(),
+        "captured_at must not be empty"
+    );
+    ensure!(
+        request.pull_request_number > 0,
+        "pull_request_number must be greater than zero"
+    );
+    let (owner, name) = parse_repository(request.repository)?;
+    let repository_path = format!(
+        "{}/{}",
+        encode_path_component(&owner),
+        encode_path_component(&name)
+    );
+    let pull_endpoint = format!(
+        "repos/{repository_path}/pulls/{}",
+        request.pull_request_number
+    );
+    let mut budget = ApiBudget::new();
+    let pull_response = budget.get(api, &pull_endpoint)?;
+    ensure!(
+        successful(&pull_response),
+        "GitHub returned HTTP {} for {pull_endpoint}",
+        pull_response.status
+    );
+    let pull: ApiDoctorPullRequest = parse_json(&pull_response.body, &pull_endpoint)?;
+
+    let repository_endpoint = format!("repos/{repository_path}");
+    let repository_response = budget.get(api, &repository_endpoint)?;
+    ensure!(
+        successful(&repository_response),
+        "GitHub returned HTTP {} for {repository_endpoint}",
+        repository_response.status
+    );
+    let repository: ApiRepository = parse_json(&repository_response.body, &repository_endpoint)?;
+    ensure!(
+        repository
+            .full_name
+            .eq_ignore_ascii_case(request.repository),
+        "GitHub repository identity does not match the requested repository"
+    );
+    ensure!(
+        repository.html_url == format!("{}/{}", request.provider_url, repository.full_name),
+        "GitHub repository URL does not match the requested provider"
+    );
+    let pull_url = format!(
+        "{}/{}/pull/{}",
+        request.provider_url, repository.full_name, request.pull_request_number
+    );
+    validate_doctor_pull(&pull, request.pull_request_number, &pull_url)?;
+
+    let mut gaps = Vec::new();
+    let mut requirements = Vec::new();
+    let unsupported_check_target = collect_doctor_effective_requirements(
+        api,
+        &mut budget,
+        &repository_path,
+        &repository.html_url,
+        &pull.base.reference,
+        &mut gaps,
+        &mut requirements,
+    )?;
+    if unsupported_check_target {
+        add_doctor_gap(
+            &mut gaps,
+            DoctorCollectionSurface::Target,
+            "effective rules require a merge-queue or workflow target that this head-only Doctor does not evaluate"
+                .to_owned(),
+        );
+    }
+    collect_doctor_classic_requirements(
+        api,
+        &mut budget,
+        &repository_path,
+        &repository.html_url,
+        &pull.base.reference,
+        &mut gaps,
+        &mut requirements,
+    )?;
+    sort_doctor_requirements(&mut requirements);
+
+    let check_runs = collect_doctor_check_runs(
+        api,
+        &mut budget,
+        &repository_path,
+        &pull.head.sha,
+        &mut gaps,
+    )?;
+    let statuses = collect_doctor_statuses(
+        api,
+        &mut budget,
+        &repository_path,
+        &pull.head.sha,
+        &mut gaps,
+    )?;
+
+    if let Some(merge_commit_sha) = &pull.merge_commit_sha {
+        if merge_commit_sha.eq_ignore_ascii_case(&pull.head.sha) {
+            add_doctor_gap(
+                &mut gaps,
+                DoctorCollectionSurface::Target,
+                "GitHub returned the PR head as its test-merge SHA, so Doctor could not distinguish the active check target"
+                    .to_owned(),
+            );
+        } else {
+            let mut target_probe_gaps = Vec::new();
+            let merge_check_runs = collect_doctor_check_runs(
+                api,
+                &mut budget,
+                &repository_path,
+                merge_commit_sha,
+                &mut target_probe_gaps,
+            )?;
+            let merge_statuses = collect_doctor_statuses(
+                api,
+                &mut budget,
+                &repository_path,
+                merge_commit_sha,
+                &mut target_probe_gaps,
+            )?;
+            if target_probe_gaps.is_empty() {
+                if !merge_check_runs.is_empty() || !merge_statuses.is_empty() {
+                    add_doctor_gap(
+                        &mut gaps,
+                        DoctorCollectionSurface::Target,
+                        format!(
+                            "test-merge commit {merge_commit_sha} has status signals, so GitHub is not evaluating the PR head diagnosed by this version"
+                        ),
+                    );
+                }
+            } else {
+                for gap in target_probe_gaps {
+                    add_doctor_gap(
+                        &mut gaps,
+                        DoctorCollectionSurface::Target,
+                        format!(
+                            "could not determine whether GitHub is evaluating test-merge commit {merge_commit_sha}: {}",
+                            gap.reason
+                        ),
+                    );
+                }
+            }
+        }
+    } else {
+        add_doctor_gap(
+            &mut gaps,
+            DoctorCollectionSurface::Target,
+            "GitHub did not provide a test-merge SHA, so Doctor could not prove that the PR head is the active check target"
+                .to_owned(),
+        );
+    }
+
+    let final_pull_response = budget.get(api, &pull_endpoint)?;
+    ensure!(
+        successful(&final_pull_response),
+        "GitHub returned HTTP {} while re-reading {pull_endpoint}",
+        final_pull_response.status
+    );
+    let final_pull: ApiDoctorPullRequest = parse_json(&final_pull_response.body, &pull_endpoint)?;
+    ensure!(
+        final_pull == pull,
+        "pull request target changed during collection; retry the doctor command"
+    );
+
+    gaps.sort_by(|left, right| {
+        doctor_surface_rank(&left.surface)
+            .cmp(&doctor_surface_rank(&right.surface))
+            .then_with(|| left.reason.cmp(&right.reason))
+    });
+    gaps.dedup_by(|left, right| left.surface == right.surface && left.reason == right.reason);
+    let collection = DoctorCollection {
+        status: if gaps.is_empty() {
+            DoctorCollectionStatus::Complete
+        } else {
+            DoctorCollectionStatus::Partial
+        },
+        api_calls: u64::try_from(budget.requests)?,
+        response_bytes: u64::try_from(budget.response_bytes)?,
+        gaps,
+    };
+    Ok(PullRequestDoctorSnapshot {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_SCHEMA.to_owned(),
+        captured_at: request.captured_at.to_owned(),
+        provider_url: request.provider_url.to_owned(),
+        repository: repository.full_name,
+        target: DoctorTarget {
+            number: pull.number,
+            url: pull.html_url,
+            base_ref: pull.base.reference,
+            base_sha: pull.base.sha.to_ascii_lowercase(),
+            head_sha: pull.head.sha.to_ascii_lowercase(),
+        },
+        collection,
+        requirements,
+        check_runs,
+        statuses,
     })
 }

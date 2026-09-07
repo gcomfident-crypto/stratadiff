@@ -1,5 +1,17 @@
 # Benchmark artifacts
 
+## Pull Request Doctor v1
+
+[`pull-request-doctor-v1/`](pull-request-doctor-v1/) is a deterministic 15-case semantic corpus
+for exact-head required-check diagnosis. It covers clean pinned and unpinned controls, complete and
+incomplete missing signals, expected-App mismatch, multi-App ambiguity, pending and failed checks,
+legacy status interactions, duplicate policy provenance, and target drift. Its independent Python
+evaluator derives the frozen oracle and rejects thirteen tamper classes; a Rust adapter feeds every
+materialized case through the product evaluator.
+
+The corpus is controlled regression evidence, not a live collector test, production-accuracy
+estimate, incident-prevalence sample, merge-safety proof, or market-demand result.
+
 ## Merge Readiness Audit v1
 
 [`merge-readiness-audit-v1/`](merge-readiness-audit-v1/) freezes 13 live GitHub readiness reports

@@ -1,0 +1,74 @@
+{
+  "acceptance_gates": {
+    "minimum_cases": 15,
+    "minimum_checks_blocked_cases": 7,
+    "minimum_checks_clear_controls": 5,
+    "minimum_inconclusive_controls": 3,
+    "minimum_legacy_status_cases": 3,
+    "minimum_partial_cases": 3,
+    "minimum_pinned_requirements": 6
+  },
+  "assets": {
+    "cases": {
+      "path": "cases.json",
+      "sha256": "f1b8656371ab9a14e77524f7e3ce74d880ae5f48719119642fd8e92dc7e87929"
+    },
+    "oracle": {
+      "path": "oracle.json",
+      "sha256": "590af16520dacc8d7a28be8b768d175fb89837adb7386fc00ee994fd4299bf9d"
+    }
+  },
+  "claim_boundary": {
+    "controlled_required_check_semantics_supported": true,
+    "end_to_end_cli_conformance_supported": false,
+    "failure_prevalence_supported": false,
+    "live_collector_conformance_supported": false,
+    "market_demand_supported": false,
+    "merge_safety_supported": false,
+    "production_accuracy_supported": false
+  },
+  "dataset_license": "MIT",
+  "dataset_version": "1.0.0",
+  "description": "A deterministic network-free corpus for exact-head required-check diagnosis and fail-closed observability controls.",
+  "designation": "controlled_semantic_regression",
+  "expected_summary": {
+    "cases": 15,
+    "collection_gaps": 3,
+    "coverage_tags": 15,
+    "evidence_refs": 17,
+    "policies": 16,
+    "requirement_statuses": {
+      "failed": 4,
+      "missing": 1,
+      "pending": 1,
+      "satisfied": 6,
+      "source_mismatch": 1,
+      "source_unknown": 2
+    },
+    "requirements": 15,
+    "verdicts": {
+      "checks_blocked": 7,
+      "checks_clear": 5,
+      "inconclusive": 3
+    }
+  },
+  "name": "Pull Request Doctor v1",
+  "required_coverage": [
+    "check_status_split_brain",
+    "clean_pinned",
+    "clean_unpinned",
+    "duplicate_policy_deduplication",
+    "exact_head_drift_fail_closed",
+    "failed",
+    "legacy_status_success",
+    "matching_source_precedence",
+    "missing_complete",
+    "missing_partial_fail_closed",
+    "partial_known_blocker",
+    "pending",
+    "pinned_legacy_failure",
+    "source_ambiguity",
+    "source_mismatch"
+  ],
+  "schema": "stratadiff-pull-request-doctor-manifest-v1"
+}

@@ -15,6 +15,9 @@ use stratadiff::coverage::{
     MAX_REVIEW_COVERAGE_BYTES, ReviewCoveragePassport, build_review_coverage_passport,
     verify_review_coverage_passport,
 };
+use stratadiff::doctor::{
+    DoctorVerdict, evaluate_pull_request_doctor, render_pull_request_doctor_markdown,
+};
 use stratadiff::github::{
     MAX_GITHUB_COMMIT_OBJECT_BYTES, MAX_GITHUB_REVIEWS_BYTES,
     MAX_GITHUB_REVIEWS_INCLUDED_RESPONSE_BYTES, resolve_github_review_checkpoint,
@@ -41,7 +44,8 @@ use stratadiff::readiness::{
 };
 use stratadiff::readiness_audit::{
     GithubReadinessApi, GithubReadinessApiResponse, MAX_READINESS_API_RESPONSE_BYTES,
-    MergeReadinessCollection, collect_merge_readiness_snapshot,
+    MergeReadinessCollection, PullRequestDoctorCollection, collect_merge_readiness_snapshot,
+    collect_pull_request_doctor_snapshot,
 };
 use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
@@ -91,6 +95,26 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Inspect required-check signals for one pull request's exact current head.
+    Doctor {
+        /// Positive pull request number or canonical HTTPS pull request URL.
+        pull_request: String,
+        /// Canonical GitHub repository in OWNER/REPO form. Required for a numeric selector.
+        #[arg(short = 'R', long)]
+        repository: Option<String>,
+        /// GitHub or GitHub Enterprise Server hostname.
+        #[arg(long)]
+        hostname: Option<String>,
+        /// Render a human-readable Markdown report or stable JSON.
+        #[arg(long, value_enum, default_value_t = ReadinessOutput::Markdown)]
+        format: ReadinessOutput,
+        /// Write the report to this path instead of stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Exit unsuccessfully unless required checks are clear on a supported head target.
+        #[arg(long)]
+        require_clear: bool,
+    },
     /// Audit current branch rules, required-check sources, and sampled exact PR heads.
     ReadinessAudit {
         /// Canonical GitHub repository in OWNER/REPO form.
@@ -583,6 +607,135 @@ enum ReadinessOutput {
     Json,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct DoctorSelection {
+    provider_url: String,
+    hostname: String,
+    repository: String,
+    pull_request_number: u64,
+}
+
+fn valid_doctor_repository_component(value: &str) -> bool {
+    !value.is_empty()
+        && !matches!(value, "." | "..")
+        && value.len() <= 100
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn validate_doctor_repository(value: &str) -> Result<()> {
+    let mut parts = value.split('/');
+    let owner = parts.next().unwrap_or_default();
+    let name = parts.next().unwrap_or_default();
+    ensure!(
+        parts.next().is_none()
+            && valid_doctor_repository_component(owner)
+            && valid_doctor_repository_component(name),
+        "doctor repository must use canonical OWNER/REPO form"
+    );
+    Ok(())
+}
+
+fn parse_doctor_pull_number(value: &str) -> Result<u64> {
+    ensure!(
+        !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()),
+        "doctor pull request must be a positive number or canonical HTTPS pull request URL"
+    );
+    let number = value
+        .parse::<u64>()
+        .context("doctor pull request number exceeds u64")?;
+    ensure!(
+        number > 0 && value == number.to_string(),
+        "doctor pull request number must be positive and canonical"
+    );
+    Ok(number)
+}
+
+fn validate_doctor_hostname(value: &str) -> Result<String> {
+    let mut authority = value.split(':');
+    let host = authority.next().unwrap_or_default();
+    let port = authority.next();
+    ensure!(
+        authority.next().is_none()
+            && !host.is_empty()
+            && host.len() <= 253
+            && host.split('.').all(|label| {
+                !label.is_empty()
+                    && label.len() <= 63
+                    && label.bytes().all(|byte| {
+                        byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
+                    })
+                    && label.as_bytes()[0].is_ascii_alphanumeric()
+                    && label.as_bytes()[label.len() - 1].is_ascii_alphanumeric()
+            }),
+        "doctor hostname must be a canonical lowercase DNS name"
+    );
+    if let Some(port) = port {
+        let port_number = port
+            .parse::<u16>()
+            .context("doctor hostname port must be a positive decimal u16")?;
+        ensure!(
+            port_number > 0 && port == port_number.to_string(),
+            "doctor hostname port must be positive and canonical"
+        );
+    }
+    let provider_url = format!("https://{value}");
+    Ok(github_provider_hostname(&provider_url)?.to_owned())
+}
+
+fn resolve_doctor_selection(
+    pull_request: &str,
+    repository: Option<&str>,
+    hostname: Option<&str>,
+) -> Result<DoctorSelection> {
+    if pull_request.bytes().all(|byte| byte.is_ascii_digit()) {
+        let repository =
+            repository.context("a numeric doctor pull request requires --repository OWNER/REPO")?;
+        validate_doctor_repository(repository)?;
+        let hostname = validate_doctor_hostname(hostname.unwrap_or("github.com"))?;
+        return Ok(DoctorSelection {
+            provider_url: format!("https://{hostname}"),
+            hostname,
+            repository: repository.to_owned(),
+            pull_request_number: parse_doctor_pull_number(pull_request)?,
+        });
+    }
+
+    let path = pull_request.strip_prefix("https://").context(
+        "doctor pull request must be a positive number or canonical HTTPS pull request URL",
+    )?;
+    let parts = path.split('/').collect::<Vec<_>>();
+    ensure!(
+        parts.len() == 5 && parts[3] == "pull",
+        "doctor pull request URL must use https://HOST/OWNER/REPO/pull/NUMBER"
+    );
+    let url_hostname = validate_doctor_hostname(parts[0])?;
+    let url_repository = format!("{}/{}", parts[1], parts[2]);
+    validate_doctor_repository(&url_repository)?;
+    let pull_request_number = parse_doctor_pull_number(parts[4])?;
+    if let Some(repository) = repository {
+        validate_doctor_repository(repository)?;
+        ensure!(
+            repository.eq_ignore_ascii_case(&url_repository),
+            "doctor pull request URL does not match --repository"
+        );
+    }
+    if let Some(hostname) = hostname {
+        let hostname = validate_doctor_hostname(hostname)?;
+        ensure!(
+            hostname == url_hostname,
+            "doctor pull request URL does not match --hostname"
+        );
+    }
+    Ok(DoctorSelection {
+        provider_url: format!("https://{url_hostname}"),
+        hostname: url_hostname,
+        repository: url_repository,
+        pull_request_number,
+    })
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 enum GithubCheckpointOutput {
     Sha,
@@ -656,6 +809,70 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<()> {
     match command {
+        Command::Doctor {
+            pull_request,
+            repository,
+            hostname,
+            format,
+            output,
+            require_clear,
+        } => {
+            let selection = resolve_doctor_selection(
+                &pull_request,
+                repository.as_deref(),
+                hostname.as_deref(),
+            )?;
+            let mut api = GhCliReadinessApi {
+                hostname: selection.hostname.clone(),
+                started: Instant::now(),
+            };
+            let captured_at = current_utc_timestamp()?;
+            let snapshot = collect_pull_request_doctor_snapshot(
+                PullRequestDoctorCollection {
+                    provider_url: &selection.provider_url,
+                    repository: &selection.repository,
+                    captured_at: &captured_at,
+                    pull_request_number: selection.pull_request_number,
+                },
+                &mut api,
+            )?;
+            let report = evaluate_pull_request_doctor(&snapshot)?;
+            let mut encoded = match (format, output.is_some()) {
+                (ReadinessOutput::Markdown, _) => {
+                    render_pull_request_doctor_markdown(&report).into_bytes()
+                }
+                (ReadinessOutput::Json, true) => serde_json::to_vec_pretty(&report)?,
+                (ReadinessOutput::Json, false) => serde_json::to_vec(&report)?,
+            };
+            if let Some(path) = output {
+                if !encoded.ends_with(b"\n") {
+                    encoded.push(b'\n');
+                }
+                std::fs::write(&path, &encoded)
+                    .with_context(|| format!("failed to write {}", display_path(&path)))?;
+            } else {
+                let mut stdout = std::io::stdout().lock();
+                match format {
+                    ReadinessOutput::Markdown => stdout.write_all(&encoded)?,
+                    ReadinessOutput::Json => {
+                        stdout.write_all(escape_terminal_unsafe_json(&encoded).as_bytes())?;
+                        stdout.write_all(b"\n")?;
+                    }
+                }
+            }
+            if require_clear {
+                let verdict = match report.verdict {
+                    DoctorVerdict::ChecksClear => "checks_clear",
+                    DoctorVerdict::ChecksBlocked => "checks_blocked",
+                    DoctorVerdict::Inconclusive => "inconclusive",
+                };
+                ensure!(
+                    report.verdict == DoctorVerdict::ChecksClear,
+                    "pull request #{} required checks are not proven clear: {verdict}",
+                    report.target.number
+                );
+            }
+        }
         Command::ReadinessAudit {
             repository,
             hostname,

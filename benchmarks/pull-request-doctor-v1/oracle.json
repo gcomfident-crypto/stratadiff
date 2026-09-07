@@ -1,0 +1,292 @@
+{
+  "cases": {
+    "clean-pinned": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "ci/build",
+          "evidence": [
+            "check_run:1001"
+          ],
+          "expected_app_id": 15368,
+          "policies": [
+            "ruleset:rs-101"
+          ],
+          "status": "satisfied"
+        }
+      ],
+      "verdict": "checks_clear"
+    },
+    "clean-unpinned": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "lint",
+          "evidence": [
+            "check_run:1002"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "branch_protection:main"
+          ],
+          "status": "satisfied"
+        }
+      ],
+      "verdict": "checks_clear"
+    },
+    "duplicate-policy-dedupe": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "build",
+          "evidence": [
+            "check_run:1011"
+          ],
+          "expected_app_id": 15368,
+          "policies": [
+            "ruleset:rs-108",
+            "branch_protection:main"
+          ],
+          "status": "satisfied"
+        }
+      ],
+      "verdict": "checks_clear"
+    },
+    "failed-check": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "unit",
+          "evidence": [
+            "check_run:1009"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "ruleset:rs-106"
+          ],
+          "status": "failed"
+        }
+      ],
+      "verdict": "checks_blocked"
+    },
+    "head-drift-incomplete": {
+      "collection_status": "partial",
+      "gaps": [
+        {
+          "reason": "pull request head changed from bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb to cccccccccccccccccccccccccccccccccccccccc during collection",
+          "surface": "target"
+        }
+      ],
+      "requirements": [
+        {
+          "context": "docs",
+          "evidence": [
+            "check_run:1012"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "ruleset:rs-109"
+          ],
+          "status": "satisfied"
+        }
+      ],
+      "verdict": "inconclusive"
+    },
+    "legacy-success": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "cla",
+          "evidence": [
+            "commit_status:2001"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "branch_protection:main"
+          ],
+          "status": "satisfied"
+        }
+      ],
+      "verdict": "checks_clear"
+    },
+    "missing-complete": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "security/scan",
+          "evidence": [],
+          "expected_app_id": 15368,
+          "policies": [
+            "ruleset:rs-102"
+          ],
+          "status": "missing"
+        }
+      ],
+      "verdict": "checks_blocked"
+    },
+    "missing-partial-inconclusive": {
+      "collection_status": "partial",
+      "gaps": [
+        {
+          "reason": "permission denied before the terminal check-run page was observed",
+          "surface": "check_runs"
+        }
+      ],
+      "requirements": [
+        {
+          "context": "deploy/preview",
+          "evidence": [],
+          "expected_app_id": null,
+          "policies": [
+            "ruleset:rs-103"
+          ],
+          "status": "source_unknown"
+        }
+      ],
+      "verdict": "inconclusive"
+    },
+    "partial-known-failure": {
+      "collection_status": "partial",
+      "gaps": [
+        {
+          "reason": "one unrelated ruleset could not be read",
+          "surface": "requirements"
+        }
+      ],
+      "requirements": [
+        {
+          "context": "integration",
+          "evidence": [
+            "check_run:1016"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "ruleset:rs-112"
+          ],
+          "status": "failed"
+        }
+      ],
+      "verdict": "checks_blocked"
+    },
+    "pending-check": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "e2e",
+          "evidence": [
+            "check_run:1008"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "branch_protection:main"
+          ],
+          "status": "pending"
+        }
+      ],
+      "verdict": "checks_blocked"
+    },
+    "pinned-check-legacy-failure": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "release",
+          "evidence": [
+            "check_run:1015",
+            "commit_status:2003"
+          ],
+          "expected_app_id": 15368,
+          "policies": [
+            "ruleset:rs-111"
+          ],
+          "status": "failed"
+        }
+      ],
+      "verdict": "checks_blocked"
+    },
+    "right-and-wrong-app": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "test",
+          "evidence": [
+            "check_run:1006",
+            "check_run:1007"
+          ],
+          "expected_app_id": 15368,
+          "policies": [
+            "ruleset:rs-105"
+          ],
+          "status": "satisfied"
+        }
+      ],
+      "verdict": "checks_clear"
+    },
+    "same-name-check-status-split-brain": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "license",
+          "evidence": [
+            "check_run:1010",
+            "commit_status:2002"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "ruleset:rs-107"
+          ],
+          "status": "failed"
+        }
+      ],
+      "verdict": "checks_blocked"
+    },
+    "source-ambiguous-unpinned": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "coverage",
+          "evidence": [
+            "check_run:1013",
+            "check_run:1014"
+          ],
+          "expected_app_id": null,
+          "policies": [
+            "ruleset:rs-110"
+          ],
+          "status": "source_unknown"
+        }
+      ],
+      "verdict": "inconclusive"
+    },
+    "wrong-app": {
+      "collection_status": "complete",
+      "gaps": [],
+      "requirements": [
+        {
+          "context": "provenance",
+          "evidence": [
+            "check_run:1005"
+          ],
+          "expected_app_id": 15368,
+          "policies": [
+            "ruleset:rs-104"
+          ],
+          "status": "source_mismatch"
+        }
+      ],
+      "verdict": "checks_blocked"
+    }
+  },
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-pull-request-doctor-oracle-v1"
+}

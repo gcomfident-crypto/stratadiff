@@ -264,6 +264,7 @@ assert_native_inbox_forward_only() {
 TOP_LEVEL_HELP="$(bash "${extension_directory}/gh-stratadiff" --help)"
 assert_contains "${TOP_LEVEL_HELP}" 'inbox                      Find open PRs that need your review resumed'
 assert_contains "${TOP_LEVEL_HELP}" 'demo                       Open a deterministic offline Review Resume scenario'
+assert_contains "${TOP_LEVEL_HELP}" 'doctor <PR>                Inspect required-check signals on one exact PR head'
 assert_contains "${TOP_LEVEL_HELP}" 'resume <PR>                Resume your latest completed review'
 DEMO_HELP="$(bash "${extension_directory}/gh-stratadiff" demo --help)"
 assert_contains "${DEMO_HELP}" 'Usage: gh stratadiff demo [options]'
@@ -305,6 +306,23 @@ set -e
 [[ "${resume_delegate_status}" -eq 37 ]]
 [[ "$(< "${resume_delegate_log}")" == \
   'stratadiff resume 17 --reviewer alice -R ghe.example/acme/widget --repo-dir /tmp/existing.git --port 4321 --no-open --future-option opaque' ]]
+
+doctor_delegate_log=${temporary_directory}/doctor-delegate.txt
+: > "${doctor_delegate_log}"
+set +e
+env \
+  PATH="${stubs}:${PATH}" \
+  STRATADIFF_BIN=stratadiff \
+  STRATADIFF_EXTENSION_TEST_LOG="${doctor_delegate_log}" \
+  GH_STUB_DOCTOR_EXIT_STATUS=41 \
+  bash "${extension_directory}/gh-stratadiff" \
+    doctor https://github.com/acme/widget/pull/17 -R acme/widget \
+    --format json --require-clear --future-option opaque
+doctor_delegate_status=$?
+set -e
+[[ "${doctor_delegate_status}" -eq 41 ]]
+[[ "$(< "${doctor_delegate_log}")" == \
+  'stratadiff doctor https://github.com/acme/widget/pull/17 -R acme/widget --format json --require-clear --future-option opaque' ]]
 
 run_demo demo-default
 [[ "${CASE_STATUS}" -eq 0 ]]

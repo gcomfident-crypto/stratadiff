@@ -11,6 +11,7 @@ Usage: gh stratadiff <command> [options]
 Commands:
   audit                      Audit recent merged PRs for stranded review checkpoints
   demo                       Open a deterministic offline Review Resume scenario
+  doctor <PR>                Inspect required-check signals on one exact PR head
   inbox                      Find open PRs that need your review resumed
   resume <PR>                Resume your latest completed review
   ownership-snapshot <BASE> Collect exact-base CODEOWNERS identities and permissions
@@ -401,14 +402,14 @@ case "${subcommand}" in
     usage
     exit 0
     ;;
-  audit|demo|inbox|resume|ownership-snapshot) ;;
+  audit|demo|doctor|inbox|resume|ownership-snapshot) ;;
   *)
     usage >&2
     die "unsupported command: ${subcommand}"
     ;;
 esac
 
-if [[ "${subcommand}" == resume || "${subcommand}" == inbox ]]; then
+if [[ "${subcommand}" == doctor || "${subcommand}" == resume || "${subcommand}" == inbox ]]; then
   stratadiff=${STRATADIFF_BIN:-stratadiff}
   require_command "${stratadiff}"
   exec "${stratadiff}" "${subcommand}" "$@"

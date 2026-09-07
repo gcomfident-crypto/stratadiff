@@ -8,11 +8,12 @@ product-market fit. The technical thesis and prior-art boundary remain in
 
 ## Decision
 
-StrataDiff should be tested as a **verifiable merge-proof control plane** across the AI, policy, CI,
-and human reviewers a team already uses—not as another diff viewer, reviewer model, merge queue,
-generic inbox, or approval bot:
+StrataDiff should first be tested as the **`gh doctor` for stuck pull requests and merge queues**,
+then as a verifiable merge-proof control plane across the AI, policy, CI, and human reviewers a
+team already uses—not as another diff viewer, reviewer model, merge queue, generic inbox, or
+approval bot:
 
-> One merge candidate. Every configured obligation. One inspectable result.
+> One command. One exact candidate. The actual blocker and next safe action.
 
 The immediate buyer outcome is one App-bound state for the actual candidate: which API-observable
 provider and review objects are bound to which PR heads, which policy generation applied, whether an
@@ -33,11 +34,13 @@ The most important go-to-market finding is an **event and trust problem**:
   races and recovery, and comes from a dedicated expected App identity. Expected-App binding proves
   the Check source, not the meaning or quality of an upstream review.
 
-Therefore acquisition starts with a read-only Merge Readiness Audit, then a non-blocking shadow
-Check from the dedicated GitHub App. The local CLI and Review Resume remain the inspection path; the
-Action is the transparent self-hosted path. Enforcement is an earned upgrade after the App has
-survived real ruleset, reviewer, and merge-queue traffic. Routine marketing comments, a replacement
-review UI, or a second reviewer model would add noise without solving the job.
+Therefore acquisition starts with a read-only `gh stratadiff doctor <PR>` at the moment a merge is
+blocked. A platform owner who sees repeated useful diagnoses can run the admin-level Merge
+Readiness Audit, then a non-blocking shadow Check from the dedicated GitHub App. Review Resume
+remains the inspection path; the Action is the transparent self-hosted path. Enforcement is an
+earned upgrade after the App has survived real ruleset, reviewer, and merge-queue traffic. Routine
+marketing comments, a replacement review UI, or a second reviewer model would add noise without
+solving the job.
 
 ## Product correction: reject the single-provider stale-guard wedge
 

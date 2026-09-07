@@ -1,0 +1,676 @@
+{
+  "cases": [
+    {
+      "covers": [
+        "clean_pinned"
+      ],
+      "description": "A successful check from the exact App required by policy satisfies the pinned requirement.",
+      "id": "clean-pinned",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1001,
+            "name": "ci/build",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1001"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "ci/build",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "rs-101",
+                "kind": "ruleset",
+                "name": "main merge policy",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/101"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "clean_unpinned"
+      ],
+      "description": "An unpinned requirement accepts a successful current check regardless of producer App.",
+      "id": "clean-unpinned",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 4242,
+            "app_slug": "acme-ci",
+            "conclusion": "success",
+            "id": 1002,
+            "name": "lint",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/checks/1002"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "lint",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "main",
+                "kind": "branch_protection",
+                "name": "main branch protection",
+                "url": "https://github.com/acme/doctor-fixture/settings/branches"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "missing_complete"
+      ],
+      "description": "A completely observed exact head with no matching signal proves that a required check is missing.",
+      "id": "missing-complete",
+      "snapshot": {
+        "check_runs": [],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "security/scan",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "rs-102",
+                "kind": "ruleset",
+                "name": "security gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/102"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "missing_partial_fail_closed"
+      ],
+      "description": "No matching signal under incomplete check-run collection is unknown, never a proven missing check.",
+      "id": "missing-partial-inconclusive",
+      "snapshot": {
+        "check_runs": [],
+        "collection": {
+          "api_calls": 3,
+          "gaps": [
+            {
+              "reason": "permission denied before the terminal check-run page was observed",
+              "surface": "check_runs"
+            }
+          ],
+          "response_bytes": 8000,
+          "status": "partial"
+        },
+        "requirements": [
+          {
+            "context": "deploy/preview",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "rs-103",
+                "kind": "ruleset",
+                "name": "preview gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/103"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "source_mismatch"
+      ],
+      "description": "A same-name successful check from the wrong known App does not satisfy an App-pinned requirement.",
+      "id": "wrong-app",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 4242,
+            "app_slug": "foreign-ci",
+            "conclusion": "success",
+            "id": 1005,
+            "name": "provenance",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/checks/1005"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "provenance",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "rs-104",
+                "kind": "ruleset",
+                "name": "trusted provenance",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/104"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "matching_source_precedence"
+      ],
+      "description": "A successful check from the pinned App wins over a same-name failure from an unrelated App.",
+      "id": "right-and-wrong-app",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1006,
+            "name": "test",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1006"
+          },
+          {
+            "app_id": 4242,
+            "app_slug": "foreign-ci",
+            "conclusion": "failure",
+            "id": 1007,
+            "name": "test",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/checks/1007"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "test",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "rs-105",
+                "kind": "ruleset",
+                "name": "test gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/105"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "partial_known_blocker"
+      ],
+      "description": "A known failed signal remains blocking when the only collection gap is on the requirements surface.",
+      "id": "partial-known-failure",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "failure",
+            "id": 1016,
+            "name": "integration",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1016"
+          }
+        ],
+        "collection": {
+          "api_calls": 4,
+          "gaps": [
+            {
+              "reason": "one unrelated ruleset could not be read",
+              "surface": "requirements"
+            }
+          ],
+          "response_bytes": 9000,
+          "status": "partial"
+        },
+        "requirements": [
+          {
+            "context": "integration",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "rs-112",
+                "kind": "ruleset",
+                "name": "integration gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/112"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "pending"
+      ],
+      "description": "An in-progress current check is waiting rather than missing or failed.",
+      "id": "pending-check",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": null,
+            "id": 1008,
+            "name": "e2e",
+            "status": "in_progress",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1008"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "e2e",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "main",
+                "kind": "branch_protection",
+                "name": "main branch protection",
+                "url": "https://github.com/acme/doctor-fixture/settings/branches"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "failed"
+      ],
+      "description": "A completed current check with a failure conclusion blocks the requirement.",
+      "id": "failed-check",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "failure",
+            "id": 1009,
+            "name": "unit",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1009"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "unit",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "rs-106",
+                "kind": "ruleset",
+                "name": "unit gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/106"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "legacy_status_success"
+      ],
+      "description": "A successful legacy commit status satisfies an unpinned requirement when no Check Run exists.",
+      "id": "legacy-success",
+      "snapshot": {
+        "check_runs": [],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "cla",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "main",
+                "kind": "branch_protection",
+                "name": "main branch protection",
+                "url": "https://github.com/acme/doctor-fixture/settings/branches"
+              }
+            ]
+          }
+        ],
+        "statuses": [
+          {
+            "context": "cla",
+            "creator_id": 9001,
+            "creator_login": "cla-bot",
+            "id": 2001,
+            "state": "success",
+            "url": "https://github.com/acme/doctor-fixture/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#status-2001"
+          }
+        ]
+      }
+    },
+    {
+      "covers": [
+        "check_status_split_brain"
+      ],
+      "description": "A successful Check Run and failed legacy status with the same unpinned context are a blocking split brain.",
+      "id": "same-name-check-status-split-brain",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1010,
+            "name": "license",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1010"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "license",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "rs-107",
+                "kind": "ruleset",
+                "name": "license gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/107"
+              }
+            ]
+          }
+        ],
+        "statuses": [
+          {
+            "context": "license",
+            "creator_id": 9002,
+            "creator_login": "legacy-license-bot",
+            "id": 2002,
+            "state": "failure",
+            "url": "https://github.com/acme/doctor-fixture/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#status-2002"
+          }
+        ]
+      }
+    },
+    {
+      "covers": [
+        "duplicate_policy_deduplication"
+      ],
+      "description": "The same requirement emitted by a ruleset and classic protection becomes one diagnosis retaining both policies.",
+      "id": "duplicate-policy-dedupe",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1011,
+            "name": "build",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1011"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "build",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "rs-108",
+                "kind": "ruleset",
+                "name": "build ruleset",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/108"
+              }
+            ]
+          },
+          {
+            "context": "build",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "main",
+                "kind": "branch_protection",
+                "name": "main branch protection",
+                "url": "https://github.com/acme/doctor-fixture/settings/branches"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "source_ambiguity"
+      ],
+      "description": "Two successful same-name Check Runs from different known Apps leave an unpinned producer ambiguous.",
+      "id": "source-ambiguous-unpinned",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1013,
+            "name": "coverage",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1013"
+          },
+          {
+            "app_id": 4242,
+            "app_slug": "acme-ci",
+            "conclusion": "success",
+            "id": 1014,
+            "name": "coverage",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/checks/1014"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "coverage",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "rs-110",
+                "kind": "ruleset",
+                "name": "coverage gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/110"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    },
+    {
+      "covers": [
+        "pinned_legacy_failure"
+      ],
+      "description": "A same-name failed legacy status still blocks a successful Check Run from the pinned App.",
+      "id": "pinned-check-legacy-failure",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1015,
+            "name": "release",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1015"
+          }
+        ],
+        "collection": {
+          "api_calls": 5,
+          "gaps": [],
+          "response_bytes": 12345,
+          "status": "complete"
+        },
+        "requirements": [
+          {
+            "context": "release",
+            "expected_app_id": 15368,
+            "policies": [
+              {
+                "id": "rs-111",
+                "kind": "ruleset",
+                "name": "release gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/111"
+              }
+            ]
+          }
+        ],
+        "statuses": [
+          {
+            "context": "release",
+            "creator_id": 9003,
+            "creator_login": "legacy-release-bot",
+            "id": 2003,
+            "state": "failure",
+            "url": "https://github.com/acme/doctor-fixture/commit/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb#status-2003"
+          }
+        ]
+      }
+    },
+    {
+      "covers": [
+        "exact_head_drift_fail_closed"
+      ],
+      "description": "A matching success cannot produce a clear verdict after the PR head changes during collection.",
+      "id": "head-drift-incomplete",
+      "snapshot": {
+        "check_runs": [
+          {
+            "app_id": 15368,
+            "app_slug": "github-actions",
+            "conclusion": "success",
+            "id": 1012,
+            "name": "docs",
+            "status": "completed",
+            "url": "https://github.com/acme/doctor-fixture/actions/runs/1012"
+          }
+        ],
+        "collection": {
+          "api_calls": 4,
+          "gaps": [
+            {
+              "reason": "pull request head changed from bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb to cccccccccccccccccccccccccccccccccccccccc during collection",
+              "surface": "target"
+            }
+          ],
+          "response_bytes": 9000,
+          "status": "partial"
+        },
+        "requirements": [
+          {
+            "context": "docs",
+            "expected_app_id": null,
+            "policies": [
+              {
+                "id": "rs-109",
+                "kind": "ruleset",
+                "name": "docs gate",
+                "url": "https://github.com/acme/doctor-fixture/settings/rules/109"
+              }
+            ]
+          }
+        ],
+        "statuses": []
+      }
+    }
+  ],
+  "dataset_version": "1.0.0",
+  "schema": "stratadiff-pull-request-doctor-cases-v1",
+  "snapshot_defaults": {
+    "captured_at": "2026-09-08T00:00:00Z",
+    "provider_url": "https://github.com",
+    "repository": "acme/doctor-fixture",
+    "schema": "stratadiff-pull-request-doctor-snapshot-v1",
+    "target": {
+      "base_ref": "main",
+      "base_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "head_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "number": 17,
+      "url": "https://github.com/acme/doctor-fixture/pull/17"
+    }
+  }
+}

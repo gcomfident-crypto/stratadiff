@@ -1,12 +1,13 @@
 # `gh stratadiff`
 
 This directory contains the personal, repository-admin-free GitHub CLI entry point for StrataDiff.
-The launcher exposes five commands; `inbox` and `resume` are implemented by the native Rust binary,
-and the extension passes their arguments and exit status through unchanged:
+The launcher exposes six commands; `doctor`, `inbox`, and `resume` are implemented by the native
+Rust binary, and the extension passes their arguments and exit status through unchanged:
 
 ```console
 gh stratadiff audit -R OWNER/REPOSITORY
 gh stratadiff demo
+gh stratadiff doctor https://github.com/OWNER/REPOSITORY/pull/123
 gh stratadiff inbox
 gh stratadiff inbox --workbench
 gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
@@ -25,6 +26,18 @@ fail closed.
 Review Resume Workbench without contacting GitHub. An upstream base edit and a previously reviewed
 author edit are reconstructed, leaving exactly one post-review line in the queue. The temporary
 history is removed when the Workbench stops.
+
+`doctor` is an experimental, low-friction incident path for a stuck pull request once the native `stratadiff`
+binary is on `PATH` (or selected with `STRATADIFF_BIN`). It binds the effective
+required-check policy to the PR's exact current head, distinguishes a missing signal from a failed
+or pending signal and an expected-App source mismatch, and prints the next safe inspection command.
+Incomplete policy or check visibility remains `inconclusive`; the command does not claim that the
+pull request is mergeable because reviews, conflicts, deployments, and other merge requirements
+remain outside this first contract.
+
+Before returning `checks_clear` or `checks_blocked`, this head-only version confirms that the
+test-merge commit has no status signals and that no visible merge-queue or required-workflow rule
+selects another target. Unsupported or unresolved targets return `inconclusive`.
 
 `inbox` is the daily, reviewer-specific path. It searches across repositories for open pull
 requests where the authenticated GitHub user completed a review and the current head differs from
@@ -65,6 +78,7 @@ Point the extension at the binary from this checkout:
 ```console
 export STRATADIFF_BIN="$(git rev-parse --show-toplevel)/target/release/stratadiff"
 gh stratadiff demo
+gh stratadiff doctor https://github.com/OWNER/REPOSITORY/pull/123
 gh stratadiff inbox
 gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 ```
@@ -221,6 +235,17 @@ Inbox:
 --limit N                Recently updated candidates to inspect; defaults to 100
 --format markdown|json   Report format; defaults to markdown
 --output PATH            Write the report to PATH instead of stdout
+```
+
+Doctor:
+
+```text
+PR                         Positive PR number or canonical HTTPS pull-request URL
+-R, --repository REPO      Required OWNER/REPO for a numeric selector
+--hostname HOSTNAME        GitHub hostname; must agree with a URL selector
+--format markdown|json     Report format; defaults to markdown
+--output PATH              Write the report to PATH instead of stdout
+--require-clear            Exit unsuccessfully unless required checks are proven clear
 ```
 
 Demo:
