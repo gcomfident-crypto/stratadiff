@@ -1376,17 +1376,6 @@ fn open_log(path: &Path, create: bool) -> Result<File> {
         .with_context(|| format!("failed to open local value log {}", path.display()))?;
     let metadata = file.metadata()?;
     ensure!(metadata.is_file(), "value log is not a regular file");
-    #[cfg(unix)]
-    {
-        ensure!(
-            metadata.nlink() == 1,
-            "value log must not have multiple hard links"
-        );
-        ensure!(
-            metadata.permissions().mode() & 0o077 == 0,
-            "value log permissions must not grant group or other access"
-        );
-    }
     Ok(file)
 }
 
@@ -1399,6 +1388,18 @@ fn open_current_log_locked(
         let file = open_log(path, create)?;
         lock(&file)?;
         if log_path_matches_file(path, &file)? {
+            #[cfg(unix)]
+            {
+                let metadata = file.metadata()?;
+                ensure!(
+                    metadata.nlink() == 1,
+                    "value log must not have multiple hard links"
+                );
+                ensure!(
+                    metadata.permissions().mode() & 0o077 == 0,
+                    "value log permissions must not grant group or other access"
+                );
+            }
             return Ok(file);
         }
         unlock(&file);
