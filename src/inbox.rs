@@ -25,7 +25,8 @@ use stratadiff::{
 
 use crate::{
     process::{SignalState, run_bounded_process},
-    value_funnel,
+    resume::{self, ResumeArgs},
+    value_funnel, viewer,
 };
 
 const INBOX_SCHEMA: &str = "stratadiff-review-inbox-v3";
@@ -199,6 +200,15 @@ pub(crate) struct InboxArgs {
     /// Opt in to a private, local-only, integrity-chained value-funnel log.
     #[arg(long, value_name = "PATH")]
     value_log: Option<PathBuf>,
+    /// Open the actionable queue in a local browser before continuing one review.
+    #[arg(long)]
+    workbench: bool,
+    /// Loopback port for --workbench. Zero asks the operating system to choose one.
+    #[arg(long, default_value_t = 0, requires = "workbench")]
+    port: u16,
+    /// Print local Workbench URLs without opening a browser.
+    #[arg(long, requires = "workbench")]
+    no_open: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -489,6 +499,54 @@ struct UnobservableItem {
     reason: String,
 }
 
+#[derive(Serialize)]
+struct InboxViewerPayload<'a> {
+    kind: &'static str,
+    observed_at_unix_seconds: u64,
+    scope: InboxViewerScope<'a>,
+    collection: InboxViewerCollection,
+    summary: &'a Summary,
+    actionable: Vec<InboxViewerAction<'a>>,
+    unobservable: &'a [UnobservableItem],
+}
+
+#[derive(Serialize)]
+struct InboxViewerScope<'a> {
+    provider_url: &'a str,
+    repository: Option<&'a str>,
+    reviewer_login: &'a str,
+}
+
+#[derive(Serialize)]
+struct InboxViewerCollection {
+    status: &'static str,
+    search_candidates: usize,
+    inspected_candidates: usize,
+    truncated: bool,
+}
+
+#[derive(Serialize)]
+struct InboxViewerAction<'a> {
+    event_id: &'a str,
+    repository: &'a str,
+    number: u64,
+    url: &'a str,
+    is_draft: bool,
+    updated_at: &'a str,
+    checkpoint: InboxViewerCheckpoint<'a>,
+    current_base_oid: &'a str,
+    head_oid: &'a str,
+    review_request_active: bool,
+    triggers: &'a [InboxEventTrigger],
+}
+
+#[derive(Serialize)]
+struct InboxViewerCheckpoint<'a> {
+    review_state: &'a str,
+    commit_id: &'a str,
+    submitted_at: &'a str,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CandidateSnapshot {
     pull_request: PullRequestRecord,
@@ -642,7 +700,6 @@ impl<'a> GhClient<'a> {
 }
 
 pub(crate) fn run(args: InboxArgs) -> Result<()> {
-    let signals = SignalState::register()?;
     let value_log = args
         .value_log
         .as_deref()
@@ -653,17 +710,21 @@ pub(crate) fn run(args: InboxArgs) -> Result<()> {
     }
     let (hostname, repository) =
         parse_repository(args.repository.as_deref(), args.hostname.as_deref())?;
-    let mut client = GhClient::new(hostname.clone(), &signals);
-    let authenticated_actor = resolve_authenticated_actor(&mut client)?;
-    let reviewer = resolve_reviewer(&mut client, args.reviewer.as_deref(), &authenticated_actor)?;
-    let inbox = collect_inbox(
-        &mut client,
-        authenticated_actor,
-        reviewer,
-        repository,
-        args.limit,
-        value_log.as_deref(),
-    )?;
+    let inbox = {
+        let signals = SignalState::register()?;
+        let mut client = GhClient::new(hostname.clone(), &signals);
+        let authenticated_actor = resolve_authenticated_actor(&mut client)?;
+        let reviewer =
+            resolve_reviewer(&mut client, args.reviewer.as_deref(), &authenticated_actor)?;
+        collect_inbox(
+            &mut client,
+            authenticated_actor,
+            reviewer,
+            repository,
+            args.limit,
+            value_log.as_deref(),
+        )?
+    };
     let bytes = match args.format {
         InboxFormat::Markdown => render_markdown(&inbox).into_bytes(),
         InboxFormat::Json => serde_json::to_vec(&inbox)?,
@@ -704,6 +765,30 @@ pub(crate) fn run(args: InboxArgs) -> Result<()> {
         value_funnel::record_inbox_delivery(path, scan_id).with_context(|| {
             "review Inbox output was delivered, but its local value-log delivery confirmation failed"
         })?;
+    }
+    if args.workbench {
+        let session_json = inbox_viewer_json(&inbox)?;
+        let event_ids = inbox
+            .actionable
+            .iter()
+            .map(|item| item.event_id.clone())
+            .collect();
+        if let Some(event_id) =
+            viewer::select_inbox_action(session_json, event_ids, args.port, !args.no_open)?
+        {
+            let item = inbox
+                .actionable
+                .into_iter()
+                .find(|item| item.event_id == event_id)
+                .context("local Inbox selected an unknown review event")?;
+            return resume::run(resume_args(
+                &hostname,
+                &inbox.scope.reviewer.login,
+                item,
+                value_log,
+                args.no_open,
+            ));
+        }
     }
     Ok(())
 }
@@ -1846,6 +1931,76 @@ fn validate_checkpoint_output(
         "GitHub review checkpoint author association is invalid"
     );
     Ok(())
+}
+
+fn inbox_viewer_json(inbox: &ReviewInbox) -> Result<Vec<u8>> {
+    let actionable = inbox
+        .actionable
+        .iter()
+        .map(|item| {
+            Ok(InboxViewerAction {
+                event_id: &item.event_id,
+                repository: &item.repository,
+                number: item.number,
+                url: &item.url,
+                is_draft: item.is_draft,
+                updated_at: &item.updated_at,
+                checkpoint: InboxViewerCheckpoint {
+                    review_state: &item.checkpoint.review_state,
+                    commit_id: &item.checkpoint.commit_id,
+                    submitted_at: &item.checkpoint.submitted_at,
+                },
+                current_base_oid: item
+                    .current_base_oid
+                    .as_deref()
+                    .context("actionable Inbox item omitted its current base")?,
+                head_oid: &item.head_oid,
+                review_request_active: item.review_request_active,
+                triggers: &item.triggers,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    serde_json::to_vec(&InboxViewerPayload {
+        kind: "review_inbox",
+        observed_at_unix_seconds: inbox.observed_at_unix_seconds,
+        scope: InboxViewerScope {
+            provider_url: &inbox.scope.provider_url,
+            repository: inbox.scope.repository.as_deref(),
+            reviewer_login: &inbox.scope.reviewer.login,
+        },
+        collection: InboxViewerCollection {
+            status: inbox.collection.status,
+            search_candidates: inbox.collection.search_candidates,
+            inspected_candidates: inbox.collection.inspected_candidates,
+            truncated: inbox.collection.truncated,
+        },
+        summary: &inbox.summary,
+        actionable,
+        unobservable: &inbox.unobservable,
+    })
+    .context("failed to encode local Inbox Workbench session")
+}
+
+fn resume_args(
+    hostname: &str,
+    reviewer: &str,
+    item: ActionableItem,
+    value_log: Option<PathBuf>,
+    no_open: bool,
+) -> ResumeArgs {
+    let repository = (hostname != "github.com").then(|| format!("{hostname}/{}", item.repository));
+    let transition_id = value_log.as_ref().map(|_| item.value_transition_id.clone());
+    ResumeArgs {
+        pull_request: item.url,
+        reviewer: Some(reviewer.to_owned()),
+        repository,
+        repo_dir: None,
+        port: 0,
+        no_open,
+        value_log,
+        transition_id,
+        inbox_event: Some(item.inbox_event),
+    }
 }
 
 fn resume_argv(

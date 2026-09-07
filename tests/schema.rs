@@ -97,6 +97,14 @@ fn every_published_schema_is_valid_draft_2020_12() {
         include_str!("../schema/review-inbox-v3.schema.json"),
         include_str!("../schema/value-funnel-event-v1.schema.json"),
         include_str!("../schema/value-funnel-report-v1.schema.json"),
+        include_str!("../schema/review-cache-payload-v1.schema.json"),
+        include_str!("../schema/review-cache-reviewer-input-v1.schema.json"),
+        include_str!("../schema/review-cache-reviewer-manifest-v1.schema.json"),
+        include_str!("../schema/review-cache-result-v1.schema.json"),
+        include_str!("../actions/review-governor/evidence-v1.schema.json"),
+        include_str!("../tools/review-transition/review-context-v1.schema.json"),
+        include_str!("../tools/review-transition/review-input-v1.schema.json"),
+        include_str!("../tools/review-transition/review-receipt-v1.schema.json"),
     ] {
         let schema: serde_json::Value = serde_json::from_str(source).unwrap();
         jsonschema::draft202012::new(&schema).unwrap();
@@ -128,6 +136,24 @@ fn every_published_schema_is_valid_draft_2020_12() {
         .offline()
         .build(&coverage_schema)
         .unwrap();
+}
+
+#[test]
+fn review_governor_evidence_example_matches_its_schema() {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../actions/review-governor/evidence-v1.schema.json"
+    ))
+    .unwrap();
+    let instance: serde_json::Value = serde_json::from_str(include_str!(
+        "../actions/review-governor/evidence-v1.example.json"
+    ))
+    .unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let errors: Vec<_> = validator
+        .iter_errors(&instance)
+        .map(|error| error.to_string())
+        .collect();
+    assert!(errors.is_empty(), "schema errors: {errors:#?}");
 }
 
 #[test]

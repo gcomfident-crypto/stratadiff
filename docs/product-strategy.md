@@ -1,4 +1,4 @@
-# Product strategy: Verified Review Delta, proven locally before native distribution
+# Product strategy: Final-Head Review Governor, with verified continuity underneath
 
 Evidence captured: **2026-09-06**. This is a falsifiable product thesis, not a market-size report or
 a claim that the roadmap is already implemented. Prices, install counts, stars, and vendor claims
@@ -9,27 +9,27 @@ maintained in the [September 2026 market-evidence snapshot](market-evidence-2026
 
 ## Decision in one sentence
 
-**StrataDiff should become a GitHub-native Verified Review Delta: after an existing human review and
-a later push, its Check proves which byte-level coverage still carries, keeps every unsupported
-case in review, and opens only the remaining residue. Audit and personal Inbox qualify and route
-early users; they are not the product moat. The local CLI must prove human value before the same
-evidence becomes a one-click App, owner-specific coverage, a signed Change Passport, and a merge
-gate.**
+**StrataDiff should become the Final-Head Review Governor in front of existing AI and policy
+reviewers: do not pay to review an obsolete PR revision, and do not merge a final revision without
+trusted review evidence bound to its immutable `(base SHA, head SHA)` input. Review Cache is the
+incremental input compiler for open reviewers; Review Resume is the human explanation and recovery
+surface. The durable moat is the deterministic evidence contract and real-history transition
+corpus, not another reviewer model.**
 
-This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff's
-wedge is to remove repeated work only when a narrower factual claim can be checked again by an
-independent verifier. The qualification experience is `gh stratadiff audit -R OWNER/REPO`; the
-daily discovery experience is native cross-repository `stratadiff inbox`; the value experience is
-`stratadiff resume <PR-URL>`. Inbox and Resume are native binary paths; Audit currently uses the
-checkout-installed extension. None requires an
-administrator install or a new review system, and none restores or manufactures a code-host
-approval.
+This is deliberately not another AI reviewer. AI reviewers generate more judgments. StrataDiff
+removes repeated work only when a narrower factual claim can be checked again by an independent
+verifier. For a person, the value experience is `stratadiff resume <PR-URL>`. For an automated
+reviewer, the target value experience is a preflight that receives a completed-review receipt and
+emits one bounded immutable input route before the expensive job starts. A route never manufactures
+or restores a code-host approval, and an open context closure can never reuse a model verdict.
 
 The v0.3.0 release shipped the first verified native binary and PR-URL flow, but release publication
-alone did not close the measured **clean-machine PR-URL activation** milestone. The highest-leverage
-next milestone is a clean-environment proof followed by a measured global Inbox-to-Resume loop, not
-another matcher or policy surface. On a machine with Git, an authenticated `gh`, and a verified
-StrataDiff binary, the intended value flow starts outside any checkout:
+alone did not close the measured **clean-machine PR-URL activation** milestone. That proof remains
+the release-quality gate for the human surface. New public evidence of per-push AI review spend,
+rate limits, duplicate comments, and teams disabling re-review makes the automation gateway the
+higher-frequency commercial wedge. It must share the same transition proof rather than branch into
+a heuristic cache product. On a machine with Git, an authenticated `gh`, and a verified StrataDiff
+binary, the human value flow starts outside any checkout:
 
 ```text
 stratadiff resume https://github.com/OWNER/REPO/pull/123
@@ -38,19 +38,23 @@ stratadiff resume https://github.com/OWNER/REPO/pull/123
 The command must derive the host and repository, resolve the authenticated reviewer, materialize
 the named commits in an isolated temporary bare repository, and open the Workbench without `-R`, a
 commit SHA, repository administration, a GitHub App, or workflow YAML. An exact-SHA fetch can still
-transfer the commit's reachable object closure; the current implementation has no hard network-byte
-or disk-usage ceiling. Source-level URL inference and repository-local tests do not by themselves
-prove that activation contract; URL-only activation remains an unvalidated distribution claim until
-a verified release artifact passes the fresh-environment test. Until a fresh machine can reach the
-first residue this way, broader proof classes and hosted policy add less product leverage than
-removing activation friction.
+transfer the commit's reachable object closure. The unreleased development path now limits each
+fetch-created file to at most 256 MiB, the complete scratch tree to 512 MiB, each isolated object
+store to 1,000,000 objects, and remote Git work to two minutes. These bounds do not meter transport
+bytes, and they are not release evidence until a verified artifact passes the fresh-environment
+test. Source-level URL inference and repository-local tests do not by themselves prove that
+activation contract. The automation equivalent is one
+preflight step that wraps the team's existing reviewer: it delays unstable intermediate heads,
+cancels superseded work, and emits an immutable selected payload for the latest eligible head.
+Scheduling state and evidence routing remain separate; a deferred head is never presented as
+reviewed or clean.
 
-The user-visible outcome is not “a better diff.” It is: **after every relevant push, tell me which
-human review still has evidence, show me exactly what remains, and expose any changed base context
-that an empty interdiff would hide.** GitHub remains the place for comments and approval. Teams that
-prove this saves time may opt into durable checkpoints, owner routing, and policy enforcement. The
-product succeeds only if the resume loop reduces repeated review work without lowering issue
-recall.
+The user-visible outcome is not “a better diff.” It is: **keep final-head automated review enabled
+without paying for every intermediate push, and make an unreviewed final input impossible to call
+green.** GitHub remains the place for comments and approval. A person can open Resume when they
+need to inspect the carried evidence, remaining residue, or changed base context. The product
+succeeds only if live teams reduce reviewer invocations, spend, or queue time while final-input
+coverage and finding recall do not regress.
 
 ### Review Churn Census v1 decision update
 
@@ -69,14 +73,14 @@ The complete result is in
 [`benchmarks/review-churn-census-v1/`](../benchmarks/review-churn-census-v1/). It does not measure
 time saved, issue recall, willingness to pay, or GitHub-wide prevalence.
 
-This evidence changes the go-to-market sequence. StrataDiff should first run a **Review Memory
-Audit** over a repository's recent history and show maintainers their own eligible cases.
-Repositories with little drift should receive an honest “not useful here” result. In affected
-repositories, the personal **Review Inbox** turns that event-driven pain into a concrete current
-queue and hands each item to no-admin Review Resume. Only retained Inbox-to-Resume usage and the
-counterbalanced human study can justify the hosted Coverage Firewall. The product must trigger only
-after an existing human review and a later head change; it should not post routine PR comments or
-appear on unaffected PRs.
+The census narrows the human Resume opportunity, but later market evidence changes the primary
+go-to-market sequence. Re-review bots already run on push, so the first acquisition surface is a
+**Review Governor** around an existing reviewer: debounce moving heads, cancel obsolete work, and
+hold one required status until the current `(base, head)` input has trusted completion evidence.
+Review Memory Audit, Inbox, and Resume remain useful qualification, explanation, and recovery
+surfaces; they are no longer expected to create the high-frequency habit on their own. The product
+must not post routine marketing comments or appear on repositories where it cannot measure avoided
+work.
 
 The early validation surface remains the local `gh` extension because it needs no organization
 approval and keeps source local. If the human experiment passes, the distribution surface should
@@ -117,11 +121,12 @@ and collection has global resource budgets.
 The current value surface is a **personal Review Resume** that requires no repository administrator
 and does not replace GitHub's review UI. It resolves the reviewer's checkpoint and opens a local
 workbench over the exact residue, using an existing checkout or isolated temporary repository. Git
-may transfer the reachable object closure for each requested commit; this path is isolated and
-automatically cleaned up, but is not yet protected by a hard network-byte or disk-usage ceiling. The
-canonical PR URL must become the demonstrated default so the user does not need to understand
-repository selection or commit identity. This is the shortest path from diagnosed pain to
-experienced value and avoids asking a team to trust an App before the reviewer has saved any time.
+may transfer the reachable object closure for each requested commit; the development path isolates
+and cleans that state, applies the file, scratch, object-count, and time bounds above, but still has
+no strict wire-byte quota. The canonical PR URL must become the demonstrated default so the user
+does not need to understand repository selection or commit identity. This is the shortest path from
+diagnosed pain to experienced value and avoids asking a team to trust an App before the reviewer has
+saved any time.
 
 The native destination is a **Verified Review Delta Check**, followed by an optional
 **review-coverage firewall**. It maintains a SHA-bound ledger for each
@@ -149,9 +154,9 @@ fallbacks or unresolved blockers. The repository-level `review-v1` report is sti
 producer-attested; the separate `review-coverage-v1` Passport is receiver-signed and independently
 recomputed against exact offline Git objects.
 
-### The first job: resume, do not restart
+### The human recovery job: resume, do not restart
 
-The first product wedge is not generic semantic triage. It is the repeated-review loop: a reviewer
+The human product job is not generic semantic triage. It is the repeated-review loop: a reviewer
 finishes a large PR snapshot, the author or coding agent pushes again, and the reviewer needs to
 know which complete PR changes differ from the reviewed checkpoint. A caller-selected checkpoint
 turns that question into a narrow comparison that does not require guessing intent or behavior.
@@ -440,56 +445,45 @@ The host-workflow acceptance matrix must include these end-to-end cases:
 
 ### P0: prove the wedge
 
-1. Close the clean-machine activation gap before broadening analysis. From a shell outside any Git
-   checkout, after installing a verified binary and authenticating `gh`, this exact shape must work:
-   `stratadiff resume https://github.com/OWNER/REPO/pull/N`. Infer repository coordinates from
-   the canonical URL, reject cross-host or ambiguous identity, fetch the named commits into an
-   isolated temporary bare repository, clean it up, and open the local Workbench. Git may transfer
-   each commit's reachable object closure. Do not require `-R`, a SHA, repository administration, an
-   App, or workflow YAML. Test Linux and macOS release assets on fresh environments and record
-   activation success, time to first residue, network and on-disk bytes, and every fail-closed
-   reason. Define and enforce a resource policy before claiming a hard download or storage bound.
-2. Stabilize and distribute the implemented one-repository Review Memory Audit and cross-repository
-   personal Review Inbox. Audit qualifies a repository; Inbox uses the authenticated reviewer to
-   search bounded open-PR metadata and emit exact Resume commands without collecting source or
-   review text. Truncated search results must remain explicitly partial. Expand the
-   three-case prospective seed to at least 30 multi-repository live cases with real pagination,
-   missing-OID, and `CHANGES_REQUESTED` coverage before making generalization claims. The separate
-   60-case target-semantic corpus now gates the shared Rust target-policy core at 60/60 in CI. The
-   live collector applies a stricter executable-Resume policy because GitHub does not expose the
-   historical review-time base; its separate CLI tests cover that boundary. Neither corpus is a
-   prevalence estimate or a substitute for the human study.
-3. Complete `stratadiff resume <PR-URL>` as the default released action. It must use the caller's existing
-   GitHub CLI authentication, resolve the current reviewer and PR revisions, recover the exact
-   reviewed commit when the provider still serves it, and open the local Workbench. Missing,
-   ambiguous, paginated, or unverifiable history must stop with an actionable error; a SHA and `-R`
-   remain expert diagnostics rather than first-run requirements. The `gh stratadiff` spelling
-   becomes a distribution claim only after the existing public `gh-stratadiff` extension repository
-   publishes and clean-machine tests a verified remote-install and update path.
-4. Make the first-run result answer three questions in under a minute: what changed since my review,
-   what was proved, and what could not be recovered. Installation and the first useful run must not
-   require repository administration, a webhook, or a new conversation interface.
-5. Freeze a reviewer-value pilot before recruitment. Measure completion time and issue recall on
-   the same seeded PR histories with and without Resume, then collect at least 100 eligible sessions
-   across at least 20 reviewers. Repository-path reduction alone is diagnostic evidence, not value.
-6. Keep hardening Exact Review Resume: preserve the exact-identity fast path and unique same-path,
-   non-interacting four-way replay across base drift; expand the adversarial corpus before supporting
-   more file kinds, hunk carry, or interaction patterns.
-7. Maintain deterministic artifacts and offline verification. The alpha now has a signed
-   `review-coverage-v1` Passport, exact-base CODEOWNERS and identity snapshots, a reviewer × owner ×
-   file matrix, an offline viewer, and Check Run request generation. Complete the remaining ledger
-   transition cases and publish a reproducible release before treating these as production controls.
-8. Dogfood the no-admin path on public repositories and recruit stack-heavy design partners. Record
-   recovery failures, residue size, completion time, issue findings, and repeat use before adding
-   more classifiers.
-9. Only after personal retention is demonstrated, ship a minimal public GitHub App beta for event
-   ingestion and an informational Resume Check. Source remains inside the caller's runner; the beta
-   does not yet add organization policy or the paid control plane, and PR comments remain opt-in to
-   avoid bot noise.
+1. Close the Governor safety contract. Every successful gate must bind the live PR's immutable
+   `(base SHA, head SHA)` pair before and after evidence collection. A base retarget or target-branch
+   update must invalidate an earlier success even when the head SHA does not move. The CodeRabbit
+   adapter must verify provider identities, a substantive exact-head review, completion state, and
+   bounded correlation; `CHANGES_REQUESTED`, paused, skipped, rate-limited, malformed, and stale
+   evidence fail closed. No workflow may check out or execute pull-request code.
+2. Run a sacrificial public-repository end-to-end trial from dispatch comment through required
+   status. Record command acknowledgement, review/status objects, latency, rerun behavior, base
+   movement, head movement, rate limits, and every terminal classification. Unit tests and public
+   examples from unrelated repositories do not establish this integration.
+3. Complete the frozen ReviewTransition-30 materialization, independent oracle, and two clean bare-
+   repository replays. Require zero false `skip` and zero false carry. Then preregister the larger
+   RT-300 selection and thresholds before observing its product outcomes.
+4. Make Review Cache receipts survive multiple updates without laundering verdicts. A residue
+   receipt must retain the complete current identity/outcome ledger, reverify prior signed lineage,
+   execute a bound deterministic cross-item outcome rule, preserve blocking outcomes, and use a
+   domain-separated signature. Open dependency closure routes to `full` or `blocked`, never reuse.
+5. Measure the dispatch claim in at least five live reviewer workflows. Capture actual provider
+   invocations, cancelled work, wall time, tokens or billed cost where available, final-input
+   coverage, and false-gate incidents. The three-PR replay remains directional evidence only.
+6. Use the composite Action as an installable alpha and enterprise escape hatch. Production moves
+   scheduling and base-update reconciliation into a dedicated GitHub App so the gate has its own
+   expected source identity, durable leases, webhook state, and no runner occupied during debounce.
+7. Keep the human trust path releasable. From outside a checkout, a verified binary plus authenticated
+   `gh` must run `stratadiff resume https://github.com/OWNER/REPO/pull/N`, materialize bounded source
+   in an isolated temporary repository, and open the evidence Workbench. Missing or unverifiable
+   history must stop explicitly.
+8. Freeze separate value studies: automation measures cost, latency, and final-input coverage;
+   Resume measures completion time and issue recall. Repository-path reduction alone is diagnostic
+   evidence, not user value.
+9. Maintain deterministic artifacts and offline verification. Publish every benchmark case and
+   refusal, retain exact provider observations, and produce a reproducible release before treating
+   any alpha component as a production control.
 
-P0 exits only when passport verification is stable, no known factual misstatement remains, and a
-blinded pilot shows useful reviewer-time reduction without lower issue recall. Passing unit tests or
-the existing AST benchmark alone is insufficient.
+P0 exits only when the exact-input gate survives head and base races in a live repository, the
+automation route passes its preregistered zero-false-skip gate, at least five live workflows show a
+measured economic or latency benefit, and no known factual misstatement remains. Passing unit
+tests, one happy-path PR, simulated billed invocations, or the historical AST benchmark alone is
+insufficient.
 
 ### P1: compound trust and distribution
 
@@ -513,7 +507,7 @@ the existing AST benchmark alone is insufficient.
 
 ### Distribution architecture after value validation
 
-The scale path is an open-core GitHub App, not an Action-first product. GitHub Apps can request
+The scale path is an open-core GitHub App, not an Action-only product. GitHub Apps can request
 `checks: write` and publish Check Runs through the
 [Checks API](https://docs.github.com/en/rest/checks/runs?apiVersion=2022-11-28). Actions can also
 publish checks when their `GITHUB_TOKEN` has that permission; the App advantage is zero-YAML
@@ -521,22 +515,24 @@ installation, durable webhook state, and a native requested-action loop. Actions
 requests can lose secrets, receive a read-only token, or await approval. The intended surfaces are
 therefore:
 
-- **Public GitHub App:** the eventual zero-YAML product surface. It emits an informational Check only
-  after an existing human review and a later head change, with one `Resume review` requested action.
-- **Native `stratadiff`:** the early validation and permanent local-trust surface. It resolves the
+- **Public GitHub App:** the eventual zero-YAML product surface. It owns per-PR dispatch leases,
+  invalidates stale base/head evidence, and publishes a required final-input Check with `Review now`
+  and `Inspect evidence` actions.
+- **Native `stratadiff`:** the permanent local-trust and recovery surface. It resolves the
   checkpoint, keeps source local, opens the Workbench, and verifies downloaded Passports. The public
   `gh-stratadiff` distribution repository can add the `gh stratadiff` spelling without changing this
   trust path once its first verified release and clean-install/update tests pass.
-- **GitHub Action/self-hosted runner:** the privacy and enterprise escape hatch, not the default
-  onboarding path.
+- **GitHub Action/self-hosted runner:** the transparent alpha, privacy path, and enterprise escape
+  hatch. It is not the eventual default onboarding or scheduler.
 
 Marketplace is a later amplifier rather than a launch dependency. GitHub's paid-listing requirements
 include at least 100 installs and verified publisher status, so the beta should begin as a direct
 public-App install and earn real retained use first
 ([Marketplace requirements](https://docs.github.com/en/apps/github-marketplace/creating-apps-for-github-marketplace/requirements-for-listing-an-app)). Public installation and Marketplace counts are acquisition
-proxies, not evidence of active use or value. The operating north star remains **Weekly Verified
-Resume Loops**: unique PR-by-reviewer cases where a verified checkpoint drifted, the reviewer
-explicitly opened Resume, and a later review was submitted on the new head.
+proxies, not evidence of active use or value. The operating north star is **Weekly Governed Final
+Inputs**: unique PR `(base, head)` pairs for which StrataDiff either avoided an obsolete invocation
+or verified the current input before merge. This metric must be reported beside false gates,
+uncovered merges, added latency, and measured cost; activity alone is not value.
 
 The MIT-licensed engine, schemas, CLI, Action, Passport export, and offline verifier remain free.
 Paid scope begins only at coordinated operations: private hosted repositories, durable cross-repo
@@ -544,39 +540,35 @@ ledgers, CODEOWNERS policy, organization analytics, SSO/RBAC, audit export, supp
 deployment. Verification and evidence export cannot be paywalled without undermining the trust
 model.
 
-The individual workflow should distribute the product before the enterprise artifact does:
+The distribution loop should begin inside a workflow the team already pays for:
 
-1. An affected reviewer installs a verified release, pastes the GitHub PR URL from outside a
-   checkout, and reaches the local residue without administrator help, `-R`, or a SHA. A source
-   build or pre-cloned repository does not count as activation.
-2. A maintainer can then run one bounded Audit and see whether their repository has more eligible
-   review churn, including exact affected PRs rather than a generic industry statistic.
-3. An affected reviewer can run Inbox and get only their open PRs whose completed-review checkpoint
-   moved, each with a copyable URL-based Resume action.
-4. Resume revalidates the selected PR and immediately shows the smaller, factual residue.
-5. The result links back to GitHub for discussion and approval; it does not ask the team to migrate
-   its review workflow.
-6. A team that repeats the workflow can install the public App for a native Check, one-click Resume,
-   and a downloadable Passport without adding workflow YAML.
-7. Opt-in aggregate results become public, pinned case studies and benchmark improvements.
-8. More real failure cases improve abstention and the benchmark, which increases trust and earns
-   more installations.
-9. Refactoring and migration tools emit compatible provenance, increasing coverage without
-   weakening the claim boundary.
+1. A maintainer installs the transparent Action pilot in front of an existing reviewer; it never
+   receives a model-sales pitch or asks the team to migrate review conversation.
+2. Every run exposes one auditable result: obsolete work avoided, current input waiting, exact input
+   verified, or an explicit blocker. A per-run counter shows measured invocations and latency, not
+   an estimated percentage.
+3. A reviewer can open local Resume only when they want to inspect evidence or continue manually.
+4. Repositories with repeated measurable value move to the zero-YAML App for durable dispatch,
+   required checks, and organization analytics; repositories without churn receive an honest “not
+   useful here” result.
+5. Opt-in real case studies and frozen failure cases improve the public benchmark and provider
+   adapters, increasing trust and earning more installations.
+6. Open reviewers and refactoring tools can emit compatible signed receipts, increasing safe reuse
+   without weakening the exact-input gate.
 
-Initial channels should be open-source maintainers, DevEx/platform communities, migration tooling,
-and transparent engineering write-ups built around reproducible before/after passports. Avoid
+Initial channels should be AI-review-heavy open-source maintainers, DevEx/platform teams, reviewer
+vendors, and transparent engineering write-ups built around reproducible dispatch ledgers. Avoid
 generic “AI reviews your PR” positioning, paid vanity benchmarks, and unsolicited PR-comment spam.
 
 The initial search and Marketplace language should name the pain rather than the mechanism:
-`GitHub changes since last review after force push`, `review after rebase`, and `Graphite restack
-review`. Public case cards should show the complete accounting—for example,
-“13 approvals dismissed; N files retained evidence; M files and K hunks require re-review”—with a
-downloadable passport instead of an unsupported percentage claim.
+`AI code review every push`, `CodeRabbit review limit reached`, `cancel stale PR review`, and
+`require review on latest commit`. Public case cards should show complete accounting—for example,
+“11 pushes, 4 dispatched reviews, final `(base, head)` verified”—with a downloadable evidence
+artifact instead of an unsupported savings percentage.
 
 The memorable outcome message is:
 
-> **Resume the review. Don't restart it.**
+> **Do not pay to review a commit that will never merge. Do not merge one that was never reviewed.**
 
 ## Precommitted stop and pivot conditions
 
@@ -610,27 +602,22 @@ defensible reduction in human review load exists.
 
 ## Immediate product test
 
-The next milestone is not “GitHub parity.” It is one end-to-end proof:
+The next milestone is not another diff feature. It is one adversarial end-to-end Governor proof:
 
 ```text
-clean machine with Git + authenticated gh, but no checkout
-  -> install a verified release artifact
-  -> paste https://github.com/OWNER/REPO/pull/N with no -R or SHA
-  -> derive repository and reviewer; materialize named commits in an isolated temporary repo
-  -> record network and on-disk use; no hard byte ceiling is implemented yet
-  -> resolve the large PR's reviewed checkpoint R
-  -> rewritten, rebased, or incrementally updated head H
-  -> exact identity, then strict four-way replay where eligible
-  -> conflicts and ambiguities fail closed
-  -> upstream-only files excluded from the PR residue
-  -> dropped reviewed edits and hazardous parent influx remain visible
-  -> exact-head gate publishes the remaining review queue
-  -> reviewer study measures time and issue recall
-  -> portable evidence still verifies after download
+sacrificial GitHub repository with an existing AI reviewer
+  -> install the pinned Governor without checking out PR code
+  -> rapid pushes supersede or debounce obsolete work
+  -> latest eligible (base SHA, head SHA) dispatches exactly once
+  -> provider acknowledgement, substantive review, and completion evidence agree
+  -> head change, base push, retarget, paused review, rate limit, and CHANGES_REQUESTED each fail closed
+  -> only the still-live exact input publishes the required success
+  -> measured invocation, latency, and terminal-state ledger survives download
+  -> an independent replay reproduces the gate decision
 ```
 
-Audit and Inbox should route more reviewers into this loop after direct activation works; they must
-not compensate for a first run that still requires source build, checkout, repository flags, or
-manual commit selection. If the loop produces measurable value, build the ledger and integrations.
-If it does not, the stop conditions above should force a narrower verifier/attestation product
-instead of a larger but unproven review platform.
+After that proof, repeat the same measurement in at least five real reviewer workflows and finish
+ReviewTransition-30 with zero false skips/carries. Resume, Audit, and Inbox explain and recover from
+the loop; they must not compensate for a Governor that cannot safely invalidate a stale base or
+prove real cost/latency value. If the loop produces no measurable benefit, the stop conditions
+should force a narrower verifier/attestation product instead of a larger unproven review platform.

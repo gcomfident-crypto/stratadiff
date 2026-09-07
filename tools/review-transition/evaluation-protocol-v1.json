@@ -1,0 +1,176 @@
+{
+  "cache_scope_contract": {
+    "cacheable_unit": "verified_review_input",
+    "dynamic_repository_context": "A consumer that reads repository state outside the frozen payload has an open dependency closure and cannot reuse a prior verdict from this benchmark.",
+    "empty_file_local_residue_implies_reusable_verdict": false,
+    "required_for_verdict_reuse": [
+      "complete declared input closure",
+      "identical canonical input digest",
+      "identical reviewer implementation and model version",
+      "identical policy and configuration digests"
+    ],
+    "verdict_reuse_evaluated": false
+  },
+  "claim_boundary": {
+    "human_priority_ground_truth": "absent",
+    "policy_ground_truth": "independently_recomputed_from_frozen_git_objects",
+    "population_estimates_supported": false,
+    "reviewer_time_or_issue_recall_supported": false,
+    "semantic_safety_supported": false
+  },
+  "cohort": {
+    "expected_plan_sha256": "d0287a0319c7e2dd7298e7a141b00be0dbfc2db8dfd75ac2a42259ceb072fdb9",
+    "plan_dataset_version": "0.1.0",
+    "plan_schema": "stratadiff-review-transition-plan-v1",
+    "replacement_policy": "forbidden",
+    "selected_cases": 30
+  },
+  "decision_contract": {
+    "allowed_decisions": [
+      "blocked",
+      "full",
+      "residue",
+      "skip"
+    ],
+    "blocked": "A complete bounded review input could not be produced. The downstream review must not be skipped.",
+    "full": "No current review input was removed. The full current PR delta and every additional unresolved obligation are emitted.",
+    "residue": "A complete accounting exists, the emitted current-change review input is a strict non-empty subset of the full current PR input, and every separately enumerated retired or base-drift obligation is also emitted.",
+    "skip": "A complete accounting exists, the independent policy oracle has no needs-review or unresolved obligation inside the declared frozen input closure, and the emitted review input is empty. This is not an approval, a semantic-safety verdict, or permission to reuse a context-dependent model verdict."
+  },
+  "failure_stage_contract": {
+    "first_terminal_failure_only": true,
+    "ordered_stages": [
+      "provider_observation",
+      "object_acquisition",
+      "ancestry_proof",
+      "source_closure",
+      "product_invocation",
+      "output_validation"
+    ],
+    "requires_full_ancestry_without_materialization": "not_evaluated_requires_full_ancestry",
+    "stage_counts_are_mutually_exclusive": true
+  },
+  "materialization_contract": {
+    "all_selected_cases_retained": true,
+    "fetch_by_full_object_id_only": true,
+    "lazy_fetch_during_oracle_and_evaluation": false,
+    "missing_or_ambiguous_objects": "classify_without_replacement_and_never_as_skip",
+    "provider_same_base_fast_path": "allowed only when both Q...B and Q...D comparisons are ahead or identical and both provider merge bases equal Q",
+    "required_snapshot_roles": {
+      "A": "the unique full-history merge-base of Q and B",
+      "B": "the frozen completed-review checkpoint commit",
+      "C": "the unique full-history merge-base of Q and D",
+      "D": "the frozen final PR head commit",
+      "Q": "the exact requested base commit frozen by the materialization manifest"
+    },
+    "source_closure": "Every commit, tree, and blob needed for A..B, C..D, carried predicates, retired-change reconstruction, and displayed evidence must be available with all remotes removed.",
+    "unique_merge_base_required": true
+  },
+  "measurement_contract": {
+    "aggregation": "Publish case rows, ratio-of-sums for count and byte metrics, and median plus p95 for distributions. Never average per-case percentages without also publishing their denominators.",
+    "bandwidth": "Measure actual received wire bytes separately for provider API and Git transfer. Object-store or pack size may be reported as storage, but must not be relabeled as bandwidth.",
+    "latency": "Use a monotonic clock and report provider metadata, Git materialization, offline analysis, and Workbench readiness separately. Include timeouts and failures in the attempt table.",
+    "line_counts": "Use Git numstat additions plus deletions for text files. Report binary and unavailable files separately rather than assigning them zero lines.",
+    "token_counts": "Count the exact canonical downstream-review payload with a pinned tokenizer name, version, vocabulary digest, and serialization schema. Omit token savings when any of those bindings is absent."
+  },
+  "metrics": {
+    "acquisition_unavailable_rate": {
+      "denominator": "30 selected cases",
+      "numerator": "selected cases whose exact required public Git objects cannot be materialized",
+      "report_separately_from": "product_block_rate"
+    },
+    "ancestry_materialization_failure_rate": {
+      "denominator": "selected cases routed to full-history ancestry verification",
+      "numerator": "those cases for which the exact required ancestry cannot be fetched or does not yield exactly one A and one C merge base",
+      "strata": [
+        "exact_object_unavailable",
+        "fetch_timeout_or_resource_limit",
+        "no_merge_base",
+        "multiple_best_merge_bases"
+      ]
+    },
+    "false_carry": {
+      "denominator": "all independently derived current-change identities and unresolved obligations in evaluated cases",
+      "gate": "zero",
+      "numerator": "oracle needs-review identities or unresolved obligations that the product carries or omits from its emitted review input",
+      "unit": "change identity or unresolved obligation"
+    },
+    "false_skip": {
+      "denominators": [
+        "30 selected cases",
+        "all product skip decisions"
+      ],
+      "gate": "zero cases",
+      "numerator": "product skip decisions for which the oracle contains any needs-review identity, identity omission, unresolved retired change, unresolved base-drift obligation, or undeclared input dependency",
+      "scope": "verified review-input routing only; verdict reuse is outside this protocol",
+      "unit": "case"
+    },
+    "product_block_rate": {
+      "denominator": "cases with valid provenance and complete offline source closure for which the product was invoked",
+      "numerator": "those invocations returning blocked or failing to return a valid complete result",
+      "strata": [
+        "resource_limit",
+        "product_error",
+        "unsupported_input",
+        "malformed_product_output"
+      ]
+    },
+    "residue_reduction": {
+      "byte_formula": "1 - canonical_residue_payload_bytes / canonical_full_review_payload_bytes",
+      "file_formula": "1 - residue_current_change_identities / all_current_change_identities",
+      "line_formula": "1 - residue_text_changed_lines / all_current_text_changed_lines",
+      "threshold": "descriptive_only_until_frozen_before_a_larger_confirmatory_cohort"
+    },
+    "route_distribution": {
+      "denominator": "30 selected cases",
+      "required_counts": [
+        "provider_attested_same_base",
+        "requires_full_ancestry",
+        "provider_metadata_unavailable"
+      ],
+      "rule": "The route is fixed from provider evidence before Git materialization or product execution and cannot depend on an observed product outcome."
+    },
+    "token_savings": {
+      "formula": "canonical_full_review_payload_tokens - canonical_residue_payload_tokens",
+      "required_bindings": [
+        "payload schema and exact bytes",
+        "tokenizer name and version",
+        "tokenizer vocabulary digest"
+      ],
+      "threshold": "none",
+      "what_it_supports": "input-token reduction only, not avoided inference cost or reusable model judgment"
+    }
+  },
+  "protocol_status": "preregistered_before_reviewtransition_30_product_evaluation",
+  "protocol_version": "1.0.0",
+  "reproducibility_gate": {
+    "independent_oracle": true,
+    "required_result": "Two clean offline runs over the same materialization produce byte-identical oracle and normalized product-result artifacts.",
+    "result_digest_required": true
+  },
+  "schema": "stratadiff-review-transition-evaluation-protocol-v1",
+  "truth_contract": {
+    "current_change_identity_fields": [
+      "status",
+      "similarity_percent",
+      "before_path_base64",
+      "after_path_base64",
+      "before_mode",
+      "after_mode",
+      "before_object_id",
+      "after_object_id"
+    ],
+    "oracle_must_not_read_product_output": true,
+    "oracle_outputs": [
+      "all current change identities",
+      "exact-identity carries",
+      "non-interacting four-way replay carries",
+      "needs-review identities",
+      "retired checkpoint changes",
+      "unresolved retired changes",
+      "base-drift obligations"
+    ],
+    "oracle_policy": "exact_git_change_identity_or_noninteracting_four_way_byte_replay",
+    "product_output_compared_only_after_oracle_freeze": true
+  }
+}

@@ -1,0 +1,221 @@
+name: Final-head CodeRabbit review
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, dismissed]
+  status:
+  # A target-branch push can change the review input without changing a PR's head SHA. Discover
+  # every affected open PR, invalidate the old head status, and reconcile the new base/head pair.
+  push:
+    branches: ['**']
+
+permissions:
+  issues: write
+  pull-requests: read
+  statuses: write
+
+jobs:
+  pull-request-event:
+    if: ${{ github.event_name == 'pull_request_target' && (github.event.action != 'edited' || github.event.changes.base != null) }}
+    name: Final-head review covered
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    concurrency:
+      group: final-head-review-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # Pin to the immutable commit selected during installation. This workflow intentionally has
+      # no checkout step and must never execute pull-request-controlled code.
+      - id: governor
+        uses: gcomfident-crypto/stratadiff/actions/review-governor@STRATADIFF_COMMIT_SHA
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          expected-base: ${{ github.event.pull_request.base.sha }}
+          expected-head: ${{ github.event.pull_request.head.sha }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          debounce-seconds: '900'
+
+      - name: Retain governor evidence
+        if: ${{ always() && steps.governor.outputs.evidence != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: review-governor-${{ github.event.pull_request.number }}-${{ github.event.pull_request.base.sha }}-${{ github.event.pull_request.head.sha }}
+          path: ${{ steps.governor.outputs.evidence }}
+          if-no-files-found: error
+          retention-days: 30
+
+  discover-base-push-prs:
+    if: ${{ github.event_name == 'push' }}
+    name: Invalidate reviews affected by base push
+    runs-on: ubuntu-latest
+    outputs:
+      pull-requests: ${{ steps.discover.outputs.result }}
+    steps:
+      - id: discover
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          STRATADIFF_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const prefix = 'refs/heads/';
+            if (!context.ref.startsWith(prefix)) {
+              return [];
+            }
+            const base = context.ref.slice(prefix.length);
+            const pulls = await github.paginate(github.rest.pulls.list, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              base,
+              per_page: 100,
+            });
+            for (const pull of pulls) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: pull.head.sha,
+                state: 'pending',
+                context: 'StrataDiff Final Head',
+                description: `Base moved to ${pull.base.sha}; reconciliation queued`.slice(0, 140),
+                target_url: process.env.STRATADIFF_RUN_URL,
+              });
+            }
+            if (pulls.length > 256) {
+              core.warning(
+                `${pulls.length - 256} pull requests remain fail-closed because a GitHub Actions matrix is limited to 256 jobs.`,
+              );
+            }
+            return pulls.slice(0, 256).map((pull) => ({
+              number: pull.number,
+              base: pull.base.sha,
+              head: pull.head.sha,
+            }));
+
+  reconcile-base-push-prs:
+    if: ${{ needs.discover-base-push-prs.outputs.pull-requests != '[]' }}
+    name: Reconcile PR ${{ matrix.pull-request.number }}
+    needs: discover-base-push-prs
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        pull-request: ${{ fromJSON(needs.discover-base-push-prs.outputs.pull-requests) }}
+    concurrency:
+      group: final-head-review-${{ github.repository }}-${{ matrix.pull-request.number }}
+      cancel-in-progress: true
+    steps:
+      - id: governor
+        uses: gcomfident-crypto/stratadiff/actions/review-governor@STRATADIFF_COMMIT_SHA
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          expected-base: ${{ matrix.pull-request.base }}
+          expected-head: ${{ matrix.pull-request.head }}
+          pull-request-number: ${{ matrix.pull-request.number }}
+          debounce-seconds: '900'
+
+      - name: Retain governor evidence
+        if: ${{ always() && steps.governor.outputs.evidence != '' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: review-governor-${{ matrix.pull-request.number }}-${{ matrix.pull-request.base }}-${{ matrix.pull-request.head }}
+          path: ${{ steps.governor.outputs.evidence }}
+          if-no-files-found: error
+          retention-days: 30
+
+  invalidate-provider-review-revocation:
+    if: ${{ github.event_name == 'pull_request_review' && github.event.review.user.id == 136622811 && (github.event.action == 'dismissed' || github.event.review.state == 'changes_requested') }}
+    name: Invalidate revoked CodeRabbit review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          STRATADIFF_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            const head = context.payload.pull_request.head.sha.toLowerCase();
+            const matching = reviews.filter((review) =>
+              review.user?.id === 136622811
+              && review.user?.type === 'Bot'
+              && review.user?.html_url === 'https://github.com/apps/coderabbitai'
+              && review.commit_id?.toLowerCase() === head
+            );
+            matching.sort((left, right) =>
+              left.submitted_at.localeCompare(right.submitted_at) || left.id - right.id
+            );
+            const latest = matching.at(-1);
+            if (!latest || !['CHANGES_REQUESTED', 'DISMISSED'].includes(latest.state)) {
+              return;
+            }
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: head,
+              state: 'failure',
+              context: 'StrataDiff Final Head',
+              description: `Latest CodeRabbit review is ${latest.state}; rerun required`.slice(0, 140),
+              target_url: process.env.STRATADIFF_RUN_URL,
+            });
+
+  invalidate-provider-status-regression:
+    if: ${{ github.event_name == 'status' && github.event.sender.id == 136622811 && github.event.context == 'CodeRabbit' }}
+    name: Invalidate regressed CodeRabbit status
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          STRATADIFF_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const sha = context.payload.sha.toLowerCase();
+            const statuses = await github.paginate(github.rest.repos.listCommitStatusesForRef, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+              per_page: 100,
+            });
+            const matching = statuses.filter((status) => {
+              const avatar = new URL(status.avatar_url);
+              return status.context === 'CodeRabbit'
+                && status.creator?.id === 136622811
+                && status.creator?.type === 'Bot'
+                && status.creator?.html_url === 'https://github.com/apps/coderabbitai'
+                && avatar.protocol === 'https:'
+                && avatar.hostname === 'avatars.githubusercontent.com'
+                && avatar.pathname === '/in/347564';
+            });
+            matching.sort((left, right) =>
+              left.created_at.localeCompare(right.created_at) || left.id - right.id
+            );
+            const latest = matching.at(-1);
+            if (!latest || (latest.state === 'success' && latest.description === 'Review completed')) {
+              return;
+            }
+            const pulls = await github.paginate(
+              github.rest.repos.listPullRequestsAssociatedWithCommit,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: sha,
+                per_page: 100,
+              },
+            );
+            for (const pull of pulls.filter((pull) => pull.state === 'open' && pull.head.sha.toLowerCase() === sha)) {
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha,
+                state: latest.state === 'pending' ? 'pending' : 'error',
+                context: 'StrataDiff Final Head',
+                description: `CodeRabbit status regressed to ${latest.state}; rerun required`.slice(0, 140),
+                target_url: process.env.STRATADIFF_RUN_URL,
+              });
+            }

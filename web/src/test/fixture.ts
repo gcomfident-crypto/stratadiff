@@ -1,4 +1,4 @@
-import type { FileSessionPayload, NodeRef, RepositorySessionPayload, ReviewCoverageSessionPayload, ReviewFile } from '../types'
+import type { FileSessionPayload, NodeRef, RepositorySessionPayload, ReviewCoverageSessionPayload, ReviewFile, ReviewInboxSessionPayload } from '../types'
 
 const digest = 'a'.repeat(64)
 
@@ -385,5 +385,55 @@ export function reviewCoverageSessionFixture(): ReviewCoverageSessionPayload {
         signature: '6'.repeat(128),
       },
     },
+  }
+}
+
+export function reviewInboxSessionFixture(): ReviewInboxSessionPayload {
+  return {
+    kind: 'review_inbox',
+    observed_at_unix_seconds: 1788652803,
+    scope: {
+      provider_url: 'https://github.com',
+      repository: null,
+      reviewer_login: 'reviewer',
+    },
+    collection: {
+      status: 'complete',
+      search_candidates: 3,
+      inspected_candidates: 3,
+      truncated: false,
+    },
+    summary: {
+      status: 'actionable',
+      completed_review_prs: 3,
+      resume_available_prs: 1,
+      up_to_date_prs: 1,
+      no_completed_review_prs: 0,
+      unobservable_review_prs: 1,
+    },
+    actionable: [{
+      event_id: '1'.repeat(64),
+      repository: 'acme/widget',
+      number: 17,
+      url: 'https://github.com/acme/widget/pull/17',
+      is_draft: false,
+      updated_at: '2026-09-06T00:00:03Z',
+      checkpoint: {
+        review_state: 'approved',
+        commit_id: 'a'.repeat(40),
+        submitted_at: '2026-09-05T00:00:00Z',
+      },
+      current_base_oid: 'e'.repeat(40),
+      head_oid: 'b'.repeat(40),
+      review_request_active: true,
+      triggers: ['head_changed', 'review_re_requested'],
+    }],
+    unobservable: [{
+      repository: 'acme/platform',
+      number: 23,
+      url: 'https://github.com/acme/platform/pull/23',
+      updated_at: '2026-09-06T00:00:02Z',
+      reason: 'current_base_oid_unavailable',
+    }],
   }
 }

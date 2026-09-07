@@ -1,0 +1,21 @@
+{
+  "schema": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-cross-item-aggregator-v1.json",
+  "contract_version": "1.0.0",
+  "algorithm": "maximum_severity_v1",
+  "inputs": [
+    "selected_execution_obligation_outcomes_including_retained_non_current",
+    "carried_current_identity_outcomes"
+  ],
+  "outcome_precedence": [
+    "passed",
+    "advisory",
+    "changes_requested",
+    "failed"
+  ],
+  "blocking_outcomes": [
+    "changes_requested",
+    "failed"
+  ],
+  "empty_outcome": "passed",
+  "invariant": "a blocking outcome remains blocking until its obligation is re-reviewed or the reuse chain is broken by a full review"
+}

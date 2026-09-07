@@ -1,0 +1,142 @@
+{
+  "cases": [
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "metrics": {
+        "billed_invocation_proxy": 10,
+        "cancelled": 0,
+        "completed": 10,
+        "dispatched": 10,
+        "final_head_coverage_lag_seconds": 607,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": false,
+        "superseded": 2,
+        "work_seconds_proxy": 6070
+      },
+      "policy_id": "per_push"
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "metrics": {
+        "billed_invocation_proxy": 10,
+        "cancelled": 4,
+        "completed": 6,
+        "dispatched": 10,
+        "final_head_coverage_lag_seconds": 907,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": false,
+        "superseded": 4,
+        "work_seconds_proxy": 4868
+      },
+      "policy_id": "github_concurrency_5m_whole_diff"
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "metrics": {
+        "billed_invocation_proxy": 6,
+        "cancelled": 1,
+        "completed": 5,
+        "dispatched": 6,
+        "final_head_coverage_lag_seconds": 1092,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": false,
+        "superseded": 1,
+        "work_seconds_proxy": 3123
+      },
+      "policy_id": "governor_stable_head_final_head"
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "metrics": {
+        "billed_invocation_proxy": 12,
+        "cancelled": 0,
+        "completed": 12,
+        "dispatched": 12,
+        "final_head_coverage_lag_seconds": 698,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": true,
+        "superseded": 0,
+        "work_seconds_proxy": 8376
+      },
+      "policy_id": "per_push"
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "metrics": {
+        "billed_invocation_proxy": 12,
+        "cancelled": 0,
+        "completed": 12,
+        "dispatched": 12,
+        "final_head_coverage_lag_seconds": 998,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": true,
+        "superseded": 0,
+        "work_seconds_proxy": 8376
+      },
+      "policy_id": "github_concurrency_5m_whole_diff"
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "metrics": {
+        "billed_invocation_proxy": 12,
+        "cancelled": 4,
+        "completed": 8,
+        "dispatched": 12,
+        "final_head_coverage_lag_seconds": 1598,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": true,
+        "superseded": 4,
+        "work_seconds_proxy": 7302
+      },
+      "policy_id": "governor_stable_head_final_head"
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "metrics": {
+        "billed_invocation_proxy": 33,
+        "cancelled": 0,
+        "completed": 33,
+        "dispatched": 33,
+        "final_head_coverage_lag_seconds": 345,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": true,
+        "superseded": 2,
+        "work_seconds_proxy": 11385
+      },
+      "policy_id": "per_push"
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "metrics": {
+        "billed_invocation_proxy": 32,
+        "cancelled": 15,
+        "completed": 17,
+        "dispatched": 32,
+        "final_head_coverage_lag_seconds": 645,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": true,
+        "superseded": 15,
+        "work_seconds_proxy": 9557
+      },
+      "policy_id": "github_concurrency_5m_whole_diff"
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "metrics": {
+        "billed_invocation_proxy": 6,
+        "cancelled": 4,
+        "completed": 2,
+        "dispatched": 6,
+        "final_head_coverage_lag_seconds": 1245,
+        "final_head_covered": true,
+        "final_head_covered_at_finalize": true,
+        "superseded": 4,
+        "work_seconds_proxy": 1350
+      },
+      "policy_id": "governor_stable_head_final_head"
+    }
+  ],
+  "input_policies_sha256": "fad8dc74f60ab2c4adaa91ccec048cf3a3a7d4ec04db800274a4ee63c6ef44e3",
+  "input_trace_sha256": "b725c2ef0483acafe97db253a794efa3fbfa4c1a00f76b1e0b3f870ff0a87b7d",
+  "schema_version": "review-governor-oracle-v0"
+}

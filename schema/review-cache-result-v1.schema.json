@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-result-v1.schema.json",
+  "title": "StrataDiff review cache completion manifest v1",
+  "description": "A reviewer-adapter assertion that one exact canonical review input and selected payload completed with exhaustive obligation accounting. A successful process exit is not this assertion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_version",
+    "canonicalization",
+    "producer",
+    "review_input_sha256",
+    "selected_payload_sha256",
+    "reviewer_input_projection_sha256",
+    "outcome",
+    "coverage",
+    "obligation_results",
+    "reviewer_output"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-result-v1.schema.json"
+    },
+    "contract_version": { "const": "1.0.0" },
+    "canonicalization": { "const": "stratadiff-canonical-json-v1" },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter_id", "execution_id"],
+      "properties": {
+        "adapter_id": { "$ref": "#/$defs/bounded_string" },
+        "execution_id": { "$ref": "#/$defs/bounded_string" }
+      }
+    },
+    "review_input_sha256": { "$ref": "#/$defs/sha256" },
+    "selected_payload_sha256": { "$ref": "#/$defs/sha256" },
+    "reviewer_input_projection_sha256": { "$ref": "#/$defs/sha256" },
+    "outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "covered_obligation_sha256",
+        "omitted_obligation_sha256",
+        "unresolved_obligation_sha256"
+      ],
+      "properties": {
+        "complete": { "const": true },
+        "covered_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "omitted_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "unresolved_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "obligation_results": {
+      "type": "array",
+      "maxItems": 10000,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["obligation_sha256", "outcome"],
+        "properties": {
+          "obligation_sha256": { "$ref": "#/$defs/sha256" },
+          "outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] }
+        }
+      }
+    },
+    "reviewer_output": {
+      "description": "Opaque adapter-normalized reviewer output bound into the signed result digest.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "bounded_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    }
+  }
+}

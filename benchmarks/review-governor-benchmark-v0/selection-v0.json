@@ -1,0 +1,30 @@
+{
+  "cases": [
+    {
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "rationale": "Nine retained reviewed heads in the pinned study plus a later unreviewed merged head; includes force-push and ordinary append transitions."
+    },
+    {
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "rationale": "Nine retained reviewed heads in the pinned study and a force-push-heavy public timeline; exercises in-flight cancellation."
+    },
+    {
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "rationale": "Eight retained reviewed heads in the pinned study and a dense mix of reviewed, unreviewed, force-pushed, and appended heads."
+    }
+  ],
+  "frozen_at": "2026-09-06T13:30:00Z",
+  "provenance": {
+    "github_api_version": "2022-11-28",
+    "selection_method": "Purposive high-churn cases with publicly reconstructable head and check-suite histories; not a population sample.",
+    "upstream_study_commit": "d57789dc2c17f2be39efe2c437f25ea98457fae8",
+    "upstream_study_path": "research/ai-code-review-study/coderabbit/throttling/review-events.csv",
+    "upstream_study_raw_url": "https://raw.githubusercontent.com/acoliver/vibetools/d57789dc2c17f2be39efe2c437f25ea98457fae8/research/ai-code-review-study/coderabbit/throttling/review-events.csv",
+    "upstream_study_sha256": "220b894ba84340536e9101ae3f31aafea45f9bb15f16a44bfbb97f53c72aa08a",
+    "upstream_study_size_bytes": 86981
+  },
+  "schema_version": "review-governor-selection-v0"
+}

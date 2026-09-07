@@ -1,0 +1,114 @@
+name: StrataDiff Final-Head Review Governor
+description: Debounce CodeRabbit dispatch and fail closed until the live pull-request base/head has exact review evidence
+author: StrataDiff contributors
+
+branding:
+  icon: shield
+  color: green
+
+inputs:
+  github-token:
+    description: Token allowed to read the pull request and post the CodeRabbit command comment
+    required: true
+  mode:
+    description: Observe current coverage without writing, or govern by dispatching and waiting
+    required: false
+    default: govern
+  repository:
+    description: GitHub repository in OWNER/REPO form; if set, it must equal the workflow repository
+    required: false
+    default: ''
+  pull-request-number:
+    description: Pull request number; defaults to the pull_request_target event value
+    required: false
+    default: ''
+  expected-head:
+    description: Full pull request head SHA; defaults to the pull_request_target event value
+    required: false
+    default: ''
+  expected-base:
+    description: Full pull request base SHA; defaults to the pull_request_target event value
+    required: false
+    default: ''
+  api-url:
+    description: GitHub REST API base URL; defaults to the current GitHub API URL
+    required: false
+    default: ''
+  debounce-seconds:
+    description: Quiet period before dispatch; caller concurrency should cancel obsolete runs
+    required: false
+    default: '900'
+  poll-seconds:
+    description: Interval for live-head and provider-evidence polling
+    required: false
+    default: '60'
+  timeout-seconds:
+    description: Maximum post-dispatch wait for exact-head evidence
+    required: false
+    default: '1800'
+  command:
+    description: Fixed verified CodeRabbit command; only full-review is accepted
+    required: false
+    default: full-review
+  status-context:
+    description: Fixed CodeRabbit completion status context from the public provider contract
+    required: false
+    default: CodeRabbit
+  reviewer-login:
+    description: Fixed CodeRabbit Bot login whose submitted review must bind the expected head
+    required: false
+    default: 'coderabbitai[bot]'
+  reviewer-handle:
+    description: Fixed CodeRabbit handle used in a top-level PR conversation command
+    required: false
+    default: coderabbitai
+  gate-context:
+    description: Fixed commit status context to configure as the required final-head branch-protection check
+    required: false
+    default: StrataDiff Final Head
+
+outputs:
+  outcome:
+    description: Final governor outcome
+    value: ${{ steps.govern.outputs.outcome }}
+  expected-head:
+    description: Head SHA this invocation was created to cover
+    value: ${{ steps.govern.outputs.expected_head }}
+  expected-base:
+    description: Base SHA this invocation was created to cover
+    value: ${{ steps.govern.outputs.expected_base }}
+  observed-base:
+    description: Live pull request base SHA at the final observation
+    value: ${{ steps.govern.outputs.observed_base }}
+  observed-head:
+    description: Live pull request head at the final observation
+    value: ${{ steps.govern.outputs.observed_head }}
+  evidence:
+    description: Runner-local JSON evidence path; upload it explicitly if durable retention is required
+    value: ${{ steps.govern.outputs.evidence }}
+
+runs:
+  using: composite
+  steps:
+    - name: Govern final-head review
+      id: govern
+      shell: bash
+      env:
+        BASH_ENV: ''
+        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_PULL_REQUEST_NUMBER: ${{ inputs.pull-request-number }}
+        INPUT_EXPECTED_BASE: ${{ inputs.expected-base }}
+        INPUT_EXPECTED_HEAD: ${{ inputs.expected-head }}
+        INPUT_API_URL: ${{ inputs.api-url }}
+        INPUT_DEBOUNCE_SECONDS: ${{ inputs.debounce-seconds }}
+        INPUT_POLL_SECONDS: ${{ inputs.poll-seconds }}
+        INPUT_TIMEOUT_SECONDS: ${{ inputs.timeout-seconds }}
+        INPUT_COMMAND: ${{ inputs.command }}
+        INPUT_STATUS_CONTEXT: ${{ inputs.status-context }}
+        INPUT_REVIEWER_LOGIN: ${{ inputs.reviewer-login }}
+        INPUT_REVIEWER_HANDLE: ${{ inputs.reviewer-handle }}
+        INPUT_GATE_CONTEXT: ${{ inputs.gate-context }}
+        STRATADIFF_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: python3 "${GITHUB_ACTION_PATH}/govern.py"

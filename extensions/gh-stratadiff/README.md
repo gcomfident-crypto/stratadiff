@@ -8,6 +8,7 @@ and the extension passes their arguments and exit status through unchanged:
 gh stratadiff audit -R OWNER/REPOSITORY
 gh stratadiff demo
 gh stratadiff inbox
+gh stratadiff inbox --workbench
 gh stratadiff resume https://github.com/OWNER/REPOSITORY/pull/123
 gh stratadiff ownership-snapshot <BASE> --output ownership.json
 ```
@@ -84,6 +85,7 @@ To inspect your current review-resume queue:
 
 ```console
 gh stratadiff inbox -R OWNER/REPOSITORY
+gh stratadiff inbox --workbench
 gh stratadiff inbox -R HOST/OWNER/REPOSITORY \
   --format json --output review-inbox.json
 ```

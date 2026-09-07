@@ -19,6 +19,7 @@ python3 benchmarks/resumebench-real-v1/verify.py self-test
 python3 tools/resumebench-github-live/resumebench_github_live.py self-test
 python3 tools/resumebench-github-live/resumebench_github_live.py verify-bundle \
   --manifest benchmarks/resumebench-github-live-v1/manifest.json
+python3 -B -m unittest discover -s tools/review-transition -p 'test_*.py' -q
 python3 scripts/demo_review_coverage.py --self-test
 python3 -B tools/reviewer-value-v1/reviewer_value_v1.py verify
 bash extensions/gh-stratadiff/tests/resume_test.sh
@@ -31,6 +32,10 @@ python3 -B tools/review-churn-census/review_churn_census.py verify \
   --manifest benchmarks/review-churn-census-v1/manifest.json \
   --aggregate benchmarks/review-churn-census-v1/aggregate.json
 (cd benchmarks/review-churn-census-v1 && sha256sum -c SHA256SUMS)
+python3 -B -m unittest discover -s tools/review-governor-benchmark -p 'test_*.py' -q
+python3 -B tools/review-governor-benchmark/verify.py \
+  benchmarks/review-governor-benchmark-v0
+python3 -B -m unittest discover -s actions/review-governor -p 'test_*.py' -q
 python3 -B benchmarks/review-memory-audit-v1/verify.py verify
 python3 -B benchmarks/review-memory-audit-v1/verify.py self-test
 (cd benchmarks/review-memory-audit-v1 && sha256sum -c SHA256SUMS)

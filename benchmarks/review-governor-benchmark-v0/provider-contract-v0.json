@@ -1,0 +1,1735 @@
+{
+  "claim_boundary": "These public observations fingerprint one CodeRabbit deployment period. They do not promise future provider behavior, prove private model execution, or show that every bot-authored command will be accepted under every repository policy and quota state.",
+  "command_routes": {
+    "conversation_successes": [
+      {
+        "acknowledgement": {
+          "body": {
+            "bytes": 223,
+            "sha256": "889a7db84179ac83ce1c05c7206d51a65fc3cab7908bbad1c35c2fb02ef627b7"
+          },
+          "command_invocation_marker_present": true,
+          "created_at": "2026-06-04T16:28:49Z",
+          "full_review_finished_present": true,
+          "id": 4624140026,
+          "source_url": "https://github.com/jarvis236/autoresearch/pull/1#issuecomment-4624140026",
+          "updated_at": "2026-06-04T16:30:47Z",
+          "user": {
+            "html_url": "https://github.com/apps/coderabbitai",
+            "id": 136622811,
+            "login": "coderabbitai[bot]",
+            "type": "Bot"
+          }
+        },
+        "acknowledgement_comment_id": 4624140026,
+        "command": {
+          "body": {
+            "bytes": 25,
+            "sha256": "e5cabf5e4c3d622694329a24a3b45b3d90f6001d7cdda827186af5fca07623f1"
+          },
+          "created_at": "2026-06-04T16:28:44Z",
+          "id": 4624139462,
+          "is_full_review_command": true,
+          "source_url": "https://github.com/jarvis236/autoresearch/pull/1#issuecomment-4624139462",
+          "user": {
+            "html_url": "https://github.com/apps/github-actions",
+            "id": 41898282,
+            "login": "github-actions[bot]",
+            "type": "Bot"
+          }
+        },
+        "command_comment_id": 4624139462,
+        "command_to_review_seconds": 109,
+        "pr_number": 1,
+        "repository": "jarvis236/autoresearch",
+        "review": {
+          "body": {
+            "bytes": 1675,
+            "sha256": "2b9f9db7b6d2a9599d5bee1e1b9e0c8b97ddbbbbf4b3f77b57869a92dd3db40a"
+          },
+          "commit_id": "7e2fc80834c7131bbd5ce8b2043231b1df570ec8",
+          "id": 4429619199,
+          "marker_present": true,
+          "source_url": "https://github.com/jarvis236/autoresearch/pull/1#pullrequestreview-4429619199",
+          "state": "COMMENTED",
+          "submitted_at": "2026-06-04T16:30:33Z",
+          "user": {
+            "html_url": "https://github.com/apps/coderabbitai",
+            "id": 136622811,
+            "login": "coderabbitai[bot]",
+            "type": "Bot"
+          }
+        },
+        "review_id": 4429619199,
+        "review_to_acknowledgement_update_seconds": 14,
+        "route": "pull_request_conversation"
+      },
+      {
+        "acknowledgement": {
+          "body": {
+            "bytes": 223,
+            "sha256": "fbff4c974a349bacb7019abc3e9c41fb278a01d6a48706c8d225e060f298c08d"
+          },
+          "command_invocation_marker_present": true,
+          "created_at": "2026-06-04T16:29:07Z",
+          "full_review_finished_present": true,
+          "id": 4624142146,
+          "source_url": "https://github.com/jarvis236/hermes-agent/pull/1#issuecomment-4624142146",
+          "updated_at": "2026-06-04T16:32:47Z",
+          "user": {
+            "html_url": "https://github.com/apps/coderabbitai",
+            "id": 136622811,
+            "login": "coderabbitai[bot]",
+            "type": "Bot"
+          }
+        },
+        "acknowledgement_comment_id": 4624142146,
+        "command": {
+          "body": {
+            "bytes": 25,
+            "sha256": "e5cabf5e4c3d622694329a24a3b45b3d90f6001d7cdda827186af5fca07623f1"
+          },
+          "created_at": "2026-06-04T16:29:01Z",
+          "id": 4624141524,
+          "is_full_review_command": true,
+          "source_url": "https://github.com/jarvis236/hermes-agent/pull/1#issuecomment-4624141524",
+          "user": {
+            "html_url": "https://github.com/apps/github-actions",
+            "id": 41898282,
+            "login": "github-actions[bot]",
+            "type": "Bot"
+          }
+        },
+        "command_comment_id": 4624141524,
+        "command_to_review_seconds": 210,
+        "pr_number": 1,
+        "repository": "jarvis236/hermes-agent",
+        "review": {
+          "body": {
+            "bytes": 2307,
+            "sha256": "c39c24a3f01662854db317fef2d04ff78794029d11cd34a0059458452410dd7b"
+          },
+          "commit_id": "97a588353bd66b4a9dbc41e9f2d749bf30b84940",
+          "id": 4429631728,
+          "marker_present": true,
+          "source_url": "https://github.com/jarvis236/hermes-agent/pull/1#pullrequestreview-4429631728",
+          "state": "COMMENTED",
+          "submitted_at": "2026-06-04T16:32:31Z",
+          "user": {
+            "html_url": "https://github.com/apps/coderabbitai",
+            "id": 136622811,
+            "login": "coderabbitai[bot]",
+            "type": "Bot"
+          }
+        },
+        "review_id": 4429631728,
+        "review_to_acknowledgement_update_seconds": 16,
+        "route": "pull_request_conversation"
+      },
+      {
+        "acknowledgement": {
+          "body": {
+            "bytes": 223,
+            "sha256": "7fb941ed9ccc96758cf4259701d38fc41fc3d9dc4f94d66926b0fc8423c0aa7b"
+          },
+          "command_invocation_marker_present": true,
+          "created_at": "2026-06-04T16:29:25Z",
+          "full_review_finished_present": true,
+          "id": 4624144172,
+          "source_url": "https://github.com/jarvis236/opensrc/pull/1#issuecomment-4624144172",
+          "updated_at": "2026-06-04T16:32:18Z",
+          "user": {
+            "html_url": "https://github.com/apps/coderabbitai",
+            "id": 136622811,
+            "login": "coderabbitai[bot]",
+            "type": "Bot"
+          }
+        },
+        "acknowledgement_comment_id": 4624144172,
+        "command": {
+          "body": {
+            "bytes": 25,
+            "sha256": "e5cabf5e4c3d622694329a24a3b45b3d90f6001d7cdda827186af5fca07623f1"
+          },
+          "created_at": "2026-06-04T16:29:19Z",
+          "id": 4624143477,
+          "is_full_review_command": true,
+          "source_url": "https://github.com/jarvis236/opensrc/pull/1#issuecomment-4624143477",
+          "user": {
+            "html_url": "https://github.com/apps/github-actions",
+            "id": 41898282,
+            "login": "github-actions[bot]",
+            "type": "Bot"
+          }
+        },
+        "command_comment_id": 4624143477,
+        "command_to_review_seconds": 176,
+        "pr_number": 1,
+        "repository": "jarvis236/opensrc",
+        "review": {
+          "body": {
+            "bytes": 2383,
+            "sha256": "56aa856a0fd9c8b839a49147d9e69277391d5839f308a947452214595def6908"
+          },
+          "commit_id": "e2aef9e2e2009a28f3138c7377884d7e8ac0a1c4",
+          "id": 4429630163,
+          "marker_present": true,
+          "source_url": "https://github.com/jarvis236/opensrc/pull/1#pullrequestreview-4429630163",
+          "state": "COMMENTED",
+          "submitted_at": "2026-06-04T16:32:15Z",
+          "user": {
+            "html_url": "https://github.com/apps/coderabbitai",
+            "id": 136622811,
+            "login": "coderabbitai[bot]",
+            "type": "Bot"
+          }
+        },
+        "review_id": 4429630163,
+        "review_to_acknowledgement_update_seconds": 3,
+        "route": "pull_request_conversation"
+      }
+    ],
+    "inline_bot_reply_skip": {
+      "pr_number": 15293,
+      "repository": "Comfy-Org/ComfyUI_frontend",
+      "response": {
+        "body": {
+          "bytes": 102,
+          "sha256": "3ec7b88a44f4ae95fa887d17653312f8f40675620cd1631059ba64555f7d3694"
+        },
+        "created_at": "2026-08-14T22:50:13Z",
+        "id": 3787635253,
+        "in_reply_to_id": 3787594687,
+        "skip_text_present": true,
+        "source_url": "https://github.com/Comfy-Org/ComfyUI_frontend/pull/15293#discussion_r3787635253",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "response_comment_id": 3787635253,
+      "root": {
+        "id": 3787594687,
+        "source_url": "https://github.com/Comfy-Org/ComfyUI_frontend/pull/15293#discussion_r3787594687",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "root_comment_id": 3787594687,
+      "route": "inline_review_thread",
+      "trigger": {
+        "body": {
+          "bytes": 1880,
+          "sha256": "98f157fd50aec3327c1d651a73b0479304ee4118f497c0dfc1f72356d72d7a30"
+        },
+        "created_at": "2026-08-14T22:50:08Z",
+        "id": 3787634776,
+        "in_reply_to_id": 3787594687,
+        "source_url": "https://github.com/Comfy-Org/ComfyUI_frontend/pull/15293#discussion_r3787634776",
+        "user": {
+          "html_url": "https://github.com/apps/glary-bot",
+          "id": 259002265,
+          "login": "glary-bot[bot]",
+          "type": "Bot"
+        }
+      },
+      "trigger_comment_id": 3787634776
+    }
+  },
+  "contract": {
+    "maximum_completion_skew_seconds": 300,
+    "review_bot_app_url": "https://github.com/apps/coderabbitai",
+    "review_bot_id": 136622811,
+    "review_bot_login": "coderabbitai[bot]",
+    "review_marker_sha256": "bff88b5424ccb0637d9154915c72108250078a478b89b043f1709ff026a94c00",
+    "status_avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+    "status_context": "CodeRabbit",
+    "status_description": "Review completed"
+  },
+  "frozen_at": "2026-09-06T13:52:58Z",
+  "provider": "coderabbit",
+  "review_evidence": [
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 2,
+      "head_sha": "e0b0aec0f109cb461e985b4e99a25521c4007d7e",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 7486,
+          "sha256": "66414a21f3a44bfc00950cb2a27b8cfb66db3c6624dc2c0b4e833ac9a25d6299"
+        },
+        "commit_id": "e0b0aec0f109cb461e985b4e99a25521c4007d7e",
+        "id": 4028072631,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028072631",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T05:15:24Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T05:15:26Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45329971155,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/e0b0aec0f109cb461e985b4e99a25521c4007d7e/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T05:15:26Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 2,
+      "head_sha": "d641155e4d98072e73bac800db67ca63a4a91d8d",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 11352,
+          "sha256": "fbf55e6576ae379e3e223aa99bc1432f0bcc09acd49696d3aba974f6e15d5274"
+        },
+        "commit_id": "d641155e4d98072e73bac800db67ca63a4a91d8d",
+        "id": 4028102836,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028102836",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T05:21:26Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T05:21:28Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45330100749,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/d641155e4d98072e73bac800db67ca63a4a91d8d/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T05:21:28Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 2,
+      "head_sha": "e63e075957a3db56df02d3180b6f4bfbf186317e",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 10624,
+          "sha256": "c51cd6682e84062f7e43e2a0da4fa0dc64321b85e7b4e447a4fb26d3a6b8bea6"
+        },
+        "commit_id": "e63e075957a3db56df02d3180b6f4bfbf186317e",
+        "id": 4028165540,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028165540",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T05:41:31Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T05:41:33Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45330525333,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/e63e075957a3db56df02d3180b6f4bfbf186317e/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T05:41:33Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 1,
+      "head_sha": "0fbe88fda3024609ab5ddb313cd6fd3a684c4561",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 11233,
+          "sha256": "cbd83459dcc831d80e9bcd56a49385573a537bb992f42b87257c8006d69da179"
+        },
+        "commit_id": "0fbe88fda3024609ab5ddb313cd6fd3a684c4561",
+        "id": 4028204411,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028204411",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T05:52:10Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T05:52:11Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45330765545,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/0fbe88fda3024609ab5ddb313cd6fd3a684c4561/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T05:52:11Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 2,
+      "head_sha": "f092efdf510d24d2a9de5497f44970fcd4b7d19c",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 12566,
+          "sha256": "fcedc7f2c50c615e61fe4549cd9d86d85dc9b3fc8e698d40e5973ccbf0b71a9e"
+        },
+        "commit_id": "f092efdf510d24d2a9de5497f44970fcd4b7d19c",
+        "id": 4028339977,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028339977",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T06:31:27Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T06:31:29Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45331715195,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/f092efdf510d24d2a9de5497f44970fcd4b7d19c/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T06:31:29Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 1,
+      "head_sha": "796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 2367,
+          "sha256": "8f8d8ab435dbf9a9d94166916073153f227b10392563271c885af2d24f3ad5cd"
+        },
+        "commit_id": "796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe",
+        "id": 4028512523,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028512523",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T07:13:15Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T07:13:16Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45332855736,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T07:13:16Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 2,
+      "head_sha": "06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 3227,
+          "sha256": "4c4c8328fb00fec292082d41b4c5f002748a2ab5cf89ec9fcae59ba2929cd8ee"
+        },
+        "commit_id": "06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7",
+        "id": 4028553222,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028553222",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T07:22:32Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T07:22:34Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45333132289,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T07:22:34Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 1,
+      "head_sha": "1869c5dbb405d23f735f4e86b556b5fcb8b39e87",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 2802,
+          "sha256": "da68e738e26dec122d550841ccb0155b453788ea53642e8ce346c7cf51fd7017"
+        },
+        "commit_id": "1869c5dbb405d23f735f4e86b556b5fcb8b39e87",
+        "id": 4028583876,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028583876",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T07:29:13Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T07:29:14Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45333333964,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/1869c5dbb405d23f735f4e86b556b5fcb8b39e87/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T07:29:14Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-jefe#30",
+      "completion_skew_seconds": 2,
+      "head_sha": "f9ab307f145d1e00643d25ec7f58e8206afe1a1c",
+      "pr_number": 30,
+      "repository": "vybestack/llxprt-jefe",
+      "review": {
+        "body": {
+          "bytes": 5060,
+          "sha256": "fe66f82c7f96863c5ec2093f080471897495d0a4eaf2e90ad6f334b7b5ba8c49"
+        },
+        "commit_id": "f9ab307f145d1e00643d25ec7f58e8206afe1a1c",
+        "id": 4030818757,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4030818757",
+        "state": "COMMENTED",
+        "submitted_at": "2026-03-30T14:01:17Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-03-30T14:01:19Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 45349460792,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-jefe/commits/f9ab307f145d1e00643d25ec7f58e8206afe1a1c/statuses",
+        "state": "success",
+        "updated_at": "2026-03-30T14:01:19Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 3,
+      "head_sha": "5ef5a0bd3dc826fb9562b5a14f6af981079552d3",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 8897,
+          "sha256": "b580911dcf19289d6049bfeaa755f03a2a326859810e76b30b463f1a4d172abd"
+        },
+        "commit_id": "5ef5a0bd3dc826fb9562b5a14f6af981079552d3",
+        "id": 4439415157,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4439415157",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-05T20:23:50Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-05T20:23:53Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48518202484,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/5ef5a0bd3dc826fb9562b5a14f6af981079552d3/statuses",
+        "state": "success",
+        "updated_at": "2026-06-05T20:23:53Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 3,
+      "head_sha": "f9020b809f34742967fe14d096b8b751e366d12b",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 5615,
+          "sha256": "78b90ce377820529397865ec75137a68902ee6be12961605d02f9e1d7680677a"
+        },
+        "commit_id": "f9020b809f34742967fe14d096b8b751e366d12b",
+        "id": 4439711225,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4439711225",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-05T21:08:28Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-05T21:08:31Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48520307234,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/f9020b809f34742967fe14d096b8b751e366d12b/statuses",
+        "state": "success",
+        "updated_at": "2026-06-05T21:08:31Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 7463,
+          "sha256": "f50f0fcdbd0c932f55627455002eb83c746b57c2259b80cee001dd5491724586"
+        },
+        "commit_id": "4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c",
+        "id": 4440118840,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440118840",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-05T22:21:10Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-05T22:21:12Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48523179870,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c/statuses",
+        "state": "success",
+        "updated_at": "2026-06-05T22:21:12Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "67c65c01787ac1e406a62f510fb4ba799085ad5b",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 4360,
+          "sha256": "02f0b79e7f43f6f98963e1a2132f4ad47a387dec3e630054ab873a14bfcb5b6c"
+        },
+        "commit_id": "67c65c01787ac1e406a62f510fb4ba799085ad5b",
+        "id": 4440207947,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440207947",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-05T22:37:56Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-05T22:37:58Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48523721177,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/67c65c01787ac1e406a62f510fb4ba799085ad5b/statuses",
+        "state": "success",
+        "updated_at": "2026-06-05T22:37:58Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "9fbb71640c82d57415fc88423635d4d289696636",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 10340,
+          "sha256": "430a894daa71eca961b2c22ef3a6cb6a98499e7732f8128cfcfe0a18037e771b"
+        },
+        "commit_id": "9fbb71640c82d57415fc88423635d4d289696636",
+        "id": 4440419598,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440419598",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-05T23:27:18Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-05T23:27:20Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48525182706,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/9fbb71640c82d57415fc88423635d4d289696636/statuses",
+        "state": "success",
+        "updated_at": "2026-06-05T23:27:20Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 1,
+      "head_sha": "c24d719eb1c9adf26ed652f9ee9f4b04413ddea5",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 4431,
+          "sha256": "b88a296ba88fba0a9b0a5414e9a76c63eb3360fc84ee8ef5c2c19e76ba037abf"
+        },
+        "commit_id": "c24d719eb1c9adf26ed652f9ee9f4b04413ddea5",
+        "id": 4440489866,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440489866",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-05T23:49:04Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-05T23:49:05Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48525750113,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/c24d719eb1c9adf26ed652f9ee9f4b04413ddea5/statuses",
+        "state": "success",
+        "updated_at": "2026-06-05T23:49:05Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "26b973abfd1fe15d554859b871aed2e22d9a02b7",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 4452,
+          "sha256": "72895aba5bc44aad5265dbc57689c1f0d674f171431d09368962cedb98770116"
+        },
+        "commit_id": "26b973abfd1fe15d554859b871aed2e22d9a02b7",
+        "id": 4440573138,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440573138",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-06T00:24:01Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-06T00:24:03Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48526641759,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/26b973abfd1fe15d554859b871aed2e22d9a02b7/statuses",
+        "state": "success",
+        "updated_at": "2026-06-06T00:24:03Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "307900a39875ab781f07853c538be3db3c2c6df6",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 7312,
+          "sha256": "66e84af277059ace07cff832d5d5b407e48f130b5be7c5a77a77783a6bcc22db"
+        },
+        "commit_id": "307900a39875ab781f07853c538be3db3c2c6df6",
+        "id": 4440779199,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440779199",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-06T01:08:14Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-06T01:08:16Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48527563605,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/307900a39875ab781f07853c538be3db3c2c6df6/statuses",
+        "state": "success",
+        "updated_at": "2026-06-06T01:08:16Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "499ba48790c9ff689ecd74a1b32d2ef38603a2b3",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 4624,
+          "sha256": "11317298db8220f1184052f8c11889fe9e2246fbbefab4d754dd82d1862d05ba"
+        },
+        "commit_id": "499ba48790c9ff689ecd74a1b32d2ef38603a2b3",
+        "id": 4440935598,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440935598",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-06T01:38:49Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-06T01:38:51Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48528121427,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/499ba48790c9ff689ecd74a1b32d2ef38603a2b3/statuses",
+        "state": "success",
+        "updated_at": "2026-06-06T01:38:51Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 2,
+      "head_sha": "9ad5dc28152d397d559bd7d155a298d8d708ac57",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 10220,
+          "sha256": "1adfbd060266c7d5b4b735d4a30678d8152971b867ddbf2dc4ad95a5b3ea0bab"
+        },
+        "commit_id": "9ad5dc28152d397d559bd7d155a298d8d708ac57",
+        "id": 4441071647,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4441071647",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-06T02:02:50Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-06T02:02:52Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48528550673,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/9ad5dc28152d397d559bd7d155a298d8d708ac57/statuses",
+        "state": "success",
+        "updated_at": "2026-06-06T02:02:52Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 18,
+      "head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 5301,
+          "sha256": "58cd421e95d0a9e4cfc6764d291869ff8b4eceb2c31c76e3fb6b741006734bae"
+        },
+        "commit_id": "051e1633d5a588d93dc0c99562738523b45119ac",
+        "id": 4443686646,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4443686646",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-06T19:50:44Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-06T19:51:02Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48543354021,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/051e1633d5a588d93dc0c99562738523b45119ac/statuses",
+        "state": "success",
+        "updated_at": "2026-06-06T19:51:02Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#1947",
+      "completion_skew_seconds": 3,
+      "head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+      "pr_number": 1947,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 9227,
+          "sha256": "c582aa6f8ac558541c203446382a1ae063b61977a1a9b727d568d22036d40951"
+        },
+        "commit_id": "051e1633d5a588d93dc0c99562738523b45119ac",
+        "id": 4443686877,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4443686877",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-06T19:50:59Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-06T19:51:02Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48543354021,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/051e1633d5a588d93dc0c99562738523b45119ac/statuses",
+        "state": "success",
+        "updated_at": "2026-06-06T19:51:02Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 3,
+      "head_sha": "9c855529d9b5be402102a7dd8095e4cb7aa4b2e9",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 7783,
+          "sha256": "bbd64aaa9d094913161b054097227d7af585559a02298405786ceec8a4a47b87"
+        },
+        "commit_id": "9c855529d9b5be402102a7dd8095e4cb7aa4b2e9",
+        "id": 4489417073,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489417073",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T21:54:25Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T21:54:28Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48889732016,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/9c855529d9b5be402102a7dd8095e4cb7aa4b2e9/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T21:54:28Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 1,
+      "head_sha": "6ba49f468d34da2c707eeee0dd799b5b7c8d0d91",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 15444,
+          "sha256": "de268709666d887002d1e917a3e809edccb32b9fa948d6eae23c68780c8ced40"
+        },
+        "commit_id": "6ba49f468d34da2c707eeee0dd799b5b7c8d0d91",
+        "id": 4489462471,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489462471",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T22:04:12Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T22:04:13Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48890118674,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/6ba49f468d34da2c707eeee0dd799b5b7c8d0d91/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T22:04:13Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "5a8e942aa6627b3ff8003e9459a00e82016127da",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 6659,
+          "sha256": "06a5301657fcbc1a1bd05cfb054f2e3bcffce4b6d6d4f95a8b4025f8703a8af3"
+        },
+        "commit_id": "5a8e942aa6627b3ff8003e9459a00e82016127da",
+        "id": 4489531159,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489531159",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T22:22:48Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T22:22:50Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48890831026,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/5a8e942aa6627b3ff8003e9459a00e82016127da/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T22:22:50Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "035d6770d9551d39236596d2fb384c62f6f3bd31",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 13604,
+          "sha256": "efa2c0bde92e5c29337736ddad91890342c5c538a6ec22afda77682abf7df9ac"
+        },
+        "commit_id": "035d6770d9551d39236596d2fb384c62f6f3bd31",
+        "id": 4489656795,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489656795",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T22:47:23Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T22:47:25Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48891676371,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/035d6770d9551d39236596d2fb384c62f6f3bd31/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T22:47:25Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "c465e9fee27b6c410650a8b5450f3e36151e136c",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 12999,
+          "sha256": "fac9461d6896bae28d09ad296d906068fc78b7a24b73c5fb59733e37e0e1ce9d"
+        },
+        "commit_id": "c465e9fee27b6c410650a8b5450f3e36151e136c",
+        "id": 4489698159,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489698159",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T22:57:13Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T22:57:15Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48891986758,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/c465e9fee27b6c410650a8b5450f3e36151e136c/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T22:57:15Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 1,
+      "head_sha": "108889e5005c2dcf24cef3d1b83c25a6551f1bd6",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 16500,
+          "sha256": "d9d86469dcd7b8f93d3cd76686a92016e8e26e9b0ba04592715eecf3e2d2c8cf"
+        },
+        "commit_id": "108889e5005c2dcf24cef3d1b83c25a6551f1bd6",
+        "id": 4489741455,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489741455",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T23:07:04Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T23:07:05Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48892287379,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/108889e5005c2dcf24cef3d1b83c25a6551f1bd6/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T23:07:05Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "73b233136a6229e9ac6234642419256c2f2b1514",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 8028,
+          "sha256": "ae8f1192be89750595861f35ae713f13664bf4aa211d44e3f19e046c50ad0dc6"
+        },
+        "commit_id": "73b233136a6229e9ac6234642419256c2f2b1514",
+        "id": 4489832440,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489832440",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-12T23:28:24Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-12T23:28:26Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48892893175,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/73b233136a6229e9ac6234642419256c2f2b1514/statuses",
+        "state": "success",
+        "updated_at": "2026-06-12T23:28:26Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "7a64550a6f65af611dafc16740376fe41df90125",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 8425,
+          "sha256": "7a1d22a4c2b15b4ffbef9765375d1a8dd366b5f34021bf2a8691e1b87717e4d8"
+        },
+        "commit_id": "7a64550a6f65af611dafc16740376fe41df90125",
+        "id": 4490084776,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490084776",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T00:38:22Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T00:38:24Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48894660549,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/7a64550a6f65af611dafc16740376fe41df90125/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T00:38:24Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 1,
+      "head_sha": "9d45fab6888db0d34eadb51da52492d30686c243",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 13314,
+          "sha256": "64b60a40b9f763db46992532c1d43e65a51bd04d29a2be7a609530497aeb8712"
+        },
+        "commit_id": "9d45fab6888db0d34eadb51da52492d30686c243",
+        "id": 4490129224,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490129224",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T00:52:18Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T00:52:19Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48894955837,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/9d45fab6888db0d34eadb51da52492d30686c243/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T00:52:19Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 1,
+      "head_sha": "edb575c46659f3c0b4a58528255ddb0e095d28e0",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 16299,
+          "sha256": "f128b4374593300b3923906243be98f8af3ae82eaa28ad724b24be587b63ec81"
+        },
+        "commit_id": "edb575c46659f3c0b4a58528255ddb0e095d28e0",
+        "id": 4490172122,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490172122",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T01:04:53Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T01:04:54Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48895214214,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/edb575c46659f3c0b4a58528255ddb0e095d28e0/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T01:04:54Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 1,
+      "head_sha": "30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 8160,
+          "sha256": "54068bbe22c86f9590faa0787a9014bc65b4629e09ce1f0cd9984df55c3560db"
+        },
+        "commit_id": "30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8",
+        "id": 4490375623,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490375623",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T01:53:35Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T01:53:36Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48896052161,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T01:53:36Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 1,
+      "head_sha": "eb8ece577799fedb3cfa318c1e474530dd8ddfb7",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 14486,
+          "sha256": "869f96921a87165b6aaaa50a579fdbb05c1f4ea74c6f12c3facfe5a482941696"
+        },
+        "commit_id": "eb8ece577799fedb3cfa318c1e474530dd8ddfb7",
+        "id": 4490430441,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490430441",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T02:05:56Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T02:05:57Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48896257841,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/eb8ece577799fedb3cfa318c1e474530dd8ddfb7/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T02:05:57Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "662b0d4ec16ae1c09fea1ce5ea441ea7408884fd",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 16844,
+          "sha256": "54516e352487d0490e484ef3325a6ffd1e73d8061fa64b9a8bce820dd54096c6"
+        },
+        "commit_id": "662b0d4ec16ae1c09fea1ce5ea441ea7408884fd",
+        "id": 4490465664,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490465664",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T02:16:59Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T02:17:01Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48896431129,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/662b0d4ec16ae1c09fea1ce5ea441ea7408884fd/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T02:17:01Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "c19967a6ac8e80dff5324d235d0f2e9a9d6b540c",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 13304,
+          "sha256": "2f0fb2ddcc54b82c11955ec79aa5b6811c40c9e0d41fc1fe4cb9d6c851a6b78e"
+        },
+        "commit_id": "c19967a6ac8e80dff5324d235d0f2e9a9d6b540c",
+        "id": 4490479744,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490479744",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T02:30:59Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T02:31:01Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48896635200,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/c19967a6ac8e80dff5324d235d0f2e9a9d6b540c/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T02:31:01Z"
+      }
+    },
+    {
+      "case_id": "vybestack/llxprt-code#2011",
+      "completion_skew_seconds": 2,
+      "head_sha": "392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9",
+      "pr_number": 2011,
+      "repository": "vybestack/llxprt-code",
+      "review": {
+        "body": {
+          "bytes": 8400,
+          "sha256": "8c11abe466362d49b86ec8e3ec8e8440c4c982c3847130bc2a120c6b25b9e43f"
+        },
+        "commit_id": "392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9",
+        "id": 4490537782,
+        "marker_present": true,
+        "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490537782",
+        "state": "COMMENTED",
+        "submitted_at": "2026-06-13T02:52:01Z",
+        "user": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        }
+      },
+      "status": {
+        "avatar_url": "https://avatars.githubusercontent.com/in/347564?v=4",
+        "context": "CodeRabbit",
+        "created_at": "2026-06-13T02:52:03Z",
+        "creator": {
+          "html_url": "https://github.com/apps/coderabbitai",
+          "id": 136622811,
+          "login": "coderabbitai[bot]",
+          "type": "Bot"
+        },
+        "description": "Review completed",
+        "id": 48896945359,
+        "source_url": "https://api.github.com/repos/vybestack/llxprt-code/commits/392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9/statuses",
+        "state": "success",
+        "updated_at": "2026-06-13T02:52:03Z"
+      }
+    }
+  ],
+  "schema_version": "review-governor-provider-contract-v0"
+}

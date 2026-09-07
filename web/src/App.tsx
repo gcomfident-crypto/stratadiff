@@ -6,6 +6,7 @@ import { Header } from './components/Header'
 import { HelpDialog } from './components/HelpDialog'
 import { Inspector } from './components/Inspector'
 import { ReviewCoverageWorkbench } from './components/ReviewCoverageWorkbench'
+import { ReviewInboxWorkbench } from './components/ReviewInboxWorkbench'
 import { ReviewWorkbench } from './components/ReviewWorkbench'
 import { Sidebar, type SidebarFilters } from './components/Sidebar'
 import { StructureView } from './components/StructureView'
@@ -41,7 +42,7 @@ function ErrorScreen({ message }: { message: string }) {
       <span className="eyebrow">SESSION UNAVAILABLE</span>
       <h1>Could not open this report</h1>
       <p>{message}</p>
-      <code>stratadiff view &lt;before&gt; &lt;after&gt;<br />stratadiff review &lt;base&gt; &lt;head&gt; --checkpoint &lt;rev&gt; --workbench<br />stratadiff review-coverage-view &lt;passport&gt; --trusted-receiver-public-key &lt;key&gt;</code>
+      <code>stratadiff view &lt;before&gt; &lt;after&gt;<br />stratadiff review &lt;base&gt; &lt;head&gt; --checkpoint &lt;rev&gt; --workbench<br />stratadiff inbox --workbench<br />stratadiff review-coverage-view &lt;passport&gt; --trusted-receiver-public-key &lt;key&gt;</code>
       <button type="button" onClick={() => window.location.reload()}><RefreshCw size={15} />Retry</button>
       <small>For safety, this viewer requires the one-time token created by the local StrataDiff server.</small>
     </main>
@@ -242,5 +243,6 @@ export default function App() {
   if (session === null) return <LoadingScreen />
   if (session.kind === 'repository_review') return <ReviewWorkbench session={session} />
   if (session.kind === 'review_coverage_passport') return <ReviewCoverageWorkbench session={session} />
+  if (session.kind === 'review_inbox') return <ReviewInboxWorkbench session={session} />
   return <Workbench session={session} />
 }

@@ -1,0 +1,455 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-context-v1.schema.json",
+  "title": "StrataDiff review context v1",
+  "description": "A complete, canonical declaration of the inputs that may influence one reviewer execution. The body digest is verified by consumers; schema validation alone does not recompute it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_version",
+    "canonicalization",
+    "body",
+    "body_sha256",
+    "compatibility_sha256"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-context-v1.schema.json"
+    },
+    "contract_version": { "const": "1.0.0" },
+    "canonicalization": { "const": "stratadiff-canonical-json-v1" },
+    "body": { "$ref": "#/$defs/body" },
+    "body_sha256": { "$ref": "#/$defs/sha256" },
+    "compatibility_sha256": { "$ref": "#/$defs/sha256" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "bounded_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "host", "owner", "name", "repository_id", "object_format"],
+      "properties": {
+        "provider": { "const": "github" },
+        "host": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$",
+          "maxLength": 253
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$"
+        },
+        "repository_id": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        },
+        "object_format": { "const": "sha1" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "number",
+        "base_ref",
+        "head_ref",
+        "base_oid",
+        "head_oid",
+        "observed_at",
+        "canonical_metadata_sha256"
+      ],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "base_ref": { "$ref": "#/$defs/bounded_string" },
+        "head_ref": { "$ref": "#/$defs/bounded_string" },
+        "base_oid": { "$ref": "#/$defs/object_id" },
+        "head_oid": { "$ref": "#/$defs/object_id" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "canonical_metadata_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "artifact_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_uri", "canonical_sha256", "byte_length"],
+      "properties": {
+        "schema_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "canonical_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "entrypoint", "artifact_sha256"],
+      "properties": {
+        "name": { "$ref": "#/$defs/bounded_string" },
+        "version": { "$ref": "#/$defs/bounded_string" },
+        "entrypoint": { "$ref": "#/$defs/bounded_string" },
+        "artifact_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "model": {
+      "oneOf": [
+        { "$ref": "#/$defs/model_present" },
+        { "$ref": "#/$defs/model_hosted_unpinned" },
+        { "$ref": "#/$defs/model_absent" }
+      ]
+    },
+    "model_present": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "model_id",
+        "immutable_revision",
+        "model_artifact_sha256",
+        "inference_parameters_sha256"
+      ],
+      "properties": {
+        "kind": { "const": "model" },
+        "provider": { "$ref": "#/$defs/bounded_string" },
+        "model_id": { "$ref": "#/$defs/bounded_string" },
+        "immutable_revision": { "$ref": "#/$defs/bounded_string" },
+        "model_artifact_sha256": { "$ref": "#/$defs/sha256" },
+        "inference_parameters_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "model_absent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "none" }
+      }
+    },
+    "model_hosted_unpinned": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "provider",
+        "model_id",
+        "provider_revision",
+        "inference_parameters_sha256",
+        "automatically_reusable"
+      ],
+      "properties": {
+        "kind": { "const": "hosted_model_unpinned" },
+        "provider": { "$ref": "#/$defs/bounded_string" },
+        "model_id": { "$ref": "#/$defs/bounded_string" },
+        "provider_revision": { "$ref": "#/$defs/bounded_string" },
+        "inference_parameters_sha256": { "$ref": "#/$defs/sha256" },
+        "automatically_reusable": { "const": false }
+      }
+    },
+    "dependency_closure": {
+      "oneOf": [
+        { "$ref": "#/$defs/dependency_closure_closed" },
+        { "$ref": "#/$defs/dependency_closure_open" }
+      ]
+    },
+    "dependency_closure_closed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "manifest_sha256"],
+      "properties": {
+        "status": { "const": "closed" },
+        "manifest_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "dependency_closure_open": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason", "observed_inputs_sha256"],
+      "properties": {
+        "status": { "const": "open" },
+        "reason": {
+          "enum": ["dynamic_external_context", "hosted_model_unpinned", "undeclared_tool_access"]
+        },
+        "observed_inputs_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "execution_kind",
+        "runtime_name",
+        "runtime_version",
+        "operating_system",
+        "architecture",
+        "runtime_manifest_sha256",
+        "environment_sha256"
+      ],
+      "properties": {
+        "execution_kind": { "enum": ["host", "container", "sandbox"] },
+        "runtime_name": { "$ref": "#/$defs/bounded_string" },
+        "runtime_version": { "$ref": "#/$defs/bounded_string" },
+        "operating_system": { "$ref": "#/$defs/bounded_string" },
+        "architecture": { "$ref": "#/$defs/bounded_string" },
+        "runtime_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "environment_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "executable_sha256", "configuration_sha256"],
+      "properties": {
+        "name": { "$ref": "#/$defs/bounded_string" },
+        "version": { "$ref": "#/$defs/bounded_string" },
+        "executable_sha256": { "$ref": "#/$defs/sha256" },
+        "configuration_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "repository_closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "complete",
+        "root_commit_oids",
+        "root_tree_oids",
+        "object_count",
+        "path_count",
+        "object_manifest_sha256",
+        "path_manifest_sha256",
+        "canonical_closure_sha256"
+      ],
+      "properties": {
+        "kind": { "const": "declared_git_object_and_path_closure_v1" },
+        "complete": { "const": true },
+        "root_commit_oids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/object_id" }
+        },
+        "root_tree_oids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/object_id" }
+        },
+        "object_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000
+        },
+        "path_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "object_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "path_manifest_sha256": { "$ref": "#/$defs/sha256" },
+        "canonical_closure_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "exact_disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition_id",
+        "subject_identity_sha256",
+        "disposition",
+        "result_sha256",
+        "receipt_body_sha256",
+        "match_basis",
+        "automatically_reusable",
+        "recorded_at"
+      ],
+      "properties": {
+        "disposition_id": { "$ref": "#/$defs/bounded_string" },
+        "subject_identity_sha256": { "$ref": "#/$defs/sha256" },
+        "disposition": {
+          "enum": ["approved", "changes_requested", "commented", "policy_passed", "policy_failed", "superseded"]
+        },
+        "result_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_body_sha256": { "$ref": "#/$defs/sha256" },
+        "match_basis": { "const": "exact_git_change_identity" },
+        "automatically_reusable": { "type": "boolean" },
+        "recorded_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "four_way_disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition_id",
+        "subject_identity_sha256",
+        "disposition",
+        "result_sha256",
+        "receipt_body_sha256",
+        "match_basis",
+        "automatically_reusable",
+        "recorded_at"
+      ],
+      "properties": {
+        "disposition_id": { "$ref": "#/$defs/bounded_string" },
+        "subject_identity_sha256": { "$ref": "#/$defs/sha256" },
+        "disposition": {
+          "enum": ["approved", "changes_requested", "commented", "policy_passed", "policy_failed", "superseded"]
+        },
+        "result_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_body_sha256": { "$ref": "#/$defs/sha256" },
+        "match_basis": { "const": "exact_noninteracting_four_way_byte_replay" },
+        "automatically_reusable": { "const": false },
+        "recorded_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "unmatched_disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "disposition_id",
+        "subject_identity_sha256",
+        "disposition",
+        "result_sha256",
+        "receipt_body_sha256",
+        "match_basis",
+        "automatically_reusable",
+        "recorded_at"
+      ],
+      "properties": {
+        "disposition_id": { "$ref": "#/$defs/bounded_string" },
+        "subject_identity_sha256": { "$ref": "#/$defs/sha256" },
+        "disposition": {
+          "enum": ["approved", "changes_requested", "commented", "policy_passed", "policy_failed", "superseded"]
+        },
+        "result_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_body_sha256": { "$ref": "#/$defs/sha256" },
+        "match_basis": { "const": "none" },
+        "automatically_reusable": { "const": false },
+        "recorded_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "historical_disposition": {
+      "oneOf": [
+        { "$ref": "#/$defs/exact_disposition" },
+        { "$ref": "#/$defs/four_way_disposition" },
+        { "$ref": "#/$defs/unmatched_disposition" }
+      ]
+    },
+    "holistic_composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reviewer_input_projection"],
+      "properties": {
+        "kind": { "const": "holistic" },
+        "reviewer_input_projection": { "$ref": "#/$defs/artifact_binding" }
+      }
+    },
+    "itemwise_composition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reviewer_input_projection", "item_review_contract", "cross_item_aggregator"],
+      "properties": {
+        "kind": { "const": "itemwise_closed_v1" },
+        "reviewer_input_projection": { "$ref": "#/$defs/artifact_binding" },
+        "item_review_contract": { "$ref": "#/$defs/artifact_binding" },
+        "cross_item_aggregator": { "$ref": "#/$defs/artifact_binding" }
+      }
+    },
+    "composition": {
+      "oneOf": [
+        { "$ref": "#/$defs/holistic_composition" },
+        { "$ref": "#/$defs/itemwise_composition" }
+      ]
+    },
+    "reviewer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation", "model", "prompt", "policy", "configuration", "runtime", "tools", "composition"],
+      "properties": {
+        "implementation": { "$ref": "#/$defs/implementation" },
+        "model": { "$ref": "#/$defs/model" },
+        "prompt": { "$ref": "#/$defs/artifact_binding" },
+        "policy": { "$ref": "#/$defs/artifact_binding" },
+        "configuration": { "$ref": "#/$defs/artifact_binding" },
+        "runtime": { "$ref": "#/$defs/runtime" },
+        "composition": { "$ref": "#/$defs/composition" },
+        "tools": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/tool" }
+        }
+      }
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reuse_policy",
+        "change_identity_schema",
+        "review_input_scope",
+        "dependency_closure",
+        "reviewer",
+        "repository",
+        "repository_closure",
+        "pull_request",
+        "historical_dispositions"
+      ],
+      "properties": {
+        "reuse_policy": { "const": "exact_git_change_identity_only_v1" },
+        "change_identity_schema": { "const": "stratadiff-exact-git-change-identity-v1" },
+        "review_input_scope": {
+          "enum": ["selected_payload_only", "declared_repository_closure"]
+        },
+        "dependency_closure": { "$ref": "#/$defs/dependency_closure" },
+        "reviewer": { "$ref": "#/$defs/reviewer" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "repository_closure": { "$ref": "#/$defs/repository_closure" },
+        "pull_request": { "$ref": "#/$defs/pull_request" },
+        "historical_dispositions": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": { "$ref": "#/$defs/historical_disposition" }
+        }
+      }
+    }
+  }
+}

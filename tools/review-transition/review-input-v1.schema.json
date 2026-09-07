@@ -1,0 +1,762 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-input-v1.schema.json",
+  "title": "StrataDiff review input routing decision v1",
+  "description": "A fail-closed routing decision for one review transition. Only exact Git change identity may remove an item from the selected review payload. Four-way replay may be retained as evidence for a selected item but cannot authorize skip or carry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_version",
+    "canonicalization",
+    "generated_at",
+    "reuse_policy",
+    "change_identity_schema",
+    "repository",
+    "pull_request",
+    "transition",
+    "current_context",
+    "resolution"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-input-v1.schema.json"
+    },
+    "contract_version": { "const": "1.0.0" },
+    "canonicalization": { "const": "stratadiff-canonical-json-v1" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "reuse_policy": { "const": "exact_git_change_identity_only_v1" },
+    "change_identity_schema": { "const": "stratadiff-exact-git-change-identity-v1" },
+    "repository": { "$ref": "#/$defs/repository" },
+    "pull_request": { "$ref": "#/$defs/pull_request" },
+    "transition": { "$ref": "#/$defs/transition" },
+    "current_context": { "$ref": "#/$defs/context_reference" },
+    "resolution": { "$ref": "#/$defs/resolution" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "current_context": {
+            "properties": {
+              "closure_status": { "const": "open" }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "resolution": {
+            "properties": {
+              "decision": { "enum": ["full", "blocked"] }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "bounded_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "host", "owner", "name", "repository_id", "object_format"],
+      "properties": {
+        "provider": { "const": "github" },
+        "host": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$",
+          "maxLength": 253
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$"
+        },
+        "repository_id": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        },
+        "object_format": { "const": "sha1" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "number", "metadata_sha256"],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "metadata_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_oid", "tree_oid"],
+      "properties": {
+        "commit_oid": { "$ref": "#/$defs/object_id" },
+        "tree_oid": { "$ref": "#/$defs/object_id" }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route", "Q", "A", "B", "C", "D"],
+      "properties": {
+        "route": { "enum": ["provider_attested_same_base", "full_history_verified"] },
+        "Q": { "$ref": "#/$defs/snapshot" },
+        "A": { "$ref": "#/$defs/snapshot" },
+        "B": { "$ref": "#/$defs/snapshot" },
+        "C": { "$ref": "#/$defs/snapshot" },
+        "D": { "$ref": "#/$defs/snapshot" }
+      }
+    },
+    "context_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_uri", "body_sha256", "compatibility_sha256", "closure_status"],
+      "properties": {
+        "schema_uri": {
+          "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-context-v1.schema.json"
+        },
+        "body_sha256": { "$ref": "#/$defs/sha256" },
+        "compatibility_sha256": { "$ref": "#/$defs/sha256" },
+        "closure_status": { "enum": ["closed", "open"] }
+      }
+    },
+    "receipt_present": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "schema_uri",
+        "receipt_id",
+        "body_sha256",
+        "attestation_sha256",
+        "prior_input_sha256",
+        "prior_result_sha256",
+        "review_context_body_sha256",
+        "review_context_compatibility_sha256",
+        "prior_outcome",
+        "retained_non_current_blocking_outcome",
+        "coverage_complete",
+        "trusted_source_verified"
+      ],
+      "properties": {
+        "status": { "const": "present" },
+        "schema_uri": {
+          "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-receipt-v1.schema.json"
+        },
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,256}$"
+        },
+        "body_sha256": { "$ref": "#/$defs/sha256" },
+        "attestation_sha256": { "$ref": "#/$defs/sha256" },
+        "prior_input_sha256": { "$ref": "#/$defs/sha256" },
+        "prior_result_sha256": { "$ref": "#/$defs/sha256" },
+        "review_context_body_sha256": { "$ref": "#/$defs/sha256" },
+        "review_context_compatibility_sha256": { "$ref": "#/$defs/sha256" },
+        "prior_outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] },
+        "retained_non_current_blocking_outcome": { "enum": ["passed", "failed", "changes_requested"] },
+        "coverage_complete": { "const": true },
+        "trusted_source_verified": { "const": true }
+      }
+    },
+    "receipt_absent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": { "const": "absent" },
+        "reason": {
+          "enum": ["not_provided", "untrusted_source", "invalid_signature", "incomplete_coverage", "digest_mismatch"]
+        }
+      }
+    },
+    "receipt_reference": {
+      "oneOf": [
+        { "$ref": "#/$defs/receipt_present" },
+        { "$ref": "#/$defs/receipt_absent" }
+      ]
+    },
+    "context_exact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "closure_status",
+        "current_body_sha256",
+        "receipt_body_sha256",
+        "current_compatibility_sha256",
+        "receipt_compatibility_sha256"
+      ],
+      "properties": {
+        "status": { "const": "exact" },
+        "closure_status": { "const": "closed" },
+        "current_body_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_body_sha256": { "$ref": "#/$defs/sha256" },
+        "current_compatibility_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_compatibility_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "context_mismatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "closure_status",
+        "current_body_sha256",
+        "receipt_body_sha256",
+        "current_compatibility_sha256",
+        "receipt_compatibility_sha256"
+      ],
+      "properties": {
+        "status": { "const": "mismatch" },
+        "closure_status": { "enum": ["closed", "open"] },
+        "current_body_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_body_sha256": { "$ref": "#/$defs/sha256" },
+        "current_compatibility_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_compatibility_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "context_unavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "closure_status",
+        "current_body_sha256",
+        "current_compatibility_sha256",
+        "reason"
+      ],
+      "properties": {
+        "status": { "const": "unavailable" },
+        "closure_status": { "enum": ["closed", "open"] },
+        "current_body_sha256": { "$ref": "#/$defs/sha256" },
+        "current_compatibility_sha256": { "$ref": "#/$defs/sha256" },
+        "reason": {
+          "enum": [
+            "receipt_absent",
+            "receipt_invalid",
+            "context_incomplete",
+            "open_dependency_closure",
+            "hosted_model_unpinned"
+          ]
+        }
+      }
+    },
+    "context_comparison": {
+      "oneOf": [
+        { "$ref": "#/$defs/context_exact" },
+        { "$ref": "#/$defs/context_mismatch" },
+        { "$ref": "#/$defs/context_unavailable" }
+      ]
+    },
+    "empty_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "schema_uri",
+        "canonical_payload_sha256",
+        "reviewer_input_projection_sha256",
+        "byte_length",
+        "selected_identity_sha256"
+      ],
+      "properties": {
+        "mode": { "const": "empty" },
+        "schema_uri": { "$ref": "#/$defs/bounded_string" },
+        "canonical_payload_sha256": { "$ref": "#/$defs/sha256" },
+        "reviewer_input_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        },
+        "selected_identity_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "residue_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "schema_uri",
+        "canonical_payload_sha256",
+        "reviewer_input_projection_sha256",
+        "byte_length",
+        "selected_identity_sha256"
+      ],
+      "properties": {
+        "mode": { "const": "residue" },
+        "schema_uri": { "$ref": "#/$defs/bounded_string" },
+        "canonical_payload_sha256": { "$ref": "#/$defs/sha256" },
+        "reviewer_input_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1073741824
+        },
+        "selected_identity_sha256": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "full_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "schema_uri",
+        "canonical_payload_sha256",
+        "reviewer_input_projection_sha256",
+        "byte_length",
+        "selected_identity_sha256"
+      ],
+      "properties": {
+        "mode": { "const": "full" },
+        "schema_uri": { "$ref": "#/$defs/bounded_string" },
+        "canonical_payload_sha256": { "$ref": "#/$defs/sha256" },
+        "reviewer_input_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        },
+        "selected_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "blocked_payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "schema_uri",
+        "canonical_payload_sha256",
+        "reviewer_input_projection_sha256",
+        "byte_length",
+        "selected_identity_sha256"
+      ],
+      "properties": {
+        "mode": { "const": "blocked" },
+        "schema_uri": { "$ref": "#/$defs/bounded_string" },
+        "canonical_payload_sha256": { "$ref": "#/$defs/sha256" },
+        "reviewer_input_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        },
+        "selected_identity_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "exact_carry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current_identity_sha256", "receipt_identity_sha256", "basis", "prior_outcome"],
+      "properties": {
+        "current_identity_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_identity_sha256": { "$ref": "#/$defs/sha256" },
+        "basis": { "const": "exact_git_change_identity" },
+        "prior_outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] }
+      }
+    },
+    "review_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligation_sha256", "reason", "evidence_sha256"],
+      "properties": {
+        "obligation_sha256": { "$ref": "#/$defs/sha256" },
+        "reason": {
+          "enum": [
+            "new_or_changed_git_identity",
+            "four_way_replay_evidence_only",
+            "retired_checkpoint_change",
+            "base_drift",
+            "retained_blocking_obligation",
+            "context_or_receipt_mismatch"
+          ]
+        },
+        "evidence_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "skip_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage_complete",
+        "full_current_identity_sha256",
+        "carried",
+        "selected_current_identity_sha256",
+        "review_required",
+        "unresolved_retired_obligation_sha256",
+        "base_drift_obligation_sha256",
+        "retained_non_current_obligation_sha256",
+        "blocking_reasons"
+      ],
+      "properties": {
+        "coverage_complete": { "const": true },
+        "full_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "carried": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/exact_carry" }
+        },
+        "selected_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "review_required": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/review_requirement" }
+        },
+        "unresolved_retired_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "base_drift_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "retained_non_current_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/bounded_string" }
+        }
+      }
+    },
+    "residue_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage_complete",
+        "full_current_identity_sha256",
+        "carried",
+        "selected_current_identity_sha256",
+        "review_required",
+        "unresolved_retired_obligation_sha256",
+        "base_drift_obligation_sha256",
+        "retained_non_current_obligation_sha256",
+        "blocking_reasons"
+      ],
+      "properties": {
+        "coverage_complete": { "const": true },
+        "full_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "carried": {
+          "type": "array",
+          "maxItems": 9999,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/exact_carry" }
+        },
+        "selected_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 9999,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "review_required": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/review_requirement" }
+        },
+        "unresolved_retired_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "base_drift_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "retained_non_current_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/bounded_string" }
+        }
+      }
+    },
+    "full_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage_complete",
+        "full_current_identity_sha256",
+        "carried",
+        "selected_current_identity_sha256",
+        "review_required",
+        "unresolved_retired_obligation_sha256",
+        "base_drift_obligation_sha256",
+        "retained_non_current_obligation_sha256",
+        "blocking_reasons"
+      ],
+      "properties": {
+        "coverage_complete": { "const": true },
+        "full_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "carried": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/exact_carry" }
+        },
+        "selected_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "review_required": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/review_requirement" }
+        },
+        "unresolved_retired_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "base_drift_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "retained_non_current_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/bounded_string" }
+        }
+      }
+    },
+    "blocked_accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coverage_complete",
+        "full_current_identity_sha256",
+        "carried",
+        "selected_current_identity_sha256",
+        "review_required",
+        "unresolved_retired_obligation_sha256",
+        "base_drift_obligation_sha256",
+        "retained_non_current_obligation_sha256",
+        "blocking_reasons"
+      ],
+      "properties": {
+        "coverage_complete": { "const": false },
+        "full_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "carried": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/exact_carry" }
+        },
+        "selected_current_identity_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "review_required": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/review_requirement" }
+        },
+        "unresolved_retired_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "base_drift_obligation_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "retained_non_current_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "blocking_reasons": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/bounded_string" }
+        }
+      }
+    },
+    "skip_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reason", "prior_receipt", "context_comparison", "selected_payload", "accounting"],
+      "properties": {
+        "decision": { "const": "skip" },
+        "reason": { "const": "all_obligations_exactly_covered" },
+        "prior_receipt": { "$ref": "#/$defs/receipt_present" },
+        "context_comparison": { "$ref": "#/$defs/context_exact" },
+        "selected_payload": { "$ref": "#/$defs/empty_payload" },
+        "accounting": { "$ref": "#/$defs/skip_accounting" }
+      }
+    },
+    "residue_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reason", "prior_receipt", "context_comparison", "selected_payload", "accounting"],
+      "properties": {
+        "decision": { "const": "residue" },
+        "reason": { "const": "exact_carries_removed_from_review_input" },
+        "prior_receipt": { "$ref": "#/$defs/receipt_present" },
+        "context_comparison": { "$ref": "#/$defs/context_exact" },
+        "selected_payload": { "$ref": "#/$defs/residue_payload" },
+        "accounting": { "$ref": "#/$defs/residue_accounting" }
+      }
+    },
+    "full_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reason", "prior_receipt", "context_comparison", "selected_payload", "accounting"],
+      "properties": {
+        "decision": { "const": "full" },
+        "reason": {
+          "enum": [
+            "no_exact_carry",
+            "receipt_unavailable",
+            "context_mismatch",
+            "context_open",
+            "policy_requires_full_review"
+          ]
+        },
+        "prior_receipt": { "$ref": "#/$defs/receipt_reference" },
+        "context_comparison": { "$ref": "#/$defs/context_comparison" },
+        "selected_payload": { "$ref": "#/$defs/full_payload" },
+        "accounting": { "$ref": "#/$defs/full_accounting" }
+      }
+    },
+    "blocked_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reason", "prior_receipt", "context_comparison", "selected_payload", "accounting"],
+      "properties": {
+        "decision": { "const": "blocked" },
+        "reason": {
+          "enum": [
+            "provider_unavailable",
+            "object_unavailable",
+            "history_ambiguous",
+            "source_closure_incomplete",
+            "resource_limit",
+            "invalid_receipt_or_context",
+            "unsupported_input"
+          ]
+        },
+        "prior_receipt": { "$ref": "#/$defs/receipt_reference" },
+        "context_comparison": { "$ref": "#/$defs/context_comparison" },
+        "selected_payload": { "$ref": "#/$defs/blocked_payload" },
+        "accounting": { "$ref": "#/$defs/blocked_accounting" }
+      }
+    },
+    "resolution": {
+      "oneOf": [
+        { "$ref": "#/$defs/skip_resolution" },
+        { "$ref": "#/$defs/residue_resolution" },
+        { "$ref": "#/$defs/full_resolution" },
+        { "$ref": "#/$defs/blocked_resolution" }
+      ]
+    }
+  }
+}

@@ -1057,6 +1057,50 @@ pub fn review_git_range_with_checkpoint(
     review_git_range_with_analysis(repository, base, head, checkpoint, &mut context)
 }
 
+/// Review exact provider snapshots using merge bases that were independently resolved and
+/// authenticated by the caller. This entry point is intended for bounded shallow materialization;
+/// ordinary local reviews must use [`review_git_range_with_checkpoint`] so Git proves ancestry.
+pub fn review_git_range_with_checkpoint_merge_bases(
+    repository: &Path,
+    base: &str,
+    head: &str,
+    head_merge_base: &str,
+    checkpoint: &str,
+    checkpoint_merge_base: &str,
+) -> Result<RepositoryReview> {
+    ensure!(
+        head_merge_base == base && checkpoint_merge_base == base,
+        "bounded snapshot review requires the requested base to be the exact merge base of both revisions"
+    );
+    let mut context = ReviewAnalysisContext::unbounded();
+    resolve_exact_commit(repository, base, "requested base")?;
+    let head_commit = resolve_exact_commit(repository, head, "head")?;
+    let base_commit = resolve_exact_commit(repository, head_merge_base, "head merge base")?;
+    let checkpoint_commit = resolve_exact_commit(repository, checkpoint, "checkpoint")?;
+    let checkpoint_base =
+        resolve_exact_commit(repository, checkpoint_merge_base, "checkpoint merge base")?;
+    let match_basis = if checkpoint_base == base_commit {
+        CheckpointMatchBasis::ExactGitChangeIdentity
+    } else {
+        CheckpointMatchBasis::ExactGitChangeIdentityOrNoninteractingFourWayByteReplay
+    };
+    let checkpoint = ReviewCheckpoint {
+        requested_revision: checkpoint.to_owned(),
+        commit: checkpoint_commit,
+        base_commit: checkpoint_base,
+        match_basis,
+    };
+    review_git_range_with_resolved_bases(
+        repository,
+        base,
+        head,
+        head_commit,
+        base_commit,
+        Some(checkpoint),
+        &mut context,
+    )
+}
+
 pub(crate) fn review_git_range_with_analysis(
     repository: &Path,
     base: &str,
@@ -1100,6 +1144,26 @@ pub(crate) fn review_git_range_with_analysis(
             })
         })
         .transpose()?;
+    review_git_range_with_resolved_bases(
+        repository,
+        base,
+        head,
+        head_commit,
+        base_commit,
+        checkpoint,
+        context,
+    )
+}
+
+fn review_git_range_with_resolved_bases(
+    repository: &Path,
+    requested_base: &str,
+    requested_head: &str,
+    head_commit: String,
+    base_commit: String,
+    checkpoint: Option<ReviewCheckpoint>,
+    context: &mut ReviewAnalysisContext,
+) -> Result<RepositoryReview> {
     let checkpoint_changes = checkpoint
         .as_ref()
         .map(|checkpoint| {
@@ -1215,8 +1279,8 @@ pub(crate) fn review_git_range_with_analysis(
     Ok(RepositoryReview {
         schema: REVIEW_SCHEMA.to_owned(),
         engine_version: env!("CARGO_PKG_VERSION").to_owned(),
-        requested_base: base.to_owned(),
-        requested_head: head.to_owned(),
+        requested_base: requested_base.to_owned(),
+        requested_head: requested_head.to_owned(),
         base_commit,
         head_commit,
         comparison: "merge_base_to_head".to_owned(),
@@ -1224,6 +1288,19 @@ pub(crate) fn review_git_range_with_analysis(
         summary,
         files,
     })
+}
+
+fn resolve_exact_commit(repository: &Path, object_id: &str, label: &str) -> Result<String> {
+    ensure!(
+        is_object_id(object_id),
+        "{label} is not an exact Git object ID"
+    );
+    let resolved = resolve_commit(repository, object_id)?;
+    ensure!(
+        resolved == object_id,
+        "{label} resolved to {resolved}, expected {object_id}"
+    );
+    Ok(resolved)
 }
 
 pub fn review_git_snapshot_delta(repository: &Path, from: &str, to: &str) -> Result<ReviewDelta> {
@@ -4008,7 +4085,8 @@ mod tests {
         ReviewAnalysisContext, ReviewDeltaBaselineBasis, ReviewFile, ReviewLane, ReviewPriority,
         ReviewSummary, allowed_raw_diff_diagnostics, line_changes, markdown_cell, markdown_code,
         markdown_report, pair_unique_exact_relocations, parse_raw_diff, patches_interact,
-        read_bounded, review_git_range_with_analysis, review_git_resume_delta_with_analysis,
+        read_bounded, review_git_range_with_analysis, review_git_range_with_checkpoint_merge_bases,
+        review_git_resume_delta_with_analysis,
     };
 
     fn git(repository: &Path, arguments: &[&str]) -> String {
@@ -4561,6 +4639,94 @@ mod tests {
         );
         assert!(context.analyzed_files.is_empty());
         assert!(context.blob_loader.bytes.is_empty());
+    }
+
+    #[test]
+    fn authenticated_merge_bases_allow_bounded_shallow_snapshot_review() {
+        let (directory, base, checkpoint) = repository_with_one_change(b"before\n", b"reviewed\n");
+        let root = directory.path();
+        fs::write(root.join("change.txt"), b"reviewed plus residue\n").unwrap();
+        let head = commit(root, "head");
+        let expected =
+            super::review_git_range_with_checkpoint(root, &base, &head, Some(&checkpoint)).unwrap();
+        fs::write(root.join(".git/shallow"), format!("{base}\n")).unwrap();
+
+        let observed = review_git_range_with_checkpoint_merge_bases(
+            root,
+            &base,
+            &head,
+            &base,
+            &checkpoint,
+            &base,
+        )
+        .unwrap();
+
+        assert_eq!(observed, expected);
+        assert!(
+            review_git_range_with_checkpoint_merge_bases(
+                root,
+                &base,
+                &head,
+                &checkpoint,
+                &checkpoint,
+                &base,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn complete_ancestry_rejects_criss_cross_merge_bases() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        git(root, &["init", "--quiet"]);
+        git(root, &["config", "user.name", "StrataDiff Test"]);
+        git(root, &["config", "user.email", "stratadiff@example.test"]);
+        fs::write(root.join("change.txt"), b"root\n").unwrap();
+        let root_commit = commit(root, "root");
+        let tree = git(root, &["rev-parse", &format!("{root_commit}^{{tree}}")]);
+        let first = git(
+            root,
+            &["commit-tree", &tree, "-p", &root_commit, "-m", "first"],
+        );
+        let second = git(
+            root,
+            &["commit-tree", &tree, "-p", &root_commit, "-m", "second"],
+        );
+        let left = git(
+            root,
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                &first,
+                "-p",
+                &second,
+                "-m",
+                "left",
+            ],
+        );
+        let right = git(
+            root,
+            &[
+                "commit-tree",
+                &tree,
+                "-p",
+                &second,
+                "-p",
+                &first,
+                "-m",
+                "right",
+            ],
+        );
+
+        let error =
+            super::review_git_range_with_checkpoint(root, &left, &right, Some(&first)).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Git comparison requires exactly one merge base, found 2")
+        );
     }
 
     #[test]

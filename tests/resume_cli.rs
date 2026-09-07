@@ -127,6 +127,7 @@ impl Fixture {
             &["config", "user.email", "resume@stratadiff.test"],
         );
         fs::write(source.join("app.rs"), b"fn value() -> i32 { 0 }\n").unwrap();
+        fs::write(source.join("mode.sh"), b"#!/bin/sh\nexit 0\n").unwrap();
         let base = commit(&real_git, &source, "base");
 
         git_at(
@@ -145,12 +146,118 @@ impl Fixture {
         fs::write(source.join("app.rs"), b"fn value() -> i32 { 2 }\n").unwrap();
         let head = commit(&real_git, &source, "current pull request head");
 
+        git_at(
+            &real_git,
+            &source,
+            &["checkout", "--quiet", "-b", "diverged-checkpoint", &base],
+        );
+        fs::write(source.join("reviewed.rs"), b"pub const REVIEWED: u8 = 1;\n").unwrap();
+        let diverged_checkpoint = commit(&real_git, &source, "diverged review checkpoint");
+
+        git_at(
+            &real_git,
+            &source,
+            &["checkout", "--quiet", "-b", "diverged-current-base", &base],
+        );
+        fs::write(source.join("upstream.rs"), b"pub const UPSTREAM: u8 = 1;\n").unwrap();
+        let mut mode_permissions = fs::metadata(source.join("mode.sh")).unwrap().permissions();
+        mode_permissions.set_mode(0o755);
+        fs::set_permissions(source.join("mode.sh"), mode_permissions).unwrap();
+        let diverged_current_base = commit(&real_git, &source, "diverged current merge base");
+
+        git_at(
+            &real_git,
+            &source,
+            &[
+                "checkout",
+                "--quiet",
+                "-b",
+                "diverged-requested-base",
+                &diverged_current_base,
+            ],
+        );
+        fs::write(source.join("base-tip.rs"), b"pub const BASE_TIP: u8 = 1;\n").unwrap();
+        let diverged_base = commit(&real_git, &source, "diverged requested base");
+
+        git_at(
+            &real_git,
+            &source,
+            &[
+                "checkout",
+                "--quiet",
+                "-b",
+                "diverged-head",
+                &diverged_current_base,
+            ],
+        );
+        fs::write(source.join("current.rs"), b"pub const CURRENT: u8 = 1;\n").unwrap();
+        let diverged_head = commit(&real_git, &source, "diverged current head");
+
+        git_at(
+            &real_git,
+            &source,
+            &["checkout", "--quiet", "-b", "criss-cross-left", &base],
+        );
+        fs::write(source.join("left.rs"), b"pub const LEFT: u8 = 1;\n").unwrap();
+        let criss_cross_left = commit(&real_git, &source, "criss-cross left");
+        git_at(
+            &real_git,
+            &source,
+            &["checkout", "--quiet", "-b", "criss-cross-right", &base],
+        );
+        fs::write(source.join("right.rs"), b"pub const RIGHT: u8 = 1;\n").unwrap();
+        let criss_cross_right = commit(&real_git, &source, "criss-cross right");
+        git_at(
+            &real_git,
+            &source,
+            &["checkout", "--quiet", "criss-cross-left"],
+        );
+        git_at(
+            &real_git,
+            &source,
+            &[
+                "merge",
+                "--quiet",
+                "--no-ff",
+                "--no-edit",
+                &criss_cross_right,
+            ],
+        );
+        let criss_cross_base = git_output(&real_git, &source, &["rev-parse", "HEAD"]);
+        git_at(
+            &real_git,
+            &source,
+            &["checkout", "--quiet", "criss-cross-right"],
+        );
+        git_at(
+            &real_git,
+            &source,
+            &[
+                "merge",
+                "--quiet",
+                "--no-ff",
+                "--no-edit",
+                &criss_cross_left,
+            ],
+        );
+        let criss_cross_head = git_output(&real_git, &source, &["rev-parse", "HEAD"]);
+
         command_success(
             Command::new(&real_git)
                 .args(["clone", "--bare", "--quiet"])
                 .arg(&source)
                 .arg(&provider),
             "clone provider repository",
+        );
+        git_at(
+            &real_git,
+            &provider,
+            &["config", "uploadpack.allowFilter", "true"],
+        );
+        git_at(
+            &real_git,
+            &provider,
+            &["config", "uploadpack.allowAnySHA1InWant", "true"],
         );
         for (label, object_id) in [
             ("base", base.as_str()),
@@ -258,6 +365,13 @@ impl Fixture {
                 &base,
                 &checkpoint,
                 &head,
+                &diverged_base,
+                &diverged_checkpoint,
+                &diverged_current_base,
+                &diverged_head,
+                &criss_cross_base,
+                &criss_cross_head,
+                &criss_cross_left,
                 &state,
                 &log,
                 drift,
@@ -648,10 +762,26 @@ fn resume_scrubs_poisoned_environment_across_repository_modes_and_sigterm_cleanu
                 .all(|line| line.contains(" git_dir=clean")),
             "poisoned GIT_DIR reached gh in {mode:?}:\n{calls}"
         );
-        assert!(
-            calls.contains(" rev-parse --git-path objects/pack"),
-            "fetch-pack did not exercise pack-keep cleanup in {mode:?}:\n{calls}"
-        );
+        if matches!(
+            mode,
+            RepositoryMode::PullRequestUrl
+                | RepositoryMode::PullRequestUrlAndRepository
+                | RepositoryMode::RepositoryOnly
+        ) {
+            assert!(
+                calls.contains(" fetch --quiet --depth=1 "),
+                "isolated snapshot fetch was not exercised in {mode:?}:\n{calls}"
+            );
+            assert!(
+                calls.contains(" repos/acme/widget/compare/"),
+                "provider merge-base evidence was not resolved in {mode:?}:\n{calls}"
+            );
+        } else {
+            assert!(
+                calls.contains(" rev-parse --git-path objects/pack"),
+                "fetch-pack did not exercise pack-keep cleanup in {mode:?}:\n{calls}"
+            );
+        }
 
         let repo_call = calls
             .lines()
@@ -756,6 +886,458 @@ fn resume_forwards_sigint_and_sighup_and_cleans_up() {
         fixture.assert_no_pack_keep_files();
         fixture.assert_no_scratch_directories();
     }
+}
+
+#[test]
+fn diverged_provider_comparison_falls_back_to_complete_ancestry() {
+    let fixture = Fixture::new("github.com", false);
+    let (result, sources) = run_until_ready_then_request_and_signal(
+        {
+            let mut command = fixture.resume_command(RepositoryMode::RepositoryOnly, false);
+            command.env("STRATADIFF_TEST_DIVERGED_COMPARISON", "1");
+            command
+        },
+        libc::SIGTERM,
+        &[
+            "/api/source/before?token={token}&file=0&scope=resume",
+            "/api/source/after?token={token}&file=0&scope=resume",
+            "/api/source/before?token={token}&file=0&scope=base",
+            "/api/source/after?token={token}&file=0&scope=base",
+        ],
+    );
+
+    assert_eq!(result.status.code(), Some(128 + libc::SIGTERM));
+    assert!(result.session.contains(r#""kind":"repository_review""#));
+    assert!(
+        result
+            .session
+            .contains(r#""base_drift":{"status":"available""#),
+        "{}",
+        result.session
+    );
+    assert!(
+        sources
+            .iter()
+            .all(|response| response.starts_with("HTTP/1.1 200 OK\r\n")),
+        "{sources:#?}"
+    );
+    let calls = fixture.calls();
+    assert!(calls.contains(" repos/acme/widget/compare/"), "{calls}");
+    let ancestry_fetches = calls
+        .lines()
+        .filter(|line| line.contains(" fetch --quiet --filter=tree:0 "))
+        .collect::<Vec<_>>();
+    assert_eq!(ancestry_fetches.len(), 1, "{calls}");
+    assert!(
+        ancestry_fetches[0].contains(" fetch_fsck=enabled ")
+            && ancestry_fetches[0].contains(" stratadiff-ancestry ")
+            && ancestry_fetches[0]
+                .contains("/ancestry.git fetch --quiet --filter=tree:0 --no-tags"),
+        "{calls}"
+    );
+    assert_eq!(
+        ancestry_fetches[0]
+            .matches("refs/stratadiff/ancestry/")
+            .count(),
+        3,
+        "{calls}"
+    );
+    let snapshot_fetches = calls
+        .lines()
+        .filter(|line| line.contains(" fetch --quiet --depth=1 "))
+        .collect::<Vec<_>>();
+    assert_eq!(snapshot_fetches.len(), 1, "{calls}");
+    assert!(
+        snapshot_fetches[0].contains(" fetch_fsck=enabled ")
+            && snapshot_fetches[0].contains(" --filter=blob:none ")
+            && snapshot_fetches[0].contains(" stratadiff-provider "),
+        "{calls}"
+    );
+    assert_eq!(
+        snapshot_fetches[0]
+            .matches("refs/stratadiff/resume/")
+            .count(),
+        4,
+        "{calls}"
+    );
+    assert!(
+        calls.contains("fixture snapshot_before_alternates=true"),
+        "{calls}"
+    );
+    assert!(!calls.contains(" fetch-pack --no-progress "), "{calls}");
+
+    let ancestry_fetch_index = calls.find(" fetch --quiet --filter=tree:0 ").unwrap();
+    let ancestry_merge_base_index = calls.find("/ancestry.git merge-base --all ").unwrap();
+    let snapshot_fetch_index = calls.find(" fetch --quiet --depth=1 ").unwrap();
+    let attached_merge_base_index = calls.find("/repository.git merge-base --all ").unwrap();
+    assert!(
+        ancestry_fetch_index < ancestry_merge_base_index
+            && ancestry_merge_base_index < snapshot_fetch_index
+            && snapshot_fetch_index < attached_merge_base_index,
+        "{calls}"
+    );
+    assert!(
+        calls.contains(
+            r#"/ancestry.git cat-file --batch-check=%\(objecttype\) --batch-all-objects --unordered"#
+        ),
+        "{calls}"
+    );
+    let orchestrator_numstat = calls
+        .lines()
+        .filter(|line| line.contains(" diff --numstat ") && line.contains(" phase=orchestrator "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        orchestrator_numstat
+            .iter()
+            .filter(|line| line.contains(" auth=present "))
+            .count(),
+        3,
+        "{calls}"
+    );
+    assert_eq!(
+        orchestrator_numstat
+            .iter()
+            .filter(|line| line.contains(" auth=none ") && line.contains(" lazy_fetch=disabled "))
+            .count(),
+        3,
+        "{calls}"
+    );
+    assert!(
+        calls
+            .lines()
+            .filter(|line| line.contains(" phase=workbench "))
+            .all(|line| line.contains(" auth=none ") && line.contains(" lazy_fetch=disabled ")),
+        "{calls}"
+    );
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn complete_ancestry_rejects_provider_merge_base_mismatch() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_PROVIDER_MERGE_BASE_MISMATCH", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("complete Git ancestry resolved pull request merge base")
+            && stderr.contains("but GitHub reported"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(calls.contains(" fetch --quiet --filter=tree:0 "), "{calls}");
+    assert!(!calls.contains(" fetch --quiet --depth=1 "), "{calls}");
+    assert!(!calls.contains(" fetch-pack --no-progress "), "{calls}");
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn complete_ancestry_rejects_criss_cross_merge_bases() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_CRISS_CROSS_COMPARISON", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("pull request ancestry requires exactly one merge base, found 2"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(calls.contains("/ancestry.git merge-base --all "), "{calls}");
+    assert!(!calls.contains(" fetch --quiet --depth=1 "), "{calls}");
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn complete_ancestry_rejects_unsupported_or_silently_ignored_tree_filter() {
+    for (variable, diagnostic) in [
+        (
+            "STRATADIFF_TEST_TREE_FILTER_UNSUPPORTED",
+            "did not honor the bounded tree-less ancestry request",
+        ),
+        (
+            "STRATADIFF_TEST_TREE_FILTER_SILENTLY_IGNORED",
+            "did not honor the tree-less ancestry filter",
+        ),
+    ] {
+        let fixture = Fixture::new("github.com", false);
+        let output = fixture
+            .resume_command(RepositoryMode::RepositoryOnly, false)
+            .env(variable, "1")
+            .output()
+            .unwrap();
+
+        assert!(!output.status.success(), "{variable}");
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains(diagnostic), "{variable}: {stderr}");
+        let calls = fixture.calls();
+        assert!(calls.contains(" --filter=tree:0 "), "{variable}: {calls}");
+        assert!(!calls.contains(" fetch --quiet --depth=1 "), "{calls}");
+        assert!(!calls.contains(" fetch-pack --no-progress "), "{calls}");
+        assert!(!calls.contains(" phase=workbench "), "{calls}");
+        fixture.assert_no_resume_refs();
+        fixture.assert_no_pack_keep_files();
+        fixture.assert_no_scratch_directories();
+    }
+}
+
+#[test]
+fn complete_ancestry_fails_before_workbench_when_base_drift_is_not_offline_closed() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_BASE_OFFLINE_NUMSTAT_MISMATCH", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "offline base drift review blob verification did not reproduce the provider-backed diff"
+        ),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(
+        calls.contains("fixture base_offline_numstat_mismatch=true"),
+        "{calls}"
+    );
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn bounded_partial_clone_batches_snapshots_and_reverifies_blobs_offline() {
+    let fixture = Fixture::new("github.com", false);
+    let result = run_until_ready_then_signal(
+        fixture.resume_command(RepositoryMode::RepositoryOnly, false),
+        libc::SIGTERM,
+    );
+
+    assert_eq!(result.status.code(), Some(128 + libc::SIGTERM));
+    assert!(result.session.contains(r#""kind":"repository_review""#));
+    let calls = fixture.calls();
+    let snapshot_fetches = calls
+        .lines()
+        .filter(|line| line.contains(" fetch --quiet --depth=1 "))
+        .collect::<Vec<_>>();
+    assert_eq!(snapshot_fetches.len(), 1, "{calls}");
+    let snapshot_fetch = snapshot_fetches[0];
+    assert!(snapshot_fetch.contains(" --filter=blob:none "), "{calls}");
+    assert!(snapshot_fetch.contains(" stratadiff-provider "), "{calls}");
+    assert_eq!(
+        snapshot_fetch.matches("refs/stratadiff/resume/").count(),
+        3,
+        "{calls}"
+    );
+    assert!(!calls.contains(" fetch-pack --no-progress "), "{calls}");
+    assert_eq!(
+        calls
+            .lines()
+            .filter(|line| *line == "fixture partial_blob_before_prefetch=missing")
+            .count(),
+        1,
+        "{calls}"
+    );
+
+    let orchestrator_numstat = calls
+        .lines()
+        .filter(|line| line.contains(" diff --numstat ") && line.contains(" phase=orchestrator "))
+        .collect::<Vec<_>>();
+    let online = orchestrator_numstat
+        .iter()
+        .filter(|line| line.contains(" auth=present "))
+        .copied()
+        .collect::<Vec<_>>();
+    let offline = orchestrator_numstat
+        .iter()
+        .filter(|line| line.contains(" auth=none "))
+        .copied()
+        .collect::<Vec<_>>();
+    assert_eq!(online.len(), 2, "{calls}");
+    assert_eq!(offline.len(), 2, "{calls}");
+    assert!(
+        online
+            .iter()
+            .all(|line| line.contains(" lazy_fetch=allowed ")),
+        "{calls}"
+    );
+    assert!(
+        offline
+            .iter()
+            .all(|line| line.contains(" lazy_fetch=disabled ")),
+        "{calls}"
+    );
+
+    let workbench_git = calls
+        .lines()
+        .filter(|line| line.starts_with("git ") && line.contains(" phase=workbench "))
+        .collect::<Vec<_>>();
+    assert!(!workbench_git.is_empty(), "{calls}");
+    assert!(
+        workbench_git.iter().all(|line| {
+            line.contains(" secrets=clean ")
+                && line.contains(" auth=none ")
+                && line.contains(" lazy_fetch=disabled ")
+        }),
+        "{calls}"
+    );
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn bounded_partial_clone_rejects_a_provider_that_ignores_blob_filtering() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_FILTER_UNSUPPORTED", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("Git provider did not honor the bounded partial-clone request"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert_eq!(
+        calls.matches(" fetch --quiet --depth=1 ").count(),
+        1,
+        "{calls}"
+    );
+    assert!(calls.contains(" --filter=blob:none "), "{calls}");
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn bounded_partial_clone_detects_a_silently_ignored_blob_filter() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_FILTER_SILENTLY_IGNORED", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("Git provider did not honor the blob-less snapshot filter"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(calls.contains(" --filter=blob:none "), "{calls}");
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn bounded_partial_clone_stops_an_oversized_changed_blob_before_workbench() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_OVERSIZED_CHANGED_BLOB", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("could not materialize every current head review blob"),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(
+        calls.contains("fixture provider_fetch_file_limit=remaining"),
+        "{calls}"
+    );
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn bounded_partial_clone_fails_closed_when_a_prefetched_blob_is_missing_offline() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_DROP_PREFETCHED_BLOB", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "offline current head review blob verification did not reproduce the provider-backed diff"
+        ),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(
+        calls.contains("fixture partial_blob_before_prefetch=missing"),
+        "{calls}"
+    );
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
+}
+
+#[test]
+fn bounded_partial_clone_fails_closed_when_offline_numstat_differs() {
+    let fixture = Fixture::new("github.com", false);
+    let output = fixture
+        .resume_command(RepositoryMode::RepositoryOnly, false)
+        .env("STRATADIFF_TEST_OFFLINE_NUMSTAT_MISMATCH", "1")
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains(
+            "offline current head review blob verification did not reproduce the provider-backed diff"
+        ),
+        "{stderr}"
+    );
+    let calls = fixture.calls();
+    assert!(
+        calls.contains(" auth=present lazy_fetch=allowed "),
+        "{calls}"
+    );
+    assert!(calls.contains(" auth=none lazy_fetch=disabled "), "{calls}");
+    assert!(!calls.contains(" phase=workbench "), "{calls}");
+    fixture.assert_no_resume_refs();
+    fixture.assert_no_pack_keep_files();
+    fixture.assert_no_scratch_directories();
 }
 
 #[test]
@@ -1415,7 +1997,15 @@ struct TerminatedRun {
     address: SocketAddr,
 }
 
-fn run_until_ready_then_signal(mut command: Command, signal: i32) -> TerminatedRun {
+fn run_until_ready_then_signal(command: Command, signal: i32) -> TerminatedRun {
+    run_until_ready_then_request_and_signal(command, signal, &[]).0
+}
+
+fn run_until_ready_then_request_and_signal(
+    mut command: Command,
+    signal: i32,
+    paths: &[&str],
+) -> (TerminatedRun, Vec<String>) {
     command.stderr(Stdio::piped());
     let process = CapturedChild::spawn(command);
 
@@ -1446,15 +2036,22 @@ fn run_until_ready_then_signal(mut command: Command, signal: i32) -> TerminatedR
     let (address, token) = parse_workbench_url(&url);
     let session = http_get(address, &format!("/api/session?token={token}"));
     assert!(session.starts_with("HTTP/1.1 200 OK\r\n"), "{session}");
+    let responses = paths
+        .iter()
+        .map(|path| http_get(address, &path.replace("{token}", &token)))
+        .collect();
 
     let (status, stderr) = process.signal_and_wait(signal);
 
-    TerminatedRun {
-        status,
-        stderr,
-        session,
-        address,
-    }
+    (
+        TerminatedRun {
+            status,
+            stderr,
+            session,
+            address,
+        },
+        responses,
+    )
 }
 
 fn wait_for_exit(child: &mut Child, timeout: Duration) -> ExitStatus {
@@ -1660,11 +2257,23 @@ auth=none
 if [[ "${{GIT_CONFIG_VALUE_1:-}}" == AUTHORIZATION:* ]]; then
   auth=present
 fi
+fetch_fsck=disabled
+for ((config_index = 0; config_index < ${{GIT_CONFIG_COUNT:-0}}; config_index++)); do
+  config_key="GIT_CONFIG_KEY_${{config_index}}"
+  config_value="GIT_CONFIG_VALUE_${{config_index}}"
+  if [[ "${{!config_key:-}}" == fetch.fsckObjects && "${{!config_value:-}}" == true ]]; then
+    fetch_fsck=enabled
+  fi
+done
+lazy_fetch=allowed
+if [[ "${{GIT_NO_LAZY_FETCH:-}}" == 1 ]]; then
+  lazy_fetch=disabled
+fi
 phase=orchestrator
 if [[ -z "${{CALLER_SECRET+x}}" ]]; then
   phase=workbench
 fi
-printf 'git secrets=%s enterprise_token=%s auth=%s phase=%s cwd=%s' "$secrets" "$enterprise_token" "$auth" "$phase" "$PWD" >> "$log"
+printf 'git secrets=%s enterprise_token=%s auth=%s lazy_fetch=%s fetch_fsck=%s phase=%s cwd=%s' "$secrets" "$enterprise_token" "$auth" "$lazy_fetch" "$fetch_fsck" "$phase" "$PWD" >> "$log"
 printf ' %q' "$@" >> "$log"
 printf '\n' >> "$log"
 
@@ -1675,12 +2284,147 @@ if [[ " $* " == *" init --bare --quiet "*"/repository.git " ]]; then
 fi
 provider_fetch=false
 for ((index = 0; index < ${{#arguments[@]}}; index++)); do
-  if [[ "${{arguments[index]}}" == "$provider_url" ]]; then
+  if [[ "${{arguments[index]}}" == "$provider_url" || "${{arguments[index]}}" == stratadiff-provider || "${{arguments[index]}}" == stratadiff-ancestry ]]; then
     provider_fetch=true
   fi
 done
-if [[ "$provider_fetch" == true ]]; then
-  exit 0
+if [[ "$provider_fetch" == true && " $* " == *" fetch "* ]]; then
+  if [[ " $* " == *" --depth=1 "* ]]; then
+    snapshot_target=
+    for ((index = 0; index < ${{#arguments[@]}} - 1; index++)); do
+      if [[ "${{arguments[index]}}" == -C ]]; then
+        snapshot_target="${{arguments[index + 1]}}"
+        break
+      fi
+    done
+    [[ -n "$snapshot_target" ]]
+    [[ ! -e "$snapshot_target/objects/info/alternates" ]]
+    if [[ "${{STRATADIFF_TEST_OVERSIZED_CHANGED_BLOB:-}}" == 1 ]]; then
+      truncate -s 157286400 "$snapshot_target/stratadiff-test-budget-a"
+      truncate -s 157286400 "$snapshot_target/stratadiff-test-budget-b"
+    fi
+    printf 'fixture snapshot_before_alternates=true\n' >> "$log"
+    for ((index = 0; index < ${{#arguments[@]}}; index++)); do
+      if [[ "${{arguments[index]}}" == "$provider_url" ]]; then
+        arguments[index]="$provider"
+      fi
+    done
+    export GIT_CONFIG_VALUE_7=always
+    if [[ "${{STRATADIFF_TEST_FILTER_UNSUPPORTED:-}}" == 1 || "${{STRATADIFF_TEST_FILTER_SILENTLY_IGNORED:-}}" == 1 ]]; then
+      local_arguments=()
+      for argument in "${{arguments[@]}}"; do
+        if [[ "$argument" == "--filter=blob:none" && "${{STRATADIFF_TEST_FILTER_SILENTLY_IGNORED:-}}" == 1 ]]; then
+          local_arguments+=("--no-filter")
+        elif [[ "$argument" != "--filter=blob:none" ]]; then
+          local_arguments+=("$argument")
+        fi
+      done
+      "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{local_arguments[@]}}"
+      if [[ "${{STRATADIFF_TEST_FILTER_UNSUPPORTED:-}}" == 1 ]]; then
+        printf 'warning: filtering not recognized by server, ignoring\n' >&2
+      fi
+      exit 0
+    fi
+    exec "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{arguments[@]}}"
+  fi
+  if [[ " $* " == *" --filter=tree:0 "* ]]; then
+    export GIT_CONFIG_VALUE_7=always
+    if [[ "${{STRATADIFF_TEST_TREE_FILTER_UNSUPPORTED:-}}" == 1 || "${{STRATADIFF_TEST_TREE_FILTER_SILENTLY_IGNORED:-}}" == 1 ]]; then
+      local_arguments=()
+      for argument in "${{arguments[@]}}"; do
+        if [[ "$argument" == "--filter=tree:0" && "${{STRATADIFF_TEST_TREE_FILTER_SILENTLY_IGNORED:-}}" == 1 ]]; then
+          local_arguments+=("--no-filter")
+        elif [[ "$argument" != "--filter=tree:0" ]]; then
+          local_arguments+=("$argument")
+        fi
+      done
+      "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{local_arguments[@]}}"
+      if [[ "${{STRATADIFF_TEST_TREE_FILTER_UNSUPPORTED:-}}" == 1 ]]; then
+        printf 'warning: filtering not recognized by server, ignoring\n' >&2
+      fi
+      exit 0
+    fi
+    exec "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{arguments[@]}}"
+  fi
+  for ((index = 0; index < ${{#arguments[@]}}; index++)); do
+    if [[ "${{arguments[index]}}" == "$provider_url" ]]; then
+      arguments[index]="$provider"
+    fi
+  done
+  export GIT_CONFIG_VALUE_7=always
+  exec "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{arguments[@]}}"
+fi
+if [[ " $* " == *" diff --numstat "* ]]; then
+  target=
+  for ((index = 0; index < ${{#arguments[@]}} - 1; index++)); do
+    if [[ "${{arguments[index]}}" == -C ]]; then
+      target="${{arguments[index + 1]}}"
+      break
+    fi
+  done
+  [[ -n "$target" ]]
+  if [[ "$auth" == present && "$lazy_fetch" == allowed ]]; then
+    if [[ "${{STRATADIFF_TEST_OVERSIZED_CHANGED_BLOB:-}}" == 1 ]]; then
+      [[ "${{STRATADIFF_PROVIDER_FETCH_FILE_LIMIT_BYTES:-}}" =~ ^[1-9][0-9]*$ ]]
+      [[ "$STRATADIFF_PROVIDER_FETCH_FILE_LIMIT_BYTES" -lt 268435456 ]]
+      [[ "$(ulimit -f)" != unlimited ]]
+      printf 'fixture provider_fetch_file_limit=remaining bytes=%s\n' "$STRATADIFF_PROVIDER_FETCH_FILE_LIMIT_BYTES" >> "$log"
+      dd if=/dev/zero of="$target/stratadiff-test-oversized-blob" bs=1 count=1 seek="$STRATADIFF_PROVIDER_FETCH_FILE_LIMIT_BYTES" status=none
+      exit 70
+    fi
+    numstat_count=0
+    if [[ -f "$target/stratadiff-test-numstat-count" ]]; then
+      read -r numstat_count < "$target/stratadiff-test-numstat-count"
+    fi
+    numstat_count=$((numstat_count + 1))
+    printf '%s\n' "$numstat_count" > "$target/stratadiff-test-numstat-count"
+    probe_blob="$("$real_git" -C "$provider" rev-list --objects --all | awk '$2 == "app.rs" {{print $1; exit}}')"
+    [[ -n "$probe_blob" ]]
+    partial_blob=missing
+    if GIT_NO_LAZY_FETCH=1 "$real_git" -C "$target" cat-file -e "$probe_blob" >/dev/null 2>&1; then
+      partial_blob=present
+    fi
+    printf 'fixture partial_blob_before_prefetch=%s\n' "$partial_blob" >> "$log"
+    export GIT_CONFIG_VALUE_7=always
+    if [[ "${{STRATADIFF_TEST_DROP_PREFETCHED_BLOB:-}}" == 1 ]]; then
+      before_packs="$target/stratadiff-test-packs-before"
+      after_packs="$target/stratadiff-test-packs-after"
+      online_output="$target/stratadiff-test-online-numstat"
+      for pack_path in "$target/objects/pack"/pack-*.pack; do
+        if [[ -f "$pack_path" ]]; then
+          printf '%s\n' "${{pack_path##*/}}"
+        fi
+      done | sort > "$before_packs"
+      "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{arguments[@]}}" > "$online_output"
+      for pack_path in "$target/objects/pack"/pack-*.pack; do
+        if [[ -f "$pack_path" ]]; then
+          printf '%s\n' "${{pack_path##*/}}"
+        fi
+      done | sort > "$after_packs"
+      comm -13 "$before_packs" "$after_packs" | while read -r pack_name; do
+        pack_stem="${{pack_name%.pack}}"
+        rm -f "$target/objects/pack/$pack_stem.pack" "$target/objects/pack/$pack_stem.idx" "$target/objects/pack/$pack_stem.promisor" "$target/objects/pack/$pack_stem.rev"
+      done
+      cat "$online_output"
+      rm -f "$before_packs" "$after_packs" "$online_output"
+      exit 0
+    fi
+    exec "$real_git" -c "url.file://$provider.insteadOf=$provider_url" "${{arguments[@]}}"
+  fi
+  if [[ "$auth" == none && "$lazy_fetch" == disabled && "${{STRATADIFF_TEST_OFFLINE_NUMSTAT_MISMATCH:-}}" == 1 ]]; then
+    "$real_git" "${{arguments[@]}}"
+    printf 'fixture-mismatch'
+    exit 0
+  fi
+  if [[ "$auth" == none && "$lazy_fetch" == disabled && "${{STRATADIFF_TEST_BASE_OFFLINE_NUMSTAT_MISMATCH:-}}" == 1 ]]; then
+    read -r numstat_count < "$target/stratadiff-test-numstat-count"
+    if [[ "$numstat_count" == 3 ]]; then
+      "$real_git" "${{arguments[@]}}"
+      printf 'fixture base_offline_numstat_mismatch=true\n' >> "$log"
+      printf 'fixture-base-mismatch'
+      exit 0
+    fi
+  fi
 fi
 if [[ " $* " == *" rev-parse --verify refs/stratadiff/provider/"* ]]; then
   object_id="${{!#}}"
@@ -1746,6 +2490,13 @@ fn gh_stub_script(
     base: &str,
     checkpoint: &str,
     head: &str,
+    diverged_base: &str,
+    diverged_checkpoint: &str,
+    diverged_current_base: &str,
+    diverged_head: &str,
+    criss_cross_base: &str,
+    criss_cross_head: &str,
+    criss_cross_merge_base: &str,
     state: &Path,
     log: &Path,
     drift: bool,
@@ -1764,10 +2515,30 @@ host={host:?}
 base={base:?}
 checkpoint={checkpoint:?}
 head={head:?}
+diverged_base={diverged_base:?}
+diverged_checkpoint={diverged_checkpoint:?}
+diverged_current_base={diverged_current_base:?}
+diverged_head={diverged_head:?}
+criss_cross_base={criss_cross_base:?}
+criss_cross_head={criss_cross_head:?}
+criss_cross_merge_base={criss_cross_merge_base:?}
 drift_head={drift_head:?}
 first_pr_url={first_pr_url:?}
 state={state}
 log={log}
+
+active_base="$base"
+active_checkpoint="$checkpoint"
+active_head="$head"
+if [[ "${{STRATADIFF_TEST_DIVERGED_COMPARISON:-}}" == 1 || "${{STRATADIFF_TEST_PROVIDER_MERGE_BASE_MISMATCH:-}}" == 1 || "${{STRATADIFF_TEST_BASE_OFFLINE_NUMSTAT_MISMATCH:-}}" == 1 || "${{STRATADIFF_TEST_TREE_FILTER_UNSUPPORTED:-}}" == 1 || "${{STRATADIFF_TEST_TREE_FILTER_SILENTLY_IGNORED:-}}" == 1 ]]; then
+  active_base="$diverged_base"
+  active_checkpoint="$diverged_checkpoint"
+  active_head="$diverged_head"
+elif [[ "${{STRATADIFF_TEST_CRISS_CROSS_COMPARISON:-}}" == 1 ]]; then
+  active_base="$criss_cross_base"
+  active_checkpoint="$diverged_checkpoint"
+  active_head="$criss_cross_head"
+fi
 
 git_dir=clean
 if [[ -n "${{GIT_DIR+x}}" ]]; then
@@ -1803,12 +2574,13 @@ case "${{1:-}} ${{2:-}}" in
     fi
     count=$((count + 1))
     printf '%s\n' "$count" > "$state/pr-count"
-    selected_head="$head"
+    selected_base="$active_base"
+    selected_head="$active_head"
     selected_url="https://$host/acme/widget/pull/17"
     if (( count == 1 )); then
       selected_url="$first_pr_url"
     fi
-    if (( count > 1 )); then
+    if (( count > 1 )) && [[ "$active_base" == "$base" && "$active_head" == "$head" ]]; then
       selected_head="$drift_head"
     fi
     bound_count=0
@@ -1825,7 +2597,6 @@ case "${{1:-}} ${{2:-}}" in
     if [[ "$arguments" == *" --json id,number,state,url,baseRefOid,headRefOid "* ]]; then
       pull_request_id=PR_17
       pull_request_state=OPEN
-      selected_base="$base"
       if [[ "${{STRATADIFF_TEST_PULL_REQUEST_NODE_DRIFT:-}}" == 1 ]]; then
         pull_request_id=PR_recreated
       fi
@@ -1840,7 +2611,7 @@ case "${{1:-}} ${{2:-}}" in
       fi
       printf '{{"id":"%s","number":17,"state":"%s","baseRefOid":"%s","headRefOid":"%s","url":"%s"}}\n' "$pull_request_id" "$pull_request_state" "$selected_base" "$selected_head" "$selected_url"
     else
-      printf '{{"number":17,"baseRefOid":"%s","headRefOid":"%s","url":"%s"}}\n' "$base" "$selected_head" "$selected_url"
+      printf '{{"number":17,"baseRefOid":"%s","headRefOid":"%s","url":"%s"}}\n' "$selected_base" "$selected_head" "$selected_url"
     fi
     ;;
   "auth token")
@@ -1856,7 +2627,7 @@ case "${{1:-}} ${{2:-}}" in
       review_node_id=PRR_101
       reviewer_node_id=U_alice
       review_state=APPROVED
-      review_checkpoint="$checkpoint"
+      review_checkpoint="$active_checkpoint"
       if [[ "${{STRATADIFF_TEST_REVIEW_DATABASE_DRIFT:-}}" == 1 ]]; then
         review_database_id=999
       fi
@@ -1874,7 +2645,55 @@ case "${{1:-}} ${{2:-}}" in
       fi
       printf '{{"id":%s,"node_id":"%s","user":{{"login":"alice","node_id":"%s","type":"User"}},"state":"%s","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-101","commit_id":"%s","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}}\n' "$review_database_id" "$review_node_id" "$reviewer_node_id" "$review_state" "$host" "$review_checkpoint"
     elif [[ "$arguments" == *" repos/acme/widget/pulls/17/reviews/103 "* ]]; then
-      printf '{{"id":103,"node_id":"PRR_103","user":{{"login":"alice","node_id":"U_alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-103","commit_id":"%s","submitted_at":"2026-09-04T19:10:09Z","author_association":"MEMBER"}}\n' "$host" "$head"
+      printf '{{"id":103,"node_id":"PRR_103","user":{{"login":"alice","node_id":"U_alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-103","commit_id":"%s","submitted_at":"2026-09-04T19:10:09Z","author_association":"MEMBER"}}\n' "$host" "$active_head"
+    elif [[ "$arguments" == *" repos/acme/widget/compare/"* ]]; then
+      comparison_endpoint=
+      for argument in "$@"; do
+        if [[ "$argument" == repos/acme/widget/compare/* ]]; then
+          comparison_endpoint="$argument"
+          break
+        fi
+      done
+      [[ -n "$comparison_endpoint" ]]
+      comparison="${{comparison_endpoint#repos/acme/widget/compare/}}"
+      comparison="${{comparison%%\?*}}"
+      comparison_base="${{comparison%%...*}}"
+      comparison_head="${{comparison#*...}}"
+      comparison_status=ahead
+      ahead_by=1
+      behind_by=0
+      merge_base="$active_base"
+      if [[ "${{STRATADIFF_TEST_CRISS_CROSS_COMPARISON:-}}" == 1 ]]; then
+        comparison_status=diverged
+        behind_by=1
+        if [[ "$comparison_head" == "$criss_cross_head" ]]; then
+          merge_base="$criss_cross_merge_base"
+        else
+          merge_base="$base"
+        fi
+      elif [[ "${{STRATADIFF_TEST_DIVERGED_COMPARISON:-}}" == 1 || "${{STRATADIFF_TEST_PROVIDER_MERGE_BASE_MISMATCH:-}}" == 1 || "${{STRATADIFF_TEST_BASE_OFFLINE_NUMSTAT_MISMATCH:-}}" == 1 || "${{STRATADIFF_TEST_TREE_FILTER_UNSUPPORTED:-}}" == 1 || "${{STRATADIFF_TEST_TREE_FILTER_SILENTLY_IGNORED:-}}" == 1 ]]; then
+        comparison_status=diverged
+        behind_by=1
+        if [[ "$comparison_head" == "$diverged_head" ]]; then
+          merge_base="$diverged_current_base"
+          if [[ "${{STRATADIFF_TEST_PROVIDER_MERGE_BASE_MISMATCH:-}}" == 1 ]]; then
+            merge_base="$base"
+          fi
+        else
+          merge_base="$base"
+          if [[ "${{STRATADIFF_TEST_PROVIDER_MERGE_BASE_MISMATCH:-}}" == 1 ]]; then
+            merge_base="$diverged_current_base"
+          fi
+        fi
+      elif [[ "$comparison_base" == "$comparison_head" ]]; then
+        comparison_status=identical
+        ahead_by=0
+        merge_base="$comparison_base"
+      elif [[ "$comparison_base" != "$active_base" ]] || [[ "$comparison_head" != "$active_head" && "$comparison_head" != "$active_checkpoint" ]]; then
+        printf 'unexpected comparison: %s\n' "$comparison" >&2
+        exit 70
+      fi
+      printf '{{"status":"%s","ahead_by":%s,"behind_by":%s,"total_commits":%s,"base_commit":"%s","merge_base_commit":"%s","html_url":"https://%s/acme/widget/compare/%s...%s"}}\n' "$comparison_status" "$ahead_by" "$behind_by" "$ahead_by" "$comparison_base" "$merge_base" "$host" "$comparison_base" "$comparison_head"
     elif [[ "$arguments" == *"/git/commits/"* ]]; then
       object_id="${{arguments##*/git/commits/}}"
       object_id="${{object_id%% *}}"
@@ -1897,9 +2716,9 @@ case "${{1:-}} ${{2:-}}" in
       extra=
       if [[ "${{STRATADIFF_TEST_REVIEW_DRIFT:-}}" == 1 && "$review_count" -gt 1 ]] || [[ "${{STRATADIFF_TEST_REVERSE_REVIEW_DRIFT:-}}" == 1 && "$review_count" == 1 ]] || [[ "${{STRATADIFF_TEST_LATE_REVIEW_DRIFT:-}}" == 1 && "$review_count" -gt 2 ]]; then
         extra=',{{"id":103,"user":{{"login":"alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-103","commit_id":"%s","submitted_at":"2026-09-04T19:10:09Z","author_association":"MEMBER"}}'
-        extra=$(printf "$extra" "$host" "$head")
+        extra=$(printf "$extra" "$host" "$active_head")
       fi
-      printf '[[{{"id":101,"user":{{"login":"alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-101","commit_id":"%s","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}},{{"id":102,"user":{{"login":"authenticated-reviewer","type":"User"}},"state":"CHANGES_REQUESTED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-102","commit_id":"%s","submitted_at":"2026-09-04T18:10:09Z","author_association":"MEMBER"}}%s]]\n' "$host" "$checkpoint" "$host" "$checkpoint" "$extra"
+      printf '[[{{"id":101,"user":{{"login":"alice","type":"User"}},"state":"APPROVED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-101","commit_id":"%s","submitted_at":"2026-09-04T17:10:09Z","author_association":"MEMBER"}},{{"id":102,"user":{{"login":"authenticated-reviewer","type":"User"}},"state":"CHANGES_REQUESTED","html_url":"https://%s/acme/widget/pull/17#pullrequestreview-102","commit_id":"%s","submitted_at":"2026-09-04T18:10:09Z","author_association":"MEMBER"}}%s]]\n' "$host" "$active_checkpoint" "$host" "$active_checkpoint" "$extra"
     elif [[ "$arguments" == *" repos/acme/widget/pulls/17/requested_reviewers?per_page=100 "* ]]; then
       request_count=0
       if [[ -f "$state/request-count" ]]; then
@@ -1948,6 +2767,13 @@ esac
         base = base,
         checkpoint = checkpoint,
         head = head,
+        diverged_base = diverged_base,
+        diverged_checkpoint = diverged_checkpoint,
+        diverged_current_base = diverged_current_base,
+        diverged_head = diverged_head,
+        criss_cross_base = criss_cross_base,
+        criss_cross_head = criss_cross_head,
+        criss_cross_merge_base = criss_cross_merge_base,
         drift_head = drift_head,
         first_pr_url = first_pr_url,
         state = shell_quote(state),

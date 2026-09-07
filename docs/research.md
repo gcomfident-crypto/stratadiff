@@ -96,7 +96,7 @@ platforms will not close the gaps. They support testing rewrite-heavy reviewers 
 segment; they do not support claiming that most PRs need StrataDiff. The repository's completed
 Review Churn Census remains the bounded incidence evidence for the selected public panel.
 
-### Activation implication
+### Resume activation implication
 
 The competitor snapshot also shows that capability and activation are separate. Native hosts have
 zero incremental install cost; Reviewable needs broad OAuth access for private-repository use,
@@ -110,7 +110,7 @@ but Git may transfer their reachable object closure; the current implementation 
 captured subprocess output, not network bytes or disk usage. That source-level path and its
 repository-local tests are necessary but do not establish distributable activation: the
 [release procedure](releasing.md) explicitly distinguishes release infrastructure from an actually
-published, installed artifact. The highest-leverage acceptance test is therefore:
+published, installed artifact. The acceptance test for this secondary human surface is therefore:
 
 ```text
 fresh environment with Git + authenticated gh

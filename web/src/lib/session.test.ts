@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { repositoryBaseDriftSessionFixture, repositorySessionFixture, sessionFixture } from '../test/fixture'
-import { decodeUtf8, fetchSession, getSessionToken } from './session'
+import { repositoryBaseDriftSessionFixture, repositorySessionFixture, reviewInboxSessionFixture, sessionFixture } from '../test/fixture'
+import { continueInboxReview, decodeUtf8, fetchSession, getSessionToken } from './session'
 
 describe('session loading', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -42,6 +42,57 @@ describe('session loading', () => {
     expect(session.kind).toBe('repository_review')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith('/api/session?token=repository-token', expect.objectContaining({ cache: 'no-store' }))
+  })
+
+  it('loads a review Inbox without fetching source code', async () => {
+    const payload = reviewInboxSessionFixture()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const session = await fetchSession('?token=inbox-token')
+
+    expect(session.kind).toBe('review_inbox')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/session?token=inbox-token', expect.objectContaining({ cache: 'no-store' }))
+  })
+
+  it('rejects inconsistent and duplicate review Inbox evidence', async () => {
+    const inconsistent = reviewInboxSessionFixture()
+    inconsistent.summary.resume_available_prs = 2
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(inconsistent), { status: 200 })))
+    await expect(fetchSession('?token=inbox-token')).rejects.toThrow('inconsistent review Inbox counts')
+
+    const duplicate = reviewInboxSessionFixture()
+    const action = duplicate.actionable[0]
+    if (action === undefined) throw new Error('Missing review Inbox fixture action.')
+    duplicate.actionable.push({ ...action })
+    duplicate.summary.resume_available_prs = 2
+    duplicate.summary.completed_review_prs = 4
+    duplicate.collection.inspected_candidates = 4
+    duplicate.collection.search_candidates = 4
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(duplicate), { status: 200 })))
+    await expect(fetchSession('?token=inbox-token')).rejects.toThrow('duplicate review Inbox actions')
+  })
+
+  it('continues an Inbox review with only the token and bound event identifier', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('{"accepted":true}', { status: 202, statusText: 'Accepted' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const eventId = '1'.repeat(64)
+    await continueInboxReview('?token=abc/123&file=9&scope=full', eventId)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/continue?token=abc%2F123', expect.objectContaining({
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ event_id: eventId }),
+    }))
+    await expect(continueInboxReview('?token=abc', 'not-an-event')).rejects.toThrow('Invalid review Inbox event identifier')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('rejects a repository delta with the wrong artifact contract', async () => {

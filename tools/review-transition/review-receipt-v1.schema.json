@@ -1,0 +1,324 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-receipt-v1.schema.json",
+  "title": "StrataDiff review receipt v1",
+  "description": "A signed receipt binding one complete prior review input and result to an exact review context and repository identity. Trust and digest equality are verified by consumers, not inferred from schema validity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "contract_version", "canonicalization", "body", "attestation"],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/tools/review-transition/review-receipt-v1.schema.json"
+    },
+    "contract_version": { "const": "1.0.0" },
+    "canonicalization": { "const": "stratadiff-canonical-json-v1" },
+    "body": { "$ref": "#/$defs/body" },
+    "attestation": { "$ref": "#/$defs/attestation" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "object_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?Z$"
+    },
+    "bounded_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "host", "owner", "name", "repository_id", "object_format"],
+      "properties": {
+        "provider": { "const": "github" },
+        "host": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$",
+          "maxLength": 253
+        },
+        "owner": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{1,100}$"
+        },
+        "repository_id": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        },
+        "object_format": { "const": "sha1" }
+      }
+    },
+    "pull_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_id", "number", "requested_base_oid", "reviewed_merge_base_oid", "reviewed_head_oid", "metadata_sha256"],
+      "properties": {
+        "node_id": {
+          "type": "string",
+          "pattern": "^[!-~]{1,256}$"
+        },
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "requested_base_oid": { "$ref": "#/$defs/object_id" },
+        "reviewed_merge_base_oid": { "$ref": "#/$defs/object_id" },
+        "reviewed_head_oid": { "$ref": "#/$defs/object_id" },
+        "metadata_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "issuer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_kind", "issuer_id", "trust_domain", "trust_policy_sha256"],
+      "properties": {
+        "source_kind": { "const": "signed_review_execution" },
+        "issuer_id": { "$ref": "#/$defs/bounded_string" },
+        "trust_domain": { "$ref": "#/$defs/bounded_string" },
+        "trust_policy_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "prior_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_uri", "canonical_input_sha256", "selected_payload_sha256", "byte_length"],
+      "properties": {
+        "schema_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "canonical_input_sha256": { "$ref": "#/$defs/sha256" },
+        "selected_payload_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        }
+      }
+    },
+    "prior_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_uri", "canonical_result_sha256", "selected_outcome", "retained_non_current_blocking_outcome", "effective_outcome", "verdict_scope", "reviewer_input_projection_sha256", "byte_length"],
+      "properties": {
+        "schema_uri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "canonical_result_sha256": { "$ref": "#/$defs/sha256" },
+        "selected_outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] },
+        "retained_non_current_blocking_outcome": {
+          "description": "Conservative reduction of blocking reviewed obligations not represented by current_identity_results. Passed means that no such blocking obligation remains.",
+          "enum": ["passed", "failed", "changes_requested"]
+        },
+        "effective_outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] },
+        "verdict_scope": { "const": "reviewer_visible_input_projection" },
+        "reviewer_input_projection_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1073741824
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "covered_input_sha256",
+        "covered_identity_sha256",
+        "current_identity_results",
+        "omitted_identity_sha256",
+        "unresolved_obligation_sha256"
+      ],
+      "properties": {
+        "complete": { "const": true },
+        "covered_input_sha256": { "$ref": "#/$defs/sha256" },
+        "covered_identity_sha256": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "current_identity_results": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/current_identity_result" }
+        },
+        "omitted_identity_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        },
+        "unresolved_obligation_sha256": {
+          "type": "array",
+          "maxItems": 0,
+          "items": { "$ref": "#/$defs/sha256" }
+        }
+      }
+    },
+    "selected_execution_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "obligation_sha256"],
+      "properties": {
+        "kind": { "const": "selected_execution" },
+        "obligation_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "prior_receipt_lineage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "prior_receipt_body_sha256", "prior_identity_sha256"],
+      "properties": {
+        "kind": { "const": "prior_receipt_exact_carry" },
+        "prior_receipt_body_sha256": { "$ref": "#/$defs/sha256" },
+        "prior_identity_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "current_identity_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity_sha256", "outcome", "lineage"],
+      "properties": {
+        "identity_sha256": { "$ref": "#/$defs/sha256" },
+        "outcome": { "enum": ["passed", "failed", "advisory", "changes_requested"] },
+        "lineage": {
+          "oneOf": [
+            { "$ref": "#/$defs/selected_execution_lineage" },
+            { "$ref": "#/$defs/prior_receipt_lineage" }
+          ]
+        }
+      }
+    },
+    "reuse_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "change_identity_schema",
+        "future_reuse_requires_identical_context",
+        "future_reuse_requires_exact_git_identity",
+        "partial_reuse_requires_itemwise_closed_composition",
+        "four_way_replay_authorizes_verdict_or_input_skip"
+      ],
+      "properties": {
+        "policy": { "const": "exact_git_change_identity_only_v1" },
+        "change_identity_schema": { "const": "stratadiff-exact-git-change-identity-v1" },
+        "future_reuse_requires_identical_context": { "const": true },
+        "future_reuse_requires_exact_git_identity": { "const": true },
+        "partial_reuse_requires_itemwise_closed_composition": { "const": true },
+        "four_way_replay_authorizes_verdict_or_input_skip": { "const": false }
+      }
+    },
+    "review_composition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reviewer_input_projection"],
+          "properties": {
+            "kind": { "const": "holistic" },
+            "reviewer_input_projection": { "$ref": "#/$defs/artifact_binding" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "reviewer_input_projection", "item_review_contract", "cross_item_aggregator"],
+          "properties": {
+            "kind": { "const": "itemwise_closed_v1" },
+            "reviewer_input_projection": { "$ref": "#/$defs/artifact_binding" },
+            "item_review_contract": { "$ref": "#/$defs/artifact_binding" },
+            "cross_item_aggregator": { "$ref": "#/$defs/artifact_binding" }
+          }
+        }
+      ]
+    },
+    "artifact_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_uri", "canonical_sha256", "byte_length"],
+      "properties": {
+        "schema_uri": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "canonical_sha256": { "$ref": "#/$defs/sha256" },
+        "byte_length": { "type": "integer", "minimum": 0, "maximum": 1073741824 }
+      }
+    },
+    "body": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "issued_at",
+        "issuer",
+        "repository",
+        "pull_request",
+        "review_context_body_sha256",
+        "review_context_compatibility_sha256",
+        "review_repository_closure_sha256",
+        "historical_dispositions_sha256",
+        "review_composition",
+        "prior_input",
+        "prior_result",
+        "coverage",
+        "reuse_constraints"
+      ],
+      "properties": {
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,256}$"
+        },
+        "issued_at": { "$ref": "#/$defs/timestamp" },
+        "issuer": { "$ref": "#/$defs/issuer" },
+        "repository": { "$ref": "#/$defs/repository" },
+        "pull_request": { "$ref": "#/$defs/pull_request" },
+        "review_context_body_sha256": { "$ref": "#/$defs/sha256" },
+        "review_context_compatibility_sha256": { "$ref": "#/$defs/sha256" },
+        "review_repository_closure_sha256": { "$ref": "#/$defs/sha256" },
+        "historical_dispositions_sha256": { "$ref": "#/$defs/sha256" },
+        "review_composition": { "$ref": "#/$defs/review_composition" },
+        "prior_input": { "$ref": "#/$defs/prior_input" },
+        "prior_result": { "$ref": "#/$defs/prior_result" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "reuse_constraints": { "$ref": "#/$defs/reuse_constraints" }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "key_id", "signature_domain", "signature_preimage_version", "body_sha256", "signature"],
+      "properties": {
+        "algorithm": { "const": "ed25519" },
+        "key_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        },
+        "signature_domain": { "const": "stratadiff.review-receipt" },
+        "signature_preimage_version": { "const": "1" },
+        "body_sha256": { "$ref": "#/$defs/sha256" },
+        "signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        }
+      }
+    }
+  }
+}

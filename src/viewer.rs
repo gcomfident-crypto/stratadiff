@@ -1,9 +1,10 @@
 use std::{
+    collections::HashSet,
     future::IntoFuture,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     process::Command,
-    sync::Arc,
+    sync::{Arc, Mutex},
     time::Duration,
 };
 
@@ -11,17 +12,17 @@ use anyhow::{Context, Result, ensure};
 use axum::{
     Router,
     body::{Body, Bytes},
-    extract::{Query, State},
+    extract::{DefaultBodyLimit, Query, State},
     http::{
         HeaderMap, HeaderValue, StatusCode, Uri,
         header::{
             CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HOST,
-            REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
+            ORIGIN, REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
         },
     },
     middleware::{self, Next},
     response::Response,
-    routing::get,
+    routing::{get, post},
 };
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,8 @@ use stratadiff::{
 use tokio::{net::TcpListener, runtime::Builder};
 
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(2);
+const MAX_INBOX_SESSION_BYTES: usize = 1024 * 1024;
+const MAX_CONTINUE_REQUEST_BYTES: usize = 256;
 
 #[derive(RustEmbed)]
 #[folder = "web/dist/"]
@@ -52,6 +55,7 @@ struct ViewerState {
 
 enum ViewerContent {
     File(FileSession),
+    Inbox(InboxSession),
     Repository(Box<RepositorySession>),
     ReviewCoverage(ReviewCoverageSession),
 }
@@ -65,6 +69,12 @@ struct FileSession {
 
 struct ReviewCoverageSession {
     passport_json: Bytes,
+    session_json: Bytes,
+}
+
+struct InboxSession {
+    allowed_event_ids: HashSet<String>,
+    selection: Mutex<Option<tokio::sync::oneshot::Sender<String>>>,
     session_json: Bytes,
 }
 
@@ -139,6 +149,12 @@ struct SessionQuery {
     scope: Option<ReviewScope>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContinueRequest {
+    event_id: String,
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 enum ReviewScope {
@@ -165,6 +181,79 @@ pub fn serve(
         None,
         None,
     )
+}
+
+pub(crate) fn select_inbox_action(
+    session_json: Vec<u8>,
+    event_ids: Vec<String>,
+    port: u16,
+    open_browser: bool,
+) -> Result<Option<String>> {
+    ensure!(
+        session_json.len() <= MAX_INBOX_SESSION_BYTES,
+        "Inbox viewer session bytes limit exceeded: observed {}, limit {MAX_INBOX_SESSION_BYTES}",
+        session_json.len()
+    );
+    let event_count = event_ids.len();
+    let allowed_event_ids = event_ids.into_iter().collect::<HashSet<_>>();
+    ensure!(
+        allowed_event_ids.len() == event_count
+            && allowed_event_ids
+                .iter()
+                .all(|event_id| valid_event_id(event_id)),
+        "Inbox viewer received invalid or duplicate event IDs"
+    );
+    let (selection_sender, selection_receiver) = tokio::sync::oneshot::channel();
+    let token = session_token()?;
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("failed to start the local Inbox Workbench runtime")?;
+    runtime.block_on(async move {
+        let listener = TcpListener::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port))
+            .await
+            .with_context(|| format!("failed to bind the local Inbox Workbench on port {port}"))?;
+        let address = listener
+            .local_addr()
+            .context("failed to read the local Inbox Workbench address")?;
+        let url = format!("http://{address}/?token={token}");
+        let state = ViewerState {
+            content: Arc::new(ViewerContent::Inbox(InboxSession {
+                allowed_event_ids,
+                selection: Mutex::new(Some(selection_sender)),
+                session_json: Bytes::from(session_json),
+            })),
+            expected_host: address.to_string(),
+            token,
+        };
+        let app = viewer_router(state);
+        let shutdown_signal = wait_for_shutdown_signal()?;
+        let (shutdown_started, shutdown_received) = tokio::sync::oneshot::channel();
+        let shutdown = async move {
+            let outcome = tokio::select! {
+                selected = selection_receiver => selected
+                    .map(Some)
+                    .context("local Inbox selection channel closed unexpectedly"),
+                signal = shutdown_signal => signal.map(|()| None),
+            };
+            let _ = shutdown_started.send(outcome);
+        };
+
+        eprintln!("StrataDiff Review Inbox: {url}");
+        eprintln!("Select Continue review or press Ctrl+C to stop the local server.");
+        if open_browser && let Err(error) = launch_browser(&url) {
+            eprintln!("Could not open the browser automatically: {error:#}");
+            eprintln!("Open this URL manually: {url}");
+        }
+
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
+            .context("local Inbox Workbench server failed")?;
+        shutdown_received
+            .await
+            .context("local Inbox Workbench shutdown listener stopped unexpectedly")?
+    })
 }
 
 pub fn serve_review(
@@ -394,14 +483,7 @@ fn serve_content(
             expected_host: address.to_string(),
             token,
         };
-        let app = Router::new()
-            .route("/api/session", get(session))
-            .route("/api/passport", get(passport_download))
-            .route("/api/source/before", get(before_source))
-            .route("/api/source/after", get(after_source))
-            .fallback(get(static_asset))
-            .with_state(state)
-            .layer(middleware::from_fn(security_headers));
+        let app = viewer_router(state);
 
         let shutdown_signal = wait_for_shutdown_signal()?;
         let (shutdown_started, mut shutdown_received) = tokio::sync::oneshot::channel();
@@ -441,6 +523,19 @@ fn serve_content(
             }
         }
     })
+}
+
+fn viewer_router(state: ViewerState) -> Router {
+    Router::new()
+        .route("/api/session", get(session))
+        .route("/api/continue", post(continue_review))
+        .route("/api/passport", get(passport_download))
+        .route("/api/source/before", get(before_source))
+        .route("/api/source/after", get(after_source))
+        .fallback(get(static_asset))
+        .layer(DefaultBodyLimit::max(MAX_CONTINUE_REQUEST_BYTES))
+        .with_state(state)
+        .layer(middleware::from_fn(security_headers))
 }
 
 #[cfg(unix)]
@@ -505,6 +600,12 @@ async fn session(
             }
             file.session_json.clone()
         }
+        ViewerContent::Inbox(inbox) => {
+            if query.file.is_some() || query.scope.is_some() {
+                return plain_response(StatusCode::NOT_FOUND, "Not found");
+            }
+            inbox.session_json.clone()
+        }
         ViewerContent::Repository(repository) => match query.file {
             Some(index) => {
                 let scope = query.scope.unwrap_or(ReviewScope::Resume);
@@ -542,6 +643,62 @@ async fn session(
         StatusCode::OK,
         "application/json; charset=utf-8",
         Body::from(session_json),
+    )
+}
+
+async fn continue_review(
+    State(state): State<ViewerState>,
+    headers: HeaderMap,
+    Query(query): Query<SessionQuery>,
+    body: Bytes,
+) -> Response {
+    if !request_host_is_valid(&headers, &state)
+        || !tokens_match(&query.token, &state.token)
+        || query.file.is_some()
+        || query.scope.is_some()
+    {
+        return plain_response(StatusCode::NOT_FOUND, "Not found");
+    }
+    if !request_origin_is_valid(&headers, &state) {
+        return plain_response(StatusCode::FORBIDDEN, "Forbidden");
+    }
+    if headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        != Some("application/json")
+    {
+        return plain_response(
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "Expected application/json",
+        );
+    }
+    let ViewerContent::Inbox(inbox) = state.content.as_ref() else {
+        return plain_response(StatusCode::NOT_FOUND, "Not found");
+    };
+    let request: ContinueRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return plain_response(StatusCode::BAD_REQUEST, "Invalid request"),
+    };
+    if !valid_event_id(&request.event_id) || !inbox.allowed_event_ids.contains(&request.event_id) {
+        return plain_response(StatusCode::NOT_FOUND, "Not found");
+    }
+    let sender = match inbox.selection.lock() {
+        Ok(mut selection) => selection.take(),
+        Err(_) => return plain_response(StatusCode::INTERNAL_SERVER_ERROR, "Internal error"),
+    };
+    let Some(sender) = sender else {
+        return plain_response(StatusCode::CONFLICT, "A review was already selected");
+    };
+    if sender.send(request.event_id).is_err() {
+        return plain_response(
+            StatusCode::CONFLICT,
+            "Inbox selection is no longer available",
+        );
+    }
+    response(
+        StatusCode::ACCEPTED,
+        "application/json; charset=utf-8",
+        Body::from(r#"{"accepted":true}"#),
     )
 }
 
@@ -633,7 +790,7 @@ async fn source_response(
                 SourceSide::After => Bytes::copy_from_slice(&file.sources.after),
             }
         }
-        ViewerContent::ReviewCoverage(_) => {
+        ViewerContent::Inbox(_) | ViewerContent::ReviewCoverage(_) => {
             return plain_response(StatusCode::NOT_FOUND, "Not found");
         }
     };
@@ -789,6 +946,20 @@ fn request_host_is_valid(headers: &HeaderMap, state: &ViewerState) -> bool {
         .is_some_and(|host| host == state.expected_host)
 }
 
+fn request_origin_is_valid(headers: &HeaderMap, state: &ViewerState) -> bool {
+    headers
+        .get(ORIGIN)
+        .and_then(|origin| origin.to_str().ok())
+        .is_some_and(|origin| origin == format!("http://{}", state.expected_host))
+}
+
+fn valid_event_id(event_id: &str) -> bool {
+    event_id.len() == 64
+        && event_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn tokens_match(candidate: &str, expected: &str) -> bool {
     if candidate.len() != expected.len() {
         return false;
@@ -874,7 +1045,65 @@ fn launch_browser(_url: &str) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{WebAssets, content_type, session_token, tokens_match};
+    use std::{
+        collections::HashSet,
+        sync::{Arc, Mutex},
+    };
+
+    use axum::{
+        body::Bytes,
+        extract::{Query, State},
+        http::{
+            HeaderMap, HeaderValue, StatusCode,
+            header::{CONTENT_TYPE, HOST, ORIGIN},
+        },
+    };
+
+    use super::{
+        InboxSession, SessionQuery, ViewerContent, ViewerState, WebAssets, content_type,
+        continue_review, session_token, tokens_match,
+    };
+
+    const EVENT_ID: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn inbox_state() -> (ViewerState, tokio::sync::oneshot::Receiver<String>) {
+        let (selection, receiver) = tokio::sync::oneshot::channel();
+        (
+            ViewerState {
+                content: Arc::new(ViewerContent::Inbox(InboxSession {
+                    allowed_event_ids: HashSet::from([EVENT_ID.to_owned()]),
+                    selection: Mutex::new(Some(selection)),
+                    session_json: Bytes::from_static(br#"{"kind":"review_inbox"}"#),
+                })),
+                expected_host: "127.0.0.1:43210".to_owned(),
+                token: "b".repeat(64),
+            },
+            receiver,
+        )
+    }
+
+    fn continue_headers(state: &ViewerState) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(HOST, HeaderValue::from_str(&state.expected_host).unwrap());
+        headers.insert(
+            ORIGIN,
+            HeaderValue::from_str(&format!("http://{}", state.expected_host)).unwrap(),
+        );
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+        headers
+    }
+
+    fn continue_query(state: &ViewerState) -> Query<SessionQuery> {
+        Query(SessionQuery {
+            token: state.token.clone(),
+            file: None,
+            scope: None,
+        })
+    }
+
+    fn continue_body(event_id: &str) -> Bytes {
+        Bytes::from(serde_json::json!({ "event_id": event_id }).to_string())
+    }
 
     #[test]
     fn session_tokens_are_full_length_and_compared_without_an_early_byte_exit() {
@@ -907,5 +1136,95 @@ mod tests {
         assert!(notices.starts_with("StrataDiff Evidence Workbench Third-Party Notices\n"));
         assert!(notices.contains("\nreact@"));
         assert!(notices.contains("\nlucide-react@"));
+    }
+
+    #[test]
+    fn inbox_continue_accepts_one_bound_event_exactly_once() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (state, receiver) = inbox_state();
+
+        let accepted = runtime.block_on(continue_review(
+            State(state.clone()),
+            continue_headers(&state),
+            continue_query(&state),
+            continue_body(EVENT_ID),
+        ));
+        assert_eq!(accepted.status(), StatusCode::ACCEPTED);
+        assert_eq!(runtime.block_on(receiver).unwrap(), EVENT_ID);
+
+        let repeated = runtime.block_on(continue_review(
+            State(state.clone()),
+            continue_headers(&state),
+            continue_query(&state),
+            continue_body(EVENT_ID),
+        ));
+        assert_eq!(repeated.status(), StatusCode::CONFLICT);
+    }
+
+    #[test]
+    fn rejected_inbox_requests_do_not_consume_the_bound_event() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let (state, receiver) = inbox_state();
+
+        let mut wrong_host = continue_headers(&state);
+        wrong_host.insert(HOST, HeaderValue::from_static("attacker.example"));
+        let response = runtime.block_on(continue_review(
+            State(state.clone()),
+            wrong_host,
+            continue_query(&state),
+            continue_body(EVENT_ID),
+        ));
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let mut wrong_origin = continue_headers(&state);
+        wrong_origin.insert(ORIGIN, HeaderValue::from_static("https://attacker.example"));
+        let response = runtime.block_on(continue_review(
+            State(state.clone()),
+            wrong_origin,
+            continue_query(&state),
+            continue_body(EVENT_ID),
+        ));
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+        let mut wrong_type = continue_headers(&state);
+        wrong_type.insert(CONTENT_TYPE, HeaderValue::from_static("text/plain"));
+        let response = runtime.block_on(continue_review(
+            State(state.clone()),
+            wrong_type,
+            continue_query(&state),
+            continue_body(EVENT_ID),
+        ));
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+        let response = runtime.block_on(continue_review(
+            State(state.clone()),
+            continue_headers(&state),
+            continue_query(&state),
+            continue_body(&"c".repeat(64)),
+        ));
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let response = runtime.block_on(continue_review(
+            State(state.clone()),
+            continue_headers(&state),
+            continue_query(&state),
+            Bytes::from_static(br#"{"event_id":7}"#),
+        ));
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let accepted = runtime.block_on(continue_review(
+            State(state.clone()),
+            continue_headers(&state),
+            continue_query(&state),
+            continue_body(EVENT_ID),
+        ));
+        assert_eq!(accepted.status(), StatusCode::ACCEPTED);
+        assert_eq!(runtime.block_on(receiver).unwrap(), EVENT_ID);
     }
 }

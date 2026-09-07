@@ -1,0 +1,56 @@
+{
+  "schema": "stratadiff-review-transition-license-policy-v1",
+  "policy_version": "1.0.0",
+  "observed_at": "2026-09-06",
+  "source": "github_repository_license_metadata",
+  "allowed_spdx_ids": [
+    "0BSD",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT"
+  ],
+  "repositories": [
+    {
+      "name_with_owner": "dotnet/runtime",
+      "observed_spdx_id": "MIT"
+    },
+    {
+      "name_with_owner": "elastic/elasticsearch",
+      "observed_spdx_id": "NOASSERTION"
+    },
+    {
+      "name_with_owner": "github/gh-stack",
+      "observed_spdx_id": "MIT"
+    },
+    {
+      "name_with_owner": "grafana/grafana",
+      "observed_spdx_id": "AGPL-3.0"
+    },
+    {
+      "name_with_owner": "home-assistant/core",
+      "observed_spdx_id": "Apache-2.0"
+    },
+    {
+      "name_with_owner": "kubernetes/kubernetes",
+      "observed_spdx_id": "Apache-2.0"
+    },
+    {
+      "name_with_owner": "microsoft/vscode",
+      "observed_spdx_id": "MIT"
+    },
+    {
+      "name_with_owner": "PostHog/posthog",
+      "observed_spdx_id": "NOASSERTION"
+    },
+    {
+      "name_with_owner": "rust-lang/rust",
+      "observed_spdx_id": "Apache-2.0"
+    },
+    {
+      "name_with_owner": "vercel/next.js",
+      "observed_spdx_id": "MIT"
+    }
+  ]
+}

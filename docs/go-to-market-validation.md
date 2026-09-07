@@ -1,4 +1,4 @@
-# Go-to-market validation: make review recovery discoverable at the moment of need
+# Go-to-market validation: govern the final AI review instead of every push
 
 Evidence captured: **2026-09-06**. Prices, installation counters, repository counters, search
 results, and product behavior are point-in-time observations. This document is a distribution and
@@ -7,30 +7,184 @@ in [`product-strategy.md`](product-strategy.md); they are not repeated here.
 
 ## Decision
 
-StrataDiff should be sold as **review continuity after a PR changes**, not as another diff viewer,
-AI reviewer, generic inbox, or approval bot:
+StrataDiff should be sold as a **Final-Head Review Governor** around the AI or policy reviewer a
+team already uses, not as another diff viewer, reviewer model, generic inbox, or approval bot:
 
-> A PR changed after your completed review. StrataDiff recovers your exact checkpoint, proves what
-> can still be accounted for, and opens everything that still needs your attention.
+> Do not pay to review a commit that will never merge. Do not merge a final PR input that was never
+> reviewed.
 
-The user outcome is a faster, less error-prone return to an interrupted review. The economic
-outcome to test is lower reviewer minutes and shorter time from a post-review update to the next
-completed review, without lower issue recall. Files hidden, lines hidden, generated summaries, and
-installation counts are not value metrics.
+The immediate user outcome is one visible state for the current immutable `(base SHA, head SHA)`
+input: waiting, reviewing, verified, blocking, or stale. The economic outcome to test is fewer
+paid reviewer invocations and less obsolete queue time while final-input coverage and finding
+recall do not regress. Dispatch proxies, files hidden, generated summaries, and installation counts
+are not value metrics.
 
-The most important go-to-market finding is a **discovery problem**:
+The most important go-to-market finding is an **event and trust problem**:
 
-- The repository census found real checkpoint drift, but not a universal daily job.
-- The current CLI can prove value without administrator access, but it cannot notify someone before
-  they remember to run it.
-- A reviewer is unlikely to install a tool today for a rewrite that may happen weeks later.
+- Existing AI reviewers already receive every relevant PR event, so the product can enter a live,
+  frequent workflow without teaching a reviewer to remember a new command.
+- Teams face a bad choice between paying on every push and disabling follow-up review; a deferred
+  review must never masquerade as a clean result.
+- The merge gate is trusted only if its evidence binds the current base and head, survives races,
+  and comes from a dedicated expected App identity.
 
-Therefore the local CLI and Review Inbox are the validation and trust path, not the final mass
-distribution surface. If the pilot passes, the scalable product is a narrowly triggered GitHub App
-Check that appears only after an existing completed human review and a later head change, with one
-**Resume review** action into the local Workbench. The App discovers the moment; the local engine
-handles source and verifies the evidence. A broad PR bot, routine comments on unaffected PRs, or a
-replacement review UI would add noise without solving discovery.
+Therefore the composite Action is the transparent pilot, the local CLI and Review Resume are the
+inspection path, and a dedicated GitHub App is the scalable distribution surface. The App owns
+durable dispatch leases, base/head invalidation, and the required final-input Check; the local
+engine handles source and verifies incremental evidence. Routine marketing comments, a replacement
+review UI, or a second reviewer model would add noise without solving the job.
+
+## Product correction: Governor for acquisition, Cache for savings, Resume for trust
+
+Fresh public evidence on 2026-09-06 strengthens a second use of the same verified transition core.
+The message should become **“do not re-review unchanged code”**; the product must then prove whether
+the next review should be skipped, narrowed to a residue, or run in full.
+
+- **Observed:** a reproducible [`acoliver/vibetools` throttling study at
+  `d57789d`](https://github.com/acoliver/vibetools/tree/d57789dc2c17f2be39efe2c437f25ea98457fae8/research/ai-code-review-study/coderabbit/throttling)
+  covers 1,024 CodeRabbit-touched PRs across three related repositories, 7,600 commits, an estimated
+  6,576 follow-up commit updates, and 256 distinct PRs retaining an exact `Review limit reached`
+  comment. One repository disabled incremental review and restored it two days later because
+  follow-up commits were going unreviewed. The sample is purposive and the retained bot comments are
+  mutable lower bounds, so this is workflow evidence rather than a population estimate.
+- **Observed:** [`fullsend-ai/fullsend#6991`](https://github.com/fullsend-ai/fullsend/issues/6991)
+  records three automated reviews of one nine-line documentation change after two manual rebases.
+  The issue reports about `$7` total review cost and estimates that exact diff reuse would have saved
+  `$4.70`. This is one public incident with self-reported cost, not a population estimate.
+- **Observed:** [`nsheaps/agents#335`](https://github.com/nsheaps/agents/pull/335) implements a
+  `skip / brief-refresh / full-review` dispatch decision using a cached whole-PR diff fingerprint
+  after Renovate-style force-pushes. Its live verification remained unchecked at capture.
+- **Observed:** [`bizimind/loxel#172`](https://github.com/bizimind/loxel/pull/172) passes prior
+  review comments and an interdiff into later review agents so they do not repeat unchanged
+  findings. Its stated test plan was also incomplete at capture.
+- **Observed:** [`fullsend-ai/agents#1091`](https://github.com/fullsend-ai/agents/issues/1091)
+  reports that a raw prior-SHA-to-current-SHA comparison pulled 14 unrelated base-branch commits
+  into a three-line dependency update and contributed to a `$1.01` re-review cost increase. This is
+  a self-reported single case, but it directly exercises StrataDiff's separate base-drift scope.
+- **Observed:** [`QwenLM/qwen-code#9661`](https://github.com/QwenLM/qwen-code/pull/9661) records
+  model review verdicts against per-file `(base, head)` blob pairs so byte-identical files can
+  survive a rebase. The open PR demonstrates convergent implementation work, not validated user
+  value or proof that StrataDiff's policy is superior.
+- **Observed:** [`mergewatch/mergewatch.ai#519`](https://github.com/mergewatch/mergewatch.ai/issues/519)
+  reports four review runs in roughly one hour on one PR, about `$1–2` of model spend, and a more
+  damaging approved/dismissed/commented state churn. It separately identifies superseding stale
+  in-flight runs and unchanged-diff skipping as correctness and cost controls.
+- **Observed:** [`fullsend-ai/fullsend#6968`](https://github.com/fullsend-ai/fullsend/issues/6968)
+  records two completed reviews around a force-push whose meaningful code diff was reported as
+  unchanged. The runs cost `$1.13` and `$1.05` and produced the same verdict and finding. Its author
+  explicitly requires comparison against the actual base-relative diff and zero false skips; the
+  proposed `15–30%` saving is a forecast for a future 20-PR validation, not a measured result.
+- **Observed:** [`AIClarityAU/minspec#1688`](https://github.com/AIClarityAU/minspec/issues/1688)
+  records two PRs where updating a branch to satisfy a strict freshness gate caused an extra
+  four-model review panel over unchanged reviewable content. The issue also states the central
+  security boundary: event type, actor, and commit message are not sufficient evidence because a
+  false cache hit could hide attacker-controlled content.
+- **Observed:** [`alibaba/open-code-review#854`](https://github.com/alibaba/open-code-review/issues/854)
+  reports one iterative PR with 19 review-gate rounds at roughly two million tokens per round and
+  proposes cross-push reuse of per-file diff fingerprints. The discussion identifies an important
+  limitation: unchanged file-local diff bytes do not prove that a prior model verdict remains valid
+  when dynamically loaded repository context changes.
+- **Observed:** [`fullsend-ai/fullsend#6911`](https://github.com/fullsend-ai/fullsend/issues/6911)
+  reports a provenance lookup silently failing because an App client ID was absent. A `$0.62`
+  initial review was followed by a `$2.15` full review for a one-file formatting fix, and the edited
+  comment destroyed the earlier provenance trail. The amounts and diagnosis are self-reported in
+  one issue, but the failure mode is directly relevant: a missing receipt binding must be visible
+  and must never masquerade as either a cache hit or a clean first run.
+- **Observed:** [`fullsend-ai/agents#1092`](https://github.com/fullsend-ai/agents/issues/1092)
+  reports two completed reviews of one PR costing `$7.38` and `$8.15`, plus two cancelled
+  intermediate runs. The second full review surfaced one new low-severity finding and explicitly
+  asks for an incremental input path. This is one incident, not an expected savings estimate.
+- **Observed:** [`nexpeakcore/deepseek-harness-pr-review#26`](https://github.com/nexpeakcore/deepseek-harness-pr-review/pull/26)
+  describes a PR that accumulated 57 review rounds and 58 bot comments because every head SHA
+  triggered a new review. Its proposed diff fingerprint also had to include blob IDs because GitHub
+  can omit patches for binary and oversized files, and it refuses to skip an incomplete prior run.
+  This converges on StrataDiff's fail-closed input identity, while still relying on provider file
+  summaries rather than an offline object closure.
+- **Observed:** [`Expensify/App#100173`](https://github.com/Expensify/App/issues/100173) documents
+  the opposite failure: an AI standards review runs only at open/ready time, so violations added by
+  follow-up commits can reach approval unless a human remembers to request another review. Its own
+  options expose the product tension between paying for every push and missing the one push that
+  matters.
+- **Observed:** [`dotCMS/core#36962`](https://github.com/dotCMS/core/issues/36962) reports four AI
+  review workflows launched on every PR push with no concurrency group. Superseded runs continued
+  against commits that could no longer merge; the issue reports 271 aggregate queued job-minutes
+  on one run. Native workflow cancellation addresses this specific waste and should be baseline
+  gateway hygiene, not claimed as StrataDiff's differentiating proof.
+
+These projects validate the job but also expose the boundary. A whole-diff hash can skip a byte-
+identical PR, but cannot safely narrow a review through dropped work, changed merge bases, stacked
+parent influx, or partially unchanged files. A raw checkpoint-to-head interdiff can include
+upstream noise or omit retired reviewed work. StrataDiff should not compete on another reviewer
+model; it should be the deterministic cache key and residue compiler in front of human or automated
+reviewers.
+
+That boundary changes the automation contract. StrataDiff may cache and narrow a declared review
+**input**, but it must not silently replay an approval or model verdict. A `skip` decision means the
+complete input scope named by the integration is unchanged under the declared policy. If the
+downstream reviewer can load repository context beyond that scope, its cache key must also bind the
+relevant base tree, prompt, rules, model/runtime, and prior finding dispositions, or choose
+`residue`, `full`, or `blocked`. The first integration should therefore expose the decision and its
+exact evidence while leaving execution policy with the caller.
+
+The three surfaces are therefore one product, not separate roadmaps:
+
+| Surface | Trigger | Immediate outcome | Distribution path |
+|---|---|---|---|
+| Review Governor | A PR input changes or becomes eligible to merge | Supersede, wait, dispatch, or prove the still-live final input | Transparent Action alpha, then dedicated GitHub App |
+| Review Resume | A person returns after a later PR update | Open only the evidence that still needs human attention | `gh stratadiff inbox --workbench`, then a narrowly triggered App action |
+| Review Cache | A workflow would rerun an AI or policy review | Emit `skip`, `residue`, `full`, or `blocked` with exact reasons and bounded source inputs | Stable JSON/Action preflight before the existing reviewer job |
+
+The automation wedge should be packaged as a **bring-your-own-reviewer incremental review
+gateway**, not as a model vendor. On each relevant push it should first supersede an obsolete
+in-flight invocation, verify the prior completed-review receipt, and then choose exactly one of four
+routes: `skip`, `residue`, `full`, or `blocked`. A valid route launches the team's existing human,
+LLM, or policy reviewer with the selected immutable payload; `blocked` launches nothing and exposes
+the missing evidence. The same Check must report observed input bytes, avoided input bytes, elapsed
+time, and caller-supplied cost telemetry so a team can see value per run without accepting a vendor
+estimate.
+
+The public evidence also rules out “run immediately on every `synchronize` event” as the default
+product loop. One team reached a `$500/month` add-on cap sixteen days early after 672 review events;
+another removed its per-push trigger after a five-push branch accumulated five similar summaries;
+a third counted stale bot state blocking ten ready PRs. Their fallback was to turn incremental
+review off, which can leave later fixes unchecked. The gateway should instead use two distinct
+states:
+
+1. **Dispatch state:** wait while the head is moving or required CI is pending, cancel work bound to
+   an obsolete head, and schedule exactly one run for the latest eligible head. Waiting is never a
+   clean result.
+2. **Evidence route:** once scheduled, emit only `skip`, `residue`, `full`, or `blocked` for that
+   immutable head. The final merge signal is valid only when its receipt is bound to the still-live
+   head.
+
+This yields a concrete acquisition promise: **keep final-head automated review enabled while
+cutting redundant intermediate runs and unchanged input.** It is stronger and more measurable than
+“better diffs,” while retaining the same fail-closed evidence contract.
+
+This gateway is the higher-frequency acquisition surface because review automation already receives
+push events. Review Resume remains the human trust and recovery surface: it lets a reviewer inspect
+the exact evidence behind a route and continue manually when needed. Supersession, receipt
+provenance, deterministic routing, bounded payloads, and telemetry form one loop; a standalone diff
+viewer or a standalone cache key does not.
+
+The automation surface must inherit the human product's fail-closed rule. `skip` is allowed only
+when the current review residue is empty and base context is accounted for. Unsupported objects,
+missing checkpoints, ambiguous replay, or unmaterialized base drift must choose `full` or `blocked`,
+never an optimistic cache hit. A cached model verdict is not a GitHub approval.
+
+Before promoting Review Cache as a product claim, evaluate it on the frozen ReviewTransition set:
+
+| Gate | First slice | Launch claim requires |
+|---|---:|---:|
+| False `skip` / false carry | `0/30` | `0/300` on the preregistered core and challenge split |
+| Reproducibility | identical selection and result digests on two clean runs | independently replayable artifacts |
+| Attention reduction | report bytes, files, and changed lines; no minimum claimed yet | precommitted threshold before seeing RT-300 outcomes |
+| Economic value | reproduce the decision on public histories | at least five live reviewer-workflow sessions with measured tokens, cost, or reviewer minutes |
+
+This correction improves discovery: automated review already runs on every relevant event, so the
+preflight does not depend on a person remembering a rarely used command. It also creates a visible
+per-run value metric. It does **not** prove that the advanced residue policy beats a simple diff
+hash often enough to justify adoption; ReviewTransition and live pilots must answer that question.
 
 ## Evidence notation and claim boundary
 
@@ -216,6 +370,38 @@ residue. At capture the main
 repository was three days old, with one star and one fork; per-asset download counters were single
 digits and include binaries, checksums, attestations, tests, retries, and upgrades. There is now a
 working acquisition path, but no defensible activation or retention funnel yet.
+
+**Observed release activation failure:** on 2026-09-06, the published immutable `v0.4.1`
+Linux x86-64 binary was installed into an empty temporary directory through the documented
+installer. SHA-256, GitHub artifact attestation, source tag, embedded build revision
+`b10383a09793cb1c0003a5f5dd5691cbbdbe2244`, and reported version all verified. From that directory,
+`stratadiff resume https://github.com/home-assistant/core/pull/176296 --no-open` failed its internal
+exact-provider-commit fetch timeout after 120 seconds (`124.05` seconds wall time, `46288` KiB
+maximum RSS). Live process inspection showed `index-pack` receiving a pack header with 1,362,095
+objects. This is one reproducible large-repository failure, not a latency distribution; it proves
+that release installation works while the released fetch path does not meet the large-repository
+activation promise.
+
+**Observed development smoke, not release evidence:** on 2026-09-06, the dirty `0.5.0`
+development build resumed `home-assistant/core#176296` from its still-observable
+`CHANGES_REQUESTED` checkpoint in an isolated repository. Cold start to a ready Workbench took
+`33.152600050` seconds. The exact result contained 19 current PR files, 15 exact-identity carries,
+and four residue files. All four file-level sessions independently regenerated a verified patch,
+and all eight before/after source requests returned HTTP 200 with byte lengths matching their
+records while the Workbench process had `GIT_NO_LAZY_FETCH=1` and no GitHub credential variables.
+Interrupting the parent removed the child, listener, and temporary object store. This single,
+operator-observed run validates the current end-to-end partial-clone path only; it is not a clean
+install, release benchmark, latency distribution, reviewer-value result, or general residue-rate
+claim.
+
+The complete-ancestry path was separately smoke-tested on frozen ReviewTransition case
+`github/gh-stack#185`. A development build reached Workbench readiness in `34.142823` seconds with
+`262960` KiB maximum observed child RSS, exposed 24 resume entries and 7 base-drift entries, and
+served all 62 corresponding before/after source requests with HTTP 200 and matching byte lengths.
+Eleven resume entries and all seven base entries had independently verified structural reports;
+13 unsupported resume entries retained their source snapshots and returned the designed 422 detail
+response rather than a fabricated report. SIGINT left no temporary repository. This is another
+single-case engineering smoke, not a distributional performance or safety result.
 
 Before any broad launch post, reproduce install-to-Workbench activation on fresh supported Linux
 and macOS environments and publish the exact failures and timings. GitHub CLI does not verify the

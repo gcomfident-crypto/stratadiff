@@ -3,7 +3,7 @@ use std::{
     env,
     ffi::{OsStr, OsString},
     fs::{self, File},
-    io::Read,
+    io::{self, Read},
     path::{Path, PathBuf},
     process::Command,
     time::Duration,
@@ -19,7 +19,7 @@ use stratadiff::{
         resolve_github_review_checkpoint_slurp_pages, verify_github_commit_object,
     },
     inbox_event::{InboxEventBinding, InboxEventEnvelope, InboxEventTrigger},
-    review::review_git_range_with_checkpoint,
+    review::{review_git_range_with_checkpoint, review_git_range_with_checkpoint_merge_bases},
 };
 use tempfile::{Builder as TempDirBuilder, TempDir};
 
@@ -37,6 +37,13 @@ const REQUESTED_REVIEWERS_STDOUT_LIMIT: usize = 4 * 1024 * 1024;
 const MAX_REQUESTED_REVIEW_TARGETS: usize = 100;
 const FETCH_PACK_CAPTURE_LIMIT: usize = 4 * 1024;
 const FETCH_PACK_PROTOCOL_LIMIT: usize = 256;
+const PREFETCH_DIFF_STDOUT_LIMIT: usize = 16 * 1024 * 1024;
+const MAX_PROVIDER_PACK_FILE_BYTES: u64 = 256 * 1024 * 1024;
+const MAX_RESUME_SCRATCH_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_EPHEMERAL_OBJECTS: usize = 1_000_000;
+const PROVIDER_FETCH_LIMIT_ENV: &str = "STRATADIFF_PROVIDER_FETCH_FILE_LIMIT_BYTES";
+const PROVIDER_REMOTE_NAME: &str = "stratadiff-provider";
+const ANCESTRY_REMOTE_NAME: &str = "stratadiff-ancestry";
 const LOCAL_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 const REMOTE_FETCH_TIMEOUT: Duration = Duration::from_secs(2 * 60);
 const VIEWER_SHUTDOWN_GRACE: Duration = Duration::from_secs(3);
@@ -127,6 +134,10 @@ pub(crate) struct ResumeWorkbenchArgs {
     pub(crate) head: String,
     #[arg(long)]
     pub(crate) checkpoint: String,
+    #[arg(long, hide = true, requires = "checkpoint_merge_base")]
+    pub(crate) head_merge_base: Option<String>,
+    #[arg(long, hide = true, requires = "head_merge_base")]
+    pub(crate) checkpoint_merge_base: Option<String>,
     #[arg(long)]
     pub(crate) repo: PathBuf,
     #[arg(long, default_value_t = 0)]
@@ -155,6 +166,24 @@ struct PullRequestCoordinates {
     base_ref_oid: String,
     head_ref_oid: String,
     url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProviderComparison {
+    status: String,
+    ahead_by: u64,
+    behind_by: u64,
+    total_commits: u64,
+    base_commit: String,
+    merge_base_commit: String,
+    html_url: String,
+}
+
+impl ProviderComparison {
+    fn supports_bounded_snapshots(&self) -> bool {
+        matches!(self.status.as_str(), "ahead" | "identical")
+    }
 }
 
 #[derive(Debug)]
@@ -219,12 +248,20 @@ struct ViewerChildRequest<'a> {
     base: &'a str,
     head: &'a str,
     checkpoint: &'a str,
+    head_merge_base: Option<&'a str>,
+    checkpoint_merge_base: Option<&'a str>,
     repository: &'a Path,
     port: u16,
     no_open: bool,
     value_log: Option<&'a Path>,
     transition_id: Option<&'a str>,
     attempt_id: Option<&'a str>,
+}
+
+struct VerifiedAncestry {
+    repository: PathBuf,
+    head_merge_base: String,
+    checkpoint_merge_base: String,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -249,7 +286,9 @@ struct ResumeSession<'a> {
     scratch: Option<TempDir>,
     session_name: String,
     repository: Option<PathBuf>,
+    repository_is_ephemeral: bool,
     provider_repository: Option<PathBuf>,
+    ancestry_repository: Option<PathBuf>,
     provider_home: Option<PathBuf>,
     authorization: Option<String>,
     temporary_refs: Vec<(String, String)>,
@@ -274,7 +313,9 @@ impl<'a> ResumeSession<'a> {
             scratch: Some(scratch),
             session_name,
             repository: None,
+            repository_is_ephemeral: false,
             provider_repository: None,
+            ancestry_repository: None,
             provider_home: None,
             authorization: None,
             temporary_refs: Vec::new(),
@@ -301,6 +342,7 @@ impl<'a> ResumeSession<'a> {
         requested_repository: Option<&str>,
         repo_dir: Option<&Path>,
     ) -> Result<()> {
+        self.repository_is_ephemeral = requested_repository.is_some() && repo_dir.is_none();
         let repository = match (requested_repository, repo_dir) {
             (None, None) => canonicalize_git_repository(
                 Path::new("."),
@@ -337,6 +379,10 @@ impl<'a> ResumeSession<'a> {
         Ok(())
     }
 
+    fn repository_is_ephemeral(&self) -> bool {
+        self.repository_is_ephemeral
+    }
+
     fn ensure_local_commit(
         &mut self,
         identity: &RepositoryIdentity,
@@ -352,6 +398,808 @@ impl<'a> ResumeSession<'a> {
             verify_provider_commit(identity, object_id, label, self.signals)?;
         }
         self.materialize_provider_commit(identity, object_id, label, ref_name)
+    }
+
+    fn configure_ephemeral_partial_clone(
+        &self,
+        identity: &RepositoryIdentity,
+        provider_home: &Path,
+    ) -> Result<()> {
+        let mut add_remote = clean_git_command();
+        add_remote
+            .arg("-C")
+            .arg(self.repository())
+            .args(["remote", "add", PROVIDER_REMOTE_NAME])
+            .arg(identity.git_url())
+            .env("HOME", provider_home)
+            .env("XDG_CONFIG_HOME", provider_home);
+        let added = run_bounded_process(
+            &mut add_remote,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git configure isolated provider remote",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&added, "git configure isolated provider remote")?;
+
+        for (key, value) in [
+            ("extensions.partialClone", PROVIDER_REMOTE_NAME),
+            ("remote.stratadiff-provider.promisor", "true"),
+            ("remote.stratadiff-provider.partialclonefilter", "blob:none"),
+        ] {
+            let mut configure = clean_git_command();
+            configure
+                .arg("-C")
+                .arg(self.repository())
+                .args(["config", "--local", "--replace-all", key, value])
+                .env("HOME", provider_home)
+                .env("XDG_CONFIG_HOME", provider_home);
+            let configured = run_bounded_process(
+                &mut configure,
+                SMALL_STDOUT_LIMIT,
+                COMMAND_STDERR_LIMIT,
+                LOCAL_COMMAND_TIMEOUT,
+                "git configure isolated partial clone",
+                Some(self.signals),
+            )?;
+            ensure_process_success(&configured, "git configure isolated partial clone")?;
+        }
+
+        let mut inspect = clean_git_command();
+        inspect
+            .arg("-C")
+            .arg(self.repository())
+            .args(["remote", "get-url", "--all", PROVIDER_REMOTE_NAME])
+            .env("HOME", provider_home)
+            .env("XDG_CONFIG_HOME", provider_home);
+        let inspected = run_bounded_process(
+            &mut inspect,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git inspect isolated provider remote",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&inspected, "git inspect isolated provider remote")?;
+        ensure!(
+            required_single_line(&inspected.stdout, "isolated provider remote")?
+                == identity.git_url(),
+            "isolated provider remote does not match the selected repository"
+        );
+        Ok(())
+    }
+
+    fn materialize_ephemeral_snapshots(
+        &mut self,
+        identity: &RepositoryIdentity,
+        snapshots: &[(&str, &str, &str)],
+    ) -> Result<()> {
+        ensure!(
+            self.repository_is_ephemeral,
+            "bounded provider snapshots require an isolated temporary repository"
+        );
+        let mut seen = HashSet::new();
+        let mut pending = Vec::new();
+        for (object_id, label, ref_name) in snapshots {
+            if !seen.insert((*object_id).to_owned()) {
+                continue;
+            }
+            if self.local_commit_exists(object_id)? {
+                self.verify_local_commit(object_id, label)?;
+                continue;
+            }
+            let reference = format!("refs/stratadiff/resume/{}/{ref_name}", self.session_name);
+            self.ensure_temporary_ref_absent(&reference)?;
+            pending.push(((*object_id).to_owned(), (*label).to_owned(), reference));
+        }
+        if pending.is_empty() {
+            return self.verify_ephemeral_snapshot_connectivity();
+        }
+        self.initialize_provider_home()?;
+        self.load_fetch_authorization(&identity.host)?;
+        let provider_home = self
+            .provider_home
+            .as_ref()
+            .expect("provider home was initialized")
+            .clone();
+        self.configure_ephemeral_partial_clone(identity, &provider_home)?;
+        let authorization = self
+            .authorization
+            .as_ref()
+            .expect("fetch authorization was loaded")
+            .clone();
+
+        let mut fetch = clean_git_command();
+        fetch
+            .arg("-C")
+            .arg(self.repository())
+            .args([
+                "fetch",
+                "--quiet",
+                "--depth=1",
+                "--filter=blob:none",
+                "--no-tags",
+                "--no-recurse-submodules",
+            ])
+            .arg(PROVIDER_REMOTE_NAME);
+        configure_provider_transport(&mut fetch, &provider_home, &authorization);
+        for (object_id, _, reference) in &pending {
+            fetch.arg(format!("{object_id}:{reference}"));
+        }
+        apply_provider_fetch_file_limit(&mut fetch, self.remaining_provider_fetch_file_bytes()?)?;
+        self.temporary_refs.extend(
+            pending
+                .iter()
+                .map(|(object_id, _, reference)| (reference.clone(), object_id.clone())),
+        );
+        let fetched = run_bounded_process(
+            &mut fetch,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            REMOTE_FETCH_TIMEOUT,
+            "git fetch exact provider snapshot",
+            Some(self.signals),
+        )?;
+        if !fetched.status.success() {
+            self.authorization = None;
+            bail!(
+                "GitHub verified the requested commits, but no longer serves every exact snapshot over Git HTTPS"
+            );
+        }
+        ensure!(
+            fetched.stderr.is_empty(),
+            "Git provider did not honor the bounded partial-clone request: {}",
+            stderr_summary(&fetched.stderr)
+        );
+        self.verify_scratch_resource_budget()?;
+        self.verify_ephemeral_snapshot_filter()?;
+        for (object_id, label, _) in &pending {
+            self.verify_local_commit(object_id, label)?;
+        }
+        self.verify_ephemeral_snapshot_connectivity()
+    }
+
+    fn prepare_ephemeral_ancestry(
+        &mut self,
+        identity: &RepositoryIdentity,
+        requested_base: &str,
+        head: &str,
+        checkpoint: &str,
+        provider_head_merge_base: &str,
+        provider_checkpoint_merge_base: &str,
+    ) -> Result<VerifiedAncestry> {
+        ensure!(
+            self.repository_is_ephemeral,
+            "complete provider ancestry requires an isolated temporary repository"
+        );
+        self.initialize_provider_home()?;
+        self.load_fetch_authorization(&identity.host)?;
+        let provider_home = self
+            .provider_home
+            .as_ref()
+            .expect("provider home was initialized")
+            .clone();
+        let authorization = self
+            .authorization
+            .as_ref()
+            .expect("fetch authorization was loaded")
+            .clone();
+        let ancestry_repository = self.initialize_ancestry_repository()?;
+
+        let mut add_remote = clean_git_command();
+        add_remote
+            .arg("-C")
+            .arg(&ancestry_repository)
+            .args(["remote", "add", ANCESTRY_REMOTE_NAME])
+            .arg(identity.git_url())
+            .env("HOME", &provider_home)
+            .env("XDG_CONFIG_HOME", &provider_home);
+        let added = run_bounded_process(
+            &mut add_remote,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git configure isolated ancestry remote",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&added, "git configure isolated ancestry remote")?;
+
+        for (key, value) in [
+            ("extensions.partialClone", ANCESTRY_REMOTE_NAME),
+            ("remote.stratadiff-ancestry.promisor", "true"),
+            ("remote.stratadiff-ancestry.partialclonefilter", "tree:0"),
+        ] {
+            let mut configure = clean_git_command();
+            configure
+                .arg("-C")
+                .arg(&ancestry_repository)
+                .args(["config", "--local", "--replace-all", key, value])
+                .env("HOME", &provider_home)
+                .env("XDG_CONFIG_HOME", &provider_home);
+            let configured = run_bounded_process(
+                &mut configure,
+                SMALL_STDOUT_LIMIT,
+                COMMAND_STDERR_LIMIT,
+                LOCAL_COMMAND_TIMEOUT,
+                "git configure isolated ancestry partial clone",
+                Some(self.signals),
+            )?;
+            ensure_process_success(&configured, "git configure isolated ancestry partial clone")?;
+        }
+
+        let mut inspect = clean_git_command();
+        inspect
+            .arg("-C")
+            .arg(&ancestry_repository)
+            .args(["remote", "get-url", "--all", ANCESTRY_REMOTE_NAME])
+            .env("HOME", &provider_home)
+            .env("XDG_CONFIG_HOME", &provider_home);
+        let inspected = run_bounded_process(
+            &mut inspect,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git inspect isolated ancestry remote",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&inspected, "git inspect isolated ancestry remote")?;
+        ensure!(
+            required_single_line(&inspected.stdout, "isolated ancestry remote")?
+                == identity.git_url(),
+            "isolated ancestry remote does not match the selected repository"
+        );
+
+        let tips = [
+            (requested_base, "pull request base", "base"),
+            (head, "pull request head", "head"),
+            (checkpoint, "review checkpoint", "checkpoint"),
+        ];
+        let mut seen = HashSet::new();
+        let pending = tips
+            .into_iter()
+            .filter(|(object_id, _, _)| seen.insert((*object_id).to_owned()))
+            .collect::<Vec<_>>();
+        let mut fetch = clean_git_command();
+        fetch
+            .arg("-C")
+            .arg(&ancestry_repository)
+            .args([
+                "fetch",
+                "--quiet",
+                "--filter=tree:0",
+                "--no-tags",
+                "--no-recurse-submodules",
+            ])
+            .arg(ANCESTRY_REMOTE_NAME);
+        configure_provider_transport(&mut fetch, &provider_home, &authorization);
+        for (object_id, _, ref_name) in &pending {
+            fetch.arg(format!(
+                "{object_id}:refs/stratadiff/ancestry/{}/{ref_name}",
+                self.session_name
+            ));
+        }
+        apply_provider_fetch_file_limit(&mut fetch, self.remaining_provider_fetch_file_bytes()?)?;
+        let fetched = run_bounded_process(
+            &mut fetch,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            REMOTE_FETCH_TIMEOUT,
+            "git fetch exact provider ancestry",
+            Some(self.signals),
+        )?;
+        ensure!(
+            fetched.status.success(),
+            "GitHub verified the requested commits, but could not provide their filtered ancestry: {}",
+            stderr_summary(&fetched.stderr)
+        );
+        ensure!(
+            fetched.stderr.is_empty(),
+            "Git provider did not honor the bounded tree-less ancestry request: {}",
+            stderr_summary(&fetched.stderr)
+        );
+        self.verify_scratch_resource_budget()?;
+        for (object_id, label, _) in &pending {
+            self.verify_exact_commit_at(&ancestry_repository, object_id, label)?;
+        }
+        self.verify_commit_only_ancestry(&ancestry_repository)?;
+        self.verify_complete_commit_ancestry(
+            &ancestry_repository,
+            &[requested_base, head, checkpoint],
+        )?;
+
+        let head_merge_base = self.unique_merge_base_at(
+            &ancestry_repository,
+            requested_base,
+            head,
+            "pull request ancestry",
+        )?;
+        ensure!(
+            head_merge_base == provider_head_merge_base,
+            "complete Git ancestry resolved pull request merge base {head_merge_base}, but GitHub reported {provider_head_merge_base}"
+        );
+        let checkpoint_merge_base = self.unique_merge_base_at(
+            &ancestry_repository,
+            requested_base,
+            checkpoint,
+            "checkpoint ancestry",
+        )?;
+        ensure!(
+            checkpoint_merge_base == provider_checkpoint_merge_base,
+            "complete Git ancestry resolved checkpoint merge base {checkpoint_merge_base}, but GitHub reported {provider_checkpoint_merge_base}"
+        );
+        Ok(VerifiedAncestry {
+            repository: ancestry_repository,
+            head_merge_base,
+            checkpoint_merge_base,
+        })
+    }
+
+    fn verify_commit_only_ancestry(&self, repository: &Path) -> Result<()> {
+        self.verify_object_inventory(repository, "filtered ancestry", &[b"commit".as_slice()])
+            .context("Git provider did not honor the tree-less ancestry filter")?;
+
+        let mut tags = clean_git_command();
+        tags.arg("-C")
+            .arg(repository)
+            .args(["for-each-ref", "--format=%(refname)", "refs/tags"]);
+        let inspected_tags = run_bounded_process(
+            &mut tags,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git inspect filtered ancestry tags",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&inspected_tags, "git inspect filtered ancestry tags")?;
+        ensure!(
+            inspected_tags.stdout.is_empty(),
+            "filtered ancestry unexpectedly imported tag refs"
+        );
+        Ok(())
+    }
+
+    fn verify_ephemeral_snapshot_filter(&self) -> Result<()> {
+        self.verify_object_inventory(
+            self.repository(),
+            "bounded provider snapshot",
+            &[b"commit".as_slice(), b"tree".as_slice()],
+        )
+        .context("Git provider did not honor the blob-less snapshot filter")
+    }
+
+    fn verify_object_inventory(
+        &self,
+        repository: &Path,
+        label: &str,
+        allowed_types: &[&[u8]],
+    ) -> Result<()> {
+        let mut inspect = clean_git_command();
+        inspect
+            .arg("-C")
+            .arg(repository)
+            .args([
+                "cat-file",
+                "--batch-check=%(objecttype)",
+                "--batch-all-objects",
+                "--unordered",
+            ])
+            .env("LC_ALL", "C");
+        let inspected = run_bounded_process(
+            &mut inspect,
+            PREFETCH_DIFF_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            REMOTE_FETCH_TIMEOUT,
+            "git inspect bounded object types",
+            Some(self.signals),
+        )?;
+        ensure!(
+            inspected.status.success() && allowed_partial_clone_diagnostics(&inspected.stderr),
+            "could not verify the {label} object set: {}",
+            stderr_summary(&inspected.stderr)
+        );
+        let mut count = 0_usize;
+        for object_type in inspected.stdout.split(|byte| *byte == b'\n') {
+            let object_type = object_type.strip_suffix(b"\r").unwrap_or(object_type);
+            if object_type.is_empty() {
+                continue;
+            }
+            ensure!(
+                allowed_types.contains(&object_type),
+                "Git provider returned an unexpected {} object in the {label}",
+                String::from_utf8_lossy(object_type)
+            );
+            count = count
+                .checked_add(1)
+                .context("provider object count overflow")?;
+            ensure!(
+                count <= MAX_EPHEMERAL_OBJECTS,
+                "{label} exceeds the {MAX_EPHEMERAL_OBJECTS} object hard limit"
+            );
+        }
+        ensure!(count > 0, "{label} contains no objects");
+        Ok(())
+    }
+
+    fn initialize_ancestry_repository(&mut self) -> Result<PathBuf> {
+        ensure!(
+            self.ancestry_repository.is_none(),
+            "isolated ancestry repository was initialized more than once"
+        );
+        let repository = self.scratch_path().join("ancestry.git");
+        create_private_directory(&repository)?;
+        let mut init = clean_git_command();
+        init.arg("-C")
+            .arg(&repository)
+            .args(["init", "--bare", "--quiet"]);
+        let initialized = run_bounded_process(
+            &mut init,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git init private ancestry repository",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&initialized, "git init private ancestry repository")?;
+        let repository = fs::canonicalize(&repository).with_context(|| {
+            format!(
+                "failed to resolve private ancestry repository {}",
+                repository.display()
+            )
+        })?;
+        self.ancestry_repository = Some(repository.clone());
+        Ok(repository)
+    }
+
+    fn verify_exact_commit_at(
+        &self,
+        repository: &Path,
+        object_id: &str,
+        label: &str,
+    ) -> Result<()> {
+        let mut resolve = clean_git_command();
+        resolve
+            .arg("-C")
+            .arg(repository)
+            .args(["rev-parse", "--verify"])
+            .arg(format!("{object_id}^{{commit}}"));
+        let resolved = run_bounded_process(
+            &mut resolve,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git verify exact ancestry commit",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&resolved, "git verify exact ancestry commit")?;
+        ensure!(
+            required_single_line(&resolved.stdout, "resolved ancestry commit")? == object_id,
+            "filtered ancestry resolved the wrong {label}"
+        );
+        Ok(())
+    }
+
+    fn verify_complete_commit_ancestry(&self, repository: &Path, tips: &[&str]) -> Result<()> {
+        let mut shallow = clean_git_command();
+        shallow
+            .arg("-C")
+            .arg(repository)
+            .args(["rev-parse", "--is-shallow-repository"]);
+        let inspected = run_bounded_process(
+            &mut shallow,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git inspect filtered ancestry depth",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&inspected, "git inspect filtered ancestry depth")?;
+        ensure!(
+            required_single_line(&inspected.stdout, "filtered ancestry depth")? == "false",
+            "Git provider returned shallow ancestry for an unbounded ancestry request"
+        );
+
+        let mut traverse = clean_git_command();
+        traverse
+            .arg("-C")
+            .arg(repository)
+            .args(["rev-list", "--count"])
+            .args(tips);
+        let traversed = run_bounded_process(
+            &mut traverse,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            REMOTE_FETCH_TIMEOUT,
+            "git traverse complete filtered ancestry",
+            Some(self.signals),
+        )?;
+        ensure!(
+            traversed.status.success() && traversed.stderr.is_empty(),
+            "filtered provider ancestry is incomplete: {}",
+            stderr_summary(&traversed.stderr)
+        );
+        let count = required_single_line(&traversed.stdout, "filtered ancestry commit count")?
+            .parse::<u64>()
+            .context("filtered ancestry commit count is invalid")?;
+        ensure!(count > 0, "filtered provider ancestry contains no commits");
+
+        let mut fsck = clean_git_command();
+        fsck.arg("-C")
+            .arg(repository)
+            .args(["fsck", "--connectivity-only", "--no-dangling"]);
+        let checked = run_bounded_process(
+            &mut fsck,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            REMOTE_FETCH_TIMEOUT,
+            "git fsck filtered ancestry",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&checked, "git fsck filtered ancestry")
+    }
+
+    fn unique_merge_base_at(
+        &self,
+        repository: &Path,
+        left: &str,
+        right: &str,
+        label: &str,
+    ) -> Result<String> {
+        let mut merge_base = clean_git_command();
+        merge_base
+            .arg("-C")
+            .arg(repository)
+            .args(["merge-base", "--all", left, right]);
+        let resolved = run_bounded_process(
+            &mut merge_base,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git resolve complete ancestry merge base",
+            Some(self.signals),
+        )?;
+        ensure!(
+            resolved.status.success(),
+            "{label} merge-base resolution failed: {}",
+            stderr_summary(&resolved.stderr)
+        );
+        unique_object_id_line(&resolved.stdout, label)
+    }
+
+    fn attach_verified_ancestry(
+        &self,
+        ancestry: &VerifiedAncestry,
+        requested_base: &str,
+        head: &str,
+        checkpoint: &str,
+        snapshot_commits: &[&str],
+    ) -> Result<()> {
+        ensure!(
+            self.repository_is_ephemeral,
+            "complete provider ancestry requires an isolated temporary repository"
+        );
+        let expected_ancestry = self
+            .ancestry_repository
+            .as_ref()
+            .context("verified ancestry repository is unavailable")?;
+        ensure!(
+            ancestry.repository == *expected_ancestry,
+            "verified ancestry repository changed before attachment"
+        );
+        self.verify_complete_commit_ancestry(
+            &ancestry.repository,
+            &[requested_base, head, checkpoint],
+        )?;
+
+        let main_objects = fs::canonicalize(self.repository().join("objects"))
+            .context("failed to resolve isolated snapshot object directory")?;
+        let ancestry_objects = fs::canonicalize(ancestry.repository.join("objects"))
+            .context("failed to resolve isolated ancestry object directory")?;
+        let ancestry_text = ancestry_objects
+            .to_str()
+            .context("isolated ancestry object directory is not portable UTF-8")?;
+        ensure!(
+            !ancestry_text.contains(['\n', '\r']),
+            "isolated ancestry object directory contains a line break"
+        );
+        let alternates = main_objects.join("info/alternates");
+        ensure!(
+            !alternates.exists(),
+            "isolated snapshot repository unexpectedly has object alternates"
+        );
+        fs::write(&alternates, format!("{ancestry_text}\n")).with_context(|| {
+            format!(
+                "failed to attach verified ancestry at {}",
+                alternates.display()
+            )
+        })?;
+
+        self.remove_verified_shallow_boundaries(snapshot_commits)?;
+        self.verify_exact_commit_at(self.repository(), requested_base, "pull request base")?;
+        self.verify_complete_commit_ancestry(
+            self.repository(),
+            &[requested_base, head, checkpoint],
+        )?;
+        let head_merge_base = self.unique_merge_base_at(
+            self.repository(),
+            requested_base,
+            head,
+            "attached pull request ancestry",
+        )?;
+        ensure!(
+            head_merge_base == ancestry.head_merge_base,
+            "attached pull request ancestry changed the verified merge base"
+        );
+        let checkpoint_merge_base = self.unique_merge_base_at(
+            self.repository(),
+            requested_base,
+            checkpoint,
+            "attached checkpoint ancestry",
+        )?;
+        ensure!(
+            checkpoint_merge_base == ancestry.checkpoint_merge_base,
+            "attached checkpoint ancestry changed the verified merge base"
+        );
+        Ok(())
+    }
+
+    fn remove_verified_shallow_boundaries(&self, snapshot_commits: &[&str]) -> Result<()> {
+        let shallow_path = self.repository().join("shallow");
+        let contents = match fs::read(&shallow_path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to inspect isolated snapshot shallow boundary {}",
+                        shallow_path.display()
+                    )
+                });
+            }
+        };
+        let expected = snapshot_commits.iter().copied().collect::<HashSet<_>>();
+        if !contents.is_empty() {
+            let contents = std::str::from_utf8(&contents)
+                .context("isolated snapshot shallow boundary is not UTF-8")?;
+            let mut observed = HashSet::new();
+            for object_id in contents.lines() {
+                ensure!(
+                    is_object_id(object_id)
+                        && expected.contains(object_id)
+                        && observed.insert(object_id),
+                    "isolated snapshot repository contains an unexpected shallow boundary"
+                );
+            }
+            ensure!(
+                !observed.is_empty(),
+                "isolated snapshot shallow boundary is empty"
+            );
+            fs::remove_file(&shallow_path).with_context(|| {
+                format!(
+                    "failed to remove verified shallow boundary {}",
+                    shallow_path.display()
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    fn prefetch_ephemeral_review_blobs(&self, ranges: &[(&str, &str, &str)]) -> Result<()> {
+        ensure!(
+            self.repository_is_ephemeral,
+            "bounded provider snapshots require an isolated temporary repository"
+        );
+        let provider_home = self
+            .provider_home
+            .as_ref()
+            .context("provider home is unavailable for review blob materialization")?;
+        let authorization = self
+            .authorization
+            .as_ref()
+            .context("provider authorization is unavailable for review blob materialization")?;
+        for (label, base, revision) in ranges {
+            let arguments = [
+                "diff",
+                "--numstat",
+                "-z",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--ignore-submodules=none",
+                *base,
+                *revision,
+                "--",
+            ];
+            let mut online = clean_git_command();
+            online
+                .arg("-C")
+                .arg(self.repository())
+                .args(arguments)
+                .env_remove("GIT_NO_LAZY_FETCH");
+            configure_provider_transport(&mut online, provider_home, authorization);
+            apply_provider_fetch_file_limit(
+                &mut online,
+                self.remaining_provider_fetch_file_bytes()?,
+            )?;
+            let materialized = run_bounded_process(
+                &mut online,
+                PREFETCH_DIFF_STDOUT_LIMIT,
+                COMMAND_STDERR_LIMIT,
+                REMOTE_FETCH_TIMEOUT,
+                "git materialize exact review blobs",
+                Some(self.signals),
+            )?;
+            ensure!(
+                materialized.status.success() && materialized.stderr.is_empty(),
+                "could not materialize every {label} review blob: {}",
+                stderr_summary(&materialized.stderr)
+            );
+            self.verify_scratch_resource_budget()?;
+
+            let mut offline = clean_git_command();
+            offline.arg("-C").arg(self.repository()).args(arguments);
+            let verified = run_bounded_process(
+                &mut offline,
+                PREFETCH_DIFF_STDOUT_LIMIT,
+                COMMAND_STDERR_LIMIT,
+                LOCAL_COMMAND_TIMEOUT,
+                "git verify offline review blobs",
+                Some(self.signals),
+            )?;
+            ensure!(
+                verified.status.success()
+                    && allowed_partial_clone_diagnostics(&verified.stderr)
+                    && verified.stdout == materialized.stdout,
+                "offline {label} review blob verification did not reproduce the provider-backed diff"
+            );
+        }
+        self.verify_ephemeral_snapshot_connectivity()
+    }
+
+    fn verify_ephemeral_snapshot_connectivity(&self) -> Result<()> {
+        ensure!(
+            self.repository_is_ephemeral,
+            "bounded provider snapshots require an isolated temporary repository"
+        );
+        self.verify_scratch_resource_budget()?;
+        self.verify_object_inventory(
+            self.repository(),
+            "materialized provider snapshot",
+            &[b"blob".as_slice(), b"commit".as_slice(), b"tree".as_slice()],
+        )?;
+        let mut fsck = clean_git_command();
+        fsck.arg("-C").arg(self.repository()).args([
+            "fsck",
+            "--connectivity-only",
+            "--no-dangling",
+        ]);
+        let checked = run_bounded_process(
+            &mut fsck,
+            SMALL_STDOUT_LIMIT,
+            COMMAND_STDERR_LIMIT,
+            LOCAL_COMMAND_TIMEOUT,
+            "git fsck exact provider snapshot",
+            Some(self.signals),
+        )?;
+        ensure_process_success(&checked, "git fsck exact provider snapshots")
+    }
+
+    fn verify_scratch_resource_budget(&self) -> Result<()> {
+        let observed = bounded_directory_bytes(self.scratch_path(), MAX_RESUME_SCRATCH_BYTES)?;
+        ensure!(
+            observed <= MAX_RESUME_SCRATCH_BYTES,
+            "Resume scratch data exceeds the {MAX_RESUME_SCRATCH_BYTES} byte hard limit"
+        );
+        Ok(())
+    }
+
+    fn remaining_provider_fetch_file_bytes(&self) -> Result<u64> {
+        let observed = bounded_directory_bytes(self.scratch_path(), MAX_RESUME_SCRATCH_BYTES)?;
+        ensure!(
+            observed < MAX_RESUME_SCRATCH_BYTES,
+            "Resume scratch data has exhausted the {MAX_RESUME_SCRATCH_BYTES} byte hard limit"
+        );
+        Ok(MAX_PROVIDER_PACK_FILE_BYTES.min(MAX_RESUME_SCRATCH_BYTES - observed))
     }
 
     fn local_commit_exists(&self, object_id: &str) -> Result<bool> {
@@ -401,8 +1249,12 @@ impl<'a> ResumeSession<'a> {
             return Ok(());
         }
         let provider_repository = self.scratch_path().join("provider.git");
-        let provider_home = self.scratch_path().join("provider-home");
-        create_private_directory(&provider_home)?;
+        self.initialize_provider_home()?;
+        let provider_home = self
+            .provider_home
+            .as_ref()
+            .expect("provider home was initialized")
+            .clone();
         let mut command = clean_git_command();
         command
             .args(["init", "--bare", "--quiet"])
@@ -419,6 +1271,15 @@ impl<'a> ResumeSession<'a> {
         )?;
         ensure_process_success(&output, "git init --bare provider repository")?;
         self.provider_repository = Some(provider_repository);
+        Ok(())
+    }
+
+    fn initialize_provider_home(&mut self) -> Result<()> {
+        if self.provider_home.is_some() {
+            return Ok(());
+        }
+        let provider_home = self.scratch_path().join("provider-home");
+        create_private_directory(&provider_home)?;
         self.provider_home = Some(provider_home);
         Ok(())
     }
@@ -489,35 +1350,9 @@ impl<'a> ResumeSession<'a> {
             .arg(identity.git_url())
             .arg(format!("{object_id}:{provider_ref}"))
             .env("HOME", &provider_home)
-            .env("XDG_CONFIG_HOME", &provider_home)
-            .env("GIT_CONFIG_COUNT", "10")
-            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
-            .env("GIT_CONFIG_VALUE_0", "")
-            .env("GIT_CONFIG_KEY_1", "http.extraHeader")
-            .env(
-                "GIT_CONFIG_VALUE_1",
-                format!("AUTHORIZATION: basic {authorization}"),
-            )
-            .env("GIT_CONFIG_KEY_2", "http.followRedirects")
-            .env("GIT_CONFIG_VALUE_2", "false")
-            .env("GIT_CONFIG_KEY_3", "http.sslVerify")
-            .env("GIT_CONFIG_VALUE_3", "true")
-            .env("GIT_CONFIG_KEY_4", "credential.helper")
-            .env("GIT_CONFIG_VALUE_4", "")
-            .env("GIT_CONFIG_KEY_5", "protocol.allow")
-            .env("GIT_CONFIG_VALUE_5", "never")
-            .env("GIT_CONFIG_KEY_6", "protocol.https.allow")
-            .env("GIT_CONFIG_VALUE_6", "always")
-            .env("GIT_CONFIG_KEY_7", "protocol.file.allow")
-            .env("GIT_CONFIG_VALUE_7", "never")
-            .env("GIT_CONFIG_KEY_8", "http.proxy")
-            .env("GIT_CONFIG_VALUE_8", "")
-            .env("GIT_CONFIG_KEY_9", "fetch.fsckObjects")
-            .env("GIT_CONFIG_VALUE_9", "true")
-            .env("GIT_TRACE", "0")
-            .env("GIT_TRACE_CURL", "0")
-            .env("GIT_TRACE_PACKET", "0")
-            .env("GIT_TRACE_REDACT", "1");
+            .env("XDG_CONFIG_HOME", &provider_home);
+        configure_provider_transport(&mut fetch, &provider_home, &authorization);
+        apply_provider_fetch_file_limit(&mut fetch, self.remaining_provider_fetch_file_bytes()?)?;
         let fetched = run_bounded_process(
             &mut fetch,
             SMALL_STDOUT_LIMIT,
@@ -532,6 +1367,12 @@ impl<'a> ResumeSession<'a> {
                 "GitHub verified {label} {object_id}, but no longer serves that exact commit over Git HTTPS"
             );
         }
+        self.verify_scratch_resource_budget()?;
+        self.verify_object_inventory(
+            &provider_repository,
+            "provider commit materialization",
+            &[b"blob".as_slice(), b"commit".as_slice(), b"tree".as_slice()],
+        )?;
 
         let mut resolve_provider = clean_git_command();
         resolve_provider
@@ -570,7 +1411,7 @@ impl<'a> ResumeSession<'a> {
             .arg(&provider_ref)
             .env("HOME", &provider_home)
             .env("XDG_CONFIG_HOME", &provider_home)
-            .env("GIT_CONFIG_COUNT", "7")
+            .env("GIT_CONFIG_COUNT", "8")
             .env("GIT_CONFIG_KEY_0", "http.extraHeader")
             .env("GIT_CONFIG_VALUE_0", "")
             .env("GIT_CONFIG_KEY_1", "credential.helper")
@@ -584,7 +1425,10 @@ impl<'a> ResumeSession<'a> {
             .env("GIT_CONFIG_KEY_5", "fetch.fsckObjects")
             .env("GIT_CONFIG_VALUE_5", "true")
             .env("GIT_CONFIG_KEY_6", "transfer.fsckObjects")
-            .env("GIT_CONFIG_VALUE_6", "true");
+            .env("GIT_CONFIG_VALUE_6", "true")
+            .env("GIT_CONFIG_KEY_7", "fetch.unpackLimit")
+            .env("GIT_CONFIG_VALUE_7", "1");
+        apply_provider_fetch_file_limit(&mut import, self.remaining_provider_fetch_file_bytes()?)?;
         let mut fetch_pack_pid = None;
         let imported = run_bounded_process_recording_pid(
             &mut import,
@@ -1175,21 +2019,6 @@ fn run_with_session(
         );
     }
 
-    session.ensure_local_commit(
-        &identity,
-        &first.base_ref_oid,
-        "pull request base",
-        "base",
-        false,
-    )?;
-    session.ensure_local_commit(
-        &identity,
-        &first.head_ref_oid,
-        "pull request head",
-        "head",
-        false,
-    )?;
-
     let checkpoint = resolve_review_checkpoint(
         &identity,
         first.number,
@@ -1212,13 +2041,156 @@ fn run_with_session(
         "review checkpoint",
         session.signals,
     )?;
-    session.ensure_local_commit(
-        &identity,
-        &checkpoint.commit_id,
-        "review checkpoint",
-        "checkpoint",
-        true,
-    )?;
+    let provider_merge_bases = if session.repository_is_ephemeral() {
+        verify_provider_commit(
+            &identity,
+            &first.base_ref_oid,
+            "pull request base",
+            session.signals,
+        )?;
+        verify_provider_commit(
+            &identity,
+            &first.head_ref_oid,
+            "pull request head",
+            session.signals,
+        )?;
+        let head_comparison = resolve_provider_merge_base(
+            &identity,
+            &first.base_ref_oid,
+            &first.head_ref_oid,
+            session.repository(),
+            session.signals,
+        )?;
+        let checkpoint_comparison = resolve_provider_merge_base(
+            &identity,
+            &first.base_ref_oid,
+            &checkpoint.commit_id,
+            session.repository(),
+            session.signals,
+        )?;
+        if head_comparison.supports_bounded_snapshots()
+            && checkpoint_comparison.supports_bounded_snapshots()
+        {
+            session.materialize_ephemeral_snapshots(
+                &identity,
+                &[
+                    (first.base_ref_oid.as_str(), "pull request base", "base"),
+                    (first.head_ref_oid.as_str(), "pull request head", "head"),
+                    (
+                        checkpoint.commit_id.as_str(),
+                        "review checkpoint",
+                        "checkpoint",
+                    ),
+                    (
+                        head_comparison.merge_base_commit.as_str(),
+                        "pull request merge base",
+                        "head-merge-base",
+                    ),
+                    (
+                        checkpoint_comparison.merge_base_commit.as_str(),
+                        "checkpoint merge base",
+                        "checkpoint-merge-base",
+                    ),
+                ],
+            )?;
+            session.prefetch_ephemeral_review_blobs(&[
+                ("current head", &first.base_ref_oid, &first.head_ref_oid),
+                (
+                    "review checkpoint",
+                    &first.base_ref_oid,
+                    &checkpoint.commit_id,
+                ),
+            ])?;
+            Some((
+                head_comparison.merge_base_commit,
+                checkpoint_comparison.merge_base_commit,
+            ))
+        } else {
+            let ancestry = session.prepare_ephemeral_ancestry(
+                &identity,
+                &first.base_ref_oid,
+                &first.head_ref_oid,
+                &checkpoint.commit_id,
+                &head_comparison.merge_base_commit,
+                &checkpoint_comparison.merge_base_commit,
+            )?;
+            let snapshot_commits = [
+                ancestry.head_merge_base.as_str(),
+                first.head_ref_oid.as_str(),
+                ancestry.checkpoint_merge_base.as_str(),
+                checkpoint.commit_id.as_str(),
+            ];
+            session.materialize_ephemeral_snapshots(
+                &identity,
+                &[
+                    (
+                        ancestry.head_merge_base.as_str(),
+                        "pull request merge base",
+                        "head-merge-base",
+                    ),
+                    (first.head_ref_oid.as_str(), "pull request head", "head"),
+                    (
+                        ancestry.checkpoint_merge_base.as_str(),
+                        "checkpoint merge base",
+                        "checkpoint-merge-base",
+                    ),
+                    (
+                        checkpoint.commit_id.as_str(),
+                        "review checkpoint",
+                        "checkpoint",
+                    ),
+                ],
+            )?;
+            session.attach_verified_ancestry(
+                &ancestry,
+                &first.base_ref_oid,
+                &first.head_ref_oid,
+                &checkpoint.commit_id,
+                &snapshot_commits,
+            )?;
+            session.prefetch_ephemeral_review_blobs(&[
+                (
+                    "current head",
+                    ancestry.head_merge_base.as_str(),
+                    &first.head_ref_oid,
+                ),
+                (
+                    "review checkpoint",
+                    ancestry.checkpoint_merge_base.as_str(),
+                    &checkpoint.commit_id,
+                ),
+                (
+                    "base drift",
+                    ancestry.checkpoint_merge_base.as_str(),
+                    ancestry.head_merge_base.as_str(),
+                ),
+            ])?;
+            None
+        }
+    } else {
+        session.ensure_local_commit(
+            &identity,
+            &first.base_ref_oid,
+            "pull request base",
+            "base",
+            false,
+        )?;
+        session.ensure_local_commit(
+            &identity,
+            &first.head_ref_oid,
+            "pull request head",
+            "head",
+            false,
+        )?;
+        session.ensure_local_commit(
+            &identity,
+            &checkpoint.commit_id,
+            "review checkpoint",
+            "checkpoint",
+            true,
+        )?;
+        None
+    };
     session.clear_authorization();
 
     let latest = read_pull_request_coordinates(
@@ -1281,6 +2253,12 @@ fn run_with_session(
             base: &first.base_ref_oid,
             head: &first.head_ref_oid,
             checkpoint: &checkpoint.commit_id,
+            head_merge_base: provider_merge_bases
+                .as_ref()
+                .map(|(head_merge_base, _)| head_merge_base.as_str()),
+            checkpoint_merge_base: provider_merge_bases
+                .as_ref()
+                .map(|(_, checkpoint_merge_base)| checkpoint_merge_base.as_str()),
             repository: session.repository(),
             port: args.port,
             no_open: args.no_open,
@@ -1293,12 +2271,25 @@ fn run_with_session(
 }
 
 pub(crate) fn run_workbench(args: ResumeWorkbenchArgs) -> Result<()> {
-    let review = review_git_range_with_checkpoint(
-        &args.repo,
-        &args.base,
-        &args.head,
-        Some(&args.checkpoint),
-    )?;
+    let review = match (&args.head_merge_base, &args.checkpoint_merge_base) {
+        (Some(head_merge_base), Some(checkpoint_merge_base)) => {
+            review_git_range_with_checkpoint_merge_bases(
+                &args.repo,
+                &args.base,
+                &args.head,
+                head_merge_base,
+                &args.checkpoint,
+                checkpoint_merge_base,
+            )?
+        }
+        (None, None) => review_git_range_with_checkpoint(
+            &args.repo,
+            &args.base,
+            &args.head,
+            Some(&args.checkpoint),
+        )?,
+        _ => bail!("head and checkpoint merge bases must be supplied together"),
+    };
     let value_log = args
         .value_log
         .as_deref()
@@ -1428,6 +2419,101 @@ fn read_pull_request_coordinates(
     )?;
     ensure_process_success(&output, "gh pr view")?;
     serde_json::from_slice(&output.stdout).context("failed to decode pull request metadata")
+}
+
+fn resolve_provider_merge_base(
+    identity: &RepositoryIdentity,
+    base: &str,
+    head: &str,
+    repository: &Path,
+    signals: &SignalState,
+) -> Result<ProviderComparison> {
+    ensure!(
+        is_sha1(base) && is_sha1(head),
+        "provider comparison requires two full lowercase Git object IDs"
+    );
+    let endpoint = format!(
+        "repos/{}/compare/{base}...{head}?per_page=1&page=2",
+        identity.full_name
+    );
+    let mut command = gh_command();
+    command
+        .args(["api", "--hostname", &identity.host, &endpoint, "--jq"])
+        .arg("{status,ahead_by,behind_by,total_commits,base_commit:.base_commit.sha,merge_base_commit:.merge_base_commit.sha,html_url}")
+        .current_dir(repository);
+    let output = run_bounded_process(
+        &mut command,
+        SMALL_STDOUT_LIMIT,
+        COMMAND_STDERR_LIMIT,
+        REMOTE_FETCH_TIMEOUT,
+        "gh api immutable commit comparison",
+        Some(signals),
+    )?;
+    ensure!(
+        output.status.success(),
+        "GitHub could not establish an immutable comparison between {base} and {head}: {}",
+        stderr_summary(&output.stderr)
+    );
+    decode_provider_merge_base(&output.stdout, identity, base, head)
+}
+
+fn decode_provider_merge_base(
+    bytes: &[u8],
+    identity: &RepositoryIdentity,
+    base: &str,
+    head: &str,
+) -> Result<ProviderComparison> {
+    let comparison: ProviderComparison = serde_json::from_slice(bytes)
+        .context("failed to decode GitHub immutable commit comparison")?;
+    ensure!(
+        comparison.base_commit == base,
+        "GitHub comparison base does not match the requested commit"
+    );
+    ensure!(
+        comparison.html_url == format!("{}/compare/{base}...{head}", identity.url),
+        "GitHub comparison URL does not bind the requested repository and commits"
+    );
+    ensure!(
+        is_sha1(&comparison.merge_base_commit),
+        "GitHub comparison returned an invalid merge base"
+    );
+    ensure!(
+        comparison.total_commits == comparison.ahead_by,
+        "GitHub comparison returned inconsistent commit counts"
+    );
+    match comparison.status.as_str() {
+        "identical" => ensure!(
+            base == head
+                && comparison.ahead_by == 0
+                && comparison.behind_by == 0
+                && comparison.merge_base_commit == base,
+            "GitHub returned an inconsistent identical comparison"
+        ),
+        "ahead" => ensure!(
+            base != head
+                && comparison.ahead_by > 0
+                && comparison.behind_by == 0
+                && comparison.merge_base_commit == base,
+            "GitHub returned an inconsistent ahead comparison"
+        ),
+        "behind" => ensure!(
+            base != head
+                && comparison.ahead_by == 0
+                && comparison.behind_by > 0
+                && comparison.merge_base_commit == head,
+            "GitHub returned an inconsistent behind comparison"
+        ),
+        "diverged" => ensure!(
+            base != head
+                && comparison.ahead_by > 0
+                && comparison.behind_by > 0
+                && comparison.merge_base_commit != base
+                && comparison.merge_base_commit != head,
+            "GitHub returned an inconsistent diverged comparison"
+        ),
+        status => bail!("GitHub returned unsupported comparison status {status}"),
+    }
+    Ok(comparison)
 }
 
 fn resolve_review_checkpoint(
@@ -1845,6 +2931,15 @@ fn run_viewer_child(request: ViewerChildRequest<'_>, signals: &SignalState) -> R
         .env("GIT_ASKPASS", "/bin/false")
         .env("GIT_NO_LAZY_FETCH", "1")
         .env("GIT_NO_REPLACE_OBJECTS", "1");
+    match (request.head_merge_base, request.checkpoint_merge_base) {
+        (Some(head_merge_base), Some(checkpoint_merge_base)) => {
+            command
+                .args(["--head-merge-base", head_merge_base])
+                .args(["--checkpoint-merge-base", checkpoint_merge_base]);
+        }
+        (None, None) => {}
+        _ => bail!("head and checkpoint merge bases must be supplied together"),
+    }
     if request.no_open {
         command.arg("--no-open");
     }
@@ -1947,6 +3042,104 @@ fn clean_git_command() -> Command {
     command
 }
 
+fn configure_provider_transport(command: &mut Command, provider_home: &Path, authorization: &str) {
+    command
+        .env("HOME", provider_home)
+        .env("XDG_CONFIG_HOME", provider_home)
+        .env("GIT_CONFIG_COUNT", "11")
+        .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+        .env("GIT_CONFIG_VALUE_0", "")
+        .env("GIT_CONFIG_KEY_1", "http.extraHeader")
+        .env(
+            "GIT_CONFIG_VALUE_1",
+            format!("AUTHORIZATION: basic {authorization}"),
+        )
+        .env("GIT_CONFIG_KEY_2", "http.followRedirects")
+        .env("GIT_CONFIG_VALUE_2", "false")
+        .env("GIT_CONFIG_KEY_3", "http.sslVerify")
+        .env("GIT_CONFIG_VALUE_3", "true")
+        .env("GIT_CONFIG_KEY_4", "credential.helper")
+        .env("GIT_CONFIG_VALUE_4", "")
+        .env("GIT_CONFIG_KEY_5", "protocol.allow")
+        .env("GIT_CONFIG_VALUE_5", "never")
+        .env("GIT_CONFIG_KEY_6", "protocol.https.allow")
+        .env("GIT_CONFIG_VALUE_6", "always")
+        .env("GIT_CONFIG_KEY_7", "protocol.file.allow")
+        .env("GIT_CONFIG_VALUE_7", "never")
+        .env("GIT_CONFIG_KEY_8", "http.proxy")
+        .env("GIT_CONFIG_VALUE_8", "")
+        .env("GIT_CONFIG_KEY_9", "fetch.fsckObjects")
+        .env("GIT_CONFIG_VALUE_9", "true")
+        .env("GIT_CONFIG_KEY_10", "fetch.unpackLimit")
+        .env("GIT_CONFIG_VALUE_10", "1")
+        .env("GIT_TRACE", "0")
+        .env("GIT_TRACE_CURL", "0")
+        .env("GIT_TRACE_PACKET", "0")
+        .env("GIT_TRACE_REDACT", "1");
+}
+
+#[cfg(unix)]
+fn apply_provider_fetch_file_limit(command: &mut Command, file_limit_bytes: u64) -> Result<()> {
+    use std::os::unix::process::CommandExt;
+
+    ensure!(
+        (1..=MAX_PROVIDER_PACK_FILE_BYTES).contains(&file_limit_bytes),
+        "provider fetch file limit is outside the supported range"
+    );
+    let limit = libc::rlim_t::try_from(file_limit_bytes)
+        .context("provider fetch file limit is not representable on this platform")?;
+    command.env(PROVIDER_FETCH_LIMIT_ENV, file_limit_bytes.to_string());
+    // setrlimit is async-signal-safe and runs after fork, before the Git process is executed.
+    unsafe {
+        command.pre_exec(move || {
+            let limits = libc::rlimit {
+                rlim_cur: limit,
+                rlim_max: limit,
+            };
+            if libc::setrlimit(libc::RLIMIT_FSIZE, &limits) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_provider_fetch_file_limit(_command: &mut Command, _file_limit_bytes: u64) -> Result<()> {
+    bail!("remote Resume requires operating-system file-size limits on Git fetches")
+}
+
+fn bounded_directory_bytes(root: &Path, limit: u64) -> Result<u64> {
+    let mut total = 0_u64;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(path) = pending.pop() {
+        let metadata = fs::symlink_metadata(&path)
+            .with_context(|| format!("failed to inspect Resume scratch path {}", path.display()))?;
+        if metadata.is_dir() {
+            for entry in fs::read_dir(&path).with_context(|| {
+                format!("failed to enumerate Resume scratch path {}", path.display())
+            })? {
+                pending.push(
+                    entry
+                        .with_context(|| {
+                            format!("failed to inspect Resume scratch path {}", path.display())
+                        })?
+                        .path(),
+                );
+            }
+            continue;
+        }
+        total = total
+            .checked_add(metadata.len())
+            .context("Resume scratch byte count overflow")?;
+        if total > limit {
+            return Ok(total);
+        }
+    }
+    Ok(total)
+}
+
 fn remove_inherited_git_environment(command: &mut Command) {
     remove_matching_environment(command, is_git_environment_name);
 }
@@ -1997,6 +3190,13 @@ fn stderr_summary(stderr: &[u8]) -> String {
     String::from_utf8_lossy(stderr).trim_end().to_owned()
 }
 
+fn allowed_partial_clone_diagnostics(stderr: &[u8]) -> bool {
+    stderr.is_empty()
+        || stderr == b"warning: lazy fetching disabled; some objects may not be available\n"
+        || stderr
+            == b"warning: This repository uses promisor remotes. Some objects may not be loaded.\n"
+}
+
 fn required_single_line(bytes: &[u8], label: &str) -> Result<String> {
     let value = std::str::from_utf8(bytes).with_context(|| format!("{label} is not UTF-8"))?;
     let value = value
@@ -2009,6 +3209,24 @@ fn required_single_line(bytes: &[u8], label: &str) -> Result<String> {
         "{label} contains more than one line"
     );
     Ok(value.to_owned())
+}
+
+fn unique_object_id_line(bytes: &[u8], label: &str) -> Result<String> {
+    let value = std::str::from_utf8(bytes).with_context(|| format!("{label} is not UTF-8"))?;
+    let lines = value
+        .lines()
+        .map(|line| line.strip_suffix('\r').unwrap_or(line))
+        .collect::<Vec<_>>();
+    ensure!(
+        lines.len() == 1,
+        "{label} requires exactly one merge base, found {}",
+        lines.len()
+    );
+    ensure!(
+        is_object_id(lines[0]),
+        "{label} returned an invalid merge base"
+    );
+    Ok(lines[0].to_owned())
 }
 
 fn validate_pull_request_coordinates(
@@ -2205,11 +3423,15 @@ fn create_private_directory(path: &Path) -> Result<()> {
 mod tests {
     use std::{ffi::OsStr, fs, process::Command};
 
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
     use super::{
-        PullRequestCoordinates, RepositoryRecord, ResumeSession, SignalState,
-        is_git_environment_name, is_object_id, is_sha1, list_pack_keep_files, pack_keep_has_owner,
-        parse_pull_request_url, requested_repository_host, should_record_attempt_failure,
-        should_remove_from_git_environment, validate_owner_repository,
+        PullRequestCoordinates, RepositoryIdentity, RepositoryRecord, ResumeSession, SignalState,
+        create_private_directory, decode_provider_merge_base, is_git_environment_name,
+        is_object_id, is_sha1, list_pack_keep_files, pack_keep_has_owner, parse_pull_request_url,
+        requested_repository_host, should_record_attempt_failure,
+        should_remove_from_git_environment, unique_object_id_line, validate_owner_repository,
         validate_pull_request_coordinates, validate_reviewer,
     };
     use crate::{process::Interrupted, value_funnel};
@@ -2252,6 +3474,37 @@ mod tests {
         assert!(commit.status.success());
         let commit = String::from_utf8(commit.stdout).unwrap().trim().to_owned();
         (repository, commit)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn private_ancestry_directory_has_owner_only_permissions() {
+        let parent = tempfile::tempdir().unwrap();
+        let directory = parent.path().join("ancestry.git");
+
+        create_private_directory(&directory).unwrap();
+
+        assert_eq!(
+            fs::metadata(directory).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[test]
+    fn complete_ancestry_merge_base_requires_one_valid_object_id() {
+        let object_id = "a".repeat(40);
+        assert_eq!(
+            unique_object_id_line(format!("{object_id}\n").as_bytes(), "ancestry").unwrap(),
+            object_id
+        );
+        assert!(
+            unique_object_id_line(
+                format!("{}\n{}\n", "a".repeat(40), "b".repeat(40)).as_bytes(),
+                "ancestry"
+            )
+            .is_err()
+        );
+        assert!(unique_object_id_line(b"not-an-object\n", "ancestry").is_err());
     }
 
     #[test]
@@ -2377,6 +3630,101 @@ mod tests {
     }
 
     #[test]
+    fn provider_comparison_binds_repository_commits_and_merge_base() {
+        let identity = RepositoryIdentity {
+            full_name: "owner/repository".to_owned(),
+            url: "https://github.com/owner/repository".to_owned(),
+            host: "github.com".to_owned(),
+        };
+        let base = "a".repeat(40);
+        let head = "b".repeat(40);
+        let encoded = serde_json::to_vec(&serde_json::json!({
+            "status": "ahead",
+            "ahead_by": 2,
+            "behind_by": 0,
+            "total_commits": 2,
+            "base_commit": base,
+            "merge_base_commit": base,
+            "html_url": format!("{}/compare/{base}...{head}", identity.url),
+        }))
+        .unwrap();
+
+        assert_eq!(
+            decode_provider_merge_base(&encoded, &identity, &base, &head)
+                .unwrap()
+                .merge_base_commit,
+            base
+        );
+    }
+
+    #[test]
+    fn provider_comparison_rejects_inconsistent_or_unbound_evidence() {
+        let identity = RepositoryIdentity {
+            full_name: "owner/repository".to_owned(),
+            url: "https://github.com/owner/repository".to_owned(),
+            host: "github.com".to_owned(),
+        };
+        let base = "a".repeat(40);
+        let head = "b".repeat(40);
+        let merge_base = "c".repeat(40);
+        for encoded in [
+            serde_json::json!({
+                "status": "ahead",
+                "ahead_by": 2,
+                "behind_by": 0,
+                "total_commits": 2,
+                "base_commit": base,
+                "merge_base_commit": merge_base,
+                "html_url": format!("{}/compare/{base}...{head}", identity.url),
+            }),
+            serde_json::json!({
+                "status": "diverged",
+                "ahead_by": 2,
+                "behind_by": 1,
+                "total_commits": 2,
+                "base_commit": base,
+                "merge_base_commit": merge_base,
+                "html_url": format!("https://github.com/other/repository/compare/{base}...{head}"),
+            }),
+        ] {
+            assert!(
+                decode_provider_merge_base(
+                    &serde_json::to_vec(&encoded).unwrap(),
+                    &identity,
+                    &base,
+                    &head,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn diverged_provider_comparison_never_uses_bounded_snapshots() {
+        let identity = RepositoryIdentity {
+            full_name: "owner/repository".to_owned(),
+            url: "https://github.com/owner/repository".to_owned(),
+            host: "github.com".to_owned(),
+        };
+        let base = "a".repeat(40);
+        let head = "b".repeat(40);
+        let merge_base = "c".repeat(40);
+        let encoded = serde_json::to_vec(&serde_json::json!({
+            "status": "diverged",
+            "ahead_by": 2,
+            "behind_by": 1,
+            "total_commits": 2,
+            "base_commit": base,
+            "merge_base_commit": merge_base,
+            "html_url": format!("{}/compare/{base}...{head}", identity.url),
+        }))
+        .unwrap();
+
+        let comparison = decode_provider_merge_base(&encoded, &identity, &base, &head).unwrap();
+        assert!(!comparison.supports_bounded_snapshots());
+    }
+
+    #[test]
     fn repository_record_rejects_unknown_provider_fields() {
         let encoded =
             br#"{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo","extra":true}"#;
@@ -2444,7 +3792,9 @@ mod tests {
             scratch: None,
             session_name: "test-session".to_owned(),
             repository: None,
+            repository_is_ephemeral: false,
             provider_repository: None,
+            ancestry_repository: None,
             provider_home: None,
             authorization: None,
             temporary_refs: Vec::new(),
@@ -2475,7 +3825,9 @@ mod tests {
             scratch: None,
             session_name: "test-session".to_owned(),
             repository: None,
+            repository_is_ephemeral: false,
             provider_repository: None,
+            ancestry_repository: None,
             provider_home: None,
             authorization: None,
             temporary_refs: Vec::new(),
@@ -2508,7 +3860,9 @@ mod tests {
             scratch: None,
             session_name: "test-session".to_owned(),
             repository: None,
+            repository_is_ephemeral: false,
             provider_repository: None,
+            ancestry_repository: None,
             provider_home: None,
             authorization: None,
             temporary_refs: Vec::new(),
@@ -2535,7 +3889,9 @@ mod tests {
             scratch: None,
             session_name: "test-session".to_owned(),
             repository: Some(repository.path().to_path_buf()),
+            repository_is_ephemeral: false,
             provider_repository: None,
+            ancestry_repository: None,
             provider_home: None,
             authorization: None,
             temporary_refs: vec![(
@@ -2559,7 +3915,9 @@ mod tests {
             scratch: None,
             session_name: "test-session".to_owned(),
             repository: Some(repository.path().to_path_buf()),
+            repository_is_ephemeral: false,
             provider_repository: None,
+            ancestry_repository: None,
             provider_home: None,
             authorization: None,
             temporary_refs: Vec::new(),

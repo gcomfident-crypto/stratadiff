@@ -15,6 +15,7 @@ mod matcher;
 pub mod ownership;
 mod patch;
 pub mod review;
+pub mod review_cache;
 
 use std::path::Path;
 

@@ -5,6 +5,7 @@ import type {
   LoadedSession,
   RepositorySessionPayload,
   ReviewCoverageSessionPayload,
+  ReviewInboxSessionPayload,
   ReviewFile,
   SessionPayload,
 } from '../types'
@@ -34,6 +35,52 @@ const reviewDeltaSchema = 'https://raw.githubusercontent.com/gcomfident-crypto/s
 const reviewCoverageSchema = 'https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-coverage-v1.schema.json'
 const coverageStates = ['covered', 'needs_review', 'blocked'] as const
 const coverageScopes = ['current_change', 'retired_residue'] as const
+const inboxSummaryStates = ['partial', 'actionable', 'up_to_date', 'no_eligible_reviews', 'insufficient_evidence'] as const
+const inboxUnobservableReasons = [
+  'head_oid_unavailable',
+  'checkpoint_base_oid_unavailable',
+  'current_base_oid_unavailable',
+  'resume_review_limit_exceeded',
+] as const
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value)
+  return actual.length === keys.length && actual.every((key) => keys.includes(key))
+}
+
+function isHttpsUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' && parsed.username.length === 0 && parsed.password.length === 0
+  } catch {
+    return false
+  }
+}
+
+function isProviderUrl(value: unknown): value is string {
+  if (!isHttpsUrl(value)) return false
+  const parsed = new URL(value)
+  return parsed.origin === value && parsed.pathname === '/' && parsed.search.length === 0 && parsed.hash.length === 0
+}
+
+function isRepository(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 202 && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value)
+}
+
+function isLogin(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 255 && /^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,253}[A-Za-z0-9])?$/.test(value)
+}
+
+function isObjectId(value: unknown): value is string {
+  return typeof value === 'string' && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(value)
+}
+
+function isTimestamp(value: unknown): value is string {
+  return typeof value === 'string' &&
+    /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z$/.test(value) &&
+    Number.isFinite(Date.parse(value))
+}
 
 function isReviewFile(value: unknown): value is Record<string, unknown> {
   return isRecord(value) &&
@@ -488,6 +535,159 @@ function assertReviewCoverageSession(value: unknown): asserts value is ReviewCov
   }
 }
 
+function isPullRequestUrl(value: unknown, providerUrl: string, repository: string, number: number): value is string {
+  if (!isHttpsUrl(value)) return false
+  const parsed = new URL(value)
+  return parsed.origin === providerUrl &&
+    parsed.pathname === `/${repository}/pull/${number}` &&
+    parsed.search.length === 0 &&
+    parsed.hash.length === 0
+}
+
+function isInboxActionableItem(value: unknown, providerUrl: string): boolean {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    'event_id',
+    'repository',
+    'number',
+    'url',
+    'is_draft',
+    'updated_at',
+    'checkpoint',
+    'current_base_oid',
+    'head_oid',
+    'review_request_active',
+    'triggers',
+  ])) return false
+  if (
+    typeof value.event_id !== 'string' || !/^[0-9a-f]{64}$/.test(value.event_id) ||
+    !isRepository(value.repository) ||
+    !Number.isSafeInteger(value.number) || (value.number as number) <= 0 ||
+    !isPullRequestUrl(value.url, providerUrl, value.repository, value.number as number) ||
+    typeof value.is_draft !== 'boolean' ||
+    !isTimestamp(value.updated_at) ||
+    !isRecord(value.checkpoint) ||
+    !hasExactKeys(value.checkpoint, ['review_state', 'commit_id', 'submitted_at']) ||
+    !['approved', 'changes_requested'].includes(String(value.checkpoint.review_state)) ||
+    !isObjectId(value.checkpoint.commit_id) ||
+    !isTimestamp(value.checkpoint.submitted_at) ||
+    !isObjectId(value.current_base_oid) ||
+    !isObjectId(value.head_oid) ||
+    value.checkpoint.commit_id === value.head_oid ||
+    typeof value.review_request_active !== 'boolean' ||
+    !Array.isArray(value.triggers)
+  ) return false
+  return value.review_request_active
+    ? value.triggers.length === 2 && value.triggers[0] === 'head_changed' && value.triggers[1] === 'review_re_requested'
+    : value.triggers.length === 1 && value.triggers[0] === 'head_changed'
+}
+
+function isInboxUnobservableItem(value: unknown, providerUrl: string): boolean {
+  return isRecord(value) &&
+    hasExactKeys(value, ['repository', 'number', 'url', 'updated_at', 'reason']) &&
+    isRepository(value.repository) &&
+    Number.isSafeInteger(value.number) && (value.number as number) > 0 &&
+    isPullRequestUrl(value.url, providerUrl, value.repository, value.number as number) &&
+    isTimestamp(value.updated_at) &&
+    (inboxUnobservableReasons as readonly unknown[]).includes(value.reason)
+}
+
+function assertReviewInboxSession(value: unknown): asserts value is ReviewInboxSessionPayload {
+  if (!isRecord(value) || value.kind !== 'review_inbox' || !hasExactKeys(value, [
+    'kind',
+    'observed_at_unix_seconds',
+    'scope',
+    'collection',
+    'summary',
+    'actionable',
+    'unobservable',
+  ])) {
+    throw new Error('The viewer returned an invalid review Inbox session.')
+  }
+
+  const scope = value.scope
+  const collection = value.collection
+  const summary = value.summary
+  if (
+    !isNonNegativeInteger(value.observed_at_unix_seconds) ||
+    !isRecord(scope) ||
+    !hasExactKeys(scope, ['provider_url', 'repository', 'reviewer_login']) ||
+    !isProviderUrl(scope.provider_url) ||
+    !(scope.repository === null || isRepository(scope.repository)) ||
+    !isLogin(scope.reviewer_login) ||
+    !isRecord(collection) ||
+    !hasExactKeys(collection, ['status', 'search_candidates', 'inspected_candidates', 'truncated']) ||
+    !['complete', 'partial'].includes(String(collection.status)) ||
+    !isNonNegativeInteger(collection.search_candidates) ||
+    !isNonNegativeInteger(collection.inspected_candidates) ||
+    typeof collection.truncated !== 'boolean' ||
+    collection.search_candidates < collection.inspected_candidates ||
+    (collection.truncated ? collection.status !== 'partial' : collection.status !== 'complete') ||
+    !isRecord(summary) ||
+    !hasExactKeys(summary, [
+      'status',
+      'completed_review_prs',
+      'resume_available_prs',
+      'up_to_date_prs',
+      'no_completed_review_prs',
+      'unobservable_review_prs',
+    ]) ||
+    !(inboxSummaryStates as readonly unknown[]).includes(summary.status) ||
+    !isNonNegativeInteger(summary.completed_review_prs) ||
+    !isNonNegativeInteger(summary.resume_available_prs) ||
+    !isNonNegativeInteger(summary.up_to_date_prs) ||
+    !isNonNegativeInteger(summary.no_completed_review_prs) ||
+    !isNonNegativeInteger(summary.unobservable_review_prs)
+  ) {
+    throw new Error('The viewer returned incomplete review Inbox evidence.')
+  }
+
+  const providerUrl = scope.provider_url
+  if (
+    !Array.isArray(value.actionable) ||
+    !value.actionable.every((item) => isInboxActionableItem(item, providerUrl)) ||
+    !Array.isArray(value.unobservable) ||
+    !value.unobservable.every((item) => isInboxUnobservableItem(item, providerUrl))
+  ) {
+    throw new Error('The viewer returned incomplete review Inbox evidence.')
+  }
+
+  if (
+    summary.resume_available_prs !== value.actionable.length ||
+    summary.unobservable_review_prs !== value.unobservable.length ||
+    summary.completed_review_prs !== summary.resume_available_prs + summary.up_to_date_prs + summary.unobservable_review_prs ||
+    collection.inspected_candidates !== summary.completed_review_prs + summary.no_completed_review_prs ||
+    (collection.truncated ? summary.status !== 'partial' : summary.status === 'partial')
+  ) {
+    throw new Error('The viewer returned inconsistent review Inbox counts.')
+  }
+  if (!collection.truncated) {
+    const expectedStatus = value.actionable.length > 0
+      ? 'actionable'
+      : value.unobservable.length > 0
+        ? 'insufficient_evidence'
+        : summary.up_to_date_prs > 0
+          ? 'up_to_date'
+          : 'no_eligible_reviews'
+    if (summary.status !== expectedStatus) throw new Error('The viewer returned an inconsistent review Inbox status.')
+  }
+
+  const seenEvents = new Set<string>()
+  const seenPullRequests = new Set<string>()
+  for (const item of value.actionable) {
+    const pullRequest = `${item.repository}#${item.number}`.toLocaleLowerCase()
+    if (seenEvents.has(item.event_id) || seenPullRequests.has(pullRequest)) {
+      throw new Error('The viewer returned duplicate review Inbox actions.')
+    }
+    seenEvents.add(item.event_id)
+    seenPullRequests.add(pullRequest)
+  }
+  for (const item of value.unobservable) {
+    const pullRequest = `${item.repository}#${item.number}`.toLocaleLowerCase()
+    if (seenPullRequests.has(pullRequest)) throw new Error('The viewer returned duplicate review Inbox entries.')
+    seenPullRequests.add(pullRequest)
+  }
+}
+
 function assertSessionPayload(value: unknown): asserts value is SessionPayload {
   if (!isRecord(value) || typeof value.kind !== 'string') {
     throw new Error('The viewer returned an invalid session kind.')
@@ -495,6 +695,7 @@ function assertSessionPayload(value: unknown): asserts value is SessionPayload {
   if (value.kind === 'file_diff') assertDiffSession(value)
   else if (value.kind === 'repository_review') assertRepositorySession(value)
   else if (value.kind === 'review_coverage_passport') assertReviewCoverageSession(value)
+  else if (value.kind === 'review_inbox') assertReviewInboxSession(value)
   else throw new Error(`The viewer returned an unsupported session kind: ${value.kind}`)
 }
 
@@ -544,6 +745,25 @@ export async function fetchSession(search: string, signal?: AbortSignal): Promis
   }
 
   return { ...payload, decodedBefore: before, decodedAfter: after } satisfies LoadedFileSession
+}
+
+export async function continueInboxReview(search: string, eventId: string, signal?: AbortSignal): Promise<void> {
+  if (!/^[0-9a-f]{64}$/.test(eventId)) throw new Error('Invalid review Inbox event identifier.')
+  const query = new URLSearchParams({ token: getSessionToken(search) }).toString()
+  const response = await fetch(`/api/continue?${query}`, {
+    method: 'POST',
+    signal,
+    cache: 'no-store',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ event_id: eventId }),
+  })
+  await checkedResponse(response, 'Continue review')
+  if (response.status !== 202) {
+    throw new Error(`Continue review returned an unexpected response (${response.status} ${response.statusText}).`)
+  }
 }
 
 export async function fetchReviewFileSources(

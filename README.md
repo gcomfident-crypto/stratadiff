@@ -1,22 +1,60 @@
 # StrataDiff
 
-**Resume the review. Don't restart it. Never inherit review without proof.**
+**Do not pay to review a commit that will never merge. Do not merge a final commit that was never
+reviewed.**
 
-StrataDiff is a local Verified Review Delta for human review of large refactors, stacked PRs,
-codemods, and AI-written changes. After a push, rebase, restack, or force-push, it reconstructs the
-reviewed baseline where that can be proved and shows the reviewer only the remaining exact delta.
-A dropped reviewed change stays visible even when it vanished from the current PR diff, and every
-unsupported or ambiguous case fails closed. When the merge base moved, the Workbench exposes the
-old-base-to-current-base drift as a separate context scope, so an empty author residue cannot hide
-changes inherited from a rewritten parent. GitHub remains the source of approval; StrataDiff adds
-an inspectable coverage gate without uploading source code. A personal Inbox first finds the open
-pull requests whose exact completed-review checkpoint has moved, so Resume is an actionable queue
-rather than a diff tool reviewers must remember to invoke.
+StrataDiff is a proposed **Final-Head Review Governor** for GitHub. It sits in front of an existing
+AI, policy, or human review workflow and owns two jobs:
 
-The engine first carries exact Git change identities. If the merge base changed, a unique same-path
-regular-file modification may also carry when strict four-way byte replay proves that the reviewed
-edit and the upstream edit do not interact. Everything else becomes `needs_review_now`. This is not
-another probabilistic AI reviewer or a generic "changes since last review" view.
+1. **Dispatch:** supersede work for obsolete PR revisions, wait while a branch is still moving, and
+   launch one review for the latest eligible revision instead of one expensive run per push.
+2. **Final-head proof:** accept a merge signal only when trusted provider evidence is bound to the
+   PR's still-current immutable `(base SHA, head SHA)` pair. Waiting, stale, incomplete, or
+   `CHANGES_REQUESTED` evidence never becomes green.
+
+```text
+PR updates -> supersede / wait -> existing reviewer -> verify exact review input -> required check -> merge
+```
+
+StrataDiff does not compete with reviewer models. Teams keep CodeRabbit or another reviewer; the
+Governor decides *when* it is worth running and proves *what exact PR revision* actually completed.
+Behind that gate, Review Cache can compile a signed `skip`, `residue`, `full`, or `blocked` input for
+reviewers that support incremental context. Review Resume is the local inspection and recovery UI
+for a person who wants to see why evidence carried or what still needs attention.
+
+## What has been measured
+
+The checked-in [Review Governor benchmark](benchmarks/review-governor-benchmark-v0/README.md)
+replays 55 observed heads and 36 CodeRabbit reviews from three real public PRs. In this deliberately
+selected sample, reviewing every push would dispatch 55 times, a five-minute debounce would
+dispatch 54 times, and the Governor policy would dispatch 24 times: **56.4% fewer candidate runs
+than per-push dispatch**. This is workflow replay evidence, not a production saving estimate.
+
+All three policies eventually saw a reviewed final head, but only two of the three PRs had that
+coverage at merge time. That is the reason scheduling alone is not the product: the required
+exact-input merge check is the safety boundary. A separate 36-event provider-contract audit found
+consistent CodeRabbit App/Bot identities, completion markers, and 1–18 second review/status skew;
+those fingerprints are adapter evidence, not a promise that every provider behaves the same way.
+
+## Project status
+
+**Unreleased `0.5.0` research alpha. Do not yet use the Governor as a production merge gate.** The
+CodeRabbit Action, signed Review Cache runtime, and ReviewTransition correctness evaluation are
+under active integration and adversarial testing. A production gate still requires complete
+base-update invalidation, a dedicated GitHub App identity, clean end-to-end provider runs, and zero
+false skips/carries on the frozen transition corpus.
+
+The latest immutable release is [`v0.4.1`](https://github.com/gcomfident-crypto/stratadiff/releases/tag/v0.4.1).
+It contains the earlier local Review Resume product; it does **not** contain the Governor or Review
+Cache described above.
+
+## Review Resume: inspect the remaining delta
+
+After a push, rebase, restack, or force-push, Resume reconstructs the reviewed baseline where that
+can be proved and shows only the remaining exact delta. A dropped reviewed change stays visible
+even when it vanished from the current PR diff. When the merge base moved, the Workbench exposes
+old-base-to-current-base drift as a separate context scope so an empty author residue cannot hide
+changes inherited from a rewritten parent. Unsupported or ambiguous cases fail closed.
 
 ![Review Resume Workbench showing only the exact one-line author follow-up after a rebase](docs/assets/review-resume-workbench.png)
 
@@ -30,7 +68,7 @@ _Base Drift is context, not a hidden carry or a gate result. It exposes the exac
 current-base change separately, including the hazardous case where author residue is empty after a
 stack rewrite._
 
-The checkpoint policy is built on an evidence-carrying single-file differ whose report separates
+The policy is built on an evidence-carrying single-file differ whose report separates
 three questions that traditional AST diff tools often mix together:
 
 1. What byte transformation turns the old file into the new file?
@@ -41,21 +79,11 @@ The first question is answered losslessly. The second is re-derived by the match
 crate used by `stratadiff verify`. The third never silently turns a heuristic score into a
 historical fact.
 
-> **Project status:** research alpha. The no-checkout `gh stratadiff audit`, native cross-repository
-> `stratadiff inbox` and no-admin `stratadiff resume <PR>` paths (also exposed as
-> `gh stratadiff resume <PR>`), exact base-drift replay, Review Resume Workbench with explicit
-> upstream base context, webhook review ledger, exact-base CODEOWNERS and permission snapshots,
-> receiver-signed review-coverage Passport, offline verification, and deterministic Check Run
-> request generation work now. The implementation remains local tooling, not a hosted GitHub App:
-> installation-token issuance, durable latest-root storage, Check Run publication, and measured
-> human time/recall outcomes are still missing. The structural diff and provenance-complete
-> benchmark layers remain available underneath the review-memory product.
-
 The bound Inbox v3 and `--inbox-event` flow documented below belong to the unreleased `0.5.0`
 line. The latest immutable binary release remains `v0.4.1`; it supports manual Resume and the
 earlier Inbox contract, but it does not contain the v3 event/revalidation path.
 
-## Why another code diff?
+## Why StrataDiff contains its own diff verifier
 
 Line diff is exact but structurally coarse. GumTree-style matching is useful but must choose a
 single mapping even when multiple histories explain the same two snapshots. That creates false
@@ -167,6 +195,12 @@ patch-id, checkpoint-to-head diff, and a conservative `git range-diff` adapter. 
 synthetic false-carry cases and matches all six path-and-line oracles while the alternatives either
 miss required attention or expose avoidable lines. This is a controlled regression result, not a
 production safety rate or evidence that reviewers save time.
+
+The [ReviewTransition-30 tooling](tools/review-transition/README.md) now exposes resumable,
+remote-free Git materialization, independent oracle generation, and two-copy offline product
+replay. The 30-case provider observation is frozen, but no complete 30-case materialization,
+oracle, or replay artifact is checked in; partial engineering runs remain explicitly
+`not_evaluated` and are not benchmark completion evidence.
 
 ## Quick start
 
@@ -289,6 +323,7 @@ command only when the shared decision core has complete evidence for an actionab
 
 ```console
 stratadiff inbox
+stratadiff inbox --workbench
 stratadiff inbox --reviewer LOGIN
 stratadiff inbox -R OWNER/REPOSITORY
 stratadiff inbox -R HOST/OWNER/REPOSITORY \
@@ -296,6 +331,13 @@ stratadiff inbox -R HOST/OWNER/REPOSITORY \
 # The local development extension forwards to the same native command:
 gh stratadiff inbox
 ```
+
+`--workbench` opens the actionable queue in a one-time loopback browser session. Selecting
+**Continue review** sends only the 64-character bound event ID back to the local process. The Inbox
+server then closes, Resume revalidates the reviewer, review, repository, base, head, and review
+request against live GitHub state, and only then opens the source Workbench. Credentials, the event
+envelope, generated command line, source, and PR text are not included in the browser session.
+Use `--no-open` to print both one-time local URLs instead of launching a browser.
 
 Later comments do not replace the latest completed checkpoint. The collector binds the viewer and
 every review author to the same immutable GitHub node ID, revalidates every inspected candidate,
@@ -378,6 +420,14 @@ its fetch process after normal exit or SIGINT/SIGTERM/SIGHUP. It does not create
 or submit GitHub approval, and review selection is currently login-based rather than bound to an
 immutable user node ID. See the
 [extension guide](extensions/gh-stratadiff/README.md) for options and trust boundaries.
+
+Provider-backed materialization applies disk and object safeguards before the Workbench opens. Each
+fetch process receives an operating-system file-size hard limit of at most 256 MiB, reduced to the
+remaining portion of a 512 MiB scratch budget; scratch logical size is recursively rechecked after
+each fetch, and an isolated repository may contain at most 1,000,000 objects. These are file,
+scratch, and object limits, not a strict network-byte quota: transport and protocol overhead are not
+metered byte for byte. Remote Git processes instead have a two-minute timeout, while the disk and
+object limits indirectly bound the materialized response.
 
 URL-only repository inference is intentionally limited to canonical `github.com` URLs. A GitHub
 Enterprise URL requires an explicit trusted `-R HOST/OWNER/REPOSITORY` or a matching

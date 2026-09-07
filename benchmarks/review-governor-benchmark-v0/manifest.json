@@ -1,0 +1,48 @@
+{
+  "artifacts": {
+    "evaluation-v0.json": {
+      "role": "deterministic evaluator output with per-run ledgers",
+      "sha256": "9285c66946b7f782c37747d7c09b69131b130ccbd076b764e465cfcf27984756",
+      "size_bytes": 105145
+    },
+    "oracle-v0.json": {
+      "role": "independent metrics replay",
+      "sha256": "dfc59682fed0e2ef78b80f2422bb56db0532a1ad9b89b680b3b00a6b23751d5c",
+      "size_bytes": 4208
+    },
+    "policies-v0.json": {
+      "role": "preregistered policy parameters and scheduling contract",
+      "sha256": "fad8dc74f60ab2c4adaa91ccec048cf3a3a7d4ec04db800274a4ee63c6ef44e3",
+      "size_bytes": 1710
+    },
+    "provider-contract-v0.json": {
+      "role": "frozen CodeRabbit public identity, completion, and command-route evidence",
+      "sha256": "9565ddeeffd03fc025424d0fd75437c8d944c99c1a3e673ee86674b294dc7d31",
+      "size_bytes": 64676
+    },
+    "selection-v0.json": {
+      "role": "pinned upstream source and purposive case selection",
+      "sha256": "9be3dad8c3555d776e9260ef5ac01979df90ba846dcdf7836241f868f47fa779",
+      "size_bytes": 1518
+    },
+    "trace-v0.json": {
+      "role": "frozen public head, review, whole-diff, and merge observations",
+      "sha256": "b725c2ef0483acafe97db253a794efa3fbfa4c1a00f76b1e0b3f870ff0a87b7d",
+      "size_bytes": 73462
+    }
+  },
+  "benchmark_id": "review-governor-benchmark-v0",
+  "counts": {
+    "cases": 3,
+    "head_events": 55,
+    "observed_review_events": 36,
+    "policy_replays": 9,
+    "provider_conversation_successes": 3,
+    "provider_inline_bot_reply_skips": 1
+  },
+  "input_sha256": {
+    "policies": "fad8dc74f60ab2c4adaa91ccec048cf3a3a7d4ec04db800274a4ee63c6ef44e3",
+    "trace": "b725c2ef0483acafe97db253a794efa3fbfa4c1a00f76b1e0b3f870ff0a87b7d"
+  },
+  "schema_version": "review-governor-manifest-v0"
+}

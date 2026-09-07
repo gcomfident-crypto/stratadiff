@@ -434,7 +434,65 @@ export interface ReviewCoverageSessionPayload {
   verification: VerificationResult
 }
 
-export type SessionPayload = FileSessionPayload | RepositorySessionPayload | ReviewCoverageSessionPayload
+export type ReviewInboxTrigger = 'head_changed' | 'review_re_requested'
+
+export interface ReviewInboxActionableItem {
+  event_id: string
+  repository: string
+  number: number
+  url: string
+  is_draft: boolean
+  updated_at: string
+  checkpoint: {
+    review_state: 'approved' | 'changes_requested'
+    commit_id: string
+    submitted_at: string
+  }
+  current_base_oid: string
+  head_oid: string
+  review_request_active: boolean
+  triggers: ['head_changed'] | ['head_changed', 'review_re_requested']
+}
+
+export interface ReviewInboxUnobservableItem {
+  repository: string
+  number: number
+  url: string
+  updated_at: string
+  reason:
+    | 'head_oid_unavailable'
+    | 'checkpoint_base_oid_unavailable'
+    | 'current_base_oid_unavailable'
+    | 'resume_review_limit_exceeded'
+}
+
+export interface ReviewInboxSessionPayload {
+  kind: 'review_inbox'
+  observed_at_unix_seconds: number
+  scope: {
+    provider_url: string
+    repository: string | null
+    reviewer_login: string
+  }
+  collection: {
+    status: 'complete' | 'partial'
+    search_candidates: number
+    inspected_candidates: number
+    truncated: boolean
+  }
+  summary: {
+    status: 'partial' | 'actionable' | 'up_to_date' | 'no_eligible_reviews' | 'insufficient_evidence'
+    completed_review_prs: number
+    resume_available_prs: number
+    up_to_date_prs: number
+    no_completed_review_prs: number
+    unobservable_review_prs: number
+  }
+  actionable: ReviewInboxActionableItem[]
+  unobservable: ReviewInboxUnobservableItem[]
+}
+
+export type SessionPayload = FileSessionPayload | RepositorySessionPayload | ReviewCoverageSessionPayload | ReviewInboxSessionPayload
 
 export type EvidenceSelection =
   | { type: 'change'; index: number }
@@ -453,4 +511,4 @@ export interface LoadedFileSession extends FileSessionPayload {
   decodedAfter: DecodedArtifact
 }
 
-export type LoadedSession = LoadedFileSession | RepositorySessionPayload | ReviewCoverageSessionPayload
+export type LoadedSession = LoadedFileSession | RepositorySessionPayload | ReviewCoverageSessionPayload | ReviewInboxSessionPayload

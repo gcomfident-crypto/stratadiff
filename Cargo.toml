@@ -14,11 +14,11 @@ name = "stratadiff"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Exact review resume and proof-carrying structural diff for Git changes"
+description = "Final-head review governor and verified review continuity for GitHub pull requests"
 license.workspace = true
 repository.workspace = true
 readme = "README.md"
-keywords = ["code-review", "git", "diff", "tree-sitter", "code-analysis"]
+keywords = ["code-review", "github", "ci", "git", "code-analysis"]
 categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
@@ -32,6 +32,7 @@ csv = "1.3"
 ed25519-dalek = "=3.0.0"
 getrandom = "0.3"
 hmac = "0.12"
+jsonschema = { version = "0.53", default-features = false }
 rust-embed = { version = "8.7", features = ["debug-embed"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -47,7 +48,6 @@ sha2 = "0.10"
 
 [dev-dependencies]
 criterion = "0.8"
-jsonschema = { version = "0.53", default-features = false }
 proptest = "1.9"
 tree-sitter-java = "=0.23.5"
 

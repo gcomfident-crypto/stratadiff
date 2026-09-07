@@ -40,6 +40,11 @@ use stratadiff::review::{
     github_review_delta_annotations, github_workflow_annotations, markdown_report,
     review_git_range_with_checkpoint, review_git_resume_delta,
 };
+use stratadiff::review_cache::{
+    MAX_REVIEW_CACHE_JSON_BYTES, ReviewCacheContextBuild, ReviewCachePreflight,
+    ReviewCacheReceiptBundle, ReviewCacheReceiptIssue, build_review_cache_context,
+    issue_review_cache_receipt, review_cache_preflight,
+};
 use stratadiff::{
     AmbiguityConstraint, DiffReport, Language, VerificationLimits, analyze_bytes, apply_patch,
     verify_and_replay_report_bytes, verify_report_bytes,
@@ -247,6 +252,204 @@ enum Command {
         #[arg(long)]
         details_url: Option<String>,
         /// Destination for the deterministic create-check-run JSON request body.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Build a complete review context from explicit reviewer and Git inputs.
+    ReviewCacheContext {
+        /// Complete, non-shallow Git repository containing the transition history.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Requested PR base commit used to resolve both merge bases.
+        #[arg(long)]
+        base: String,
+        /// Exact commit previously reviewed, or the current head for a first review.
+        #[arg(long)]
+        checkpoint: String,
+        /// Current PR head commit.
+        #[arg(long)]
+        head: String,
+        /// Versioned manifest binding reviewer, dependencies, and prior dispositions.
+        #[arg(long)]
+        reviewer_manifest: PathBuf,
+        /// GitHub or GitHub Enterprise hostname.
+        #[arg(long)]
+        provider_host: String,
+        /// Repository owner.
+        #[arg(long)]
+        owner: String,
+        /// Repository name.
+        #[arg(long)]
+        name: String,
+        /// Stable provider repository node ID.
+        #[arg(long)]
+        repository_id: String,
+        /// Stable provider pull-request node ID.
+        #[arg(long)]
+        pull_request_node_id: String,
+        /// Pull-request number.
+        #[arg(long)]
+        pull_request_number: u64,
+        /// Requested base ref name.
+        #[arg(long)]
+        base_ref: String,
+        /// Pull-request head ref name.
+        #[arg(long)]
+        head_ref: String,
+        /// UTC RFC 3339 time at which provider metadata was observed.
+        #[arg(long)]
+        observed_at: String,
+        /// SHA-256 of canonical reviewer-visible PR metadata excluding refs, OIDs, and time.
+        #[arg(long)]
+        canonical_metadata_sha256: String,
+        /// Exact reviewer input scope.
+        #[arg(long, value_parser = ["selected_payload_only", "declared_repository_closure"])]
+        review_input_scope: String,
+        /// Destination for the canonical review-context-v1 artifact.
+        #[arg(short, long)]
+        output: PathBuf,
+    },
+    /// Route an existing reviewer to skip, residue, full, or blocked from exact Git evidence.
+    ReviewCache {
+        /// Exact commit previously reviewed. A signed receipt is required before anything carries.
+        checkpoint: String,
+        /// Complete current review-context-v1 JSON artifact.
+        #[arg(long)]
+        context: PathBuf,
+        /// Complete, non-shallow Git repository containing the transition history.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Signed review-receipt-v1 JSON. Omit for a conservative full route.
+        #[arg(
+            long,
+            requires_all = [
+                "prior_input",
+                "prior_payload",
+                "prior_result",
+                "trusted_key_id",
+                "trusted_public_key",
+                "trust_domain",
+                "trust_policy_sha256"
+            ]
+        )]
+        receipt: Option<PathBuf>,
+        /// Exact canonical review-input JSON bound by the receipt.
+        #[arg(long, requires = "receipt")]
+        prior_input: Option<PathBuf>,
+        /// Exact canonical selected-payload JSON bound by the receipt.
+        #[arg(long, requires = "receipt")]
+        prior_payload: Option<PathBuf>,
+        /// Exact canonical reviewer result JSON bound by the receipt.
+        #[arg(long, requires = "receipt")]
+        prior_result: Option<PathBuf>,
+        /// Trusted receipt key identifier.
+        #[arg(long, requires = "receipt")]
+        trusted_key_id: Option<String>,
+        /// Trusted Ed25519 public key as 64 lowercase hexadecimal characters.
+        #[arg(long, requires = "receipt")]
+        trusted_public_key: Option<String>,
+        /// Trusted receipt issuer domain.
+        #[arg(long, requires = "receipt")]
+        trust_domain: Option<String>,
+        /// Digest of the exact trust policy authorizing the receipt key.
+        #[arg(long, requires = "receipt")]
+        trust_policy_sha256: Option<String>,
+        /// UTC RFC 3339 timestamp recorded in the deterministic route artifact.
+        #[arg(long)]
+        generated_at: String,
+        /// Destination for the canonical selected reviewer payload.
+        #[arg(long)]
+        payload_output: PathBuf,
+        /// Destination for the exact projection that the adapter may expose to the reviewer.
+        #[arg(long)]
+        reviewer_input_output: PathBuf,
+        /// Destination for the canonical review-input routing decision. Omit to write stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Append stable outputs for a GitHub Actions step.
+        #[arg(long, requires = "output")]
+        github_output: Option<PathBuf>,
+    },
+    /// Issue a signed receipt only after an adapter proves complete review coverage.
+    ReviewCacheReceipt {
+        /// Complete, non-shallow Git repository containing the reviewed transition.
+        #[arg(long, default_value = ".")]
+        repo: PathBuf,
+        /// Complete review-context-v1 JSON used by preflight.
+        #[arg(long)]
+        context: PathBuf,
+        /// Canonical review-input-v1 routing decision produced by preflight.
+        #[arg(long)]
+        review_input: PathBuf,
+        /// Canonical selected payload consumed by the reviewer.
+        #[arg(long)]
+        selected_payload: PathBuf,
+        /// Canonical review-cache-result-v1 completion manifest produced by the adapter.
+        #[arg(long)]
+        result: PathBuf,
+        /// Live PR base observed by the adapter immediately after reviewer completion.
+        #[arg(long)]
+        expected_base: String,
+        /// Live PR head observed by the adapter immediately after reviewer completion.
+        #[arg(long)]
+        expected_head: String,
+        /// Prior signed receipt whose exact carries were used by a residue execution.
+        #[arg(
+            long,
+            requires_all = [
+                "prior_input",
+                "prior_payload",
+                "prior_result",
+                "prior_key_id",
+                "prior_public_key",
+                "prior_trust_domain",
+                "prior_trust_policy_sha256"
+            ]
+        )]
+        prior_receipt: Option<PathBuf>,
+        /// Exact canonical review-input JSON bound by the prior receipt.
+        #[arg(long, requires = "prior_receipt")]
+        prior_input: Option<PathBuf>,
+        /// Exact canonical selected-payload JSON bound by the prior receipt.
+        #[arg(long, requires = "prior_receipt")]
+        prior_payload: Option<PathBuf>,
+        /// Exact canonical reviewer result JSON bound by the prior receipt.
+        #[arg(long, requires = "prior_receipt")]
+        prior_result: Option<PathBuf>,
+        /// Trusted key identifier for the prior receipt.
+        #[arg(long, requires = "prior_receipt")]
+        prior_key_id: Option<String>,
+        /// Trusted Ed25519 public key for the prior receipt.
+        #[arg(long, requires = "prior_receipt")]
+        prior_public_key: Option<String>,
+        /// Trusted issuer domain for the prior receipt.
+        #[arg(long, requires = "prior_receipt")]
+        prior_trust_domain: Option<String>,
+        /// Digest of the trust policy authorizing the prior receipt key.
+        #[arg(long, requires = "prior_receipt")]
+        prior_trust_policy_sha256: Option<String>,
+        /// Unique receipt identifier.
+        #[arg(long)]
+        receipt_id: String,
+        /// UTC RFC 3339 receipt issuance time.
+        #[arg(long)]
+        issued_at: String,
+        /// Stable identifier for the reviewer adapter issuing the receipt.
+        #[arg(long)]
+        issuer_id: String,
+        /// Trust domain in which the signing key is authorized.
+        #[arg(long)]
+        trust_domain: String,
+        /// SHA-256 of the exact policy authorizing this signing key.
+        #[arg(long)]
+        trust_policy_sha256: String,
+        /// Stable Ed25519 signing-key identifier.
+        #[arg(long)]
+        key_id: String,
+        /// File containing the 32-byte Ed25519 signing key as 64 lowercase hex characters.
+        #[arg(long)]
+        signing_key_file: PathBuf,
+        /// Destination for the canonical signed review receipt.
         #[arg(short, long)]
         output: PathBuf,
     },
@@ -699,6 +902,352 @@ fn run(command: Command) -> Result<()> {
             eprintln!(
                 "wrote verified GitHub App Check Run payload for {} to {} (not published)",
                 payload.head_sha,
+                display_path(&output)
+            );
+        }
+        Command::ReviewCacheContext {
+            repo,
+            base,
+            checkpoint,
+            head,
+            reviewer_manifest,
+            provider_host,
+            owner,
+            name,
+            repository_id,
+            pull_request_node_id,
+            pull_request_number,
+            base_ref,
+            head_ref,
+            observed_at,
+            canonical_metadata_sha256,
+            review_input_scope,
+            output,
+        } => {
+            let reviewer_manifest = read_bounded(
+                &reviewer_manifest,
+                MAX_REVIEW_CACHE_JSON_BYTES,
+                "reviewer manifest bytes",
+            )?;
+            let context = build_review_cache_context(ReviewCacheContextBuild {
+                repository: &repo,
+                requested_base: &base,
+                checkpoint: &checkpoint,
+                head: &head,
+                provider_host: &provider_host,
+                owner: &owner,
+                name: &name,
+                repository_id: &repository_id,
+                pull_request_node_id: &pull_request_node_id,
+                pull_request_number,
+                base_ref: &base_ref,
+                head_ref: &head_ref,
+                observed_at: &observed_at,
+                canonical_metadata_sha256: &canonical_metadata_sha256,
+                review_input_scope: &review_input_scope,
+                reviewer_manifest: &reviewer_manifest,
+            })?;
+            std::fs::write(&output, context)
+                .with_context(|| format!("failed to write {}", display_path(&output)))?;
+            eprintln!("wrote review cache context to {}", display_path(&output));
+        }
+        Command::ReviewCache {
+            checkpoint,
+            context,
+            repo,
+            receipt,
+            prior_input,
+            prior_payload,
+            prior_result,
+            trusted_key_id,
+            trusted_public_key,
+            trust_domain,
+            trust_policy_sha256,
+            generated_at,
+            payload_output,
+            reviewer_input_output,
+            output,
+            github_output,
+        } => {
+            let context_bytes = read_bounded(
+                &context,
+                MAX_REVIEW_CACHE_JSON_BYTES,
+                "review context bytes",
+            )?;
+            let receipt_bytes = receipt
+                .as_ref()
+                .map(|path| read_bounded(path, MAX_REVIEW_CACHE_JSON_BYTES, "review receipt bytes"))
+                .transpose()?;
+            let prior_input_bytes = prior_input
+                .as_ref()
+                .map(|path| {
+                    read_bounded(
+                        path,
+                        MAX_REVIEW_CACHE_JSON_BYTES,
+                        "prior review input bytes",
+                    )
+                })
+                .transpose()?;
+            let prior_payload_bytes = prior_payload
+                .as_ref()
+                .map(|path| {
+                    read_bounded(
+                        path,
+                        MAX_REVIEW_CACHE_JSON_BYTES,
+                        "prior selected payload bytes",
+                    )
+                })
+                .transpose()?;
+            let prior_result_bytes = prior_result
+                .as_ref()
+                .map(|path| {
+                    read_bounded(
+                        path,
+                        MAX_REVIEW_CACHE_JSON_BYTES,
+                        "prior review result bytes",
+                    )
+                })
+                .transpose()?;
+            let receipt_bundle = match receipt_bytes.as_deref() {
+                Some(receipt_bytes) => Some(ReviewCacheReceiptBundle {
+                    receipt: receipt_bytes,
+                    prior_input: prior_input_bytes
+                        .as_deref()
+                        .context("--receipt requires --prior-input")?,
+                    prior_payload: prior_payload_bytes
+                        .as_deref()
+                        .context("--receipt requires --prior-payload")?,
+                    prior_result: prior_result_bytes
+                        .as_deref()
+                        .context("--receipt requires --prior-result")?,
+                    trusted_key_id: trusted_key_id
+                        .as_deref()
+                        .context("--receipt requires --trusted-key-id")?,
+                    trusted_public_key: trusted_public_key
+                        .as_deref()
+                        .context("--receipt requires --trusted-public-key")?,
+                    trust_domain: trust_domain
+                        .as_deref()
+                        .context("--receipt requires --trust-domain")?,
+                    trust_policy_sha256: trust_policy_sha256
+                        .as_deref()
+                        .context("--receipt requires --trust-policy-sha256")?,
+                }),
+                None => None,
+            };
+            let artifacts = review_cache_preflight(ReviewCachePreflight {
+                repository: &repo,
+                checkpoint: &checkpoint,
+                generated_at: &generated_at,
+                current_context: &context_bytes,
+                receipt: receipt_bundle,
+            })?;
+            let cached_blocking = artifacts.decision
+                == stratadiff::review_cache::ReviewCacheDecision::Skip
+                && artifacts
+                    .cached_outcome
+                    .as_deref()
+                    .is_some_and(|outcome| matches!(outcome, "failed" | "changes_requested"));
+            std::fs::write(&payload_output, &artifacts.selected_payload_bytes)
+                .with_context(|| format!("failed to write {}", display_path(&payload_output)))?;
+            std::fs::write(&reviewer_input_output, &artifacts.reviewer_input_bytes).with_context(
+                || format!("failed to write {}", display_path(&reviewer_input_output)),
+            )?;
+            if let Some(path) = &output {
+                std::fs::write(path, &artifacts.review_input_bytes)
+                    .with_context(|| format!("failed to write {}", display_path(path)))?;
+            } else {
+                let mut stdout = std::io::stdout().lock();
+                stdout.write_all(&artifacts.review_input_bytes)?;
+                stdout.write_all(b"\n")?;
+            }
+            if let Some(path) = github_output {
+                let review_input_path = std::fs::canonicalize(
+                    output
+                        .as_ref()
+                        .context("--github-output requires --output")?,
+                )
+                .context("failed to resolve review cache output path")?;
+                let payload_path = std::fs::canonicalize(&payload_output)
+                    .context("failed to resolve review cache payload output path")?;
+                let reviewer_input_path = std::fs::canonicalize(&reviewer_input_output)
+                    .context("failed to resolve reviewer input output path")?;
+                let review_input_path = review_input_path.to_string_lossy();
+                let payload_path = payload_path.to_string_lossy();
+                let reviewer_input_path = reviewer_input_path.to_string_lossy();
+                ensure!(
+                    !review_input_path.contains(['\r', '\n'])
+                        && !payload_path.contains(['\r', '\n'])
+                        && !reviewer_input_path.contains(['\r', '\n']),
+                    "review cache output path cannot be represented in GITHUB_OUTPUT"
+                );
+                let should_run = matches!(
+                    artifacts.decision,
+                    stratadiff::review_cache::ReviewCacheDecision::Residue
+                        | stratadiff::review_cache::ReviewCacheDecision::Full
+                );
+                let mut github = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&path)
+                    .with_context(|| format!("failed to open {}", display_path(&path)))?;
+                writeln!(github, "decision={}", artifacts.decision.as_str())?;
+                writeln!(github, "should_run={should_run}")?;
+                writeln!(
+                    github,
+                    "cached_outcome={}",
+                    artifacts.cached_outcome.as_deref().unwrap_or("none")
+                )?;
+                writeln!(github, "cached_blocking={cached_blocking}")?;
+                writeln!(github, "review_input={review_input_path}")?;
+                writeln!(github, "selected_payload={payload_path}")?;
+                writeln!(github, "reviewer_visible_input={reviewer_input_path}")?;
+            }
+            if let Some(notice) = artifacts.receipt_notice {
+                eprintln!("{}", escape_terminal_unsafe_text(&notice));
+            }
+            eprintln!(
+                "review cache decision: {} (payload {})",
+                artifacts.decision.as_str(),
+                display_path(&payload_output)
+            );
+            ensure!(
+                !cached_blocking,
+                "cached review outcome is blocking; the unchanged reviewed input remains rejected"
+            );
+        }
+        Command::ReviewCacheReceipt {
+            repo,
+            context,
+            review_input,
+            selected_payload,
+            result,
+            expected_base,
+            expected_head,
+            prior_receipt,
+            prior_input,
+            prior_payload,
+            prior_result,
+            prior_key_id,
+            prior_public_key,
+            prior_trust_domain,
+            prior_trust_policy_sha256,
+            receipt_id,
+            issued_at,
+            issuer_id,
+            trust_domain,
+            trust_policy_sha256,
+            key_id,
+            signing_key_file,
+            output,
+        } => {
+            let context_bytes = read_bounded(
+                &context,
+                MAX_REVIEW_CACHE_JSON_BYTES,
+                "review context bytes",
+            )?;
+            let review_input_bytes = read_bounded(
+                &review_input,
+                MAX_REVIEW_CACHE_JSON_BYTES,
+                "review input bytes",
+            )?;
+            let selected_payload_bytes = read_bounded(
+                &selected_payload,
+                MAX_REVIEW_CACHE_JSON_BYTES,
+                "selected payload bytes",
+            )?;
+            let result_bytes =
+                read_bounded(&result, MAX_REVIEW_CACHE_JSON_BYTES, "review result bytes")?;
+            let prior_receipt_bytes = prior_receipt
+                .as_ref()
+                .map(|path| read_bounded(path, MAX_REVIEW_CACHE_JSON_BYTES, "prior receipt bytes"))
+                .transpose()?;
+            let prior_input_bytes = prior_input
+                .as_ref()
+                .map(|path| {
+                    read_bounded(
+                        path,
+                        MAX_REVIEW_CACHE_JSON_BYTES,
+                        "prior review input bytes",
+                    )
+                })
+                .transpose()?;
+            let prior_payload_bytes = prior_payload
+                .as_ref()
+                .map(|path| {
+                    read_bounded(
+                        path,
+                        MAX_REVIEW_CACHE_JSON_BYTES,
+                        "prior selected payload bytes",
+                    )
+                })
+                .transpose()?;
+            let prior_result_bytes = prior_result
+                .as_ref()
+                .map(|path| {
+                    read_bounded(
+                        path,
+                        MAX_REVIEW_CACHE_JSON_BYTES,
+                        "prior review result bytes",
+                    )
+                })
+                .transpose()?;
+            let prior_receipt_bundle = match prior_receipt_bytes.as_deref() {
+                Some(receipt) => Some(ReviewCacheReceiptBundle {
+                    receipt,
+                    prior_input: prior_input_bytes
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-input")?,
+                    prior_payload: prior_payload_bytes
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-payload")?,
+                    prior_result: prior_result_bytes
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-result")?,
+                    trusted_key_id: prior_key_id
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-key-id")?,
+                    trusted_public_key: prior_public_key
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-public-key")?,
+                    trust_domain: prior_trust_domain
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-trust-domain")?,
+                    trust_policy_sha256: prior_trust_policy_sha256
+                        .as_deref()
+                        .context("--prior-receipt requires --prior-trust-policy-sha256")?,
+                }),
+                None => None,
+            };
+            let signing_key_bytes =
+                read_bounded(&signing_key_file, 66, "Ed25519 signing key file bytes")?;
+            let signing_key_text = std::str::from_utf8(&signing_key_bytes)
+                .context("Ed25519 signing key file is not UTF-8")?;
+            let signing_key = signing_key_text
+                .strip_suffix("\r\n")
+                .or_else(|| signing_key_text.strip_suffix('\n'))
+                .unwrap_or(signing_key_text);
+            let receipt = issue_review_cache_receipt(ReviewCacheReceiptIssue {
+                repository: &repo,
+                expected_base: &expected_base,
+                expected_head: &expected_head,
+                current_context: &context_bytes,
+                review_input: &review_input_bytes,
+                selected_payload: &selected_payload_bytes,
+                result: &result_bytes,
+                prior_receipt: prior_receipt_bundle,
+                receipt_id: &receipt_id,
+                issued_at: &issued_at,
+                issuer_id: &issuer_id,
+                trust_domain: &trust_domain,
+                trust_policy_sha256: &trust_policy_sha256,
+                key_id: &key_id,
+                signing_key,
+            })?;
+            std::fs::write(&output, receipt)
+                .with_context(|| format!("failed to write {}", display_path(&output)))?;
+            eprintln!(
+                "wrote signed review cache receipt to {}",
                 display_path(&output)
             );
         }

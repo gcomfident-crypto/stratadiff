@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-reviewer-manifest-v1.schema.json",
+  "title": "StrataDiff reviewer manifest v1",
+  "description": "Explicit non-Git inputs used by review-cache-context. Detailed nested validation is inherited from the generated review-context-v1 artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_version",
+    "dependency_closure",
+    "reviewer",
+    "historical_dispositions"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-reviewer-manifest-v1.schema.json"
+    },
+    "contract_version": { "const": "1.0.0" },
+    "dependency_closure": { "type": "object" },
+    "reviewer": { "type": "object" },
+    "historical_dispositions": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "type": "object" }
+    }
+  }
+}

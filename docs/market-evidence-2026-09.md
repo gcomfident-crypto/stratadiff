@@ -1,4 +1,4 @@
-# Market evidence: review continuity after a changed pull request
+# Market evidence: final-input review coverage without per-push waste
 
 Evidence captured: **2026-09-06**. This is a point-in-time, auditable product-research snapshot.
 Issue votes, reactions, comments, labels, and states can change. Public issue reports are
@@ -8,22 +8,23 @@ independent accuracy or adoption.
 
 ## Decision
 
-The recurring job is not “show a nicer diff.” It is:
+The recurring commercial job is not “show a nicer diff” or “sell another reviewer model.” It is:
 
-> After a human reviewed a pull-request state and the branch changed, recover that reviewer's exact
-> usable checkpoint and show what still needs attention without asking the reviewer to reconstruct
-> commit history or trust an automatic approval.
+> Keep automated review enabled for the PR state that can merge without paying to review every
+> unstable intermediate state.
 
-The strongest initial segment is teams that combine frequent rebases, force-pushes, or stacked pull
-requests with strict review protection, multiple reviewers or ownership domains, and expensive CI.
-The evidence does not support a claim that every pull request or every developer has this problem.
+The strongest initial segment is teams already paying for AI or multi-model review, with several
+pushes per PR, finite review credits, stale in-flight jobs, or follow-up coverage gaps. Stacked PR,
+frequent rebase, strict review protection, and expensive CI make that pain sharper. The evidence
+does not support a claim that every pull request or every developer has this problem.
 
-The recommended wedge is a **Verified Review Resume Check**: capture an immutable review receipt
-when an existing human review is submitted, recompute reviewer-specific coverage after a later
-push, and publish an informational Check with one **Resume review** action. It must expose current
-author residue, dropped reviewed work, and changed-base context separately; every unsupported or
-ambiguous case remains in review. It does not review code, restore a GitHub approval, or decide that
-code is safe to merge.
+The primary wedge is a **Final-Head Review Governor** that supersedes obsolete work and withholds its
+required success until trusted evidence covers the still-live `(base SHA, head SHA)` pair. Review
+Cache may then reduce an open reviewer's input to `skip`, `residue`, `full`, or `blocked`; Review
+Resume lets a person inspect the exact evidence and remaining work. Every unsupported or ambiguous
+case remains visible. StrataDiff neither reviews code nor restores a GitHub approval. The automation
+path remains an alpha thesis until live end-to-end trials and the frozen transition evaluation
+establish its safety and economic value.
 
 ## Evidence-strength labels
 
@@ -56,6 +57,44 @@ code is safe to merge.
 | Individual case | [GitLab #604779](https://gitlab.com/gitlab-org/gitlab/-/work_items/604779), created 2026-07-02, open, updated 2026-09-03; 5 notes | A commit in one CODEOWNERS domain clears approvals in unaffected domains, “forcing them to re-review code they have already validated.” | Coverage eventually needs reviewer × ownership-domain scope rather than one global checkpoint. | One recent enterprise-style request; GitLab already documents a separate affected-Code-Owner reset option in ordinary project settings. |
 | Individual edge case | [GitHub Files Changed feedback comment](https://github.com/orgs/community/discussions/163932#discussioncomment-13622332), posted 2025-06-30; parent discussion remains open | A file was added and reviewed, then deleted; Changes since last review was “unable to render or display” the change. | Dropped or reverted reviewed work must remain explicit even when absent from the current PR range. | One report inside a broad feedback thread; it establishes possibility only. |
 | Repeated implementation failure | VS Code GitHub extension [#4510](https://github.com/microsoft/vscode-pull-request-github/issues/4510), created 2023-02, still open with 15 reactions and 7 comments; related [#5455](https://github.com/microsoft/vscode-pull-request-github/issues/5455) and [#6281](https://github.com/microsoft/vscode-pull-request-github/issues/6281) were closed as completed | Reporters describe merges from the base branch injecting dozens of unrelated files into Changes since last review; one calls the view “near impossible in certain circumstances.” | Base-noise exclusion is a recurring implementation trap and should be an explicit benchmark stratum. | Two reports were fixed in one client; do not present them as a current GitHub Web limitation. |
+
+## Automated-review rerun evidence
+
+These cases were captured on 2026-09-06. Their cost and causal explanations are claims made in the
+linked issues or pull requests unless explicitly described as directly observable. They establish
+concrete failure modes, not expected savings or market prevalence.
+
+| Strength | Source | Observed problem | Product implication |
+|---|---|---|---|
+| Reproducible multi-repository study | [`acoliver/vibetools` CodeRabbit throttling study at `d57789d`](https://github.com/acoliver/vibetools/tree/d57789dc2c17f2be39efe2c437f25ea98457fae8/research/ai-code-review-study/coderabbit/throttling) | Across three related repositories, the study records 1,024 CodeRabbit-touched PRs, 7,600 commits, an estimated 6,576 follow-up commit updates, and 256 distinct PRs retaining an exact `Review limit reached` comment. One repository briefly disabled incremental review, saw no blocks in a 47-hour window, then restored it because follow-up commits went unreviewed. | This independently exposes the same coverage-versus-capacity tradeoff at larger scale. A gateway needs both demand shaping and head-bound review continuity; the purposive repositories and mutable bot comments do not establish population prevalence or causal savings. |
+| Individual cost case | [`fullsend-ai/fullsend#6911`](https://github.com/fullsend-ai/fullsend/issues/6911) | A missing App client ID caused prior-review provenance lookup to fail silently. The issue reports a `$0.62` initial review followed by a `$2.15` full review for one formatting fix, with the prior comment overwritten. | Receipt provenance is part of correctness. Missing or invalid provenance needs an explicit route and durable history, not a silent cache miss. |
+| Individual cost case | [`fullsend-ai/agents#1092`](https://github.com/fullsend-ai/agents/issues/1092) | Two completed runs cost `$7.38` and `$8.15`; the second surfaced one new low-severity finding, while two intermediate runs were cancelled. | A residue route can have directly measurable value, but run supersession and completed-receipt state must be modeled separately. |
+| Measured workflow case | [`nexpeakcore/deepseek-harness-pr-review#26`](https://github.com/nexpeakcore/deepseek-harness-pr-review/pull/26) | One PR reached 57 review rounds and 58 bot comments because every head SHA caused a rerun. The proposed implementation hashes provider file metadata and refuses to skip an incomplete prior run. | Head movement is a noisy trigger. Exact completed-input identity is the useful key; provider patches alone are insufficient for the strongest proof. |
+| Individual correctness case | [`Expensify/App#100173`](https://github.com/Expensify/App/issues/100173) | Running AI standards review only at open/ready time leaves violations introduced by later human-review fixes unchecked; running on every push would increase cost and noise. | The gateway must solve both sides: never miss a changed input, while avoiding a full rerun when a complete closed input is unchanged. |
+| Individual capacity case | [`dotCMS/core#36962`](https://github.com/dotCMS/core/issues/36962) | Four AI review workflows launch per push without cancellation; the issue reports 271 aggregate queued job-minutes and superseded runs against obsolete commits. | Cancelling stale work is baseline orchestration hygiene. It belongs in the gateway loop, though native workflow concurrency already solves the narrow case. |
+| Measured team-spend case | [`mento-protocol/monitoring-monorepo#2229`](https://github.com/mento-protocol/monitoring-monorepo/issues/2229) | The repository recorded 672 review events in 30 days, 365 billed events, 48 blocked events, and 3.9 events per PR. Its `$500/month` CodeRabbit add-on cap was reached 16 days before reset, so the team disabled automatic incremental review and estimated `$200–250/month` after moving to open-plus-closeout reviews. | Teams will pay to review updates, but a per-push trigger can exhaust a finite review budget. The useful product is a head-aware dispatch governor that retains final-head coverage instead of merely switching incremental review off. The projected saving is the issue author's estimate, not an observed post-change result. |
+| Measured workflow tradeoff | [`BinaryStudioAcademy/bsa-2026-transcripta#181`](https://github.com/BinaryStudioAcademy/bsa-2026-transcripta/pull/181) | A branch reworked five times accumulated five similar summaries; one cited PR received two summaries and twelve inline comments in seven minutes, with duplicate file/line comments. The repository removed the per-push trigger, estimating 28 avoided runs across seven or eight PRs, while explicitly accepting that later fixes would no longer be checked automatically. | The status quo forces a bad choice between repetitive review noise and stale final-head coverage. A useful gateway must suppress redundant work without treating an unreviewed later push as clean. |
+| Multi-PR operational case | [`shakacode/agent-workflows#746`](https://github.com/shakacode/agent-workflows/issues/746) | Across 82 open PRs the repository counted 103 top-level CodeRabbit comments and ten ready PRs blocked by stale changes-requested objects, then proposed disabling automatic incremental re-review while keeping the reviewer available on demand. | Comment churn and stale review state are user-facing costs in addition to model spend. The gateway should publish one head-bound state surface and supersede old runs rather than append one review summary per push. |
+| Product-convergence case | [`quadseven/grug#557`](https://github.com/quadseven/grug/issues/557) | A review-agent project asks for a stored last-reviewed head, commit-range-scoped delta reviews, automatic pause during rapid pushes, and explicit resume/review commands because its current open-once policy can leave later commits unreviewed. | Exact transition identity, quiescence scheduling, and explicit final-head refresh form one job. Delta selection without dispatch control solves only half of the repeated-review loop. |
+| Lineage correctness case | [`opena2a-org/ai-trust#76`](https://github.com/opena2a-org/ai-trust/pull/76) | A prior-review lookup silently read the wrong GitHub endpoint after the bot changed from reviews to issue comments, so every push was reviewed from scratch. The repair also required full pagination and bot-identity filtering to avoid replaying stale or quoted review text. | Review history is not a trustworthy cache receipt by convention. Provenance, pagination, actor identity, and completion state must be explicit inputs, with a full/blocked fallback when they cannot be established. |
+
+Taken together with the previously captured Fullsend, Minspec, Qwen Code, and Alibaba cases, the
+more defensible first automation job is:
+
+> Before an expensive reviewer runs, wait for a useful head, supersede obsolete work, prove the
+> exact input transition, and emit one auditable `skip`, `residue`, `full`, or `blocked` route.
+
+This is intentionally a reviewer-agnostic preflight. The product should integrate with existing
+review agents and policy checks rather than ask a team to replace the model or workflow that
+already produces its findings.
+
+The recurring adoption signal is not simply “incremental review is cheaper.” Teams are disabling
+per-push review to control spend and noise, then explicitly accepting a coverage gap on later
+commits. That makes the first sellable outcome sharper: **keep automatic final-head coverage on
+without paying for every unstable intermediate head or re-reading provably unchanged input.** The
+transition router remains the correctness core; CI readiness, a short quiescence window, native
+workflow concurrency, and one head-bound status surface are orchestration around it. A deferred run
+is scheduling state, not a fifth evidence decision and never evidence that a head is clean.
 
 ## Native capability and competitor counter-evidence
 
@@ -97,7 +136,47 @@ The repository's separate 500-PR Review Churn Census found checkpoint drift in 8
 reviewer/PR checkpoints. That bounded panel supports an event-driven product, not a universal daily
 workflow. It must not be blended with self-selected issue votes to manufacture a market-size claim.
 
-## Product wedge: Verified Review Resume Check
+## Primary product wedge: Final-Head Review Governor
+
+### User-visible contract
+
+For every reviewable PR input, publish one quiet required state instead of one bot narrative per
+push:
+
+```text
+StrataDiff Final Input — waiting
+3 intermediate revisions superseded; review will start after the branch stabilizes
+
+StrataDiff Final Input — verified
+base 91f3… + head a842… reviewed by CodeRabbit; 2 candidate runs avoided
+```
+
+The state machine is deliberately small:
+
+1. **Waiting:** the PR is draft, moving, or waiting for a declared eligibility signal. This is not
+   a clean result.
+2. **Reviewing:** one leased provider run is bound to the current base/head pair.
+3. **Verified:** trusted completion and substantive review evidence cover that same still-live pair.
+4. **Blocking:** the reviewer requested changes or evidence is invalid, incomplete, or timed out.
+5. **Stale:** head or base changed; the earlier result cannot satisfy the current gate.
+
+The initial CodeRabbit adapter is unofficial and cannot cache CodeRabbit's private context. Its
+safe job is dispatch plus evidence verification. Incremental `skip` or `residue` is reserved for a
+reviewer whose complete input closure and signed result contract are available to Review Cache.
+
+### Immediate implementation implication
+
+The transparent Action alpha must never execute pull-request code and must bind both base and head
+around every evidence read. A head-only commit status is insufficient when the target branch moves.
+The deployable configuration must either force the PR head to update before merge or reconcile
+every open PR affected by a base push, overwriting a stale success before it can merge. A production
+App must add a dedicated expected-source identity, durable dispatch leases, and merge-queue support.
+
+The first public proof must include a same-head/base-moved case, a head race, a retarget, a provider
+pause or rate limit, `CHANGES_REQUESTED`, and a successful review. It must report actual provider
+invocations and latency; the current three-PR replay's billed-invocation count is only a proxy.
+
+## Secondary product wedge: Verified Review Resume Check
 
 ### User-visible contract
 
@@ -165,21 +244,24 @@ The minimum event-driven vertical slice is:
 
 ### Primary ICP
 
+- GitHub teams already paying for CodeRabbit or another automated reviewer and seeing several head
+  updates, duplicate summaries, quota pressure, or cancelled review work per PR.
+- A DevEx/platform/security owner who can install a required Check and compare actual invocation,
+  latency, and cost telemetry before and after the pilot.
 - GitHub teams already using stacked PRs, Graphite, `gh-stack`, frequent rebases, or curated
   force-push workflows.
 - Repositories with stale-review dismissal, latest-push approval, merge queues, CODEOWNERS, or
   multiple required reviewers.
 - Monorepos or projects where CI/deployment reruns and specialist review round-trips are expensive.
-- A DevEx/platform/security owner who can install a Check, paired with reviewers who experience the
-  interruption directly.
 
-Use `gh stratadiff audit` to qualify each repository. A low-drift repository should receive an
-honest “not useful here” result rather than an installation pitch.
+Use the Governor in observation mode plus `gh stratadiff audit` to qualify each repository. A
+low-churn or low-cost repository should receive an honest “not useful here” result rather than an
+installation pitch.
 
 ### Poor initial fit
 
 - Small, append-only PRs whose native Changes since last review view is sufficient.
-- Repositories with one informal reviewer and cheap CI.
+- Repositories with one informal reviewer, cheap or unlimited automated review, and little PR churn.
 - Teams asking primarily for AI bug findings, summaries, stack creation, or syntax-aware diff
   presentation.
 - Environments that cannot preserve an event-time checkpoint under an acceptable source-retention
@@ -190,7 +272,20 @@ honest “not useful here” result rather than an installation pitch.
 These are proposed go/no-go gates, not achieved results. Freeze the protocol and thresholds before
 examining pilot outcomes.
 
-### 1. Prospective correctness corpus
+### 1. Live Governor trial
+
+Run the pinned Action first on a sacrificial repository, then in at least five consenting reviewer
+workflows. Preserve the complete event, dispatch, provider-evidence, and gate ledger for every
+eligible base/head transition. Measure actual provider invocations, cancellations, review latency,
+added merge latency, billed cost or tokens where exposed, final-input coverage, and every false or
+stale gate.
+
+**Governor gate:** zero successful states on a stale or incomplete base/head input; zero uncovered
+merges when the check is configured as required; and a measured reduction in at least one buyer
+metric—provider invocations, billed cost, or obsolete queue time—without worse final-input coverage.
+Five pilots establish feasibility, not a population saving estimate.
+
+### 2. Prospective correctness corpus
 
 Collect consecutive review-event histories prospectively rather than selecting only successful
 examples. Freeze exact event IDs and `A/B/C/D` object identities. Stratify at least:
@@ -211,7 +306,7 @@ plain checkpoint-to-head diff, `git range-diff`, and stable patch ID where each 
 success, and every missing or unsupported input represented as fail-closed. Report the statistical
 upper bound implied by the sample; zero observed errors is not a universal guarantee.
 
-### 2. Counterbalanced reviewer study
+### 3. Counterbalanced reviewer study
 
 Use the same seeded and naturally occurring PR histories with native GitHub review and Resume in
 counterbalanced order. A full PR diff alone is an insufficient baseline because GitHub now offers
@@ -229,7 +324,7 @@ non-inferiority margin before data collection; and require a statistically suppo
 active review time versus the native baseline. If time improves while recall degrades beyond the
 margin, the product fails.
 
-### 3. Prospective product funnel
+### 4. Prospective product funnel
 
 Measure the complete denominator:
 
@@ -253,11 +348,15 @@ with missing prerequisites in that success denominator—report them separately.
 repeat Resume loops when another eligible event occurs. Freeze a numeric repeat-use threshold only
 after the first baseline cohort; changing it after inspecting outcomes invalidates the gate.
 
-### 4. Promotion and enforcement gate
+### 5. Promotion and enforcement gate
 
-Do not enable a required merge Check or claim saved time until all of the following are true:
+Do not recommend a production required merge Check or claim saved time until all of the following
+are true:
 
+- the live Governor gate passes across at least five consenting workflows;
 - the integrity and human-value gates pass on the frozen protocol;
+- same-head base movement and merge-queue behavior have explicit, tested invalidation paths;
+- the gate is bound to a dedicated expected App source rather than a shared Actions identity;
 - no unresolved factual misclassification is known;
 - event-time retention, deletion, encryption, and source-processing boundaries are documented;
 - a clean install reaches the first useful residue without a manually supplied SHA;
@@ -271,9 +370,11 @@ rather than widening claims.
 
 Safe external wording:
 
-> StrataDiff reconstructs a submitted human-review checkpoint after a later PR change, carries only
-> relations supported by its declared deterministic policy, and shows the remaining review residue.
+> StrataDiff schedules review for a stable PR revision and verifies provider evidence against the
+> still-live base/head input. For reviewers with a declared closed input contract, it can also
+> compile an evidence-backed incremental payload; everything unsupported stays in review.
 
-Do not claim that a person read every carried byte, that carried code is behaviorally equivalent or
-safe, that an approval remains valid, that most PRs need the product, or that reviewer time and
-defect recall improve before the prospective study supplies those results.
+Do not claim current benchmark dispatch proxies are real savings, that CodeRabbit private context
+is cached, that a person read every carried byte, that carried code is behaviorally equivalent or
+safe, that an approval remains valid, that most PRs need the product, or that cost, reviewer time,
+and defect recall improve before prospective pilots supply those results.

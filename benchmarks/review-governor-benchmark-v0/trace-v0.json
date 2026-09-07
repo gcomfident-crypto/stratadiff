@@ -1,0 +1,1615 @@
+{
+  "cases": [
+    {
+      "base_sha": "791cc047887b2a5603e9031e45f7479092c4eb8c",
+      "calibration": {
+        "basis": "median first CodeRabbit review submission minus public head observation",
+        "observation_count": 9,
+        "observed_lag_seconds": [
+          394,
+          418,
+          440,
+          606,
+          607,
+          673,
+          702,
+          786,
+          824
+        ],
+        "review_runtime_seconds": 607
+      },
+      "case_id": "vybestack/llxprt-jefe#30",
+      "events": [
+        {
+          "at": "2026-03-30T05:02:18Z",
+          "head_sha": "e0b0aec0f109cb461e985b4e99a25521c4007d7e",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T05:02:18Z",
+            "check_suite_ids": [
+              62536826611
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/e0b0aec0f109cb461e985b4e99a25521c4007d7e/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...e0b0aec0f109cb461e985b4e99a25521c4007d7e",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 29072,
+          "whole_diff_sha256": "28af987c8fe9f707595f6ed0ea6a6bf65cb21d46417728c91dc474aa8cbd08ed"
+        },
+        {
+          "at": "2026-03-30T05:11:19Z",
+          "head_sha": "d641155e4d98072e73bac800db67ca63a4a91d8d",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T05:11:23Z",
+            "check_suite_ids": [
+              62537530911
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/d641155e4d98072e73bac800db67ca63a4a91d8d/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...d641155e4d98072e73bac800db67ca63a4a91d8d",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 24021200441
+          },
+          "whole_diff_bytes": 30314,
+          "whole_diff_sha256": "6bcecd936eecf173f4492f6dfe52a8858a5d520a6107a273400de76b51ac9c04"
+        },
+        {
+          "at": "2026-03-30T05:15:24Z",
+          "head_sha": "e0b0aec0f109cb461e985b4e99a25521c4007d7e",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028072631,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028072631",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T05:21:26Z",
+          "head_sha": "d641155e4d98072e73bac800db67ca63a4a91d8d",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028102836,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028102836",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T05:27:47Z",
+          "head_sha": "e63e075957a3db56df02d3180b6f4bfbf186317e",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T05:27:50Z",
+            "check_suite_ids": [
+              62538891279
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/e63e075957a3db56df02d3180b6f4bfbf186317e/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...e63e075957a3db56df02d3180b6f4bfbf186317e",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 24021576263
+          },
+          "whole_diff_bytes": 31321,
+          "whole_diff_sha256": "bb4a5e3a3727c43dd184ad5c443190eb3db6a53ec8481b05d9316fd4dd49f481"
+        },
+        {
+          "at": "2026-03-30T05:40:28Z",
+          "head_sha": "0fbe88fda3024609ab5ddb313cd6fd3a684c4561",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T05:40:32Z",
+            "check_suite_ids": [
+              62539978583
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/0fbe88fda3024609ab5ddb313cd6fd3a684c4561/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...0fbe88fda3024609ab5ddb313cd6fd3a684c4561",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 24021839198
+          },
+          "whole_diff_bytes": 32855,
+          "whole_diff_sha256": "60ac186b42c57dbd2528cc796bfcd458a7cd178147beb7f34d1d7de01d878295"
+        },
+        {
+          "at": "2026-03-30T05:41:31Z",
+          "head_sha": "e63e075957a3db56df02d3180b6f4bfbf186317e",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028165540,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028165540",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T05:52:10Z",
+          "head_sha": "0fbe88fda3024609ab5ddb313cd6fd3a684c4561",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028204411,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028204411",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T06:20:14Z",
+          "head_sha": "f092efdf510d24d2a9de5497f44970fcd4b7d19c",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T06:20:14Z",
+            "check_suite_ids": [
+              62543911244
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/f092efdf510d24d2a9de5497f44970fcd4b7d19c/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...f092efdf510d24d2a9de5497f44970fcd4b7d19c",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 32815,
+          "whole_diff_sha256": "24de0cda61b70000b6817586653b27e2dd4a1cac379f157a57ab28f525b2ddbc"
+        },
+        {
+          "at": "2026-03-30T06:31:27Z",
+          "head_sha": "f092efdf510d24d2a9de5497f44970fcd4b7d19c",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028339977,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028339977",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T07:03:09Z",
+          "head_sha": "796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T07:03:09Z",
+            "check_suite_ids": [
+              62548734372
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 33392,
+          "whole_diff_sha256": "b0957873207c9815a5d776d1f2479489f377bcab20024230dd797db1f787ad9d"
+        },
+        {
+          "at": "2026-03-30T07:13:15Z",
+          "head_sha": "796fa52d324f7d82fe6f89bbd74f9d4a6e1c7fbe",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028512523,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028512523",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T07:15:58Z",
+          "head_sha": "06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T07:15:58Z",
+            "check_suite_ids": [
+              62550302519
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 33672,
+          "whole_diff_sha256": "232f87034f56205b9b8ace3b72b1930069ef86cf70406a88837e849450af90cd"
+        },
+        {
+          "at": "2026-03-30T07:21:53Z",
+          "head_sha": "1869c5dbb405d23f735f4e86b556b5fcb8b39e87",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T07:21:53Z",
+            "check_suite_ids": [
+              62551056826
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/1869c5dbb405d23f735f4e86b556b5fcb8b39e87/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...1869c5dbb405d23f735f4e86b556b5fcb8b39e87",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 33622,
+          "whole_diff_sha256": "36b31c7dc9568607c5d71f1d5c92df948678784ec4f2ca98600b7a5e2b44cc54"
+        },
+        {
+          "at": "2026-03-30T07:22:32Z",
+          "head_sha": "06f2fb4413ce96a379e7c7ffbd4fdd05ab95cfc7",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028553222,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028553222",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T07:29:13Z",
+          "head_sha": "1869c5dbb405d23f735f4e86b556b5fcb8b39e87",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4028583876,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4028583876",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T13:54:19Z",
+          "head_sha": "f9ab307f145d1e00643d25ec7f58e8206afe1a1c",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T13:54:19Z",
+            "check_suite_ids": [
+              62605735255
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/f9ab307f145d1e00643d25ec7f58e8206afe1a1c/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...f9ab307f145d1e00643d25ec7f58e8206afe1a1c",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 35546,
+          "whole_diff_sha256": "dd6d3967c4216cc7bbc2a0f74bd2db20dcf6f2bfe259e00fd63645ac25b18853"
+        },
+        {
+          "at": "2026-03-30T14:01:17Z",
+          "head_sha": "f9ab307f145d1e00643d25ec7f58e8206afe1a1c",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4030818757,
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30#pullrequestreview-4030818757",
+          "state": "commented"
+        },
+        {
+          "at": "2026-03-30T14:54:18Z",
+          "head_sha": "b00efa59ba6e97db0e1b6195e0a9c46ac02fa104",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-03-30T14:54:18Z",
+            "check_suite_ids": [
+              62615819803
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-jefe/commit/b00efa59ba6e97db0e1b6195e0a9c46ac02fa104/checks",
+            "evidence_kinds": [
+              "final_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-jefe/compare/791cc047887b2a5603e9031e45f7479092c4eb8c...b00efa59ba6e97db0e1b6195e0a9c46ac02fa104",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 36123,
+          "whole_diff_sha256": "8e15ec82278b0ffe290009005664275e8fb4a96a583612fa311cefdd37a2f027"
+        },
+        {
+          "at": "2026-03-30T15:02:23Z",
+          "head_sha": "b00efa59ba6e97db0e1b6195e0a9c46ac02fa104",
+          "kind": "finalize",
+          "merge_commit_sha": "d13e869338555bd18061177351ddf579466623a6",
+          "outcome": "merged",
+          "source_url": "https://github.com/vybestack/llxprt-jefe/pull/30"
+        }
+      ],
+      "final_head_sha": "b00efa59ba6e97db0e1b6195e0a9c46ac02fa104",
+      "finalized_at": "2026-03-30T15:02:23Z",
+      "opened_at": "2026-03-30T05:02:14Z",
+      "pr_number": 30,
+      "pr_url": "https://github.com/vybestack/llxprt-jefe/pull/30",
+      "repository": "vybestack/llxprt-jefe",
+      "selection_rationale": "Nine retained reviewed heads in the pinned study plus a later unreviewed merged head; includes force-push and ordinary append transitions."
+    },
+    {
+      "base_sha": "e3e41b498edd933341011faccffcc3d44e1917af",
+      "calibration": {
+        "basis": "median first CodeRabbit review submission minus public head observation",
+        "observation_count": 11,
+        "observed_lag_seconds": [
+          441,
+          529,
+          565,
+          659,
+          663,
+          698,
+          711,
+          712,
+          871,
+          895,
+          1022
+        ],
+        "review_runtime_seconds": 698
+      },
+      "case_id": "vybestack/llxprt-code#1947",
+      "events": [
+        {
+          "at": "2026-06-05T20:08:55Z",
+          "head_sha": "5ef5a0bd3dc826fb9562b5a14f6af981079552d3",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T20:08:55Z",
+            "check_suite_ids": [
+              72614314899,
+              72614314916
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/5ef5a0bd3dc826fb9562b5a14f6af981079552d3/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...5ef5a0bd3dc826fb9562b5a14f6af981079552d3",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 88941,
+          "whole_diff_sha256": "c821cffa9a342790f30750cd9c0409a3dd8de7f163fa0fefc7308bf9af4b3332"
+        },
+        {
+          "at": "2026-06-05T20:23:50Z",
+          "head_sha": "5ef5a0bd3dc826fb9562b5a14f6af981079552d3",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4439415157,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4439415157",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-05T20:27:05Z",
+          "head_sha": "04357246bf109874479002c18e40d9101a3bef91",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T20:27:08Z",
+            "check_suite_ids": [
+              72617001481,
+              72617001491
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/04357246bf109874479002c18e40d9101a3bef91/checks",
+            "evidence_kinds": [
+              "force_push"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...04357246bf109874479002c18e40d9101a3bef91",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26402395498
+          },
+          "whole_diff_bytes": 91824,
+          "whole_diff_sha256": "62c7b5a95f12df0b2f86e611616cb3872689c14c37b9326979ab957d77ec4de5"
+        },
+        {
+          "at": "2026-06-05T20:56:37Z",
+          "head_sha": "f9020b809f34742967fe14d096b8b751e366d12b",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T20:56:40Z",
+            "check_suite_ids": [
+              72621316892,
+              72621316905
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/f9020b809f34742967fe14d096b8b751e366d12b/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...f9020b809f34742967fe14d096b8b751e366d12b",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26403354056
+          },
+          "whole_diff_bytes": 94342,
+          "whole_diff_sha256": "84b9246bf7caf96cbcbc103adbc7300fa441fe5c3ae0beeb5ee8b7a62d79d3ad"
+        },
+        {
+          "at": "2026-06-05T21:08:28Z",
+          "head_sha": "f9020b809f34742967fe14d096b8b751e366d12b",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4439711225,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4439711225",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-05T22:04:08Z",
+          "head_sha": "4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T22:04:11Z",
+            "check_suite_ids": [
+              72630000455,
+              72630000499
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26405496075
+          },
+          "whole_diff_bytes": 99699,
+          "whole_diff_sha256": "9cf139c50e16f751698549ab2bee82aaffe936068962f7ac69b420e8226f9b28"
+        },
+        {
+          "at": "2026-06-05T22:21:10Z",
+          "head_sha": "4a66e5e601f1918b97fdfeac8fd23fd8d24e1b4c",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440118840,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440118840",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-05T22:29:07Z",
+          "head_sha": "67c65c01787ac1e406a62f510fb4ba799085ad5b",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T22:29:09Z",
+            "check_suite_ids": [
+              72632759581,
+              72632759592
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/67c65c01787ac1e406a62f510fb4ba799085ad5b/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...67c65c01787ac1e406a62f510fb4ba799085ad5b",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26406240989
+          },
+          "whole_diff_bytes": 99741,
+          "whole_diff_sha256": "e35b7f03c319ddd10b5c6e15cc4c9207fa32bf871d8bcce31f2c282b620fad3c"
+        },
+        {
+          "at": "2026-06-05T22:37:56Z",
+          "head_sha": "67c65c01787ac1e406a62f510fb4ba799085ad5b",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440207947,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440207947",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-05T23:15:40Z",
+          "head_sha": "9fbb71640c82d57415fc88423635d4d289696636",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T23:15:43Z",
+            "check_suite_ids": [
+              72637471003,
+              72637471023
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/9fbb71640c82d57415fc88423635d4d289696636/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...9fbb71640c82d57415fc88423635d4d289696636",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26407461925
+          },
+          "whole_diff_bytes": 100187,
+          "whole_diff_sha256": "2d5d020f1f87a07c5daf2082e0ef6de89c617d63d03d8fbe880d19564bca5531"
+        },
+        {
+          "at": "2026-06-05T23:27:18Z",
+          "head_sha": "9fbb71640c82d57415fc88423635d4d289696636",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440419598,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440419598",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-05T23:38:01Z",
+          "head_sha": "c24d719eb1c9adf26ed652f9ee9f4b04413ddea5",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-05T23:38:03Z",
+            "check_suite_ids": [
+              72639508047,
+              72639508065
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/c24d719eb1c9adf26ed652f9ee9f4b04413ddea5/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...c24d719eb1c9adf26ed652f9ee9f4b04413ddea5",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26407897566
+          },
+          "whole_diff_bytes": 100241,
+          "whole_diff_sha256": "c1485dc5ebc34ff890d3113d340f0e05610b84ec18a937fa537199d0bb726374"
+        },
+        {
+          "at": "2026-06-05T23:49:04Z",
+          "head_sha": "c24d719eb1c9adf26ed652f9ee9f4b04413ddea5",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440489866,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440489866",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T00:14:36Z",
+          "head_sha": "26b973abfd1fe15d554859b871aed2e22d9a02b7",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-06T00:14:39Z",
+            "check_suite_ids": [
+              72642650232,
+              72642650357
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/26b973abfd1fe15d554859b871aed2e22d9a02b7/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...26b973abfd1fe15d554859b871aed2e22d9a02b7",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26408647822
+          },
+          "whole_diff_bytes": 105033,
+          "whole_diff_sha256": "5cd4b28732c106d85daa6c1e0a4405241c0437d1a48cc52042744000db96d99c"
+        },
+        {
+          "at": "2026-06-06T00:24:01Z",
+          "head_sha": "26b973abfd1fe15d554859b871aed2e22d9a02b7",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440573138,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440573138",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T00:53:43Z",
+          "head_sha": "307900a39875ab781f07853c538be3db3c2c6df6",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-06T00:53:45Z",
+            "check_suite_ids": [
+              72645526644,
+              72645526654
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/307900a39875ab781f07853c538be3db3c2c6df6/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...307900a39875ab781f07853c538be3db3c2c6df6",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26409389265
+          },
+          "whole_diff_bytes": 106721,
+          "whole_diff_sha256": "f1c80af4e7cc1b7863c2a95d14a03f544691f23cba16e27838903d531fc23eef"
+        },
+        {
+          "at": "2026-06-06T01:08:14Z",
+          "head_sha": "307900a39875ab781f07853c538be3db3c2c6df6",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440779199,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440779199",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T01:27:50Z",
+          "head_sha": "499ba48790c9ff689ecd74a1b32d2ef38603a2b3",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-06T01:27:52Z",
+            "check_suite_ids": [
+              72647915735,
+              72647915793
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/499ba48790c9ff689ecd74a1b32d2ef38603a2b3/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...499ba48790c9ff689ecd74a1b32d2ef38603a2b3",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26410178451
+          },
+          "whole_diff_bytes": 108827,
+          "whole_diff_sha256": "f1116679a967b5000277d1c17f5d2854e1940d8c2d8f8fbffdba7ac8a79059b6"
+        },
+        {
+          "at": "2026-06-06T01:38:49Z",
+          "head_sha": "499ba48790c9ff689ecd74a1b32d2ef38603a2b3",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4440935598,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4440935598",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T01:50:58Z",
+          "head_sha": "9ad5dc28152d397d559bd7d155a298d8d708ac57",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-06T01:51:01Z",
+            "check_suite_ids": [
+              72649427470,
+              72649427494
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/9ad5dc28152d397d559bd7d155a298d8d708ac57/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...9ad5dc28152d397d559bd7d155a298d8d708ac57",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26410639353
+          },
+          "whole_diff_bytes": 110241,
+          "whole_diff_sha256": "68344e7d113d82949ede7b11e5c6d890baf800c91c1e698b0fe70520cd162a7a"
+        },
+        {
+          "at": "2026-06-06T02:02:50Z",
+          "head_sha": "9ad5dc28152d397d559bd7d155a298d8d708ac57",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4441071647,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4441071647",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T19:43:23Z",
+          "head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-06T19:43:23Z",
+            "check_suite_ids": [
+              72713648717,
+              72713648721
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/051e1633d5a588d93dc0c99562738523b45119ac/checks",
+            "evidence_kinds": [
+              "reviewed_head",
+              "final_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/e3e41b498edd933341011faccffcc3d44e1917af...051e1633d5a588d93dc0c99562738523b45119ac",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 111254,
+          "whole_diff_sha256": "3efc6f6d8e574310499adf1f61aa7fc7b6b1ae003b9604d956dbba9f6501d360"
+        },
+        {
+          "at": "2026-06-06T19:50:44Z",
+          "head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4443686646,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4443686646",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T19:50:59Z",
+          "head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4443686877,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947#pullrequestreview-4443686877",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-06T20:23:48Z",
+          "head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+          "kind": "finalize",
+          "merge_commit_sha": "8aa3b250e782c28df9d9b4643418207c23ad2d90",
+          "outcome": "merged",
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/1947"
+        }
+      ],
+      "final_head_sha": "051e1633d5a588d93dc0c99562738523b45119ac",
+      "finalized_at": "2026-06-06T20:23:48Z",
+      "opened_at": "2026-06-05T20:08:51Z",
+      "pr_number": 1947,
+      "pr_url": "https://github.com/vybestack/llxprt-code/pull/1947",
+      "repository": "vybestack/llxprt-code",
+      "selection_rationale": "Nine retained reviewed heads in the pinned study and a force-push-heavy public timeline; exercises in-flight cancellation."
+    },
+    {
+      "base_sha": "1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0",
+      "calibration": {
+        "basis": "median first CodeRabbit review submission minus public head observation",
+        "observation_count": 15,
+        "observed_lag_seconds": [
+          277,
+          286,
+          303,
+          308,
+          314,
+          317,
+          327,
+          345,
+          349,
+          357,
+          365,
+          374,
+          392,
+          421,
+          613
+        ],
+        "review_runtime_seconds": 345
+      },
+      "case_id": "vybestack/llxprt-code#2011",
+      "events": [
+        {
+          "at": "2026-06-12T21:49:17Z",
+          "head_sha": "9c855529d9b5be402102a7dd8095e4cb7aa4b2e9",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T21:49:17Z",
+            "check_suite_ids": [
+              73842591025,
+              73842591062,
+              73842591077,
+              73842591107,
+              73842591124
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/9c855529d9b5be402102a7dd8095e4cb7aa4b2e9/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...9c855529d9b5be402102a7dd8095e4cb7aa4b2e9",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 13776,
+          "whole_diff_sha256": "bc5b464e01e2bdcc9a238cb254e7b2936d7e6afa9cde083cfc057d71d1eb6b6c"
+        },
+        {
+          "at": "2026-06-12T21:54:25Z",
+          "head_sha": "9c855529d9b5be402102a7dd8095e4cb7aa4b2e9",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489417073,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489417073",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-12T21:58:07Z",
+          "head_sha": "6ba49f468d34da2c707eeee0dd799b5b7c8d0d91",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T21:58:09Z",
+            "check_suite_ids": [
+              73843748641,
+              73843748645
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/6ba49f468d34da2c707eeee0dd799b5b7c8d0d91/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...6ba49f468d34da2c707eeee0dd799b5b7c8d0d91",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26695742778
+          },
+          "whole_diff_bytes": 13928,
+          "whole_diff_sha256": "63ef8a6c813cd83c4a184d64353024becbece793388fb24991fdb0bd9afa26e8"
+        },
+        {
+          "at": "2026-06-12T22:04:12Z",
+          "head_sha": "6ba49f468d34da2c707eeee0dd799b5b7c8d0d91",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489462471,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489462471",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-12T22:07:16Z",
+          "head_sha": "b3bdadf4a307168b5aabb4752917621d6b901380",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T22:07:19Z",
+            "check_suite_ids": [
+              73845018510,
+              73845018538
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/b3bdadf4a307168b5aabb4752917621d6b901380/checks",
+            "evidence_kinds": [
+              "force_push"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...b3bdadf4a307168b5aabb4752917621d6b901380",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26695970574
+          },
+          "whole_diff_bytes": 14056,
+          "whole_diff_sha256": "0a8e366f032d0ea1802bc26ddde9a639644d0944b092c5d216334ef11706d240"
+        },
+        {
+          "at": "2026-06-12T22:16:51Z",
+          "head_sha": "5a8e942aa6627b3ff8003e9459a00e82016127da",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T22:16:54Z",
+            "check_suite_ids": [
+              73846225223,
+              73846225393
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/5a8e942aa6627b3ff8003e9459a00e82016127da/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...5a8e942aa6627b3ff8003e9459a00e82016127da",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26696198989
+          },
+          "whole_diff_bytes": 13949,
+          "whole_diff_sha256": "c98ba2b8014b2fa1223a8f02c90dbf1ce22ce157dcab113023f23d941b9ff39f"
+        },
+        {
+          "at": "2026-06-12T22:22:48Z",
+          "head_sha": "5a8e942aa6627b3ff8003e9459a00e82016127da",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489531159,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489531159",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-12T22:25:23Z",
+          "head_sha": "508eb2645e71d1eafce39d87067442d7ee91c1e2",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T22:25:25Z",
+            "check_suite_ids": [
+              73847287788,
+              73847287920
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/508eb2645e71d1eafce39d87067442d7ee91c1e2/checks",
+            "evidence_kinds": [
+              "force_push"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...508eb2645e71d1eafce39d87067442d7ee91c1e2",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26696389027
+          },
+          "whole_diff_bytes": 14332,
+          "whole_diff_sha256": "f38ffe96dc7c0ebf903e9fdc5aa370469eaa1f8907355f966dfe4c659c2d24bb"
+        },
+        {
+          "at": "2026-06-12T22:41:38Z",
+          "head_sha": "035d6770d9551d39236596d2fb384c62f6f3bd31",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T22:41:40Z",
+            "check_suite_ids": [
+              73849190484,
+              73849190492
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/035d6770d9551d39236596d2fb384c62f6f3bd31/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...035d6770d9551d39236596d2fb384c62f6f3bd31",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26696780958
+          },
+          "whole_diff_bytes": 14993,
+          "whole_diff_sha256": "61c4275b22a10b72ca98ea7a4d556cdea8e404027a4fd4eaf7a40f8decabffed"
+        },
+        {
+          "at": "2026-06-12T22:47:23Z",
+          "head_sha": "035d6770d9551d39236596d2fb384c62f6f3bd31",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489656795,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489656795",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-12T22:52:10Z",
+          "head_sha": "c465e9fee27b6c410650a8b5450f3e36151e136c",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T22:52:12Z",
+            "check_suite_ids": [
+              73850355136,
+              73850355325
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/c465e9fee27b6c410650a8b5450f3e36151e136c/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...c465e9fee27b6c410650a8b5450f3e36151e136c",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26697014045
+          },
+          "whole_diff_bytes": 15772,
+          "whole_diff_sha256": "86aed438591af9e78d50c8aa6435580fdee5eb8b0182c17a7c5cfa59edb82740"
+        },
+        {
+          "at": "2026-06-12T22:57:13Z",
+          "head_sha": "c465e9fee27b6c410650a8b5450f3e36151e136c",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489698159,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489698159",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-12T23:02:18Z",
+          "head_sha": "108889e5005c2dcf24cef3d1b83c25a6551f1bd6",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T23:02:20Z",
+            "check_suite_ids": [
+              73851424047,
+              73851424061
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/108889e5005c2dcf24cef3d1b83c25a6551f1bd6/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...108889e5005c2dcf24cef3d1b83c25a6551f1bd6",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26697235081
+          },
+          "whole_diff_bytes": 15981,
+          "whole_diff_sha256": "722fafed93e9b40dff11c4a67a4fc438be39191d29ee96bd566bd407caeac41b"
+        },
+        {
+          "at": "2026-06-12T23:07:04Z",
+          "head_sha": "108889e5005c2dcf24cef3d1b83c25a6551f1bd6",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489741455,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489741455",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-12T23:22:10Z",
+          "head_sha": "73b233136a6229e9ac6234642419256c2f2b1514",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-12T23:22:13Z",
+            "check_suite_ids": [
+              73853503935,
+              73853503961
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/73b233136a6229e9ac6234642419256c2f2b1514/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...73b233136a6229e9ac6234642419256c2f2b1514",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26697664551
+          },
+          "whole_diff_bytes": 16827,
+          "whole_diff_sha256": "9f359252a4b92b123e63130c404c43446e85abe719cb8d34e541e5b1c1acc7d4"
+        },
+        {
+          "at": "2026-06-12T23:28:24Z",
+          "head_sha": "73b233136a6229e9ac6234642419256c2f2b1514",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4489832440,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4489832440",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T00:32:33Z",
+          "head_sha": "7a64550a6f65af611dafc16740376fe41df90125",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T00:32:35Z",
+            "check_suite_ids": [
+              73860016783,
+              73860016787
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/7a64550a6f65af611dafc16740376fe41df90125/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...7a64550a6f65af611dafc16740376fe41df90125",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26699078817
+          },
+          "whole_diff_bytes": 19137,
+          "whole_diff_sha256": "f93873c194a3c36e75ca4f33fd50806f0d773287d923e199751f60c0d649fa04"
+        },
+        {
+          "at": "2026-06-13T00:38:22Z",
+          "head_sha": "7a64550a6f65af611dafc16740376fe41df90125",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490084776,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490084776",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T00:47:01Z",
+          "head_sha": "9d45fab6888db0d34eadb51da52492d30686c243",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T00:47:03Z",
+            "check_suite_ids": [
+              73861140907,
+              73861140966
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/9d45fab6888db0d34eadb51da52492d30686c243/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...9d45fab6888db0d34eadb51da52492d30686c243",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26699341322
+          },
+          "whole_diff_bytes": 19205,
+          "whole_diff_sha256": "c99712c2d00f00f2da2daf827556d25b43e7043968c313b985da56e3b2999a94"
+        },
+        {
+          "at": "2026-06-13T00:52:18Z",
+          "head_sha": "9d45fab6888db0d34eadb51da52492d30686c243",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490129224,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490129224",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T00:57:28Z",
+          "head_sha": "793ec6d7f163da9df8b3bc74662a8a657265920d",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T00:57:30Z",
+            "check_suite_ids": [
+              73861911203,
+              73861911209
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/793ec6d7f163da9df8b3bc74662a8a657265920d/checks",
+            "evidence_kinds": [
+              "force_push"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...793ec6d7f163da9df8b3bc74662a8a657265920d",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26699549899
+          },
+          "whole_diff_bytes": 20936,
+          "whole_diff_sha256": "a6ac2cda0f59c6899a65849ab9b6ef9cec57e4bd5e511ff52ee1bb09e2466c7d"
+        },
+        {
+          "at": "2026-06-13T00:58:21Z",
+          "head_sha": "edb575c46659f3c0b4a58528255ddb0e095d28e0",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T00:58:23Z",
+            "check_suite_ids": [
+              73861970607,
+              73861970624
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/edb575c46659f3c0b4a58528255ddb0e095d28e0/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...edb575c46659f3c0b4a58528255ddb0e095d28e0",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26699567478
+          },
+          "whole_diff_bytes": 20860,
+          "whole_diff_sha256": "0d3ed385a7926c7fbf94a1619e110f98e0ef9acfb51007d2f3e2a948ba763d59"
+        },
+        {
+          "at": "2026-06-13T01:04:53Z",
+          "head_sha": "edb575c46659f3c0b4a58528255ddb0e095d28e0",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490172122,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490172122",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T01:12:37Z",
+          "head_sha": "498e2a54da63a3e0e5b2d093e663ae7986749fc5",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T01:12:39Z",
+            "check_suite_ids": [
+              73863072082
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/498e2a54da63a3e0e5b2d093e663ae7986749fc5/checks",
+            "evidence_kinds": [
+              "force_push"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...498e2a54da63a3e0e5b2d093e663ae7986749fc5",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26699845824
+          },
+          "whole_diff_bytes": 21387,
+          "whole_diff_sha256": "9684c4e75e6049064c57c9aedbce94c8248952b291804a675fc524e35fd0f3f2"
+        },
+        {
+          "at": "2026-06-13T01:26:48Z",
+          "head_sha": "7e4bdd1adf8e756ba5dfddd6a8219cfa818dae55",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T01:26:50Z",
+            "check_suite_ids": [
+              73864056775,
+              73864056780
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/7e4bdd1adf8e756ba5dfddd6a8219cfa818dae55/checks",
+            "evidence_kinds": [
+              "force_push"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...7e4bdd1adf8e756ba5dfddd6a8219cfa818dae55",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26700130794
+          },
+          "whole_diff_bytes": 21410,
+          "whole_diff_sha256": "c674dd42bc7c5380db9505b53aa2f52f5b9bf1ad5bf1dfa37c2c146863e6bb46"
+        },
+        {
+          "at": "2026-06-13T01:46:34Z",
+          "head_sha": "30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T01:46:36Z",
+            "check_suite_ids": [
+              73865457381,
+              73865457398
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26700563076
+          },
+          "whole_diff_bytes": 20522,
+          "whole_diff_sha256": "ccb2820f452c5430e67abfa1cc8ee393fd025d9a09f4d63cc818d507ac15a809"
+        },
+        {
+          "at": "2026-06-13T01:53:35Z",
+          "head_sha": "30cae5b7efc3a6ac09edc0ef321c7e7e5f7c46e8",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490375623,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490375623",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T02:00:42Z",
+          "head_sha": "eb8ece577799fedb3cfa318c1e474530dd8ddfb7",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T02:00:44Z",
+            "check_suite_ids": [
+              73866448085,
+              73866448153
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/eb8ece577799fedb3cfa318c1e474530dd8ddfb7/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...eb8ece577799fedb3cfa318c1e474530dd8ddfb7",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26700848382
+          },
+          "whole_diff_bytes": 22442,
+          "whole_diff_sha256": "67c407961ffe57563766d2a161c5efe238b635c26db709f1fe868c6c16efc6c1"
+        },
+        {
+          "at": "2026-06-13T02:05:56Z",
+          "head_sha": "eb8ece577799fedb3cfa318c1e474530dd8ddfb7",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490430441,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490430441",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T02:11:32Z",
+          "head_sha": "662b0d4ec16ae1c09fea1ce5ea441ea7408884fd",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T02:11:34Z",
+            "check_suite_ids": [
+              73867199618,
+              73867199633
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/662b0d4ec16ae1c09fea1ce5ea441ea7408884fd/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...662b0d4ec16ae1c09fea1ce5ea441ea7408884fd",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26701091129
+          },
+          "whole_diff_bytes": 23377,
+          "whole_diff_sha256": "eec19c3ec5b95b9ff90f2fabbd99c059ddc15e2d4f38375ade86fb89bad0f3c9"
+        },
+        {
+          "at": "2026-06-13T02:16:59Z",
+          "head_sha": "662b0d4ec16ae1c09fea1ce5ea441ea7408884fd",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490465664,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490465664",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T02:20:46Z",
+          "head_sha": "c19967a6ac8e80dff5324d235d0f2e9a9d6b540c",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T02:20:48Z",
+            "check_suite_ids": [
+              73867762262,
+              73867762270
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/c19967a6ac8e80dff5324d235d0f2e9a9d6b540c/checks",
+            "evidence_kinds": [
+              "force_push",
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...c19967a6ac8e80dff5324d235d0f2e9a9d6b540c",
+            "time_basis": "github_head_ref_force_pushed_event",
+            "timeline_event_id": 26701233217
+          },
+          "whole_diff_bytes": 23478,
+          "whole_diff_sha256": "eb9e8854afcf548fe0676bf0771b7bab5b5ab61b3d1e8aad2520edc4fcf38ff8"
+        },
+        {
+          "at": "2026-06-13T02:30:59Z",
+          "head_sha": "c19967a6ac8e80dff5324d235d0f2e9a9d6b540c",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490479744,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490479744",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T02:34:03Z",
+          "head_sha": "e81c6e6f8136c27a053fab8181c96705b8c939a1",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T02:34:03Z",
+            "check_suite_ids": [
+              73868574662,
+              73868574697
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/e81c6e6f8136c27a053fab8181c96705b8c939a1/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...e81c6e6f8136c27a053fab8181c96705b8c939a1",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 23956,
+          "whole_diff_sha256": "ede6595fccafa7fbd667cfeafba51ef9b0881601d76fa3840452e6a0c69ffbb8"
+        },
+        {
+          "at": "2026-06-13T02:47:24Z",
+          "head_sha": "392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T02:47:24Z",
+            "check_suite_ids": [
+              73869391547,
+              73869391603
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9/checks",
+            "evidence_kinds": [
+              "reviewed_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 31684,
+          "whole_diff_sha256": "d0f053694009456d736037759ba019208697db4f882a02429b95650d87b373e0"
+        },
+        {
+          "at": "2026-06-13T02:52:01Z",
+          "head_sha": "392ce6d4a58ccecdab2f20ab57fca5ea4d88c5c9",
+          "kind": "observed_review",
+          "reviewer": "coderabbitai[bot]",
+          "source_review_id": 4490537782,
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011#pullrequestreview-4490537782",
+          "state": "commented"
+        },
+        {
+          "at": "2026-06-13T02:56:21Z",
+          "head_sha": "f5d22c352eb8cb9a758fa29ea4cbb837ab489da3",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T02:56:21Z",
+            "check_suite_ids": [
+              73869945701,
+              73869945717
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/f5d22c352eb8cb9a758fa29ea4cbb837ab489da3/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...f5d22c352eb8cb9a758fa29ea4cbb837ab489da3",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 31621,
+          "whole_diff_sha256": "bd3b8cbe9b2027aa4938541f5512e26f5d7f55e4f0e441d0b294e9f9245bfe59"
+        },
+        {
+          "at": "2026-06-13T03:06:14Z",
+          "head_sha": "e12dea9c445810a5f97f98dc7c21d3c3c060bf85",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T03:06:14Z",
+            "check_suite_ids": [
+              73870591582,
+              73870591606
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/e12dea9c445810a5f97f98dc7c21d3c3c060bf85/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...e12dea9c445810a5f97f98dc7c21d3c3c060bf85",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 31879,
+          "whole_diff_sha256": "688124647bbabfaf120c6cbcff996a642f4566885915bbe07f30b1f9e9d8970d"
+        },
+        {
+          "at": "2026-06-13T03:16:12Z",
+          "head_sha": "ee4223260ff16d9b0271c7c8fdc817e9ca26011a",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T03:16:12Z",
+            "check_suite_ids": [
+              73871224589,
+              73871224592
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/ee4223260ff16d9b0271c7c8fdc817e9ca26011a/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...ee4223260ff16d9b0271c7c8fdc817e9ca26011a",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 31878,
+          "whole_diff_sha256": "4dc1b4269d2ebb14889a440fc55896b2b0c1396bc30d032abeeaf8b97e98b587"
+        },
+        {
+          "at": "2026-06-13T03:24:03Z",
+          "head_sha": "4ea96fc9d70a92a8d6a7bd77e78f6a1492cfa226",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T03:24:03Z",
+            "check_suite_ids": [
+              73871706157,
+              73871706162
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/4ea96fc9d70a92a8d6a7bd77e78f6a1492cfa226/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...4ea96fc9d70a92a8d6a7bd77e78f6a1492cfa226",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 31899,
+          "whole_diff_sha256": "501ec85884edea9b3381f62628ef89c25a49271db917f1f532a44147ed5e8da0"
+        },
+        {
+          "at": "2026-06-13T03:35:32Z",
+          "head_sha": "f793344da6960eec0b4bde347d720b33e024734d",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T03:35:32Z",
+            "check_suite_ids": [
+              73872463216,
+              73872463229
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/f793344da6960eec0b4bde347d720b33e024734d/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...f793344da6960eec0b4bde347d720b33e024734d",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 33447,
+          "whole_diff_sha256": "a372d59c461dd35e18320aea6059ebc4736f6050411dbe1a9c51d73ce8c1127f"
+        },
+        {
+          "at": "2026-06-13T03:48:09Z",
+          "head_sha": "dc18156accdd68171e8d67064b720f9d348f3c63",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T03:48:09Z",
+            "check_suite_ids": [
+              73873271075,
+              73873271079
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/dc18156accdd68171e8d67064b720f9d348f3c63/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...dc18156accdd68171e8d67064b720f9d348f3c63",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 34531,
+          "whole_diff_sha256": "69064ee99ee26ee7dfb63bd46b7fc45471322f9dee0ebd3cef140d294e6425ca"
+        },
+        {
+          "at": "2026-06-13T04:03:16Z",
+          "head_sha": "c33542732c10542bc6fa063aa2ed1d98f070a114",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T04:03:16Z",
+            "check_suite_ids": [
+              73874267819,
+              73874267822,
+              73874268794,
+              73874268801
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/c33542732c10542bc6fa063aa2ed1d98f070a114/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...c33542732c10542bc6fa063aa2ed1d98f070a114",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 37137,
+          "whole_diff_sha256": "5f23b8a9cf592c44cac6ef61b78cef127997cb040c1285b04d39d4ebd623bd98"
+        },
+        {
+          "at": "2026-06-13T04:14:43Z",
+          "head_sha": "bf6ba48b8f5e34bc77cef20a1f6f72972466e3de",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T04:14:43Z",
+            "check_suite_ids": [
+              73875027068,
+              73875027069
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/bf6ba48b8f5e34bc77cef20a1f6f72972466e3de/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...bf6ba48b8f5e34bc77cef20a1f6f72972466e3de",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 40639,
+          "whole_diff_sha256": "b6a035839ec24a436a7ea53af3776a32d7fa777c610657b1618d549af9ed8406"
+        },
+        {
+          "at": "2026-06-13T04:24:34Z",
+          "head_sha": "9bb3255b2dd335c5d537d40f243d233bfd828e7b",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T04:24:34Z",
+            "check_suite_ids": [
+              73875651064,
+              73875651100
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/9bb3255b2dd335c5d537d40f243d233bfd828e7b/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...9bb3255b2dd335c5d537d40f243d233bfd828e7b",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 41397,
+          "whole_diff_sha256": "d3b45ef166d56d109799052d105e792d4d0ae0693332e54e1911065572cab1be"
+        },
+        {
+          "at": "2026-06-13T04:36:00Z",
+          "head_sha": "38a3850f8251f69f9723aebc35869893583b6d0d",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T04:36:00Z",
+            "check_suite_ids": [
+              73876351349,
+              73876351429
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/38a3850f8251f69f9723aebc35869893583b6d0d/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...38a3850f8251f69f9723aebc35869893583b6d0d",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 41457,
+          "whole_diff_sha256": "ae6e127d9fed63962815cc6303f6ee4af38c95e72853989381e6dc7fc873be23"
+        },
+        {
+          "at": "2026-06-13T04:44:02Z",
+          "head_sha": "0965c845a261664a3ab11ab8320261f2018bd5f3",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T04:44:02Z",
+            "check_suite_ids": [
+              73876868023,
+              73876868040
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/0965c845a261664a3ab11ab8320261f2018bd5f3/checks",
+            "evidence_kinds": [],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...0965c845a261664a3ab11ab8320261f2018bd5f3",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 41876,
+          "whole_diff_sha256": "d841299d0f36d18aec2a80263fe8d9094bdbfc68e1ec63a2c8e10f334355e6f4"
+        },
+        {
+          "at": "2026-06-13T04:49:35Z",
+          "head_sha": "760138e100bd15f1267ceec43579e383b48e1395",
+          "kind": "head",
+          "observation": {
+            "check_suite_created_at": "2026-06-13T04:49:35Z",
+            "check_suite_ids": [
+              73877194348,
+              73877194351
+            ],
+            "check_suite_url": "https://github.com/vybestack/llxprt-code/commit/760138e100bd15f1267ceec43579e383b48e1395/checks",
+            "evidence_kinds": [
+              "final_head"
+            ],
+            "immutable_diff_url": "https://api.github.com/repos/vybestack/llxprt-code/compare/1adad3b34b3ee87e281ecb488ee5b5be65a1f9a0...760138e100bd15f1267ceec43579e383b48e1395",
+            "time_basis": "github_actions_check_suite_created_at",
+            "timeline_event_id": null
+          },
+          "whole_diff_bytes": 41896,
+          "whole_diff_sha256": "fb709738b3df0324d1e440af384d736ef985ee55ba422c4bcfa192185a402eba"
+        },
+        {
+          "at": "2026-06-13T18:22:10Z",
+          "head_sha": "760138e100bd15f1267ceec43579e383b48e1395",
+          "kind": "finalize",
+          "merge_commit_sha": "d3e18a5c8e6491218362dfe29990cb3a6fceb7f3",
+          "outcome": "merged",
+          "source_url": "https://github.com/vybestack/llxprt-code/pull/2011"
+        }
+      ],
+      "final_head_sha": "760138e100bd15f1267ceec43579e383b48e1395",
+      "finalized_at": "2026-06-13T18:22:10Z",
+      "opened_at": "2026-06-12T21:49:13Z",
+      "pr_number": 2011,
+      "pr_url": "https://github.com/vybestack/llxprt-code/pull/2011",
+      "repository": "vybestack/llxprt-code",
+      "selection_rationale": "Eight retained reviewed heads in the pinned study and a dense mix of reviewed, unreviewed, force-pushed, and appended heads."
+    }
+  ],
+  "frozen_at": "2026-09-06T13:30:00Z",
+  "observation_contract": {
+    "finalize": "public merged_at and immutable final head SHA",
+    "head": "force-push event time when public; otherwise earliest public GitHub Actions check-suite creation time, with PR-open time as a lower bound for a pre-open check",
+    "review": "public GitHub pull-request review submission by coderabbitai[bot]",
+    "whole_diff": "SHA-256 of GitHub's immutable base-SHA...head-SHA raw diff response"
+  },
+  "provenance": {
+    "github_api_version": "2022-11-28",
+    "selection_method": "Purposive high-churn cases with publicly reconstructable head and check-suite histories; not a population sample.",
+    "upstream_study_commit": "d57789dc2c17f2be39efe2c437f25ea98457fae8",
+    "upstream_study_path": "research/ai-code-review-study/coderabbit/throttling/review-events.csv",
+    "upstream_study_raw_url": "https://raw.githubusercontent.com/acoliver/vibetools/d57789dc2c17f2be39efe2c437f25ea98457fae8/research/ai-code-review-study/coderabbit/throttling/review-events.csv",
+    "upstream_study_sha256": "220b894ba84340536e9101ae3f31aafea45f9bb15f16a44bfbb97f53c72aa08a",
+    "upstream_study_size_bytes": 86981
+  },
+  "schema_version": "review-governor-trace-v0"
+}

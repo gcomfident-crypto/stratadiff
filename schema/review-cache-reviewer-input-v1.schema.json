@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-reviewer-input-v1.schema.json",
+  "title": "StrataDiff reviewer-visible input projection v1",
+  "description": "The exact semantic input an adapter may expose to a reviewer. Git routing provenance such as base/head commit IDs remains in the enclosing selected-payload artifact and is intentionally excluded here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_version",
+    "canonicalization",
+    "composition",
+    "repository",
+    "pull_request",
+    "items"
+  ],
+  "properties": {
+    "schema": {
+      "const": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/schema/review-cache-reviewer-input-v1.schema.json"
+    },
+    "contract_version": { "const": "1.0.0" },
+    "canonicalization": { "const": "stratadiff-canonical-json-v1" },
+    "composition": { "type": "object" },
+    "repository": { "type": "object" },
+    "pull_request": { "type": "object" },
+    "items": {
+      "type": "array",
+      "maxItems": 20000,
+      "items": { "type": "object" }
+    }
+  }
+}

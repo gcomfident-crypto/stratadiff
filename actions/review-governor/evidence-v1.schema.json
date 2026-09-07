@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/gcomfident-crypto/stratadiff/main/actions/review-governor/evidence-v1.schema.json",
+  "title": "StrataDiff CodeRabbit governor evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "generated_at",
+    "provider",
+    "repository",
+    "pull_request_number",
+    "expected_base_sha",
+    "observed_base_sha",
+    "expected_head_sha",
+    "observed_head_sha",
+    "outcome",
+    "reason",
+    "coverage",
+    "dispatch",
+    "gate",
+    "attestation",
+    "claim_boundary"
+  ],
+  "properties": {
+    "schema": { "const": "stratadiff-coderabbit-governor-evidence-v1" },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "provider": { "const": "coderabbit" },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "pull_request_number": { "type": "integer", "minimum": 1 },
+    "expected_base_sha": { "$ref": "#/$defs/objectId" },
+    "observed_base_sha": { "$ref": "#/$defs/objectId" },
+    "expected_head_sha": { "$ref": "#/$defs/objectId" },
+    "observed_head_sha": { "$ref": "#/$defs/objectId" },
+    "outcome": {
+      "enum": [
+        "blocked",
+        "closed-uncovered",
+        "deferred-draft",
+        "dispatched-covered",
+        "merged-uncovered",
+        "observed-provider-evidence",
+        "observed-uncovered",
+        "reviewed-blocking",
+        "superseded",
+        "timed-out-uncovered"
+      ]
+    },
+    "reason": { "type": "string", "minLength": 1 },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "complete",
+        "gate_satisfied",
+        "basis",
+        "temporally_correlated",
+        "command_correlated",
+        "maximum_evidence_skew_seconds",
+        "not_before",
+        "required_evidence",
+        "status",
+        "review",
+        "acknowledgement"
+      ],
+      "properties": {
+        "complete": { "type": "boolean" },
+        "gate_satisfied": { "type": "boolean" },
+        "basis": { "enum": ["none", "post_dispatch_provider_evidence"] },
+        "temporally_correlated": { "type": "boolean" },
+        "command_correlated": { "type": "boolean" },
+        "maximum_evidence_skew_seconds": { "const": 300 },
+        "not_before": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string", "format": "date-time" }
+          ]
+        },
+        "required_evidence": {
+          "const": [
+            "coderabbit_app_review_completed_status",
+            "substantive_exact_head_coderabbit_bot_review",
+            "post_dispatch_coderabbit_command_acknowledgement",
+            "bounded_completion_time_skew"
+          ]
+        },
+        "status": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "context",
+                "state",
+                "description",
+                "provider_app_id",
+                "creator_id",
+                "creator_login",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "id": { "type": "integer", "minimum": 1 },
+                "context": { "const": "CodeRabbit" },
+                "state": { "enum": ["error", "failure", "pending", "success"] },
+                "description": { "type": ["string", "null"] },
+                "provider_app_id": { "const": 347564 },
+                "creator_id": { "const": 136622811 },
+                "creator_login": { "const": "coderabbitai[bot]" },
+                "created_at": { "type": "string", "format": "date-time" },
+                "updated_at": { "type": "string", "format": "date-time" }
+              }
+            }
+          ]
+        },
+        "review": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "state",
+                "commit_id",
+                "submitted_at",
+                "body_bytes",
+                "body_sha256",
+                "reviewer_id",
+                "reviewer_login"
+              ],
+              "properties": {
+                "id": { "type": "integer", "minimum": 1 },
+                "state": {
+                  "enum": ["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"]
+                },
+                "commit_id": { "$ref": "#/$defs/objectId" },
+                "submitted_at": { "type": "string", "format": "date-time" },
+                "body_bytes": { "type": "integer", "minimum": 0 },
+                "body_sha256": { "$ref": "#/$defs/sha256" },
+                "reviewer_id": { "const": 136622811 },
+                "reviewer_login": { "const": "coderabbitai[bot]" }
+              }
+            }
+          ]
+        },
+        "acknowledgement": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "created_at",
+                "updated_at",
+                "body_bytes",
+                "body_sha256",
+                "command_handle",
+                "full_review_finished",
+                "reviewer_id",
+                "reviewer_login"
+              ],
+              "properties": {
+                "id": { "type": "integer", "minimum": 1 },
+                "created_at": { "type": "string", "format": "date-time" },
+                "updated_at": { "type": "string", "format": "date-time" },
+                "body_bytes": { "type": "integer", "minimum": 1 },
+                "body_sha256": { "$ref": "#/$defs/sha256" },
+                "command_handle": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                },
+                "full_review_finished": { "type": "boolean" },
+                "reviewer_id": { "const": 136622811 },
+                "reviewer_login": { "const": "coderabbitai[bot]" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "dispatch": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["comment_id", "created_at", "command", "lease", "lease_status_id"],
+          "properties": {
+            "comment_id": { "type": "integer", "minimum": 1 },
+            "created_at": { "type": "string", "format": "date-time" },
+            "command": { "const": "@coderabbitai full review" },
+            "lease": { "enum": ["created", "adopted"] },
+            "lease_status_id": {
+              "oneOf": [
+                { "type": "null" },
+                { "type": "integer", "minimum": 1 }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "gate": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["context", "state"],
+          "properties": {
+            "context": { "const": "StrataDiff Final Head" },
+            "state": { "enum": ["error", "failure", "pending", "success"] }
+          }
+        }
+      ]
+    },
+    "attestation": { "type": "null" },
+    "claim_boundary": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "objectId": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

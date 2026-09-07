@@ -1,0 +1,1467 @@
+{
+  "cases": [
+    {
+      "bindings": {
+        "checkpoint": "60d197491b8f6f54cebdcb810e3cbb089436b86a1883c3b563a2ea5269be0dde",
+        "head": "58fc3491cd58fa6d9bc0e600787a14e4f397b9ff1ab34dfe9ee09609b994ca3b",
+        "pull_request": "9ca23301f8bf31a6219edf13a09ef6a6a8065e50d6d3eaff9d6f52277f98bd1c"
+      },
+      "case_id": "github-github-gh-stack-pr-321",
+      "checkpoint_oid": "67774e4cc7e6e30fce71d1d88d83217b74250e92",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+          "behind_by": 0,
+          "head_oid": "67774e4cc7e6e30fce71d1d88d83217b74250e92",
+          "merge_base_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+          "status": "ahead",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+          "behind_by": 0,
+          "head_oid": "4ddb50d71e6f35e42fe46af975a7f2212ae61216",
+          "merge_base_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+          "status": "ahead",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "4ddb50d71e6f35e42fe46af975a7f2212ae61216",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:05Z",
+      "provider_response_sha256": {
+        "checkpoint": "d07569f5df8d7f23a30372788b6fbc825425ca2ec70656604386e455fb6d788e",
+        "head": "67866cd250b7a151056d723de671d2d35a4c03011d9caf6d945f3f8f3c0fde88",
+        "pull_request": "a56df3c535b63303babfa180c18025d26a3d634919c6d3ab3138e59e9ff6eaa0"
+      },
+      "pull_request": {
+        "base_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+        "head_oid": "4ddb50d71e6f35e42fe46af975a7f2212ae61216",
+        "merged": true,
+        "node_id": "PR_kwDORKR9iM72oaWZ",
+        "number": 321,
+        "state": "closed",
+        "updated_at": "2026-07-29T17:32:17Z"
+      },
+      "repository": "github/gh-stack",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "5c436f76bfc37ebe124b132a4e9ac99da359e34fcb1e542194e962d3aab98226",
+        "head": "e891b403bce6d681bbd9e3fc5f537cbcea7e6725c217192d7edcd64fc73a287e",
+        "pull_request": "2b789e3d96db0fdeba7519affa9b6c658488717ccd1f18bb3e56cbdd6fc7b9ee"
+      },
+      "case_id": "github-vercel-next.js-pr-95680",
+      "checkpoint_oid": "896d29028231bbd4e3b352e83fbf22a0e97355a4",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "a37068f525c86c79f1e973cd6712b8c6d0560cad",
+          "behind_by": 150,
+          "head_oid": "896d29028231bbd4e3b352e83fbf22a0e97355a4",
+          "merge_base_oid": "26ba36077ea1b325ba7231b629b10dc857c27dbd",
+          "status": "diverged",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "a37068f525c86c79f1e973cd6712b8c6d0560cad",
+          "behind_by": 150,
+          "head_oid": "d3d820eeacfd1501e7b5cd7a5c581269ec00cb7f",
+          "merge_base_oid": "26ba36077ea1b325ba7231b629b10dc857c27dbd",
+          "status": "diverged",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "d3d820eeacfd1501e7b5cd7a5c581269ec00cb7f",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:09Z",
+      "provider_response_sha256": {
+        "checkpoint": "0f2b14883d496d7bd63df30706d686e4f83e02aaa531607ebb633ba72a38a38d",
+        "head": "9542df6a9502a2101f57517d87cb12def1d93ba23c89dec66b1b3fbd414d6d23",
+        "pull_request": "97b236c4b2cee4bd71b35e07d5884f3458e08f7a37ee88c7dd8bd8534cc50691"
+      },
+      "pull_request": {
+        "base_oid": "a37068f525c86c79f1e973cd6712b8c6d0560cad",
+        "head_oid": "d3d820eeacfd1501e7b5cd7a5c581269ec00cb7f",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis7wMj4P",
+        "number": 95680,
+        "state": "closed",
+        "updated_at": "2026-07-13T06:36:49Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "b72ae51b86d80c2c9fbd673186f5a5a80e8d42c597801dec3f753a71a0b062ce",
+        "head": "ac6ea650203390b60bc77cbf64ba012ce6a4f2bebe558f7ec3281c14a89d6478",
+        "pull_request": "fb6d6b9d5a28401bb75d1fec52c2895031e3f5f635c7195f62e7092693276d44"
+      },
+      "case_id": "github-dotnet-runtime-pr-129147",
+      "checkpoint_oid": "7b9a9fcbebbf2d10b7169d955845a4893222bbc0",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "1d715a37a1cb148fd614883998a77b2d8d9fb4ba",
+          "behind_by": 299,
+          "head_oid": "7b9a9fcbebbf2d10b7169d955845a4893222bbc0",
+          "merge_base_oid": "e0471a15199706b747aaf744d76eeec1dff75fe4",
+          "status": "diverged",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 6,
+          "base_oid": "1d715a37a1cb148fd614883998a77b2d8d9fb4ba",
+          "behind_by": 0,
+          "head_oid": "fe4ffc2f17c9e55e4a6a13d8ac52c928f9c49ebb",
+          "merge_base_oid": "1d715a37a1cb148fd614883998a77b2d8d9fb4ba",
+          "status": "ahead",
+          "total_commits": 6
+        }
+      },
+      "final_head_oid": "fe4ffc2f17c9e55e4a6a13d8ac52c928f9c49ebb",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:12Z",
+      "provider_response_sha256": {
+        "checkpoint": "4f3b3945546c41084340912fcdca5b3e385ced80f7acf434f5f107a6b6bce2c3",
+        "head": "b391073957b45e30cd84349ebbdb0272a7ac76e26e6d6993fb901fd56a5e8493",
+        "pull_request": "c25b267da1fdc5d60aae90305f9e28037e4973f705b5645dc203d3057909ee8c"
+      },
+      "pull_request": {
+        "base_oid": "1d715a37a1cb148fd614883998a77b2d8d9fb4ba",
+        "head_oid": "fe4ffc2f17c9e55e4a6a13d8ac52c928f9c49ebb",
+        "merged": true,
+        "node_id": "PR_kwDODI9FZc7kKQFt",
+        "number": 129147,
+        "state": "closed",
+        "updated_at": "2026-07-24T09:23:31Z"
+      },
+      "repository": "dotnet/runtime",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "6c51f2c717864ac3c7eaead625514f8f8617a7d1da03847435cbaf5e141ce9ad",
+        "head": "8a30ba49afe30e26a4f4d9caef55226989e25431d65ab66930ff3846a5a40e92",
+        "pull_request": "e1758b0d0b748b434ae53bd2528d9131310d27bdb412acbbe01f4a392aec8da3"
+      },
+      "case_id": "github-microsoft-vscode-pr-325931",
+      "checkpoint_oid": "bc62a1e71a24a5be7e3393d5e9af10582664d6f0",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 5,
+          "base_oid": "bb6cc90ffae436cc7ac5795552b981af089ca6a6",
+          "behind_by": 118,
+          "head_oid": "bc62a1e71a24a5be7e3393d5e9af10582664d6f0",
+          "merge_base_oid": "0217c2f1a0defc7fdbfb4feba74e71e366de6822",
+          "status": "diverged",
+          "total_commits": 5
+        },
+        "head": {
+          "ahead_by": 6,
+          "base_oid": "bb6cc90ffae436cc7ac5795552b981af089ca6a6",
+          "behind_by": 0,
+          "head_oid": "1376351dd0c923ba7392362d401d0e1036427be0",
+          "merge_base_oid": "bb6cc90ffae436cc7ac5795552b981af089ca6a6",
+          "status": "ahead",
+          "total_commits": 6
+        }
+      },
+      "final_head_oid": "1376351dd0c923ba7392362d401d0e1036427be0",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:16Z",
+      "provider_response_sha256": {
+        "checkpoint": "b519b0f44ed2f0ab10024c104715cff4a84cb51759282de322776b9a2085f6f1",
+        "head": "60e1666702a701360c615c339ddf36cdfccb9e8cba259d47b91726726a9b8991",
+        "pull_request": "59b206ee0939fe88e1de2e4a7478c692862d49836a6527596923c2a67be1f4cb"
+      },
+      "pull_request": {
+        "base_oid": "bb6cc90ffae436cc7ac5795552b981af089ca6a6",
+        "head_oid": "1376351dd0c923ba7392362d401d0e1036427be0",
+        "merged": true,
+        "node_id": "PR_kwDOAn8RLM7x-3ic",
+        "number": 325931,
+        "state": "closed",
+        "updated_at": "2026-08-30T23:24:00Z"
+      },
+      "repository": "microsoft/vscode",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "ed932264897876c7f93736945ba221d620858a60a662ca4290efed7d86c1a7cc",
+        "head": "715fab300890d13cebec6b829db0da8f93045ba998d206c07bff30adeeb49583",
+        "pull_request": "a3a99e5d5ae8804c36b8687463efef25fb731fe56eabe25e92f21877d9c37092"
+      },
+      "case_id": "github-vercel-next.js-pr-95389",
+      "checkpoint_oid": "5eda2b85c8e88e3e24da5a4aad1d4ad46f263f29",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 64,
+          "base_oid": "303f7ffd4a0db19948a71eba73cd85f366625a65",
+          "behind_by": 0,
+          "head_oid": "5eda2b85c8e88e3e24da5a4aad1d4ad46f263f29",
+          "merge_base_oid": "303f7ffd4a0db19948a71eba73cd85f366625a65",
+          "status": "ahead",
+          "total_commits": 64
+        },
+        "head": {
+          "ahead_by": 66,
+          "base_oid": "303f7ffd4a0db19948a71eba73cd85f366625a65",
+          "behind_by": 0,
+          "head_oid": "e1291ebf393f0bf625d44b80381714749c41bb5d",
+          "merge_base_oid": "303f7ffd4a0db19948a71eba73cd85f366625a65",
+          "status": "ahead",
+          "total_commits": 66
+        }
+      },
+      "final_head_oid": "e1291ebf393f0bf625d44b80381714749c41bb5d",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:20Z",
+      "provider_response_sha256": {
+        "checkpoint": "1b8c84138acf6d334038cce9fa1aac1c7607a1e006c9f4cf41e09219b2ef7f35",
+        "head": "0a0e976337876b11452c5a043f92e7a0288c08011f871639157413e6ddc9ac5f",
+        "pull_request": "c622d9501c20a36b867d0b3ab24ac7d8df0555550bc7f4f855692ba74a0b6cf4"
+      },
+      "pull_request": {
+        "base_oid": "303f7ffd4a0db19948a71eba73cd85f366625a65",
+        "head_oid": "e1291ebf393f0bf625d44b80381714749c41bb5d",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis7s6wOl",
+        "number": 95389,
+        "state": "closed",
+        "updated_at": "2026-07-14T18:22:03Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "4b26dd33aad1570e0e7d78a08f425eac236bfbd74127e16ab5864132512726f5",
+        "head": "797a579cdb83a23a8a1057f8437a20774b4d7f3d10aa766447dee1524ccdcbcf",
+        "pull_request": "5d2cc6bb24da338ebefb0d34578251c72ae5ecacacf8c691163e9b9c94f57674"
+      },
+      "case_id": "github-github-gh-stack-pr-307",
+      "checkpoint_oid": "fb48d5228c766998a184fbac47607dbd7221aa93",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 10,
+          "base_oid": "c6d87eefb6a6399c671b2a3902ec172f71b8da98",
+          "behind_by": 0,
+          "head_oid": "fb48d5228c766998a184fbac47607dbd7221aa93",
+          "merge_base_oid": "c6d87eefb6a6399c671b2a3902ec172f71b8da98",
+          "status": "ahead",
+          "total_commits": 10
+        },
+        "head": {
+          "ahead_by": 11,
+          "base_oid": "c6d87eefb6a6399c671b2a3902ec172f71b8da98",
+          "behind_by": 0,
+          "head_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+          "merge_base_oid": "c6d87eefb6a6399c671b2a3902ec172f71b8da98",
+          "status": "ahead",
+          "total_commits": 11
+        }
+      },
+      "final_head_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:24Z",
+      "provider_response_sha256": {
+        "checkpoint": "11b9b3287875b6f81fd1459bfc78f3f46c506281cd4a85eb9d5257297c784727",
+        "head": "65d416edc00d087c22d4617774cc4605729ca40c150d1441be307309996b00db",
+        "pull_request": "815b5cb012d9c6031f75b419706cdb087ce4c139276b7c8f77157327d453bed3"
+      },
+      "pull_request": {
+        "base_oid": "c6d87eefb6a6399c671b2a3902ec172f71b8da98",
+        "head_oid": "ff3379369b4fa2ca37a195beb06e9a25d521a092",
+        "merged": true,
+        "node_id": "PR_kwDORKR9iM71mzEn",
+        "number": 307,
+        "state": "closed",
+        "updated_at": "2026-07-29T17:32:16Z"
+      },
+      "repository": "github/gh-stack",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "83d8c0389fac6a9337174cdd80582fa8543d161c7da783529c017372ad30a64c",
+        "head": "1200a1946c212a00fabf955f0c752a0853df23cae0dbcc8834bea9b98d2ff727",
+        "pull_request": "d8d68f9a5574b2ff51adaba9f1613224b320c22d324265ed4b83c89b025e4245"
+      },
+      "case_id": "github-microsoft-vscode-pr-333256",
+      "checkpoint_oid": "7db6e4a9e56f7047b10bd644767d63f40d32bc8d",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 7,
+          "base_oid": "a06d01ff8fbb8ab45882d09c31a14b6003dd6e94",
+          "behind_by": 2,
+          "head_oid": "7db6e4a9e56f7047b10bd644767d63f40d32bc8d",
+          "merge_base_oid": "cefc83193036e53a85e980c5d0b22e9d66cd267e",
+          "status": "diverged",
+          "total_commits": 7
+        },
+        "head": {
+          "ahead_by": 9,
+          "base_oid": "a06d01ff8fbb8ab45882d09c31a14b6003dd6e94",
+          "behind_by": 0,
+          "head_oid": "cd1280d1134c39320f701e92a885781506955e8c",
+          "merge_base_oid": "a06d01ff8fbb8ab45882d09c31a14b6003dd6e94",
+          "status": "ahead",
+          "total_commits": 9
+        }
+      },
+      "final_head_oid": "cd1280d1134c39320f701e92a885781506955e8c",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:28Z",
+      "provider_response_sha256": {
+        "checkpoint": "2cd03d65c100f477eae7288a9001884488df7a56dbb9e5f5148d6cd584066729",
+        "head": "2460adfcec8558f87c0299dd5f0f002cff802df7cbecc83c8a461dec4e9da703",
+        "pull_request": "038a49ae40f7757d02be80a6b4eba469890498cac66fa8fe44754f2d8240adff"
+      },
+      "pull_request": {
+        "base_oid": "a06d01ff8fbb8ab45882d09c31a14b6003dd6e94",
+        "head_oid": "cd1280d1134c39320f701e92a885781506955e8c",
+        "merged": true,
+        "node_id": "PR_kwDOAn8RLM8AAAABBYrPYw",
+        "number": 333256,
+        "state": "closed",
+        "updated_at": "2026-08-28T21:55:02Z"
+      },
+      "repository": "microsoft/vscode",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "49054c84c4cab76e7c9882a99f8ea0a2c89abf1e556af396c025f417b9fa800a",
+        "head": "bbfe7d8c01c0bf6b19457df93707563c4b2ead9f6285d1b55712051b0e4c33b3",
+        "pull_request": "664ab833ba1f1a4d444fafabf272fd54fbc53ab7b6d4723ffd9c7d9abf91bf83"
+      },
+      "case_id": "github-dotnet-runtime-pr-129503",
+      "checkpoint_oid": "a5a97e8d89ecb269aa031b3ee45b45416c90784f",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 12,
+          "base_oid": "b1ea6ff8a102c76f5f8ffdf55a8a2a7fc40de61b",
+          "behind_by": 11,
+          "head_oid": "a5a97e8d89ecb269aa031b3ee45b45416c90784f",
+          "merge_base_oid": "50bc3b3e1fe96d95e7f04bd3189d9eb2c7a40b59",
+          "status": "diverged",
+          "total_commits": 12
+        },
+        "head": {
+          "ahead_by": 17,
+          "base_oid": "b1ea6ff8a102c76f5f8ffdf55a8a2a7fc40de61b",
+          "behind_by": 0,
+          "head_oid": "4e8f7580e6e4a204cd700d0ce83428a0e6029a2d",
+          "merge_base_oid": "b1ea6ff8a102c76f5f8ffdf55a8a2a7fc40de61b",
+          "status": "ahead",
+          "total_commits": 17
+        }
+      },
+      "final_head_oid": "4e8f7580e6e4a204cd700d0ce83428a0e6029a2d",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:32Z",
+      "provider_response_sha256": {
+        "checkpoint": "e162d5a98b4a0b73277f37b9a6795450ebc29a61e9a99436cddcd80b5eb64f0e",
+        "head": "81bd5a1192e418dc56cd791bea45a47ec6cb60185bef1692e8db73a10e7c9b71",
+        "pull_request": "e2e54322cd165a610a35a79f376298898b7aae32677273f522bb3fea052d3634"
+      },
+      "pull_request": {
+        "base_oid": "b1ea6ff8a102c76f5f8ffdf55a8a2a7fc40de61b",
+        "head_oid": "4e8f7580e6e4a204cd700d0ce83428a0e6029a2d",
+        "merged": true,
+        "node_id": "PR_kwDODI9FZc7nVG3N",
+        "number": 129503,
+        "state": "closed",
+        "updated_at": "2026-07-23T09:24:07Z"
+      },
+      "repository": "dotnet/runtime",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "0a1f279d84da6f323157fc5a35b073904595356fa5914b88814edd92085a35a5",
+        "head": "5be419bf2d3a9dd170d0cab1d8ab30311db568b239c283932b48b69d27fd3330",
+        "pull_request": "a0d7a1a0c9a271d68f156f85eb15ca60fe8508b390c3656667cc66aea47d8066"
+      },
+      "case_id": "github-microsoft-vscode-pr-324047",
+      "checkpoint_oid": "e9c4a8153dc893a883e5ae7365c39dfaeebdbdd3",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "6162ed61f705a03f985cdb4a183e97fae7222863",
+          "behind_by": 0,
+          "head_oid": "e9c4a8153dc893a883e5ae7365c39dfaeebdbdd3",
+          "merge_base_oid": "6162ed61f705a03f985cdb4a183e97fae7222863",
+          "status": "ahead",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "6162ed61f705a03f985cdb4a183e97fae7222863",
+          "behind_by": 0,
+          "head_oid": "939e110e4edb969c564f547f95bbcd432351d4b0",
+          "merge_base_oid": "6162ed61f705a03f985cdb4a183e97fae7222863",
+          "status": "ahead",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "939e110e4edb969c564f547f95bbcd432351d4b0",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:38Z",
+      "provider_response_sha256": {
+        "checkpoint": "a10302fc868346e22478e516adaa6c5a43fc4cdc585487e88ce8b8c0d8127ace",
+        "head": "864c1d61ccdc79b8b579214749aaeb6f7cb4c442e5c3505213b1be9fd3e47597",
+        "pull_request": "89df8ed700856fa0033e8c229a8e918cc8eaaa57652c2821fae0419fa80ef89f"
+      },
+      "pull_request": {
+        "base_oid": "6162ed61f705a03f985cdb4a183e97fae7222863",
+        "head_oid": "939e110e4edb969c564f547f95bbcd432351d4b0",
+        "merged": true,
+        "node_id": "PR_kwDOAn8RLM7tHfuh",
+        "number": 324047,
+        "state": "closed",
+        "updated_at": "2026-08-28T23:26:17Z"
+      },
+      "repository": "microsoft/vscode",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "1ab4652a2ef490361d1d4d73142ec7ba3a5c1ce9b1a4ff9daab4a7dbbae6ce5c",
+        "head": "30a2175e8501fdfdd9eb34ae240800b45cbb72ecb0a00523aceb98a84c8030db",
+        "pull_request": "9156fb61341ed13998124e638512333e6024007da2812d8333d472b9421a479c"
+      },
+      "case_id": "github-kubernetes-kubernetes-pr-140422",
+      "checkpoint_oid": "68712716749a63750a173e8cd85465076bc7e909",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 3,
+          "base_oid": "36cf27229d38a2f3df8fb1061a8cbbf00974ba68",
+          "behind_by": 682,
+          "head_oid": "68712716749a63750a173e8cd85465076bc7e909",
+          "merge_base_oid": "4b502f08714bcb575dd33b8dc8835ac34d3d89c1",
+          "status": "diverged",
+          "total_commits": 3
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "36cf27229d38a2f3df8fb1061a8cbbf00974ba68",
+          "behind_by": 16,
+          "head_oid": "313109bed062affc4e3c6baa049d66057d08464b",
+          "merge_base_oid": "2524f10e40ef2c20ca8c228e78f510084a24afb6",
+          "status": "diverged",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "313109bed062affc4e3c6baa049d66057d08464b",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:43Z",
+      "provider_response_sha256": {
+        "checkpoint": "172e0bc13d1261c5a2792a991868ae8463685311b100b16885c53ac7049fa8a3",
+        "head": "f62e0f80206c6e99d93aa2b8802b5f71bcc4d9c51959f070a43ca13e06ae7faf",
+        "pull_request": "7a4f4c82b1f7b6b1875daab28a18eb1703a7dda0b697585a5552d4ba46c42b39"
+      },
+      "pull_request": {
+        "base_oid": "36cf27229d38a2f3df8fb1061a8cbbf00974ba68",
+        "head_oid": "313109bed062affc4e3c6baa049d66057d08464b",
+        "merged": true,
+        "node_id": "PR_kwDOAToIks7wTKtp",
+        "number": 140422,
+        "state": "closed",
+        "updated_at": "2026-07-23T07:39:21Z"
+      },
+      "repository": "kubernetes/kubernetes",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "f57897c2dfe3c08319455037fe069fe7e7ddf8284944128e6f466ebdf6ea4705",
+        "head": "9afadfdb393f5ee76c4eec85287c70c04c6a1ff7379b54b90590203a1e2d031f",
+        "pull_request": "0e2e2f9825c5ca9278cc70cfa8d90d386070d4357d34fce8f323064d65ca4353"
+      },
+      "case_id": "github-github-gh-stack-pr-185",
+      "checkpoint_oid": "379fd4306caafe0f2891049d2d7b9f3f86237aba",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 5,
+          "base_oid": "c79f2b22a1ddff3ac16f64f95ff48c03755c6191",
+          "behind_by": 3,
+          "head_oid": "379fd4306caafe0f2891049d2d7b9f3f86237aba",
+          "merge_base_oid": "a365459e816d25dd7f4be62358d4baba5e20e4d0",
+          "status": "diverged",
+          "total_commits": 5
+        },
+        "head": {
+          "ahead_by": 17,
+          "base_oid": "c79f2b22a1ddff3ac16f64f95ff48c03755c6191",
+          "behind_by": 0,
+          "head_oid": "ae8c0bcafd32f148263986f9aab32f5b7ff4b6a3",
+          "merge_base_oid": "c79f2b22a1ddff3ac16f64f95ff48c03755c6191",
+          "status": "ahead",
+          "total_commits": 17
+        }
+      },
+      "final_head_oid": "ae8c0bcafd32f148263986f9aab32f5b7ff4b6a3",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:47Z",
+      "provider_response_sha256": {
+        "checkpoint": "76385ce3cc3ff9ec4db240ebac2a46eb0d2a979c3a92b4bfcb0eac156e5a92dc",
+        "head": "a08c07f46b5466db1352689cbc8a16d4450afdd55848c6ba40b4cbdb95de623c",
+        "pull_request": "9ec45f4bbf33aac77fa5de95063b3d70754f1ab3841e73ec380ff9be057572e6"
+      },
+      "pull_request": {
+        "base_oid": "c79f2b22a1ddff3ac16f64f95ff48c03755c6191",
+        "head_oid": "ae8c0bcafd32f148263986f9aab32f5b7ff4b6a3",
+        "merged": true,
+        "node_id": "PR_kwDORKR9iM7yRERl",
+        "number": 185,
+        "state": "closed",
+        "updated_at": "2026-07-26T15:26:09Z"
+      },
+      "repository": "github/gh-stack",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "18908085b7a2eb7e879fa2b41e15aa37a5da409ceaada94e6e3331b32efbab84",
+        "head": "1d39f5f01af46088a4e7d5b5ca5cc97be1a1313a47890c26c5d63326002a2ddb",
+        "pull_request": "304444609c89011d4bdbe673a9eabe45e8d98c3dcf55d9340eea8ae8c7ee23d0"
+      },
+      "case_id": "github-vercel-next.js-pr-96106",
+      "checkpoint_oid": "49e317f0352c8c7d49d8f4a1cfb9ace0b6f0fa2f",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "02d016d641649ebfc07ed2b163c2551785ee4bac",
+          "behind_by": 3,
+          "head_oid": "49e317f0352c8c7d49d8f4a1cfb9ace0b6f0fa2f",
+          "merge_base_oid": "bdbbb1e8876a6c8376ebdd40cafdd25a99fd8195",
+          "status": "diverged",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 1,
+          "base_oid": "02d016d641649ebfc07ed2b163c2551785ee4bac",
+          "behind_by": 0,
+          "head_oid": "a13c10421d721311c011ee94a257f7d6f149dc6e",
+          "merge_base_oid": "02d016d641649ebfc07ed2b163c2551785ee4bac",
+          "status": "ahead",
+          "total_commits": 1
+        }
+      },
+      "final_head_oid": "a13c10421d721311c011ee94a257f7d6f149dc6e",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:51Z",
+      "provider_response_sha256": {
+        "checkpoint": "28f0a2e13f66ea6949134ec9d9d814441da3fff1610cf2eb21cd755c3a108091",
+        "head": "5d21a43a0684dcfde6ab64e4d46c1b858f18e94d0be0e78dddb8dca15493ad32",
+        "pull_request": "3c4ce2b8d9dffc9af10f80877b7a3632edba69251f89ed51b58e570230fe3518"
+      },
+      "pull_request": {
+        "base_oid": "02d016d641649ebfc07ed2b163c2551785ee4bac",
+        "head_oid": "a13c10421d721311c011ee94a257f7d6f149dc6e",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis71iwec",
+        "number": 96106,
+        "state": "closed",
+        "updated_at": "2026-07-28T16:03:58Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "d65fc837abefbe603751a1b3956c37cd7eaea66d3e564d1a9e96c5bcf9f484a7",
+        "head": "2013163814b691ce59e92959cb54425a4560c3316dd6dc07d17b9fc7a27d6136",
+        "pull_request": "77c4c8779db2e19a99a34cdc734cb60b8b6c86cd74cced6e45806042e12accd5"
+      },
+      "case_id": "github-github-gh-stack-pr-147",
+      "checkpoint_oid": "1cc2acea6f71629d1984ede77dfb4ce0a8441035",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 6,
+          "base_oid": "6f6cefa82aeb927ce290b81682a32b0d7a8a10a7",
+          "behind_by": 0,
+          "head_oid": "1cc2acea6f71629d1984ede77dfb4ce0a8441035",
+          "merge_base_oid": "6f6cefa82aeb927ce290b81682a32b0d7a8a10a7",
+          "status": "ahead",
+          "total_commits": 6
+        },
+        "head": {
+          "ahead_by": 9,
+          "base_oid": "6f6cefa82aeb927ce290b81682a32b0d7a8a10a7",
+          "behind_by": 0,
+          "head_oid": "d7207ae3060a6b4ffdeeafacb263093ca3a61f34",
+          "merge_base_oid": "6f6cefa82aeb927ce290b81682a32b0d7a8a10a7",
+          "status": "ahead",
+          "total_commits": 9
+        }
+      },
+      "final_head_oid": "d7207ae3060a6b4ffdeeafacb263093ca3a61f34",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:55Z",
+      "provider_response_sha256": {
+        "checkpoint": "446042e19d9b9e589e1bee262cc92437e8e85903c73599f82f8d704838685873",
+        "head": "338dbd1a275808ff2f6575076d64b7fe8691a1c93cafa3828e6e31c2a1469c82",
+        "pull_request": "ed8f66bd3b5978f5b9126c31690549e9f7fb509f4a73283fcd6ceb2704be57da"
+      },
+      "pull_request": {
+        "base_oid": "6f6cefa82aeb927ce290b81682a32b0d7a8a10a7",
+        "head_oid": "d7207ae3060a6b4ffdeeafacb263093ca3a61f34",
+        "merged": true,
+        "node_id": "PR_kwDORKR9iM7q-gBG",
+        "number": 147,
+        "state": "closed",
+        "updated_at": "2026-06-30T00:11:20Z"
+      },
+      "repository": "github/gh-stack",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "ae587d896502f09f06e94f388a97dc6cb0ff4c9955dcc3c90a645a96013588c4",
+        "head": "4083d8571d7a9b192ab6a15135921a1b66ee5f88dc2914eaad41bb8eb062eb38",
+        "pull_request": "99ad95a623afa5851cfbb6851aa56cb9feca602c53fbfed90ef12e94bd569cb1"
+      },
+      "case_id": "github-microsoft-vscode-pr-325983",
+      "checkpoint_oid": "76cffe4c7a2fc297a705aafe93a1953595eb844f",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 4,
+          "base_oid": "f7b500c0e0af5e9e10765921dc4431b36012e803",
+          "behind_by": 0,
+          "head_oid": "76cffe4c7a2fc297a705aafe93a1953595eb844f",
+          "merge_base_oid": "f7b500c0e0af5e9e10765921dc4431b36012e803",
+          "status": "ahead",
+          "total_commits": 4
+        },
+        "head": {
+          "ahead_by": 5,
+          "base_oid": "f7b500c0e0af5e9e10765921dc4431b36012e803",
+          "behind_by": 0,
+          "head_oid": "da823d73316d76c24cdd641c5fb550584d68e914",
+          "merge_base_oid": "f7b500c0e0af5e9e10765921dc4431b36012e803",
+          "status": "ahead",
+          "total_commits": 5
+        }
+      },
+      "final_head_oid": "da823d73316d76c24cdd641c5fb550584d68e914",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:14:58Z",
+      "provider_response_sha256": {
+        "checkpoint": "55433057e50d0b7a89f6a439f11b3ada4e4c150533f5b1940fd8b5cec4e912ba",
+        "head": "274df17a50ed57f8c76eeaaac3d71a14a47e0c47572aae1faeba2a9795369ca0",
+        "pull_request": "190907bc560f8f98a2b6bb382ab0af4b98966420c8994935024bd29a6e73736f"
+      },
+      "pull_request": {
+        "base_oid": "f7b500c0e0af5e9e10765921dc4431b36012e803",
+        "head_oid": "da823d73316d76c24cdd641c5fb550584d68e914",
+        "merged": true,
+        "node_id": "PR_kwDOAn8RLM7yGaqC",
+        "number": 325983,
+        "state": "closed",
+        "updated_at": "2026-09-04T04:43:01Z"
+      },
+      "repository": "microsoft/vscode",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "1a0898824fa41cc87d4558a15d8ba1bc7ad20fc317851a5e3549b277adf8dfac",
+        "head": "a7ebeab62ebf935f549d2d7d1a0e7fd2a95ccbee97a23904a68dc067415a7ef9",
+        "pull_request": "82c5aa38d042a0fdaefd265dd62bdf97e527a46fd4f23aa9484a57e0783d6843"
+      },
+      "case_id": "github-vercel-next.js-pr-97108",
+      "checkpoint_oid": "be7539e3f6fcb622d5fd16f5a66ebe6c13af64e8",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 12,
+          "base_oid": "05ed7c1be263cc86496be4a65a50aa9599112303",
+          "behind_by": 5,
+          "head_oid": "be7539e3f6fcb622d5fd16f5a66ebe6c13af64e8",
+          "merge_base_oid": "cce7bf2fc01340ae0fed37eb79906faa53166b4e",
+          "status": "diverged",
+          "total_commits": 12
+        },
+        "head": {
+          "ahead_by": 9,
+          "base_oid": "05ed7c1be263cc86496be4a65a50aa9599112303",
+          "behind_by": 0,
+          "head_oid": "6d33b86833041f9367fefacbdfba2873bdce89f9",
+          "merge_base_oid": "05ed7c1be263cc86496be4a65a50aa9599112303",
+          "status": "ahead",
+          "total_commits": 9
+        }
+      },
+      "final_head_oid": "6d33b86833041f9367fefacbdfba2873bdce89f9",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:02Z",
+      "provider_response_sha256": {
+        "checkpoint": "1e864a914c7a13398ccad0ce33d5043f19e88c1782a99a62389ec4c127ec9ce4",
+        "head": "9da1c84359cc42a8d66d1cc23623a68fda324a6a123744f5424187198954a92b",
+        "pull_request": "8cf13ba06d60f68dda263d8d42e7b13713b12e4a98ec9417f0e739692b4caa52"
+      },
+      "pull_request": {
+        "base_oid": "05ed7c1be263cc86496be4a65a50aa9599112303",
+        "head_oid": "6d33b86833041f9367fefacbdfba2873bdce89f9",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis79IKtU",
+        "number": 97108,
+        "state": "closed",
+        "updated_at": "2026-08-27T20:23:47Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "34b728df444af9830589ae06d99ffc6b17245928ae7331d402e347d811eb2df4",
+        "head": "735ccece7b59ab6d0cb28f55328a032be2d58f99c8b34c5eb364e4890e1ef97b",
+        "pull_request": "bc59d129210b4a40621d9b8449439c207f590c02a27cc405f5b8a723ace5fe91"
+      },
+      "case_id": "github-rust-lang-rust-pr-157766",
+      "checkpoint_oid": "d3a02b06aca872710761206c43cca128d54184bd",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "09a371361240e42b0d69438fd1179efcf212e576",
+          "behind_by": 68,
+          "head_oid": "d3a02b06aca872710761206c43cca128d54184bd",
+          "merge_base_oid": "32cfe53009803b85afd40ff72768bb058e9936f0",
+          "status": "diverged",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 1,
+          "base_oid": "09a371361240e42b0d69438fd1179efcf212e576",
+          "behind_by": 0,
+          "head_oid": "c9ecb9fc017ad06960839525bdb77a82d1415af5",
+          "merge_base_oid": "09a371361240e42b0d69438fd1179efcf212e576",
+          "status": "ahead",
+          "total_commits": 1
+        }
+      },
+      "final_head_oid": "c9ecb9fc017ad06960839525bdb77a82d1415af5",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:06Z",
+      "provider_response_sha256": {
+        "checkpoint": "70b8c93b93a69d9d96c230db9464f0043da1bf6ae528356044bf2b5e12d1d3d1",
+        "head": "f8cfa793a2ab0f31394815efad4ba9d317928fd35f16b4ee0424442e30b40918",
+        "pull_request": "f032f856260df467b9d295bef10c1326df72ea1d3dd65042e75eced2cca9eadc"
+      },
+      "pull_request": {
+        "base_oid": "09a371361240e42b0d69438fd1179efcf212e576",
+        "head_oid": "c9ecb9fc017ad06960839525bdb77a82d1415af5",
+        "merged": true,
+        "node_id": "PR_kwDOAAsO6M7lU8nv",
+        "number": 157766,
+        "state": "closed",
+        "updated_at": "2026-06-21T18:51:48Z"
+      },
+      "repository": "rust-lang/rust",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "5cccdeb68b540fec1b6dcf3b3f956f0ec0d7fd33c1c2f29ddb6ca474e7a666a6",
+        "head": "e03101b9374a082fd5a29ea18cda87710a46f0a4381374d72149bec0f22c6dc9",
+        "pull_request": "cd1e8cdbd93a3f931cec2dc4fd9f0f7f80910fd4e738fe0cff02f1db0a48054f"
+      },
+      "case_id": "github-home-assistant-core-pr-175484",
+      "checkpoint_oid": "1c94a0afeab8acf6b4a436f6d35d9098c96103dd",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "87cf0f8937cb36471f114e87d5c9979e8c47be0a",
+          "behind_by": 0,
+          "head_oid": "1c94a0afeab8acf6b4a436f6d35d9098c96103dd",
+          "merge_base_oid": "87cf0f8937cb36471f114e87d5c9979e8c47be0a",
+          "status": "ahead",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 4,
+          "base_oid": "87cf0f8937cb36471f114e87d5c9979e8c47be0a",
+          "behind_by": 0,
+          "head_oid": "047c10a9c120c31359d9fb47cb241e59c5aae11c",
+          "merge_base_oid": "87cf0f8937cb36471f114e87d5c9979e8c47be0a",
+          "status": "ahead",
+          "total_commits": 4
+        }
+      },
+      "final_head_oid": "047c10a9c120c31359d9fb47cb241e59c5aae11c",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:10Z",
+      "provider_response_sha256": {
+        "checkpoint": "3931c3fbe67c67b1672e8b5055d2b799557ebd133e09f0f44dd982b6d9bd1d02",
+        "head": "57a87ecc87e97350a787dc37b03aeefb1914fd326881b58e1aab01d0bc42d285",
+        "pull_request": "e5ea75d9701bf385437ddda00297afcd95ce280792686c7072bfbfe26e2829fc"
+      },
+      "pull_request": {
+        "base_oid": "87cf0f8937cb36471f114e87d5c9979e8c47be0a",
+        "head_oid": "047c10a9c120c31359d9fb47cb241e59c5aae11c",
+        "merged": true,
+        "node_id": "PR_kwDOAMSroc7tkE5s",
+        "number": 175484,
+        "state": "closed",
+        "updated_at": "2026-07-07T12:04:00Z"
+      },
+      "repository": "home-assistant/core",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "44ed3edc88200fd9c6ea51b267032a205584cbe7a3709685f02223ca022f0480",
+        "head": "d0b6d2aaa7ee1fe85330bfd60a0c2eaf9298da947db0c8b8e162c815160da0ec",
+        "pull_request": "31b45c74bbb2858035d7627f119950a1d833bc1b2bf6c091956d4e51117ed452"
+      },
+      "case_id": "github-dotnet-runtime-pr-131860",
+      "checkpoint_oid": "22b95750999fbd2c5e40041fd4d6df39f18ff6d8",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "c8f97975ab0d8ff84aebf176829e17f7c7052f03",
+          "behind_by": 0,
+          "head_oid": "22b95750999fbd2c5e40041fd4d6df39f18ff6d8",
+          "merge_base_oid": "c8f97975ab0d8ff84aebf176829e17f7c7052f03",
+          "status": "ahead",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "c8f97975ab0d8ff84aebf176829e17f7c7052f03",
+          "behind_by": 0,
+          "head_oid": "6e68184d19352f1363f96ca73734b5d200956e9e",
+          "merge_base_oid": "c8f97975ab0d8ff84aebf176829e17f7c7052f03",
+          "status": "ahead",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "6e68184d19352f1363f96ca73734b5d200956e9e",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:14Z",
+      "provider_response_sha256": {
+        "checkpoint": "3f0d5dbb25af0f40327541008e92bf1a309792d5f8a1db01b2e9b6455b49a2d3",
+        "head": "404808da0103397318117a293b79593e0a09574e92d30e0827365744fae8ffa7",
+        "pull_request": "73fc98611cc41a733778b790ce14f599db78a8dd91998bbce82c2568a6e8dfbe"
+      },
+      "pull_request": {
+        "base_oid": "c8f97975ab0d8ff84aebf176829e17f7c7052f03",
+        "head_oid": "6e68184d19352f1363f96ca73734b5d200956e9e",
+        "merged": true,
+        "node_id": "PR_kwDODI9FZc76-yUw",
+        "number": 131860,
+        "state": "closed",
+        "updated_at": "2026-09-06T08:41:34Z"
+      },
+      "repository": "dotnet/runtime",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "e2f754cb9dc840917ecc85a886c0932420bf274b4964eaa0740d0c410f261013",
+        "head": "a503647b8c72b3e384dc7426c0cf3c63f0f5366ec53cf3c17a4155460456c0d2",
+        "pull_request": "aba9b520d019cdb9094b95751cf4a16ff30ce137dd8985bedf77fef14e07e759"
+      },
+      "case_id": "github-vercel-next.js-pr-97698",
+      "checkpoint_oid": "9425e3562e2c09f621e658f2d3cdafd80a1350ef",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "2690ad4922cbe201537b3dd31b740eba97e28831",
+          "behind_by": 33,
+          "head_oid": "9425e3562e2c09f621e658f2d3cdafd80a1350ef",
+          "merge_base_oid": "1c86b8a4fa3bb8795e25fd49bbbd10844dd83263",
+          "status": "diverged",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "2690ad4922cbe201537b3dd31b740eba97e28831",
+          "behind_by": 33,
+          "head_oid": "bd4482944a0081c84c8f6322e6550a71340dc05b",
+          "merge_base_oid": "1c86b8a4fa3bb8795e25fd49bbbd10844dd83263",
+          "status": "diverged",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "bd4482944a0081c84c8f6322e6550a71340dc05b",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:18Z",
+      "provider_response_sha256": {
+        "checkpoint": "479412140a169e4ed6b2d3e37365e7eb8c644a14b8945fd75a3deec43e5d8858",
+        "head": "5abaf58b68a4a1c1fc54f5f7eca93826ea957b39aa3853110954ab30c9890f94",
+        "pull_request": "fd74587c057854f0c648a4be1498fee7f8f3a62ad61d12cc39dd1c664271558a"
+      },
+      "pull_request": {
+        "base_oid": "2690ad4922cbe201537b3dd31b740eba97e28831",
+        "head_oid": "bd4482944a0081c84c8f6322e6550a71340dc05b",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis8AAAABAlSPdg",
+        "number": 97698,
+        "state": "closed",
+        "updated_at": "2026-08-25T02:21:34Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "79bd09026f649fd67ff9d98b66f14f8981ef96b671c186e1616a83c946782a64",
+        "head": "9099c9585d4ed6ee0a055ba8beba1bc9aa49add838d35295a4bf62926643734c",
+        "pull_request": "4653cd1040da8aa747e667b20289068983ec13d01358029ea1155d2cc30f12c2"
+      },
+      "case_id": "github-home-assistant-core-pr-175203",
+      "checkpoint_oid": "4ada6b33e898c9c7b699e881d1c44d53f53411ef",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "abd99f7ef1c199caedc14bbc1ff2647b9581e745",
+          "behind_by": 193,
+          "head_oid": "4ada6b33e898c9c7b699e881d1c44d53f53411ef",
+          "merge_base_oid": "b0355f8a9e556f9b6f76ea9462847ef2034b43dc",
+          "status": "diverged",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 2,
+          "base_oid": "abd99f7ef1c199caedc14bbc1ff2647b9581e745",
+          "behind_by": 0,
+          "head_oid": "8f11d53c1feb1dc8c17ca02b5d2592ed1b7e6698",
+          "merge_base_oid": "abd99f7ef1c199caedc14bbc1ff2647b9581e745",
+          "status": "ahead",
+          "total_commits": 2
+        }
+      },
+      "final_head_oid": "8f11d53c1feb1dc8c17ca02b5d2592ed1b7e6698",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:21Z",
+      "provider_response_sha256": {
+        "checkpoint": "398fee46958f7b971b98d0c2d0e5114992109c16306081eff6e54bd8accfdfd3",
+        "head": "718a7937f08a5cdd6b48fae63fb15dc1cb7b21997840e119ea27a21f5335f19a",
+        "pull_request": "3cbf7893ba9cbe4d2d82a0870ecff7857a9b7e0cb68b2c7e33e3298f8b6a32d4"
+      },
+      "pull_request": {
+        "base_oid": "abd99f7ef1c199caedc14bbc1ff2647b9581e745",
+        "head_oid": "8f11d53c1feb1dc8c17ca02b5d2592ed1b7e6698",
+        "merged": true,
+        "node_id": "PR_kwDOAMSroc7sPsF2",
+        "number": 175203,
+        "state": "closed",
+        "updated_at": "2026-07-05T20:22:42Z"
+      },
+      "repository": "home-assistant/core",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "a079b4af697375e3e7f39250b76487ba1fa6541577a9a1535bb84c6c5dead578",
+        "head": "e91b3888834ba9acaa7c51c998bd0912b052d2160e608ab2d694c099b9c02eb3",
+        "pull_request": "9cbcb1c51a850547479456f1b05233b5715bcfc510a8b83360e124b2dbac1dc4"
+      },
+      "case_id": "github-rust-lang-rust-pr-159570",
+      "checkpoint_oid": "c50737e427fd304023912462e525cac5e89e936b",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "234c31cd674e11703f15d290cba7ff81dfe8b4b8",
+          "behind_by": 0,
+          "head_oid": "c50737e427fd304023912462e525cac5e89e936b",
+          "merge_base_oid": "234c31cd674e11703f15d290cba7ff81dfe8b4b8",
+          "status": "ahead",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 1,
+          "base_oid": "234c31cd674e11703f15d290cba7ff81dfe8b4b8",
+          "behind_by": 0,
+          "head_oid": "ec05c7f6a07b09511dab3c51b1b88b37444a5efd",
+          "merge_base_oid": "234c31cd674e11703f15d290cba7ff81dfe8b4b8",
+          "status": "ahead",
+          "total_commits": 1
+        }
+      },
+      "final_head_oid": "ec05c7f6a07b09511dab3c51b1b88b37444a5efd",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:25Z",
+      "provider_response_sha256": {
+        "checkpoint": "044bd5e7b48a56233271eda01d5f2ce4be9b27bc23adf722a49ec47b26eba11b",
+        "head": "d511dd5fd851ae79f7e3940b6992fd36d62f8dabad4c3f7c92ebff9e04bdba30",
+        "pull_request": "4e103a6303c574bc4ae34cca36b6fcbdbf22fb4219f4de466a3e905edf46917c"
+      },
+      "pull_request": {
+        "base_oid": "234c31cd674e11703f15d290cba7ff81dfe8b4b8",
+        "head_oid": "ec05c7f6a07b09511dab3c51b1b88b37444a5efd",
+        "merged": true,
+        "node_id": "PR_kwDOAAsO6M7zj15k",
+        "number": 159570,
+        "state": "closed",
+        "updated_at": "2026-07-20T07:16:46Z"
+      },
+      "repository": "rust-lang/rust",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "5a26e723e9c019cf2d2cd96a68fbd401b7a75baaecda7813c4731ba7b07a16cc",
+        "head": "32417c26aa1fa2f32b6b22f66f3663409a51bf2226ada9d2629785a36b1c8a8a",
+        "pull_request": "956ac6392712f5eb77e5faadf83ad8206de7767aad88ac0cdfdb162a60ecf730"
+      },
+      "case_id": "github-vercel-next.js-pr-97949",
+      "checkpoint_oid": "c09d78401358cddadee150696dc7f00a01ba0cb1",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "d8f45609fa74e56f24958d45d93d3426511f957f",
+          "behind_by": 3,
+          "head_oid": "c09d78401358cddadee150696dc7f00a01ba0cb1",
+          "merge_base_oid": "a9a1cb7859f178f830ad3773b303130c21b19586",
+          "status": "diverged",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 2,
+          "base_oid": "d8f45609fa74e56f24958d45d93d3426511f957f",
+          "behind_by": 3,
+          "head_oid": "9bcdbf92d42aa660b768a5a8b9bbf0ed0631f922",
+          "merge_base_oid": "a9a1cb7859f178f830ad3773b303130c21b19586",
+          "status": "diverged",
+          "total_commits": 2
+        }
+      },
+      "final_head_oid": "9bcdbf92d42aa660b768a5a8b9bbf0ed0631f922",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:28Z",
+      "provider_response_sha256": {
+        "checkpoint": "9b88665bc0586e16837a996b4e313e93a73fae872dc9cc6fae3bf0396b315ce8",
+        "head": "e55905e9a92d176fb1945fa73fe80dd4a57c2c3b0e2213ec2c1e3a690cdbebe3",
+        "pull_request": "05c51f97c885e21d334562f7978c5b1446f7cb9cad0b392aefb88da33dc4e17d"
+      },
+      "pull_request": {
+        "base_oid": "d8f45609fa74e56f24958d45d93d3426511f957f",
+        "head_oid": "9bcdbf92d42aa660b768a5a8b9bbf0ed0631f922",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis8AAAABBGp12g",
+        "number": 97949,
+        "state": "closed",
+        "updated_at": "2026-08-31T18:23:40Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "4414ff048b88163e6d9a11a81edc211556afe4b8f215af8c3c477290f05a525e",
+        "head": "01976aa3a868d023d1c5252029061dffb8dcdab70daeb76575599bedfb24e14e",
+        "pull_request": "7a7f4bb3c7719fc81fda62ccfab2d0480691fae236a7dc7eb975ac84021ff13b"
+      },
+      "case_id": "github-dotnet-runtime-pr-127498",
+      "checkpoint_oid": "b25447a1aeec1b3c40cbbba4ee62ad3dd9582f4d",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 12,
+          "base_oid": "9db0b2959ed06688da8de4411472782718f411f7",
+          "behind_by": 0,
+          "head_oid": "b25447a1aeec1b3c40cbbba4ee62ad3dd9582f4d",
+          "merge_base_oid": "9db0b2959ed06688da8de4411472782718f411f7",
+          "status": "ahead",
+          "total_commits": 12
+        },
+        "head": {
+          "ahead_by": 13,
+          "base_oid": "9db0b2959ed06688da8de4411472782718f411f7",
+          "behind_by": 0,
+          "head_oid": "d55e8d0b98d1ec129d263e5776d26ab918f3d792",
+          "merge_base_oid": "9db0b2959ed06688da8de4411472782718f411f7",
+          "status": "ahead",
+          "total_commits": 13
+        }
+      },
+      "final_head_oid": "d55e8d0b98d1ec129d263e5776d26ab918f3d792",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:32Z",
+      "provider_response_sha256": {
+        "checkpoint": "429c7570954ec57b5e3c442a6e86cfb0f9602d10347da1ea150cbd4d4d51b10b",
+        "head": "b5ec1f42116f22c400e6bcfcc503cc91f7e0bf8d1540753de5536a23b8b27d05",
+        "pull_request": "885bc92b95cab4618717e890f96601da61b3c5329b0ecac54d3eb70dc7baafb6"
+      },
+      "pull_request": {
+        "base_oid": "9db0b2959ed06688da8de4411472782718f411f7",
+        "head_oid": "d55e8d0b98d1ec129d263e5776d26ab918f3d792",
+        "merged": true,
+        "node_id": "PR_kwDODI9FZc7WR9g4",
+        "number": 127498,
+        "state": "closed",
+        "updated_at": "2026-07-18T09:08:30Z"
+      },
+      "repository": "dotnet/runtime",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "2991c84abd717bddf27e14f9026c3d68f4bce00082e3416d0941576225118ca0",
+        "head": "fb886292c2d03152d0869f9ee81dd01ba70104d1292b4b66fcf9f5d0034b818a",
+        "pull_request": "8fab9a0c89d36f03ef03659de341667174c23bc49b3b130dbac69b6169bb8ea3"
+      },
+      "case_id": "github-kubernetes-kubernetes-pr-129109",
+      "checkpoint_oid": "852983aa50ebbcd852326ef6ba63d3920550e798",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "2846ba9cdbbde11f02435cfdfccf1850d99be47b",
+          "behind_by": 11605,
+          "head_oid": "852983aa50ebbcd852326ef6ba63d3920550e798",
+          "merge_base_oid": "29101e9774e318f502cbdf68080bafe7c5794124",
+          "status": "diverged",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 3,
+          "base_oid": "2846ba9cdbbde11f02435cfdfccf1850d99be47b",
+          "behind_by": 2399,
+          "head_oid": "d8f70b87cec6888420e778bca1ea8022a6617140",
+          "merge_base_oid": "eb0da686b86f3e1a8c7519a37a6bde64daf09867",
+          "status": "diverged",
+          "total_commits": 3
+        }
+      },
+      "final_head_oid": "d8f70b87cec6888420e778bca1ea8022a6617140",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:36Z",
+      "provider_response_sha256": {
+        "checkpoint": "a245f43162cb7929a5b28356965e8e00775dc97429cd29d902a81a9f3c312836",
+        "head": "eccae27b4eb463b2a0c9d4a5e499e53a3ce6513e39dbe9bfa113041240f0b511",
+        "pull_request": "dcbb0451e9c3bffe16ce92252b7a9fc75b13fa913a40f3f8b519121e4d4ad626"
+      },
+      "pull_request": {
+        "base_oid": "2846ba9cdbbde11f02435cfdfccf1850d99be47b",
+        "head_oid": "d8f70b87cec6888420e778bca1ea8022a6617140",
+        "merged": true,
+        "node_id": "PR_kwDOAToIks6EWo8j",
+        "number": 129109,
+        "state": "closed",
+        "updated_at": "2026-06-30T18:10:13Z"
+      },
+      "repository": "kubernetes/kubernetes",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "8c84a878a5981fe3f10b84d4041f8e424fd2310c3fbc83546b841c50ff769c93",
+        "head": "b7dac828060b72cbba1b4e2ed1789a801c0ee583d459a275a5c9eab8c1ed3a44",
+        "pull_request": "216d77b92a104b9589c85f5e0831ee352e4bf2052714d2f5a5bf4091aa2fa012"
+      },
+      "case_id": "github-dotnet-runtime-pr-129897",
+      "checkpoint_oid": "3e5309a71c3b4e17a26e79abbb8fe34230a22583",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 3,
+          "base_oid": "a20d77863595d98bf3602674f5dca5ee252ab03e",
+          "behind_by": 24,
+          "head_oid": "3e5309a71c3b4e17a26e79abbb8fe34230a22583",
+          "merge_base_oid": "f5a9853b34aeeec46e5729715a62ef2095607f13",
+          "status": "diverged",
+          "total_commits": 3
+        },
+        "head": {
+          "ahead_by": 6,
+          "base_oid": "a20d77863595d98bf3602674f5dca5ee252ab03e",
+          "behind_by": 0,
+          "head_oid": "b009c5c1ea7ce17591407d14bd436e920a3343b0",
+          "merge_base_oid": "a20d77863595d98bf3602674f5dca5ee252ab03e",
+          "status": "ahead",
+          "total_commits": 6
+        }
+      },
+      "final_head_oid": "b009c5c1ea7ce17591407d14bd436e920a3343b0",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:40Z",
+      "provider_response_sha256": {
+        "checkpoint": "e793e51ce7f61560d4c7c8394f9195c7824bf54b5bd9dee9dd7b0480015c9d52",
+        "head": "9b079c986b8895823d55f9d9c667d63c2bde2622eed1f2069fbcf8211512669f",
+        "pull_request": "1b95bd52c1eb4fb9cb9f5ddf491631c73c73427369ff4f7472c3724e6a44d9ea"
+      },
+      "pull_request": {
+        "base_oid": "a20d77863595d98bf3602674f5dca5ee252ab03e",
+        "head_oid": "b009c5c1ea7ce17591407d14bd436e920a3343b0",
+        "merged": true,
+        "node_id": "PR_kwDODI9FZc7rDANr",
+        "number": 129897,
+        "state": "closed",
+        "updated_at": "2026-08-02T09:18:38Z"
+      },
+      "repository": "dotnet/runtime",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "c5f2b7ac33e065413254c01d8973d344c2dd6a18673fe2e426b9c2f99bff4fd0",
+        "head": "af65cca08cc5c85a7e363e333d19e3c70294d5a7d691f0edc207918336bedcf2",
+        "pull_request": "7ad2e99ea25f81e1da3161c0b5e70113b733db0f35be83cb0c941e068263d3fc"
+      },
+      "case_id": "github-microsoft-vscode-pr-327852",
+      "checkpoint_oid": "6e5fcc764a5285d0b61ce7bcf526c43380bacaef",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 9,
+          "base_oid": "67e1cc55203c9ca2174b86a892ab5dda9f8ff318",
+          "behind_by": 81,
+          "head_oid": "6e5fcc764a5285d0b61ce7bcf526c43380bacaef",
+          "merge_base_oid": "b7c14909f5744eb0463d644c57491200331ef063",
+          "status": "diverged",
+          "total_commits": 9
+        },
+        "head": {
+          "ahead_by": 16,
+          "base_oid": "67e1cc55203c9ca2174b86a892ab5dda9f8ff318",
+          "behind_by": 0,
+          "head_oid": "8490e28bc4af2ff5c5ea8f8a6551738b38622d44",
+          "merge_base_oid": "67e1cc55203c9ca2174b86a892ab5dda9f8ff318",
+          "status": "ahead",
+          "total_commits": 16
+        }
+      },
+      "final_head_oid": "8490e28bc4af2ff5c5ea8f8a6551738b38622d44",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:44Z",
+      "provider_response_sha256": {
+        "checkpoint": "5aa6311a86c7538f6df297a0a6f83a81538eda67526e18942e2f65ebe6ae622c",
+        "head": "510a1a2fdc4f88ebaa222f85ebdb8806e23ffb315503966553e57bf7fae1de55",
+        "pull_request": "0e0ae5595257e3925b58517f30567bf84a0a4f5728bba8a12135559f8e3904ab"
+      },
+      "pull_request": {
+        "base_oid": "67e1cc55203c9ca2174b86a892ab5dda9f8ff318",
+        "head_oid": "8490e28bc4af2ff5c5ea8f8a6551738b38622d44",
+        "merged": true,
+        "node_id": "PR_kwDOAn8RLM73jI9Y",
+        "number": 327852,
+        "state": "closed",
+        "updated_at": "2026-07-29T20:41:52Z"
+      },
+      "repository": "microsoft/vscode",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "c956f37c7943874888a9a8252db1e504659612f921ae7e3cfcd964369e89d740",
+        "head": "bb6de1c3a87300dd88bdc72effd2b206870802a591f05971c4ae6cc9b448c7b3",
+        "pull_request": "e1b4b9da324a6e1bba7fc0c8a060d360123b9e5f12c2494ea3023353e397081e"
+      },
+      "case_id": "github-vercel-next.js-pr-97833",
+      "checkpoint_oid": "d9ec811480ac32b9bc3be1749aea9822b7c3e766",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 1,
+          "base_oid": "2cee98ab972ca936334ced42df8b9523ca5ce18b",
+          "behind_by": 0,
+          "head_oid": "d9ec811480ac32b9bc3be1749aea9822b7c3e766",
+          "merge_base_oid": "2cee98ab972ca936334ced42df8b9523ca5ce18b",
+          "status": "ahead",
+          "total_commits": 1
+        },
+        "head": {
+          "ahead_by": 2,
+          "base_oid": "2cee98ab972ca936334ced42df8b9523ca5ce18b",
+          "behind_by": 0,
+          "head_oid": "2f03e6266a3414af6b7784d4ca4cf83d6b34533a",
+          "merge_base_oid": "2cee98ab972ca936334ced42df8b9523ca5ce18b",
+          "status": "ahead",
+          "total_commits": 2
+        }
+      },
+      "final_head_oid": "2f03e6266a3414af6b7784d4ca4cf83d6b34533a",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:48Z",
+      "provider_response_sha256": {
+        "checkpoint": "a3f25e8cace7b129104948fbe44e4beae7ed3a62b378079da46b295fbe9d2e6c",
+        "head": "2dcfdd98868dd5e2c343f15272086abaaa7b7de3980024a112a7284a134e0ee8",
+        "pull_request": "0f748cbc139e24eece10200530f414a6b84560a8bc9d64d88220a65099825948"
+      },
+      "pull_request": {
+        "base_oid": "2cee98ab972ca936334ced42df8b9523ca5ce18b",
+        "head_oid": "2f03e6266a3414af6b7784d4ca4cf83d6b34533a",
+        "merged": true,
+        "node_id": "PR_kwDOBC3Cis8AAAABA267eA",
+        "number": 97833,
+        "state": "closed",
+        "updated_at": "2026-08-27T21:54:26Z"
+      },
+      "repository": "vercel/next.js",
+      "route": "provider_attested_same_base"
+    },
+    {
+      "bindings": {
+        "checkpoint": "a25cbb40acab61d36235ab2713340f957d296679f08f7080a7d3db45a7a4dd36",
+        "head": "bfb3e2f95d2f906a6c5c414916b4eed13176a7b2663ae85e891ec21507a3bd85",
+        "pull_request": "d85ab8a84dbfad79733b8f11f391e60cf641691bda556b0fbda9c0131afb0f5b"
+      },
+      "case_id": "github-kubernetes-kubernetes-pr-140717",
+      "checkpoint_oid": "9632d1a3655a959229e807aa694c1767a6a71aa6",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 3,
+          "base_oid": "d5171388c6415ecae167b2e9be5a8b031cbfa384",
+          "behind_by": 50,
+          "head_oid": "9632d1a3655a959229e807aa694c1767a6a71aa6",
+          "merge_base_oid": "9c722bc288a761747528086f354a7d2bc6e0e1ba",
+          "status": "diverged",
+          "total_commits": 3
+        },
+        "head": {
+          "ahead_by": 5,
+          "base_oid": "d5171388c6415ecae167b2e9be5a8b031cbfa384",
+          "behind_by": 50,
+          "head_oid": "7a6d7e566cc19de5a5a0e13f90b586129db5f7bd",
+          "merge_base_oid": "9c722bc288a761747528086f354a7d2bc6e0e1ba",
+          "status": "diverged",
+          "total_commits": 5
+        }
+      },
+      "final_head_oid": "7a6d7e566cc19de5a5a0e13f90b586129db5f7bd",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:52Z",
+      "provider_response_sha256": {
+        "checkpoint": "22d498dc80a7dc2fa044dfbe407d7fc84ee0d60e48e2013cef0d18cdbafdbf23",
+        "head": "df1fddb1b34f13128281876ffa30742328573727e4bef61e59993b48222a1f79",
+        "pull_request": "b31fb32c3fc903e2d478f0adfa145b9df8af38c11da2cb733e842b946344e706"
+      },
+      "pull_request": {
+        "base_oid": "d5171388c6415ecae167b2e9be5a8b031cbfa384",
+        "head_oid": "7a6d7e566cc19de5a5a0e13f90b586129db5f7bd",
+        "merged": true,
+        "node_id": "PR_kwDOAToIks7zcbWR",
+        "number": 140717,
+        "state": "closed",
+        "updated_at": "2026-07-24T15:50:26Z"
+      },
+      "repository": "kubernetes/kubernetes",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "cde924490dd9ebc584c3abb5f2413e0c93d822a6e7b702639aa8f3ea7c552ac7",
+        "head": "6aa69cd48460d7973ecb56f73153fd45810099a3459b1c5d619f5721f49bbad1",
+        "pull_request": "5227e2f11a29b679ed693c8f6401249fe130e10c20f91cb2f91915915c2ad976"
+      },
+      "case_id": "github-home-assistant-core-pr-178664",
+      "checkpoint_oid": "9bcc7f0438f91008b1c5bb1f8046eecb61882795",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 2,
+          "base_oid": "035ae91efb2f70e977d75a413abd4cfb703d5c3c",
+          "behind_by": 64,
+          "head_oid": "9bcc7f0438f91008b1c5bb1f8046eecb61882795",
+          "merge_base_oid": "87f77c13f973ef80a5a476e102225e0fad3d6d1e",
+          "status": "diverged",
+          "total_commits": 2
+        },
+        "head": {
+          "ahead_by": 4,
+          "base_oid": "035ae91efb2f70e977d75a413abd4cfb703d5c3c",
+          "behind_by": 0,
+          "head_oid": "64667240bcd5c393c61c629be5491459115418cf",
+          "merge_base_oid": "035ae91efb2f70e977d75a413abd4cfb703d5c3c",
+          "status": "ahead",
+          "total_commits": 4
+        }
+      },
+      "final_head_oid": "64667240bcd5c393c61c629be5491459115418cf",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:15:56Z",
+      "provider_response_sha256": {
+        "checkpoint": "0cc5637c73eadf75e401335101f57ee583ea7981ede9217577755c4008b7c10f",
+        "head": "fbcb15f6bd5b933dcf889e4850ee67142faa60ac849b2362d36cfc8341ebbc95",
+        "pull_request": "4729c1466c94713512163f3c77433ae6d928de0e40b5bbcd48bbd9271f270699"
+      },
+      "pull_request": {
+        "base_oid": "035ae91efb2f70e977d75a413abd4cfb703d5c3c",
+        "head_oid": "64667240bcd5c393c61c629be5491459115418cf",
+        "merged": true,
+        "node_id": "PR_kwDOAMSroc7894pZ",
+        "number": 178664,
+        "state": "closed",
+        "updated_at": "2026-08-13T12:14:07Z"
+      },
+      "repository": "home-assistant/core",
+      "route": "requires_full_ancestry"
+    },
+    {
+      "bindings": {
+        "checkpoint": "43be780082c1543c23c18755e8aafa254a262b5b27464e9d890a43a2d771c29c",
+        "head": "a43986558fc0669525ae07cf0d857253c4768cb3b43aaab2d9f3531109d311dc",
+        "pull_request": "ff71b8b9288dce1356bbe96db435f50388d0a65b80ccbb67fcc5d827facde469"
+      },
+      "case_id": "github-dotnet-runtime-pr-129091",
+      "checkpoint_oid": "3a38a1e5f5da59bac9153ead4589ab6d3440fb96",
+      "comparisons": {
+        "checkpoint": {
+          "ahead_by": 17,
+          "base_oid": "8f2341959451d05a276af3760b45b16310a19baf",
+          "behind_by": 230,
+          "head_oid": "3a38a1e5f5da59bac9153ead4589ab6d3440fb96",
+          "merge_base_oid": "e0471a15199706b747aaf744d76eeec1dff75fe4",
+          "status": "diverged",
+          "total_commits": 17
+        },
+        "head": {
+          "ahead_by": 18,
+          "base_oid": "8f2341959451d05a276af3760b45b16310a19baf",
+          "behind_by": 0,
+          "head_oid": "f60b971d3e10038fe9728d8be84925c46f8dcec2",
+          "merge_base_oid": "8f2341959451d05a276af3760b45b16310a19baf",
+          "status": "ahead",
+          "total_commits": 18
+        }
+      },
+      "final_head_oid": "f60b971d3e10038fe9728d8be84925c46f8dcec2",
+      "observation_status": "observed",
+      "observed_at": "2026-09-06T12:16:00Z",
+      "provider_response_sha256": {
+        "checkpoint": "bf2c7b1a1a17ff9bc893df00fcfe2cd3d3ebc4c499c93407259567746ac40397",
+        "head": "1dbf0141631740e40dcddcd28233cc268397d7fcbc4809cb57b0860247edbc21",
+        "pull_request": "cb99f914ecb62479ffb00caa20a161a3cd2d5e78524169cb48e0c748dd045db7"
+      },
+      "pull_request": {
+        "base_oid": "8f2341959451d05a276af3760b45b16310a19baf",
+        "head_oid": "f60b971d3e10038fe9728d8be84925c46f8dcec2",
+        "merged": true,
+        "node_id": "PR_kwDODI9FZc7jkqmK",
+        "number": 129091,
+        "state": "closed",
+        "updated_at": "2026-07-20T09:40:14Z"
+      },
+      "repository": "dotnet/runtime",
+      "route": "requires_full_ancestry"
+    }
+  ],
+  "complete": true,
+  "dataset_version": "0.1.0",
+  "plan_sha256": "d0287a0319c7e2dd7298e7a141b00be0dbfc2db8dfd75ac2a42259ceb072fdb9",
+  "protocol_sha256": "b804e08ff34d69e4e4d7820abe35d9bb27b82165db6a5f5af3dbd2177c29c194",
+  "provider": {
+    "api_root": "https://api.github.com",
+    "api_version": "2022-11-28",
+    "host": "github.com"
+  },
+  "schema": "stratadiff-review-transition-provider-observation-v1",
+  "started_at": "2026-09-06T12:14:02Z",
+  "summary": {
+    "failed": 0,
+    "observed": 30,
+    "pending": 0,
+    "routes": {
+      "provider_attested_same_base": 11,
+      "provider_metadata_unavailable": 0,
+      "requires_full_ancestry": 19
+    },
+    "selected_cases": 30
+  },
+  "updated_at": "2026-09-06T12:16:00Z"
+}

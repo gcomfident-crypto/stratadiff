@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { repositoryBaseDriftSessionFixture, repositorySessionFixture, reviewCoverageSessionFixture, sessionFixture } from './test/fixture'
+import { repositoryBaseDriftSessionFixture, repositorySessionFixture, reviewCoverageSessionFixture, reviewInboxSessionFixture, sessionFixture } from './test/fixture'
 
 vi.mock('@pierre/diffs/react', () => ({
   MultiFileDiff: ({ oldFile, newFile }: { oldFile: { contents: string }; newFile: { contents: string } }) => (
@@ -511,6 +511,55 @@ describe('Evidence Workbench', () => {
       '/api/passport?token=test-token',
     )
     expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the actionable Review Inbox and hands off only the selected event', async () => {
+    const payload = reviewInboxSessionFixture()
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.startsWith('/api/session')) return Promise.resolve(new Response(JSON.stringify(payload), { status: 200 }))
+      if (url.startsWith('/api/continue')) return Promise.resolve(new Response('{"accepted":true}', { status: 202, statusText: 'Accepted' }))
+      throw new Error(`Unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+
+    expect(await screen.findByText('1 pull request ready to resume')).toBeInTheDocument()
+    expect(screen.getByText('acme/widget')).toBeInTheDocument()
+    expect(screen.getByText('Source code').nextElementSibling).toHaveTextContent('Not collected')
+    expect(screen.getByText('PR text').nextElementSibling).toHaveTextContent('Not collected')
+    fireEvent.click(screen.getByRole('button', { name: 'Continue review for acme/widget pull request 17' }))
+    expect(await screen.findByText('Continue accepted')).toBeInTheDocument()
+
+    const eventId = '1'.repeat(64)
+    expect(fetchMock).toHaveBeenCalledWith('/api/continue?token=test-token', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ event_id: eventId }),
+    }))
+    expect(screen.getByRole('button', { name: 'Continue review for acme/widget pull request 17' })).toBeDisabled()
+  })
+
+  it('keeps unobservable Inbox entries visible for manual follow-up', async () => {
+    const payload = reviewInboxSessionFixture()
+    payload.actionable = []
+    payload.summary = {
+      status: 'insufficient_evidence',
+      completed_review_prs: 2,
+      resume_available_prs: 0,
+      up_to_date_prs: 1,
+      no_completed_review_prs: 0,
+      unobservable_review_prs: 1,
+    }
+    payload.collection.search_candidates = 2
+    payload.collection.inspected_candidates = 2
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 })))
+
+    render(<App />)
+
+    expect(await screen.findByText('No pull request is ready to resume')).toBeInTheDocument()
+    expect(screen.getByText('No safe resume point')).toBeInTheDocument()
+    expect(screen.getByText('acme/platform')).toBeInTheDocument()
+    expect(screen.getByText('The current base commit was unavailable.')).toBeInTheDocument()
   })
 
   it('filters the passport matrix by coverage state and owner', async () => {
