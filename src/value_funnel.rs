@@ -1708,6 +1708,20 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn value_log_with_multiple_hard_links_is_rejected() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("value.jsonl");
+        record_inbox_discovery(&path, true, 0, 0, &[]).unwrap();
+        std::fs::hard_link(&path, directory.path().join("alias.jsonl")).unwrap();
+
+        let error = read_log_path(&path).err().unwrap();
+        assert!(error
+            .to_string()
+            .contains("value log must not have multiple hard links"));
+    }
+
     #[test]
     fn funnel_is_local_aggregate_and_integrity_chained() {
         let directory = tempfile::tempdir().unwrap();
