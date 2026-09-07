@@ -96,13 +96,17 @@ availability; outbox and pair fencing coordinate them through PostgreSQL.
 
 ```sh
 npm test
+DATABASE_URL=postgresql://... npm run test:postgres
 npm run build
 ```
 
-The tests use an in-memory PostgreSQL-compatible adapter and injected GitHub transport. They make
-no calls to GitHub and cover HMAC verification, delivery deduplication, stale delivery ordering,
-same-SHA PR isolation, immediate revocation, lease fencing, merge-group head binding, Checks API
-identity, and pagination beyond 300 open PRs.
+The unit tests use an in-memory PostgreSQL-compatible adapter and injected GitHub transport. They
+make no calls to GitHub and cover HMAC verification, delivery deduplication, stale delivery
+ordering, same-SHA PR isolation, immediate revocation, lease fencing, merge-group head binding,
+Checks API identity, and pagination beyond 300 open PRs. The separate integration suite applies
+the production migrations to a real PostgreSQL server. It deterministically holds one outbox row
+lock while a second worker claims work, and verifies outbox and pair lease expiry/fencing against
+the real transaction engine. CI runs that suite on PostgreSQL 17.
 
 Still not done: a live GitHub App installation E2E, a live PostgreSQL concurrency soak, delivery
 redrive/dead-letter operations, an operator UI, and merge-group-native provider
@@ -118,7 +122,7 @@ publisher can only be detected and compensated after an external write; the serv
 canonical Check Run for compensation, but this is not proof of a zero-duration green race. These
 are explicit blockers for deployment as a required merge control.
 
-The unit suite's PostgreSQL adapter does not implement `FOR UPDATE SKIP LOCKED`. Before deploying
-multiple replicas, run a real-PostgreSQL integration gate that races outbox claims, lease expiry,
-epoch changes, and process death around the comment POST. The SQL uses row locking and fenced
-updates in production, but the unit adapter must not be presented as proof of those lock semantics.
+The unit suite's PostgreSQL adapter does not implement `FOR UPDATE SKIP LOCKED`; only
+`npm run test:postgres` is evidence for that lock path. The deterministic integration gate proves
+concurrent claim exclusion and stale lease rejection, but it is not a long-running concurrency
+soak and does not simulate process death around the comment POST.

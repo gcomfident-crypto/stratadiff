@@ -1579,8 +1579,15 @@ export class PgGovernorStore implements GovernorStore {
             SET last_error = $4, available_at = $5,
                 lease_owner = NULL, lease_expires_at = NULL
           WHERE id = $1 AND lease_fence = $2 AND lease_owner = $3
-            AND completed_at IS NULL`,
-        [lease.id, lease.fence, lease.workerId, message.slice(0, 2_000), availableAt],
+            AND lease_expires_at > $6 AND completed_at IS NULL`,
+        [
+          lease.id,
+          lease.fence,
+          lease.workerId,
+          message.slice(0, 2_000),
+          availableAt,
+          now,
+        ],
       ),
     );
     return result.rowCount === 1;

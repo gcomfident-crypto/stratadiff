@@ -46,3 +46,7 @@ jobs:
         run: |
           npm run migrate
           npm run migrate
+      - name: Prove PostgreSQL concurrency and lease fencing
+        env:
+          DATABASE_URL: postgresql://governor:governor_ci@127.0.0.1:5432/governor_test
+        run: npm run test:postgres

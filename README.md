@@ -45,13 +45,13 @@ a durable outbox plus lease fencing. It models a merge-group SHA as a separate g
 fails closed while merge-group-native review evidence is unavailable instead of borrowing a green
 PR-head check.
 
-This is an implementation milestone, not production validation. The automated suite uses an
-in-memory PostgreSQL-compatible adapter and injected GitHub transport; CI smoke-tests migrations
-against PostgreSQL but does not prove `SKIP LOCKED`, outbox, or worker fencing under real database
-concurrency. A live App installation with the ruleset pinned to its `integration_id`, strict
-up-to-date checks or merge queue, and an actual CodeRabbit review remains untested end to end, as
-does a real-PostgreSQL concurrency and process-failure soak. Until those gates pass, the App is not
-production-ready.
+This is an implementation milestone, not production validation. The unit suite uses an in-memory
+PostgreSQL-compatible adapter and injected GitHub transport. CI additionally runs a deterministic
+PostgreSQL 17 integration gate that holds a real row lock to prove `SKIP LOCKED` claim exclusion
+and verifies outbox and pair lease fencing. A live App installation with the ruleset pinned to its
+`integration_id`, strict up-to-date checks or merge queue, and an actual CodeRabbit review remains
+untested end to end, as does a real-PostgreSQL concurrency and process-failure soak. Until those
+gates pass, the App is not production-ready.
 
 The latest immutable release is [`v0.4.1`](https://github.com/gcomfident-crypto/stratadiff/releases/tag/v0.4.1).
 It contains the earlier local Review Resume product; it does **not** contain the Governor or Review
