@@ -1,0 +1,48 @@
+name: Governor App CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  governor-app:
+    name: Governor App · Node 24 · PostgreSQL 17
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: governor_test
+          POSTGRES_USER: governor
+          POSTGRES_PASSWORD: governor_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U governor -d governor_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: services/governor-app
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/governor-app/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Smoke-test PostgreSQL migrations and idempotency
+        env:
+          DATABASE_URL: postgresql://governor:governor_ci@127.0.0.1:5432/governor_test
+        run: |
+          npm run migrate
+          npm run migrate

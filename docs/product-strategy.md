@@ -140,10 +140,19 @@ The alpha now implements the repository Audit, personal Inbox, and underlying fi
 slice: the existing single-reviewer Action, HMAC-authenticated webhook ingestion, an append-only
 review ledger, exact-base CODEOWNERS resolution, user and team permission snapshots, reviewer ×
 owner × file coverage, a signed Passport, offline recomputation, a local Passport viewer, and
-deterministic Check Run request JSON. It does not yet provide a hosted webhook receiver, durable
-production storage, live permission collection, actual Check Run publication, partial-file review
-state, or evidence that the workflow saves human time. Those gaps must remain visible in every
-launch claim.
+deterministic Check Run request JSON. A separate
+[runnable hosted GitHub App MVP](../services/governor-app/README.md) now receives signed webhooks,
+binds the fixed `StrataDiff Final Head` Check Run to a dedicated App identity, and coordinates
+PostgreSQL state, durable outbox work, and monotonic lease fencing. It creates a distinct gate for
+each merge-group SHA but deliberately leaves it non-successful until merge-group-native provider
+evidence exists; it never reuses a green PR-head gate.
+
+That hosted implementation is not production validation. Its automated tests use an in-memory
+PostgreSQL-compatible adapter and injected GitHub transport, while CI's real-PostgreSQL coverage is
+limited to migration smoke testing. A live App/ruleset/strict-or-merge-queue/CodeRabbit end-to-end
+run and a real-PostgreSQL concurrency and process-failure proof are still missing. Live permission
+collection, partial-file review state, and evidence that the workflow saves human time also remain
+open. These boundaries must remain visible in every launch claim.
 
 The alpha gate now derives a separate `review-delta-v1` queue from five snapshots: old base `A`,
 reviewed checkpoint `B`, current base `C`, current head `D`, and reconstructed reviewed baseline
@@ -465,9 +474,10 @@ The host-workflow acceptance matrix must include these end-to-end cases:
 5. Measure the dispatch claim in at least five live reviewer workflows. Capture actual provider
    invocations, cancelled work, wall time, tokens or billed cost where available, final-input
    coverage, and false-gate incidents. The three-PR replay remains directional evidence only.
-6. Use the composite Action as an installable alpha and enterprise escape hatch. Production moves
-   scheduling and base-update reconciliation into a dedicated GitHub App so the gate has its own
-   expected source identity, durable leases, webhook state, and no runner occupied during debounce.
+6. Use the composite Action as an installable alpha and enterprise escape hatch. Harden the
+   runnable dedicated GitHub App MVP that now owns the expected Check source, PostgreSQL webhook
+   state, durable outbox, and fenced leases. Before calling it a production control, prove the live
+   App/ruleset/merge-queue/CodeRabbit path and race its workers on real PostgreSQL.
 7. Keep the human trust path releasable. From outside a checkout, a verified binary plus authenticated
    `gh` must run `stratadiff resume https://github.com/OWNER/REPO/pull/N`, materialize bounded source
    in an isolated temporary repository, and open the evidence Workbench. Missing or unverifiable
@@ -515,9 +525,10 @@ installation, durable webhook state, and a native requested-action loop. Actions
 requests can lose secrets, receive a read-only token, or await approval. The intended surfaces are
 therefore:
 
-- **Public GitHub App:** the eventual zero-YAML product surface. It owns per-PR dispatch leases,
-  invalidates stale base/head evidence, and publishes a required final-input Check with `Review now`
-  and `Inspect evidence` actions.
+- **Hosted GitHub App:** a runnable private MVP today and the eventual public zero-YAML product
+  surface. It owns per-PR dispatch leases, invalidates stale base/head evidence, and publishes the
+  dedicated required final-input Check. Public installation still depends on live ruleset,
+  merge-queue, CodeRabbit, and real-PostgreSQL concurrency validation.
 - **Native `stratadiff`:** the permanent local-trust and recovery surface. It resolves the
   checkpoint, keeps source local, opens the Workbench, and verifies downloaded Passports. The public
   `gh-stratadiff` distribution repository can add the `gh stratadiff` spelling without changing this

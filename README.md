@@ -38,11 +38,20 @@ those fingerprints are adapter evidence, not a promise that every provider behav
 
 ## Project status
 
-**Unreleased `0.5.0` research alpha. Do not yet use the Governor as a production merge gate.** The
-CodeRabbit Action, signed Review Cache runtime, and ReviewTransition correctness evaluation are
-under active integration and adversarial testing. A production gate still requires complete
-base-update invalidation, a dedicated GitHub App identity, clean end-to-end provider runs, and zero
-false skips/carries on the frozen transition corpus.
+**Unreleased `0.5.0` research alpha. Do not yet use the Governor as a production merge gate.** A
+[runnable hosted GitHub App MVP](services/governor-app/README.md) now owns the dedicated
+`StrataDiff Final Head` Check Run identity, persists webhook and gate state in PostgreSQL, and uses
+a durable outbox plus lease fencing. It models a merge-group SHA as a separate gate subject and
+fails closed while merge-group-native review evidence is unavailable instead of borrowing a green
+PR-head check.
+
+This is an implementation milestone, not production validation. The automated suite uses an
+in-memory PostgreSQL-compatible adapter and injected GitHub transport; CI smoke-tests migrations
+against PostgreSQL but does not prove `SKIP LOCKED`, outbox, or worker fencing under real database
+concurrency. A live App installation with the ruleset pinned to its `integration_id`, strict
+up-to-date checks or merge queue, and an actual CodeRabbit review remains untested end to end, as
+does a real-PostgreSQL concurrency and process-failure soak. Until those gates pass, the App is not
+production-ready.
 
 The latest immutable release is [`v0.4.1`](https://github.com/gcomfident-crypto/stratadiff/releases/tag/v0.4.1).
 It contains the earlier local Review Resume product; it does **not** contain the Governor or Review
