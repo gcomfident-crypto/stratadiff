@@ -13,17 +13,20 @@ maintained in the [September 2026 market-evidence snapshot](market-evidence-2026
 **StrataDiff should enter through `gh stratadiff doctor <PR>`. It binds effective policy, required
 contexts, producer App identity and observed signals to one exact PR or `merge_group` SHA, then
 names the blocker and the smallest safe next action when the evidence supports them; otherwise it
-abstains. Repeated diagnoses may support a flight recorder and merge proof later, but only after
-shadow validation. It is not another reviewer, merge queue, rules dashboard or generic composite
-Check.**
+abstains. It works before an App install and independently of the selected merge queue. Reused,
+owner-verified diagnoses lead to a non-mutating repository Preflight; only then may a lightweight
+App Recorder preserve prospective candidate evidence. Shadow proof and enforcement come later. It is
+not another reviewer, merge queue, rules dashboard or generic composite Check.**
 
 This is deliberately not another AI reviewer. AI reviewers generate judgments; GitHub supplies
 SHA, ruleset, review, and Check primitives. StrataDiff's job is to prove how those facts compose.
-For a developer, the first value experience is one read-only `gh stratadiff doctor <PR-URL>` command at the
-moment GitHub gives only a generic policy failure. For a platform owner, repeated incident bundles
-lead to an admin-level repository preflight and then a non-blocking shadow proof. `stratadiff
-resume <PR-URL>` remains the local review-recovery flow. A route never manufactures or restores a
-code-host approval, and an open context closure can never reuse a model verdict.
+For a developer, the first value experience is one read-only `gh stratadiff doctor <PR-URL>` command
+at the moment GitHub gives only a generic policy failure. For a platform owner, repeated incident
+bundles lead to an admin-level repository Preflight. If repeated use establishes that current
+public evidence cannot close the team's incidents, a narrowly permissioned App Recorder
+captures them prospectively; it does not publish a gate by default. `stratadiff resume <PR-URL>`
+remains the local review-recovery flow. A route never manufactures or restores a code-host approval,
+and an open context closure can never reuse a model verdict.
 
 ### Explicit No-Go correction
 
@@ -42,11 +45,12 @@ must win on a policy spanning multiple reviewers, explicit override provenance, 
 from PR heads to a different synthetic merge candidate. If teams do not need that composition, the
 host and reviewer-native controls are sufficient and StrataDiff should say so.
 
-The released CLI remains useful but is no longer the primary acquisition assumption. New public
+The released Resume CLI remains useful but is no longer the primary acquisition assumption. New public
 evidence of checks that never schedule, expected-App drift, merge-queue event gaps, lost completion
 signals, and opaque host errors makes an exact-PR Doctor the faster falsification path. A repository
 Audit requires broader administrative visibility and follows only after the incident-level value is
-visible; a hosted shadow Check follows after both.
+visible. An App Recorder follows only after Doctor or Preflight is reused and the owner confirms a
+retention gap; a hosted shadow Check follows after those retained observations replay correctly.
 It must share the same transition proof rather than branch into a heuristic cache product. On a
 machine with Git, an authenticated `gh`, and a verified StrataDiff binary, the human explanation
 flow still starts outside any checkout:
@@ -99,9 +103,12 @@ the single-reviewer Governor. The first acquisition surface is now **Pull Reques
 why this exact PR head is blocked before asking for admin access or an App install. The repository
 Audit then inventories rulesets, expected App sources, duplicate check names, missing `merge_group`
 triggers, path-filtered required workflows, reviewer coverage, overrides, and repeated work for a
-qualified team. Only then should the repository run a non-blocking composite proof in shadow mode.
-Review Cache, Inbox, and Resume remain optimization, explanation, and recovery surfaces; they are
-not expected to create the high-frequency habit on their own.
+qualified team. A recorder App is justified only after the same owner reuses the diagnosis or
+Preflight and confirms a material post-hoc evidence gap. It first records; it
+does not post a Check or change policy. A non-blocking composite proof follows only after those
+prospective records can be replayed without a false confident answer. Review Cache, Inbox, and
+Resume remain optimization, explanation, and recovery surfaces; they are not expected to create the
+high-frequency habit on their own.
 
 “Read-only” means the Audit performs no mutation, not that every field is available with low
 privilege. GitHub's [rules API](https://docs.github.com/en/rest/repos/rules?apiVersion=2022-11-28)
@@ -111,13 +118,15 @@ repository Administration read, rule-suite history has a maximum one-month selec
 `bypass_actors` is returned only to a caller with ruleset write access. Missing privileged fields
 must remain unknown rather than being interpreted as an empty configuration.
 
-The early validation path is dual: the local `gh` extension preserves a no-admin trust path, while
-the public GitHub App is required to test the actual buyer job—durable multi-provider evidence and
-an App-bound shadow Check. Enforcement comes only after shadow data and live merge-queue E2E pass.
-An Action remains a transparent self-hosted escape hatch, but its shared workflow identity and
-fork-token constraints make it a weaker default control plane. No surface should post routine
-marketing comments or appear on a repository where it cannot report a concrete audit finding or
-verified candidate.
+The early validation path is sequential: the local `gh` extension preserves the no-install trust
+path; the owner-authorized Preflight uses the owner's existing GitHub access; and a public GitHub
+App is requested only when repeat use justifies durable, prospective evidence capture. The same App
+may later test an App-bound shadow Check, but recording and gating are separate promotions.
+Enforcement comes only after replayed recorder data and a live merge-queue E2E pass. An Action
+remains a transparent self-hosted escape hatch, but its shared workflow identity and fork-token
+constraints make it a weaker default control plane. No surface should post routine marketing
+comments or appear on a repository where it cannot report a concrete audit finding or verified
+candidate.
 
 ### Product boundary: Audit diagnoses, Merge Proof decides, Resume explains
 
@@ -167,6 +176,16 @@ separately validated commit relations; unavailable membership fails closed. GitH
 canonical place for conversation and approval. The long-term promise is:
 
 > One candidate, one policy, one inspectable proof. Never inherit unproven review evidence.
+
+[dcoapp/app #303](https://github.com/dcoapp/app/issues/303) demonstrates why the recorder is a
+separate, earned step. A required `DCO` result remained Expected for about an hour before queue
+ejection. For that old event, the current public timeline no longer exposed the exact candidate SHA
+and the temporary ref and Check Runs were gone, so its SHA → Check chain could not be reconstructed
+from public evidence. App-side records later identified both missing `merge_queues: read` and a live
+registration subscribed to `merge_queue_entry` instead of `merge_group`. A post-hoc Doctor could
+safely report only the candidate identity and missing producer signal retained at observation time,
+not that internal cause. The recorder exists to preserve future evidence after this limitation has
+caused repeated value loss, not to pretend historical omniscience.
 
 The alpha now implements the repository Audit, personal Inbox, and underlying file-level vertical
 slice: the existing single-reviewer Action, HMAC-authenticated webhook ingestion, an append-only
@@ -375,10 +394,11 @@ worked on semantic diffing, refactoring analysis, or review workflow.
 
 | Category | What it already does well | Boundary for StrataDiff |
 |---|---|---|
-| GitHub and GitLab | Canonical conversation, permissions, approvals, viewed state, file navigation, and revision workflow. GitHub requires the latest candidate SHA, supports an expected App source, can dismiss stale approvals when configured, and creates a different SHA for `merge_group` ([required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks), [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)). GitLab stores diff versions and uses `git patch-id` for smarter approval reset. | Do not claim native hosts accept old checks or lack source identity binding; expected-App binding does not validate reviewer semantics. Automate configuration audit, normalize cross-provider evidence snapshots, and prove only supported PR-head-to-final-candidate transitions. |
+| GitHub and GitLab | Canonical conversation, permissions, approvals, viewed state, file navigation, and revision workflow. GitHub requires the latest candidate SHA, supports an expected App source, can dismiss stale approvals when configured, and creates a different SHA for `merge_group` ([required-check troubleshooting](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks), [merge queue](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue)). [`gh pr checks --required`](https://cli.github.com/manual/gh_pr_checks) and Rules Insights already expose required checks and rule outcomes. GitLab stores diff versions and uses `git patch-id` for smarter approval reset. | Do not claim native hosts accept old checks, lack source identity binding, or cannot show blockers. Expected-App binding does not validate reviewer semantics, while the current CLI does not join expected/observed App identity or reconstruct a native queue candidate. Add only the queue-neutral policy → candidate → producer → trigger proof and explicit unknowns. |
 | [Reviewable](https://docs.reviewable.io/files) | Tracks each reviewer × file × immutable revision, exposes last-reviewed-to-latest comparisons, pins force-pushed commits, collapses base-only changes, and heuristically matches rebased commits. | Do not claim invention of persistent per-file review memory. Differentiate on a GitHub-native/no-migration entry, deterministic four-snapshot evidence, explicit fail-closed states, no additional third-party OAuth grant for the local path, local source analysis, and offline verification. |
 | [Aviator FlexReview](https://docs.aviator.co/flexreview/concepts/validation-in-flexreview), GitLab, and Gerrit | Selectively retain or invalidate approvals after no-code rebases and file changes. Gerrit additionally compares arbitrary patch sets, separates mapped rebase edits, stores private reviewed flags by patch set × file × user, and copies votes under administrator-defined change-kind conditions ([review UI](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#normal-and-rebase-edits), [reviewed flags](https://gerrit-review.googlesource.com/Documentation/config-accounts.html#reviewed-flags), [copy conditions](https://gerrit-review.googlesource.com/Documentation/config-labels.html#label_copyCondition)). Its own documentation shows a [hazardous stacked squash](https://gerrit-review.googlesource.com/Documentation/user-review-ui.html#hazardous-rebases) whose patch-set interdiff is empty while parent content enters implicitly. | `Coverage Firewall`, selective invalidation, and rebase coloring are expansion capabilities, not primary novelty. The remaining combination is GitHub-native exact residue reconstruction, reviewer-specific dropped-residue and parent-influx evidence, strict replay, portable verification, and a no-migration local entry. |
 | Graphite and stacked-PR tools | Make changes reviewable by splitting, restacking, navigating, versioning, and queueing PRs. Graphite's own queue is [incompatible with GitHub's native queue](https://graphite.com/docs/graphite-merge-queue), while its external integration hands work to another queue. | Do not compete on queue ownership, stack navigation, or generic version interdiff. Remain a neutral evidence plane for the merge path a team already chose. |
+| Mergify, Aviator, and Trunk merge queues | Mergify's [`queue show`](https://docs.mergify.com/merge-queue/monitoring/) reports position, CI, and blocking conditions and supports App-qualified checks. Aviator exposes [`av pr status`](https://docs.aviator.co/aviator-cli/manpages/av-pr-status-1), sticky blocker reasons, and pending-workflow diagnosis. Trunk's [testing-details API](https://docs.trunk.io/merge-queue/reference/merge/get-details-about-testing-that-merge-queue-is-performing) exposes required-status sources, exact `testBranchSha`, Checks, and tested PRs. | CLI blocker explanations, App qualification, and exact candidate/check chains already exist inside vendor-owned queues. StrataDiff must work before installation or queue migration, across native and third-party paths, and abstain instead of inferring vendor-internal state. |
 | CodeRabbit | Its [Request Changes Workflow](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow) already checks latest-review completion, reviewed HEAD membership, unresolved threads, pre-merge checks, and a final HEAD race; its [automatic-review controls](https://docs.coderabbit.ai/configuration/auto-review) expose review-budget and pause tradeoffs. | **No-Go:** do not sell CodeRabbit stale-head prevention. Import its actual review objects as one provider, record explicit overrides, and compete only on multi-provider/final-candidate composition. |
 | Copilot and other AI reviewers | Copilot can re-review pushes and, in public preview, submit approvals that are dismissed after a new commit; it may repeat resolved feedback. A public report found 0 actual approvals among 78 reviews despite enabled settings ([docs](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review), [report](https://github.com/orgs/community/discussions/206810)). | Normalize actual API evidence rather than UI recommendations. Do not rely on a preview bug persisting, and do not infer other providers lack undocumented capabilities. |
 | SemanticDiff, Difftastic, and Pyor | Provide substantially better structural presentation, moved-code navigation, grouping, or re-review views than line diff. | The overlap is real. Differentiate first on zero-admin checkpoint recovery across force-pushes, then on portable evidence, independent replay, and explicit abstention—not on visual syntax awareness alone. |
@@ -386,8 +406,9 @@ worked on semantic diffing, refactoring analysis, or review workflow.
 | Moderne / OpenRewrite | Deterministic source recipes with [recipe tests](https://docs.openrewrite.org/authoring-recipes/recipe-testing) and knowledge of the transformation that was requested. | For recipe-produced changes, producer provenance can be stronger than post-hoc inference. Import the recipe attestation; focus StrataDiff on vendor-neutral verification of changes from any source. |
 | Static analysis and security scanners | Find known bug and vulnerability classes. | These tools answer “what may be wrong?” StrataDiff answers “what factual transformation can be replayed or checked?” Neither replaces the other. |
 
-The defensible product loop is: **exact-PR Doctor → admin preflight Audit → non-blocking shadow
-proof → measured remediation and savings → opt-in required Check → portable evidence ledger**.
+The defensible product loop is: **queue-neutral, pre-install Doctor → owner-verified Preflight →
+repeat-use gate → prospective App Recorder → replayed recorder evidence → non-blocking shadow proof
+→ opt-in required Check**.
 Resume and conservative residue
 explain or reduce work inside that loop. Any competitor can copy a summary; provider interoperability,
 strict failure behavior, final-candidate binding, offline replay, and accumulated adversarial lineage
@@ -509,45 +530,55 @@ The host-workflow acceptance matrix must include these end-to-end cases:
 
 ### P0: prove the wedge
 
-1. Ship the read-only Merge Readiness Audit and a non-blocking shadow Check before expanding the
-   enforcement surface. Audit expected App sources, duplicate context names, `merge_group`
+1. Ship `gh stratadiff doctor <PR>` as the queue-neutral, pre-install entry. For one observed
+   candidate, join effective required contexts and expected App identities to exact-SHA Checks,
+   suites, runs, jobs, and statically attributable workflow triggers. When candidate identity,
+   producer, reusable workflow, dynamic matrix, or external-service state is not proved, emit an
+   explicit unknown instead of a likely cause.
+2. Promote repeated, owner-verified diagnoses into a non-mutating Merge Readiness Preflight. Audit
+   expected App sources, duplicate context names, `merge_group`
    coverage, path-filtered required workflows, overrides, final-push evidence, and repeated work.
    GitHub.com's and GHES 3.22's path-filter boundary is 3,000 files, while GHES 3.17–3.21 use 300.
    The Audit must bind the deployment/version before applying either limit and remain unknown above
    300 when it cannot. The pull-files API returns at most 3,000 files, so a capped response does not
    independently prove a complete ordered evaluation set.
-2. Close the merge-proof safety contract. Every successful gate must bind repository, PR, current
+3. Only after Doctor or Preflight is reused and an owner confirms that ephemeral evidence prevents
+   incident closure, install a recorder App. Capture candidate lifecycle, visible policy, webhook
+   delivery, Check, suite, run, and job identifiers prospectively without comments, policy changes,
+   or a required Check. Prove retention, deletion, and replay before promoting the same installation
+   to shadow evaluation.
+4. Close the merge-proof safety contract. Every successful gate must bind repository, PR, current
    base and head, final candidate SHA, independently established merge-group membership, provider
    evidence IDs and sources, scope, and policy generation. The webhook's head/base fields alone do
    not establish membership. Missing, wrong-source, contradictory, overridden-out-of-policy,
    malformed, quarantined, and stale evidence fails closed. No workflow may execute PR code.
-3. Run a sacrificial-organization end-to-end trial with a ruleset pinned to the dedicated App,
+5. Run a sacrificial-organization end-to-end trial with a ruleset pinned to the dedicated App,
    real Copilot and CodeRabbit evidence, and GitHub's native merge queue. Record every webhook,
    review/check object, policy decision, repair, latency, and terminal classification. Unit tests and
    unrelated public examples do not establish this integration.
-4. Preserve the completed clean ReviewTransition-30 result as engine evidence, then preregister a
+6. Preserve the completed clean ReviewTransition-30 result as engine evidence, then preregister a
    Final-Candidate-100 control-plane corpus before observing outcomes. Require zero false `skip`,
    false carry, or wrong-candidate success and identical independent replay digests.
-5. Make Review Cache receipts survive multiple updates without laundering verdicts. A residue
+7. Make Review Cache receipts survive multiple updates without laundering verdicts. A residue
    receipt must retain the complete current identity/outcome ledger, reverify prior signed lineage,
    execute a bound deterministic cross-item outcome rule, preserve blocking outcomes, and use a
    domain-separated signature. Open dependency closure routes to `full` or `blocked`, never reuse.
-6. Measure the proof and dispatch claims in at least five live repositories. Capture actual provider
+8. Measure the proof and dispatch claims in at least five live repositories. Capture actual provider
    invocations, cancelled work, wall time, tokens or billed cost where available, final-input
    coverage, and false-gate incidents. The three-PR replay remains directional evidence only.
-7. Use the composite Action as an installable alpha and enterprise escape hatch. Harden the
+9. Use the composite Action as an installable alpha and enterprise escape hatch. Harden the
    runnable dedicated GitHub App MVP that now owns the expected Check source, PostgreSQL webhook
    state, durable outbox, and fenced leases. Before calling it a production control, prove the live
    App/ruleset/merge-queue/CodeRabbit path and race its workers on real PostgreSQL.
-8. Keep the human trust path releasable. From outside a checkout, a verified binary plus authenticated
+10. Keep the human trust path releasable. From outside a checkout, a verified binary plus authenticated
    `gh` must run `stratadiff resume https://github.com/OWNER/REPO/pull/N`, materialize bounded source
    in an isolated temporary repository, and open the evidence Workbench. Missing or unverifiable
    history must stop explicitly.
-9. Freeze separate value studies: Audit measures actionable configuration findings and shadow-to-
+11. Freeze separate value studies: Audit measures actionable configuration findings and shadow-to-
    enforce conversion; automation measures cost, latency, and final-candidate coverage;
    Resume measures completion time and issue recall. Repository-path reduction alone is diagnostic
    evidence, not user value.
-10. Maintain deterministic artifacts and offline verification. Publish every benchmark case and
+12. Maintain deterministic artifacts and offline verification. Publish every benchmark case and
    refusal, retain exact provider observations, and produce a reproducible release before treating
    any alpha component as a production control.
 
@@ -591,9 +622,10 @@ requests can lose secrets, receive a read-only token, or await approval. The int
 therefore:
 
 - **Hosted GitHub App:** a runnable private MVP today and the eventual public zero-YAML product
-  surface. It owns per-PR dispatch leases, invalidates stale base/head evidence, and publishes the
-  dedicated required final-input Check. Public installation still depends on live ruleset,
-  merge-queue, CodeRabbit, and real-PostgreSQL concurrency validation.
+  surface. Its first public mode is a narrowly permissioned recorder offered only after verified
+  Doctor/Preflight reuse. Later promotions own per-PR dispatch leases, invalidate stale base/head
+  evidence, and publish a shadow and eventually required final-input Check. Public promotion still
+  depends on live ruleset, merge-queue, CodeRabbit, and real-PostgreSQL concurrency validation.
 - **Native `stratadiff`:** the permanent local-trust and recovery surface. It resolves the
   checkpoint, keeps source local, opens the Workbench, and verifies downloaded Passports. The public
   `gh-stratadiff` distribution repository can add the `gh stratadiff` spelling without changing this
@@ -602,8 +634,8 @@ therefore:
   hatch. It is not the eventual default onboarding or scheduler.
 
 Marketplace is a later amplifier rather than a launch dependency. GitHub's paid-listing requirements
-include at least 100 installs and verified publisher status, so the beta should begin as a direct
-public-App install and earn real retained use first
+include at least 100 installs and verified publisher status, so eligible repeat users should begin
+with direct recorder installs and earn real retained use before broader App distribution
 ([Marketplace requirements](https://docs.github.com/en/apps/github-marketplace/creating-apps-for-github-marketplace/requirements-for-listing-an-app)). Public installation and Marketplace counts are acquisition
 proxies, not evidence of active use or value. The operating north star is **Weekly Verified
 Merges**: unique merged final-candidate SHAs for which StrataDiff retained a complete replayable
@@ -619,21 +651,23 @@ model.
 
 The distribution loop should begin with a repository fact the platform owner can verify:
 
-1. A maintainer runs the non-mutating Audit against current rulesets, workflow triggers, Check
-   sources, visible overrides, and still-resolvable review timelines; the result names exact objects,
-   granted visibility, and explicit unknowns. It does not reconstruct uncollected merge-group
-   membership history.
-2. A qualified repository installs the App in non-blocking shadow mode and sees one composite proof
-   without migrating review conversation or its merge queue.
-3. Every run exposes one auditable result: evidence collected, candidate verified, superseded,
+1. A maintainer runs `gh stratadiff doctor <PR>` without installing an App or changing queues. The
+   bundle names the observed candidate, exact objects, granted visibility, and explicit unknowns.
+2. Repeated, owner-verified diagnoses unlock the non-mutating Preflight against current rulesets,
+   workflow triggers, Check sources, visible overrides, and still-resolvable review timelines. It
+   does not reconstruct uncollected merge-group membership history.
+3. Only when reuse proves the need for future evidence does a qualified repository install the App
+   in recorder mode. After recorder replay passes, the same installation may expose a non-blocking
+   composite shadow proof without migrating review conversation or its merge queue.
+4. Every shadow run exposes one auditable result: evidence collected, candidate verified, superseded,
    quarantined, or blocked. Per-run counters show measured invocations and latency, not an estimated
    percentage.
-4. A reviewer opens local Resume only to inspect evidence or continue manually. Repositories with
+5. A reviewer opens local Resume only to inspect evidence or continue manually. Repositories with
    repeated value and acceptable false-red latency may opt into the App-bound required Check;
    correctly configured low-churn repositories receive an honest “not useful here” result.
-5. Opt-in real case studies and frozen failure cases improve the public benchmark and provider
+6. Opt-in real case studies and frozen failure cases improve the public benchmark and provider
    adapters, increasing trust and earning more installations.
-6. Open reviewers and refactoring tools can emit compatible signed receipts, increasing safe reuse
+7. Open reviewers and refactoring tools can emit compatible signed receipts, increasing safe reuse
    without weakening the exact-input gate.
 
 Initial channels should be AI-review-heavy open-source maintainers, DevEx/platform teams, reviewer
@@ -682,7 +716,9 @@ defensible reduction in human review load exists.
 
 ## Immediate product test
 
-The next milestone is not another diff feature. It is one adversarial, cross-provider merge proof:
+The internal technical test can run in a sacrificial organization without changing the public
+acquisition sequence. The next milestone is not another diff feature. It is one adversarial,
+cross-provider merge proof:
 
 ```text
 sacrificial GitHub organization with Copilot and CodeRabbit evidence

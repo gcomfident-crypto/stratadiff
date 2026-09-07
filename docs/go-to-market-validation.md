@@ -15,12 +15,13 @@ approval bot:
 
 > One command. One observed candidate. A proved blocker or an explicit unknown.
 
-The immediate buyer outcome is one App-bound state for the actual candidate: which API-observable
-provider and review objects are bound to which PR heads, which policy generation applied, whether an
-override exists, and why those recorded facts do or do not cover a synthetic `merge_group` SHA. The
-economic outcome to test is lower duplicate review/CI spend and merge delay without worse
-final-candidate coverage or finding recall. Dispatch proxies, files hidden, generated summaries, and
-installation counts are not value metrics.
+The immediate outcome is a local evidence bundle for one still-observable candidate: which
+effective rule expects which context and App, what appeared on the exact SHA, which producer and
+workflow can be proved, and where the chain becomes unknown. The later buyer outcome is an
+App-bound state backed by prospectively recorded candidate evidence. The economic outcome to test
+is lower duplicate review/CI spend and merge delay without worse final-candidate coverage or finding
+recall. Dispatch proxies, files hidden, generated summaries, and installation counts are not value
+metrics.
 
 The most important go-to-market finding is an **event and trust problem**:
 
@@ -34,13 +35,23 @@ The most important go-to-market finding is an **event and trust problem**:
   races and recovery, and comes from a dedicated expected App identity. Expected-App binding proves
   the Check source, not the meaning or quality of an upstream review.
 
-Therefore acquisition starts with a read-only `gh stratadiff doctor <PR>` at the moment a merge is
-blocked. A platform owner who sees repeated useful diagnoses can run the admin-level Merge
-Readiness Audit, then a non-blocking shadow Check from the dedicated GitHub App. Review Resume
-remains the inspection path; the Action is the transparent self-hosted path. Enforcement is an
-earned upgrade after the App has survived real ruleset, reviewer, and merge-queue traffic. Routine
-marketing comments, a replacement review UI, or a second reviewer model would add noise without
-solving the job.
+Therefore acquisition starts with a queue-neutral, read-only `gh stratadiff doctor <PR>` at the
+moment a merge is blocked, before an App install or queue migration. A platform owner who reuses and
+verifies those diagnoses can run the administration-scoped but non-mutating Merge Readiness
+Preflight. Only when reuse establishes a material post-hoc candidate-evidence gap should
+the team install a lightweight App Recorder. Shadow evaluation is a later promotion of recorded,
+replayable evidence; enforcement is later still. Review Resume remains the inspection path and the
+Action the transparent self-hosted path. Routine marketing comments, a replacement review UI, or a
+second reviewer model would add noise without solving the job.
+
+The retention boundary is concrete. In [dcoapp/app #303](https://github.com/dcoapp/app/issues/303),
+a required `DCO` result remained Expected for roughly an hour before queue ejection. The temporary
+ref and Check Runs were gone by investigation time and the current public timeline did not expose
+the exact old candidate SHA, so that event's SHA → Check chain could not be recovered from public
+evidence. App-side records later exposed both missing `merge_queues: read` and a live registration
+subscribed to `merge_queue_entry` instead of `merge_group`. Doctor must report only the identity and
+missing signal actually observed, without guessing that internal cause. The case supports an opt-in
+prospective recorder after reuse, not a mandatory App at first contact.
 
 ## Product correction: reject the single-provider stale-guard wedge
 
@@ -148,12 +159,14 @@ relevant base tree, prompt, rules, model/runtime, and prior finding dispositions
 `residue`, `full`, or `blocked`. The first integration should therefore expose the decision and its
 exact evidence while leaving execution policy with the caller.
 
-The three surfaces are therefore one product, not separate roadmaps:
+These surfaces are one staged product, not separate roadmaps:
 
 | Surface | Trigger | Immediate outcome | Distribution path |
 |---|---|---|---|
-| Merge Readiness Audit | A platform owner connects a repository | Explain current ruleset, Check-source, workflow-trigger, review-evidence, override, and duplicate-work risks from still-observable history | Read-only CLI/App report |
-| Merge Proof | A PR head or merge-group candidate changes | Evaluate all configured obligations and publish one actual-API, App-bound shadow or required result | Dedicated GitHub App; Action as self-hosted escape hatch |
+| Pull Request Doctor | A developer encounters one blocked PR or queue candidate | Join effective rule, required context/App, exact observed SHA, Check/suite/run/job, and attributable workflow trigger; emit a proved blocker or explicit unknown | `gh` extension; no App install or queue migration |
+| Merge Readiness Preflight | The same owner verifies and reuses Doctor | Explain repository-wide ruleset, Check-source, workflow-trigger, review-evidence, override, and duplicate-work risks from still-observable history | Non-mutating CLI using the owner's authorized read access |
+| App Recorder | Reuse proves ephemeral candidate loss prevents diagnosis | Prospectively retain bounded candidate, delivery, policy, Check, suite, run, and job observations without gating merges | Narrowly permissioned GitHub App; no comments or required Check |
+| Merge Proof | Recorder evidence replays correctly and the owner requests shadow evaluation | Evaluate configured obligations and publish one actual-API, App-bound shadow or required result | Recorder App promoted to shadow, then separately to enforcement; Action as self-hosted escape hatch |
 | Review Resume | A person returns after a later PR update | Open only the evidence that still needs human attention | `gh stratadiff inbox --workbench`, then a narrowly triggered App action |
 | Review Cache | A workflow would rerun an AI or policy review | Emit `skip`, `residue`, `full`, or `blocked` with exact reasons and bounded source inputs | Stable JSON/Action preflight before the existing reviewer job |
 
@@ -183,12 +196,13 @@ This yields a concrete acquisition promise: **see whether the code GitHub is abo
 review evidence your policy actually requires, across all of your existing reviewers.** Measured
 reductions in redundant runs are a supporting ROI claim, not the initial trust claim.
 
-The Audit is the low-risk acquisition surface because it can show current configuration and
-still-observable evidence gaps before asking a team to block merges. It cannot reconstruct a
-merge-group history that GitHub no longer exposes. The shadow Check is the frequency surface.
-Review Resume remains the human inspection path. Source identity, supersession, receipt provenance,
-deterministic routing, bounded payloads, and telemetry form one loop; a standalone diff viewer or
-cache key does not.
+Doctor is the low-risk acquisition surface because it can explain one current incident without an
+App or queue migration. Preflight expands only after the owner verifies that result. Neither can
+reconstruct a merge-group history that GitHub no longer exposes. The recorder is the prospective
+frequency surface only after repeat use validates the retention need; the shadow Check is a later
+decision surface. Review Resume remains the human inspection path. Source identity, supersession,
+receipt provenance, deterministic routing, bounded payloads, and telemetry form one loop; a
+standalone diff viewer or cache key does not.
 
 The automation surface must inherit the human product's fail-closed rule. `skip` is allowed only
 when the current review residue is empty and base context is accounted for. Unsupported objects,
@@ -231,9 +245,10 @@ The first installer is defined by a current control-plane problem, not a broad p
    month and two or more required review/check sources.
 2. The repository uses strict up-to-date checks or native merge queue, or has measurable duplicate
    AI-review/CI work after pushes and base updates.
-3. They will run a read-only audit and compare every result with the underlying GitHub objects.
-4. They can authorize a non-blocking shadow App but will not make it required before a measured
-   trial.
+3. They will verify one Doctor result, reuse Doctor or Preflight, and compare every result with the
+   underlying GitHub objects.
+4. If ephemeral evidence proves material, they can authorize recorder-only App access and will not
+   enable a shadow or required Check before retained-event replay passes.
 
 The highest-probability initial teams have roughly 20–300 engineers, agent-heavy or stacked PRs,
 scarce CODEOWNERS, and a DevEx/platform/security owner. Staff engineers, code owners, and open-source
@@ -241,7 +256,7 @@ maintainers remain important daily users of evidence details and Resume. This se
 
 | Role | Immediate job | Required proof before the next ask |
 |---|---|---|
-| DevEx/platform/security owner | Know whether current rules and reviewer evidence protect the actual merge candidate | Audit names exact misconfigurations; shadow mode produces no false green and acceptable false red/latency |
+| DevEx/platform/security owner | Know whether current rules and reviewer evidence protect the actual merge candidate | Doctor proves one blocker or unknown; Preflight findings are verified; recorder replay precedes shadow evaluation |
 | Affected reviewer | Understand why a provider obligation is missing or resume without reconstructing a range | Evidence IDs, source, candidate, policy, and every unsupported carry are inspectable |
 | PR author or maintainer | Get a final candidate unblocked without blind re-review or hidden override | The Check gives one actionable reason and preserves override provenance |
 
@@ -334,11 +349,12 @@ friction in different ways. List prices and installation counters below were cap
 
 | Product | First-value path and permission cost | Current packaging signal | Distribution lesson for StrataDiff |
 |---|---|---|---|
-| GitHub native | Already enforces latest candidate SHA, can pin an expected App source, can dismiss stale reviews when configured, and exposes a distinct `merge_group` event where merge queues are available; no additional install | Rules and checks are bundled with eligible plans; merge queues are limited to organization-owned public repositories and Enterprise Cloud organization-owned private repositories | Never sell these primitives as missing. Expected-App binding authenticates the Check source, not reviewer semantics; the remaining hypothesis is automated configuration audit plus cross-provider/final-candidate composition |
+| GitHub native | Already enforces latest candidate SHA, can pin an expected App source, can dismiss stale reviews when configured, and exposes a distinct `merge_group` event where merge queues are available. `gh pr checks --required` lists required checks; Rules Insights exposes rule pass/fail/bypass and Evaluate results. | Rules and checks are bundled with eligible plans; merge queues are limited to organization-owned public repositories and Enterprise Cloud organization-owned private repositories | Never claim GitHub has no blocker view. The current CLI still does not join expected/observed App identity or reconstruct a native queue candidate; the narrow hypothesis is the cross-layer, queue-neutral evidence chain and explicit abstention |
 | Graphite | New signups install or request its GitHub App. Its own queue is incompatible with GitHub native queue and can require bypass permissions for optimizations; its external integration hands work to another queue. | Hobby free; Starter `$20/seat/month` and Team `$40/seat/month`, billed annually; 30-day Team trial. The Marketplace listing embedded `61,296` installations at capture. | Do not replace the queue. A neutral proof layer must integrate with the chosen merge path and earn admin trust in shadow mode |
+| Mergify / Aviator / Trunk queues | Mergify `queue show` exposes blocking conditions. Aviator `av pr status` exposes the associated PR status and required status checks; its pending-workflow diagnosis is limited to parallel mode with GitHub Actions and does not distinguish required from non-required workflows. Mergify supports App-qualified checks, while Trunk's testing-details API exposes required-status sources and exact `testBranchSha`. Each path is tied to that vendor's installed queue or testing run. | Existing installation and queue adoption are prerequisites; packaging differs by vendor and was not independently audited here | Do not claim blocker explanation, App qualification, or exact candidate/check chains are unique. Win on pre-install, queue-neutral diagnosis and never infer vendor-internal causes |
 | Reviewable | GitHub OAuth sign-in requests broad scopes; a repo admin connects a repository. A connected repo automatically creates reviews and inserts a Reviewable link into PR descriptions. | Public/personal free; Team `$8` and Business `$16` per contributor/month billed annually; private repo connection may start a 30-day trial | Persistent review state is valuable, but workflow migration, write access, and automatic PR links are material adoption costs. The local pilot should remain no-admin and non-invasive |
 | Aviator FlexReview / Review | Connect the Aviator GitHub App, activate a repo in read-only mode, wait for history indexing, test through slash commands/dashboard, and then activate selected teams; validation can later become a required check | Current pricing page advertises Free, Team `$20/dev/month` with a 14-day trial, Scale `$50/dev/month`, and custom Enterprise | Read-only shadow mode is an effective enterprise bridge. StrataDiff should copy the staged-risk pattern, not claim selective validation or owner routing as novel |
-| CodeRabbit | GitHub login, App installation, then immediate review. Its Request Changes Workflow already guards exact HEAD; its automatic-review controls expose finite allowance and pause tradeoffs. | Public/OSS free; Essentials `$24`, Team `$48` per developer/month billed annually, Advanced `$90` monthly. Its Marketplace listing embedded `318,416` installations at capture | Treat it as an evidence producer, not a broken stale guard. Immediate Audit output and cross-provider policy must justify a second App installation |
+| CodeRabbit | GitHub login, App installation, then immediate review. Its Request Changes Workflow already guards exact HEAD; its automatic-review controls expose finite allowance and pause tradeoffs. | Public/OSS free; Essentials `$24`, Team `$48` per developer/month billed annually, Advanced `$90` monthly. Its Marketplace listing embedded `318,416` installations at capture | Treat it as an evidence producer, not a broken stale guard. Reused Doctor/Preflight value and a confirmed retention gap must justify a second App installation |
 | Copilot code review | Native rulesets can request review on each push; public-preview approvals are dismissed on new commits. Re-reviews may repeat resolved findings, and one public MLflow report observed zero actual approvals in 78 reviews despite enabled settings. | Bundled by Copilot plan; approval behavior is a fast-moving public preview as of 2026-09-08 | Read actual review objects and remain robust to product changes. A preview rollout defect is a test case, not a durable wedge |
 
 Graphite's own [proof-of-concept guidance](https://graphite.com/docs/onboarding-your-team) recommends
@@ -354,7 +370,7 @@ copy a per-developer price before measuring who uses the product and how often.
 
 ## Distribution reality and cold-start channels
 
-### GitHub CLI extension: no-admin verification and Resume, not the control-plane proof
+### GitHub CLI extension: pre-install Doctor and Resume, not the control-plane proof
 
 GitHub's official extension documentation says extensions are local and user-scoped, third-party
 extensions are not certified by GitHub, and users should audit their source. A repository must be
@@ -363,7 +379,7 @@ then install and run it as:
 
 ```console
 gh extension install OWNER/gh-stratadiff
-gh stratadiff inbox
+gh stratadiff doctor https://github.com/OWNER/REPO/pull/123
 ```
 
 Current GitHub CLI `2.97.0` supports `gh extension search`; with no query it returns extensions
@@ -375,8 +391,8 @@ results for `review`, one low-star direct result for `diff`, several for `rebase
 
 The extension repository therefore needs a literal problem description, not category jargon:
 
-> Recover reviewer checkpoints after rebase, force-push, restack, or new commits; inspect the
-> evidence-backed review residue locally.
+> Explain why this exact PR or queue candidate is blocked. Show the evidence chain or say what is
+> unknowable; no App install and no queue migration.
 
 Use the topics `gh-extension`, `code-review`, `pull-request`, `rebase`, `force-push`, and
 `stacked-pr`. The README's first screen should contain one install command, one real before/after
@@ -434,7 +450,7 @@ and macOS environments and publish the exact failures and timings. GitHub CLI do
 adjacent checksum or provenance bundle when installing an extension, and GitHub does not certify
 or endorse third-party extensions, so wording such as “GitHub-verified extension” is forbidden.
 
-### GitHub App and Marketplace: primary live-validation surface
+### GitHub App and Marketplace: earned recorder, then live-validation surface
 
 GitHub documents that a public App can be installed directly from the app owner without a
 Marketplace listing. Organization owners can install Apps; repository admins may install an App on
@@ -446,20 +462,21 @@ Marketplace is therefore not required for the first public App beta. It is also 
 paid channel: GitHub's current requirements say a paid GitHub App needs at least 100 installations,
 a verified publisher organization, purchase-event handling, and monthly plus annual billing.
 
-**Decision:** keep the remote CLI extension as the no-admin verification and Resume path, but use a
-direct-install public App for the actual Audit and shadow-proof pilot. A complete Audit needs
-repository Administration read, so organization-owner approval is part of that App path; it cannot
-also promise repository-admin self-installation. The App requests only the permissions justified by
-the pilot, and its Check remains non-required until live evidence meets the enforcement gates.
-Pursue Marketplace after retained direct installs, not as a way to manufacture the first 100
-installations.
+**Decision:** keep the remote CLI extension as the pre-install Doctor, verification, and Resume
+path. Run Preflight with the owner's existing authorized account rather than making an App the first
+ask. Offer a direct-install public App first in recorder-only mode after verified reuse and a
+confirmed ephemeral-evidence gap. Repository Administration read and Checks write are requested
+only for later Preflight automation or shadow-proof promotion; they are not bundled into recorder
+onboarding without need. The Check remains absent in recorder mode and non-required in shadow mode
+until live evidence meets the enforcement gates. Pursue Marketplace after retained direct installs,
+not as a way to manufacture the first 100 installations.
 
 ### Channel priority
 
 | Priority | Channel experiment | Why it fits the trigger | Attribution and success signal |
 |---|---|---|---|
-| 1 | Consent-based outreach to DevEx/platform owners whose repositories use multiple review sources and strict checks or merge queue | Reaches the buyer while configuration and duplicated-work evidence is inspectable | Audit completed → finding acknowledged → shadow enabled |
-| 2 | One reproducible public Audit and merge-group case study with downloadable proof | Lets technical users inspect exact GitHub objects instead of trusting security marketing | Verified artifact downloads, qualified shadow installs, remediated findings |
+| 1 | Consent-based outreach to DevEx/platform owners whose repositories use multiple review sources and strict checks or merge queue | Reaches the buyer while configuration and duplicated-work evidence is inspectable | Doctor verified and reused → Preflight completed → recorder requested |
+| 2 | One reproducible public Doctor/Preflight and merge-group case study with downloadable proof | Lets technical users inspect exact GitHub objects instead of trusting security marketing | Verified artifact downloads, qualified recorder installs, remediated findings |
 | 3 | Partner with reviewer vendors and merge-queue consultants on an open attestation adapter | Makes StrataDiff complementary rather than a replacement | Second provider connected, joint design partner, adapter replay conformance |
 | 4 | GitHub Actions, DevEx, platform-engineering, and stacked-PR communities where self-promotion is allowed | Concentrates owners of the actual policy and queue problem | Opt-in audit applications and completed shadow weeks, not impressions |
 | Later | Marketplace and broader content distribution | Removes install friction only after permissions and value are justified | Weekly Verified Merges, shadow-to-enforce conversion, week-four retained repos |
@@ -470,20 +487,24 @@ the remote install and evidence loop work. GitHub repository traffic reports onl
 view/clone window; release downloads include upgrades and automation. Use them as diagnostics, not
 activated-user counts.
 
-## The minimum audit-to-enforcement loop
+## The minimum Doctor-to-enforcement loop
 
 The loop must create value before asking the team to block a merge:
 
 ```text
-read-only repository Audit
-  -> owner verifies exact ruleset/workflow/evidence findings
-  -> dedicated App runs a non-blocking shadow proof
+pre-install Doctor on one live PR
+  -> the same owner verifies and reuses the diagnosis
+  -> non-mutating repository Preflight confirms the repeated class
+  -> dedicated App records future ephemeral candidates without gating
+  -> retained events replay independently
+  -> the App runs a non-blocking shadow proof
   -> false-red, latency, duplicate work, and override behavior are measured
   -> owner remediates configuration and requests enforcement
   -> exact final-candidate proof becomes the one required Check
 ```
 
-The Audit/Shadow Report is the smallest useful share object. It should include:
+The Doctor/Preflight Report is the smallest useful share object. A later recorder or Shadow Report
+adds prospective lifecycle evidence. Each should include:
 
 - repository and ruleset identifiers, or privacy-preserving hashes for a private pilot;
 - required Check names and expected sources, PR-head and merge-group candidate IDs;
@@ -511,10 +532,12 @@ The report is more defensible than a generic referral link because it carries th
 configuration or evidence gap, the candidate it affected, and an independent replay path. It gives
 the repository owner a concrete remediation task without pretending to carry a human approval.
 
-**Organization expansion trigger:** after an owner confirms at least one actionable Audit finding,
-or explicitly requests candidate-level evidence visibility despite a clean Audit, offer the
-non-blocking App shadow trial. The App should report eligible events without comments or policy
-changes. A required Check and paid controls remain separate later asks.
+**Organization expansion trigger:** do not request an App after one curiosity click. Offer
+recorder-only installation only after the same owner has verified and reused Doctor or Preflight,
+and either an ephemeral candidate prevented a conclusive diagnosis or the owner explicitly asks to
+retain future candidate evidence. Promote recorder mode to a non-blocking shadow trial only after a
+retained event replays independently and permission/retention boundaries are accepted. A required
+Check and paid controls remain separate later asks.
 
 ## Instrumentation required before recruitment
 
@@ -524,8 +547,13 @@ The primary control-plane funnel is:
 
 ```text
 qualified_repository
-  -> audit_completed
+  -> doctor_result_verified
+  -> doctor_reused
+  -> preflight_completed
   -> finding_adjudicated
+  -> recorder_requested
+  -> candidate_recorded
+  -> recording_replayed
   -> shadow_installed
   -> candidate_observed
   -> proof_converged
@@ -591,17 +619,18 @@ resume-to-ready    = workbench-ready attempts / resume attempts
 
 The Resume funnel cannot by itself measure clean-install activation, human attention to delivered
 output, repeat use by participant, or repository retention. Do not infer control-plane demand from
-the post-delivery funnel; demand comes from the Audit-to-shadow conversions above.
+the post-delivery funnel; demand comes from the Doctor-to-recorder-to-shadow conversions above.
 
-## Four-week pilot
+## Four-week post-reuse pilot
 
-The four-week clock starts only after the Audit schema, App permissions, shadow policy, event
-retention, and analysis plan are frozen. Recruit at least five independent repositories matching the
-ICP, with at least two real reviewer/check sources across the cohort. A source checkout, synthetic
-unit test, or repository that cannot exercise a final candidate does not count as activation. The
-separate 100-session, 20-reviewer study remains required before a human-time or recall claim.
+The four-week clock starts only after the same owner has verified and reused Doctor or Preflight,
+the recorder schema and minimal App permissions are frozen, and the owner confirms the retention
+need. Recruit at least five independent repositories matching the ICP, with at least two real
+reviewer/check sources across the cohort. A source checkout, synthetic unit test, or repository that
+cannot exercise a final candidate does not count as activation. The separate 100-session,
+20-reviewer study remains required before a human-time or recall claim.
 
-### Week 1: bounded retrospective Audit and baseline
+### Week 1: bounded retrospective Preflight and baseline
 
 - Inventory effective rulesets, expected App IDs, duplicate context names, workflow triggers, path
   filters, visible bypass actors, reviewer providers, and still-resolvable PR evidence. Record hidden
@@ -620,17 +649,21 @@ separate 100-session, 20-reviewer study remains required before a human-time or 
 - Continue only with repositories that have a measurable problem or explicitly value the audit
   trail; report “not useful here” for the rest.
 
-### Week 2: non-blocking shadow proof
+### Week 2: recorder-only observation
 
-- Install the dedicated App without making its Check required. Bind each shadow decision to exact
-  provider objects, source identities, policy generation, PR head, and candidate SHA.
-- Exercise a real native merge queue where available. Compare every shadow result with GitHub's
-  actual mergeability and a human-adjudicated evidence ledger.
-- Record false green, false red, unknown, evidence-to-Check latency, repair latency, and every
-  quarantine or override. Any false green pauses the pilot and blocks distribution.
+- Install the dedicated App with only the permissions needed to observe the agreed events. Publish
+  no comments or Check; bind each record to exact provider objects, source identities, visible
+  policy generation, PR head, and candidate SHA.
+- Exercise a real native merge queue where available. Compare every recorded lifecycle with
+  GitHub's later observable state and a human-adjudicated evidence ledger.
+- Export and independently replay at least one retained candidate lifecycle. A missing delivery,
+  partial policy view, or unproved membership stays unknown and blocks promotion to shadow mode.
 
-### Week 3: remediation and ROI
+### Week 3: non-blocking shadow proof and remediation
 
+- Promote only replay-valid recorder installations to a non-blocking shadow Check. Record false
+  green, false red, unknown, evidence-to-Check latency, repair latency, and every quarantine or
+  override. Any false green pauses the pilot and blocks distribution.
 - Let owners fix wrong-source checks, missing `merge_group` triggers, duplicate names, or provider
   policy gaps; verify each repair from a new snapshot rather than assuming success.
 - Enable dispatch/cache optimization only in consenting repositories and compare actual reviewer
@@ -638,7 +671,7 @@ separate 100-session, 20-reviewer study remains required before a human-time or 
 - Publish a case study only with repository approval and downloadable evidence, including cases
   where StrataDiff found nothing or saved nothing.
 
-### Week 4: enforcement decision
+### Week 4: ROI and enforcement decision
 
 - Ask each owner whether to keep shadow mode, remove the App, or make the canonical Check required.
 - Measure Weekly Verified Merges, shadow-to-enforce conversion, week-four repository retention,
@@ -706,6 +739,10 @@ separate study.
 - “The first/only incremental review tool,” “GitHub has no changes-since-review,” or “we invented
   review memory.” Graphite, Reviewable, GitHub, GitLab, Gerrit, and Aviator already cover parts of
   this job.
+- “GitHub cannot show required checks or rule failures,” “queue vendors cannot explain blockers,”
+  “App-qualified checks are unique,” or “nobody exposes an exact queue candidate.” GitHub CLI and
+  Rules Insights, Mergify, Aviator, and Trunk each cover those claims in their own scope. The
+  remaining hypothesis is pre-install, queue-neutral evidence composition with explicit unknowns.
 - “Safe to merge,” “review unnecessary,” “approval preserved,” “semantically equivalent,” “zero
   risk,” or “no bugs missed.” A deterministic byte relation is not a safety verdict.
 - “Works on every rebase/force-push/repository.” Commits can be unavailable, histories ambiguous,
@@ -728,22 +765,28 @@ separate study.
 
 ## Immediate execution order
 
-1. Freeze the Merge Readiness Audit schema and run it over a consented 500-PR retrospective sample.
-   Publish denominators, incomplete collections, owner-adjudicated findings, and clean results. Do
-   not treat absent historical merge-group membership or hidden bypass actors as clean evidence.
-2. Install the dedicated GitHub App on design-partner repositories and emit a non-blocking shadow
-   Check bound to the exact candidate, provider identities, policy generation, and evidence ledger.
-3. Before recruitment expands, pass at least 80 live/adversarial GitHub cases that include expected
+1. Ship and replay `gh stratadiff doctor <PR>` against current public incidents. For each case,
+   publish the exact observed candidate and evidence chain, and score false-confident diagnoses and
+   correct abstentions. Do not require an App or queue migration.
+2. Freeze the Merge Readiness Preflight schema and run it over a consented 500-PR retrospective
+   sample only after owner-verified Doctor reuse. Publish denominators, incomplete collections,
+   owner-adjudicated findings, and clean results. Do not treat absent historical merge-group
+   membership or hidden bypass actors as clean evidence.
+3. Offer recorder-only App installation to owners whose repeated use proves an ephemeral-evidence
+   gap. Independently replay at least one retained candidate lifecycle before enabling a shadow
+   Check bound to exact candidate, provider identities, policy generation, and evidence ledger.
+4. Before recruitment expands, pass at least 80 live/adversarial GitHub cases that include expected
    App sources, duplicate context names, delivery reordering, head races, CodeRabbit and Copilot
    review objects, and a real native `merge_group` candidate. Unit-only synthetic cases do not
    satisfy this gate.
-4. Recruit five qualified repositories through consent-based DevEx/platform-owner outreach and run
-   the frozen four-week Audit-to-shadow pilot. Publish false green, false red, unknown, convergence,
-   repair, finding-action, and shadow-retention results with their denominators.
-5. Offer the canonical required Check only to repositories that request enforcement and only after
+5. Recruit five qualified repositories through consent-based DevEx/platform-owner outreach and run
+   the frozen four-week post-reuse recorder-to-shadow pilot. Publish false green, false red,
+   unknown, convergence, repair, finding-action, and shadow-retention results with their
+   denominators.
+6. Offer the canonical required Check only to repositories that request enforcement and only after
    the safety, availability, product-pull, and retention gates pass. Marketplace and pricing follow
    retained direct installs, not the other way around.
-6. Keep `v0.4.1` immutable and continue fresh-machine CLI/Resume validation as the local verification
+7. Keep `v0.4.1` immutable and continue fresh-machine CLI/Resume validation as the local verification
    and reviewer-recovery track. It does not gate the first shadow App pilot and must not be used as
    evidence that the cross-provider control plane works.
 
@@ -770,6 +813,9 @@ provider contracts below were refreshed on 2026-09-08.
   the [`merge_group` webhook](https://docs.github.com/en/webhooks/webhook-events-and-payloads#merge_group),
   [rules endpoints](https://docs.github.com/en/rest/repos/rules?apiVersion=2022-11-28), and
   [rule-suite endpoints](https://docs.github.com/en/rest/repos/rule-suites?apiVersion=2022-11-28).
+- Native diagnosis: [`gh pr checks`](https://cli.github.com/manual/gh_pr_checks),
+  [Rules Insights](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/managing-rulesets-for-a-repository#viewing-insights-for-rulesets),
+  and [dcoapp/app #303](https://github.com/dcoapp/app/issues/303).
 - Graphite: [GitHub App authentication](https://graphite.com/docs/authenticate-with-github-app),
   [PR Versions](https://graphite.com/docs/pull-request-versions),
   [PR Inbox](https://graphite.com/docs/use-pr-inbox),
@@ -783,6 +829,11 @@ provider contracts below were refreshed on 2026-09-08.
 - Aviator: [FlexReview onboarding](https://docs.aviator.co/flexreview/getting-started),
   [read-only mode](https://docs.aviator.co/flexreview/concepts/read-only-mode), and
   [pricing](https://www.aviator.co/pricing/).
+- Queue diagnostics: [Mergify queue monitoring](https://docs.mergify.com/merge-queue/monitoring/),
+  [Mergify App-qualified checks](https://docs.mergify.com/changelog/2026-06-02-scope-check-conditions-to-a-specific-github-app/),
+  [Aviator `av pr status`](https://docs.aviator.co/aviator-cli/manpages/av-pr-status-1),
+  [Aviator pending workflows](https://docs.aviator.co/mergequeue/concepts/pending-workflow-runs), and
+  [Trunk testing details](https://docs.trunk.io/merge-queue/reference/merge/get-details-about-testing-that-merge-queue-is-performing).
 - CodeRabbit: [GitHub setup](https://docs.coderabbit.ai/platforms/github-com),
   [test-repository onboarding](https://docs.coderabbit.ai/guide/repository),
   [Request Changes Workflow](https://docs.coderabbit.ai/pr-reviews/request-changes-workflow),
