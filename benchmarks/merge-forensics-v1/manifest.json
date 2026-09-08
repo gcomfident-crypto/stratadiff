@@ -207,7 +207,7 @@
     {
       "id": "prow-915",
       "kind": "public_incident",
-      "url": "https://github.com/kubernetes/test-infra/issues/915"
+      "url": "https://github.com/kubernetes-sigs/prow/issues/915"
     }
   ],
   "schema": "stratadiff-merge-forensics-manifest-v1"
