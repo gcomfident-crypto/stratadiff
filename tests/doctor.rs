@@ -156,6 +156,15 @@ fn snapshot_v2(kind: DoctorEvaluationTargetKind) -> PullRequestDoctorSnapshotV2 
     }
 }
 
+fn mark_target_provisional(snapshot: &mut PullRequestDoctorSnapshotV2) {
+    snapshot.target.evaluation.resolution = DoctorEvaluationTargetResolution::Provisional;
+    snapshot.collection.status = DoctorCollectionStatus::Partial;
+    snapshot.collection.gaps.push(DoctorCollectionGap {
+        surface: DoctorCollectionSurface::Target,
+        reason: "the active GitHub check target could not be proven".to_owned(),
+    });
+}
+
 fn workflow_snapshot_v3() -> PullRequestDoctorSnapshotV3 {
     let mut base = snapshot_v2(DoctorEvaluationTargetKind::MergeGroup);
     base.check_runs.clear();
@@ -403,7 +412,7 @@ fn provisional_v2_targets_fail_closed_for_every_kind() {
         DoctorEvaluationTargetKind::MergeGroup,
     ] {
         let mut input = snapshot_v2(kind);
-        input.target.evaluation.resolution = DoctorEvaluationTargetResolution::Provisional;
+        mark_target_provisional(&mut input);
         let report = evaluate_pull_request_doctor_v2(&input).unwrap();
 
         assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
@@ -423,6 +432,69 @@ fn provisional_v2_targets_fail_closed_for_every_kind() {
         assert!(markdown.contains("Resolution: <code>provisional</code>"));
         assert!(markdown.contains("has not proved that GitHub selected it"));
         assert!(!markdown.contains("exact head"));
+    }
+}
+
+#[test]
+fn provisional_v2_targets_keep_only_safe_read_actions() {
+    let cases = [
+        (
+            vec![check(
+                501,
+                Some(ACTIONS_APP_ID),
+                "completed",
+                Some("failure"),
+            )],
+            DoctorActionCode::InspectFailedCheck,
+        ),
+        (
+            vec![check(501, Some(ACTIONS_APP_ID), "queued", None)],
+            DoctorActionCode::WaitForCheck,
+        ),
+        (
+            vec![check(501, None, "completed", Some("success"))],
+            DoctorActionCode::ResolveSourceIdentity,
+        ),
+    ];
+
+    for (checks, expected_action) in cases {
+        let mut input = snapshot_v2(DoctorEvaluationTargetKind::PrHead);
+        mark_target_provisional(&mut input);
+        input.check_runs = checks;
+
+        let report = evaluate_pull_request_doctor_v2(&input).unwrap();
+
+        assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
+        assert!(!report.claim_boundary.required_check_readiness_supported);
+        assert_eq!(report.next_actions.len(), 2);
+        assert_eq!(report.next_actions[0].code, expected_action);
+        assert!(report.next_actions[0].requirement.is_some());
+        assert!(report.next_actions[0].argv[4].contains(&input.signal_sha));
+        assert_eq!(
+            report.next_actions[1].code,
+            DoctorActionCode::CompleteCollection
+        );
+        assert_eq!(report.next_actions[1].requirement, None);
+    }
+
+    for checks in [
+        Vec::new(),
+        vec![check(501, Some(9_999), "completed", Some("success"))],
+    ] {
+        let mut input = snapshot_v2(DoctorEvaluationTargetKind::PrHead);
+        mark_target_provisional(&mut input);
+        input.check_runs = checks;
+
+        let report = evaluate_pull_request_doctor_v2(&input).unwrap();
+
+        assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
+        assert!(!report.claim_boundary.required_check_readiness_supported);
+        assert_eq!(report.next_actions.len(), 1);
+        assert_eq!(
+            report.next_actions[0].code,
+            DoctorActionCode::CompleteCollection
+        );
+        assert_eq!(report.next_actions[0].requirement, None);
     }
 }
 
@@ -802,8 +874,17 @@ fn an_unresolved_check_target_overrides_a_known_head_blocker() {
     assert_eq!(report.verdict, DoctorVerdict::Inconclusive);
     assert!(!report.claim_boundary.required_check_readiness_supported);
     assert_eq!(report.summary.failed, 1);
-    assert_eq!(report.next_actions.len(), 1);
-    assert_eq!(report.next_actions[0].requirement, None);
+    assert_eq!(report.next_actions.len(), 2);
+    assert_eq!(
+        report.next_actions[0].code,
+        DoctorActionCode::InspectFailedCheck
+    );
+    assert!(report.next_actions[0].requirement.is_some());
+    assert_eq!(
+        report.next_actions[1].code,
+        DoctorActionCode::CompleteCollection
+    );
+    assert_eq!(report.next_actions[1].requirement, None);
 }
 
 #[test]

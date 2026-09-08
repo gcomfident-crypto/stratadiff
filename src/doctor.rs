@@ -1198,6 +1198,15 @@ fn action_for(
     })
 }
 
+fn action_is_safe_for_provisional_target(code: DoctorActionCode) -> bool {
+    matches!(
+        code,
+        DoctorActionCode::WaitForCheck
+            | DoctorActionCode::InspectFailedCheck
+            | DoctorActionCode::ResolveSourceIdentity
+    )
+}
+
 fn evaluate_pull_request_doctor_with_signal_sha(
     snapshot: &PullRequestDoctorSnapshot,
     signal_sha: &str,
@@ -1258,15 +1267,12 @@ fn evaluate_pull_request_doctor_with_signal_sha(
         DoctorVerdict::ChecksClear
     };
 
-    let mut next_actions = if target_inconclusive {
-        Vec::new()
-    } else {
-        diagnoses
-            .iter()
-            .filter_map(|diagnosis| action_for(snapshot, diagnosis))
-            .collect::<Vec<_>>()
-    };
+    let mut next_actions = diagnoses
+        .iter()
+        .filter_map(|diagnosis| action_for(snapshot, diagnosis))
+        .collect::<Vec<_>>();
     if target_inconclusive {
+        next_actions.retain(|action| action_is_safe_for_provisional_target(action.code));
         next_actions.push(DoctorNextAction {
             code: DoctorActionCode::CompleteCollection,
             requirement: None,
@@ -1347,14 +1353,17 @@ pub fn evaluate_pull_request_doctor_v2(
         }
     }
     if !target_selected {
-        next_actions = vec![DoctorNextAction {
+        next_actions.retain(|action| {
+            action.requirement.is_some() && action_is_safe_for_provisional_target(action.code)
+        });
+        next_actions.push(DoctorNextAction {
             code: DoctorActionCode::CompleteCollection,
             requirement: None,
             title: "Resolve the provisional evaluation target".to_owned(),
             rationale: "Doctor observed signals on this SHA but did not prove that GitHub selected it as the active required-check target. Refresh candidate evidence before acting on the diagnosis."
                 .to_owned(),
             argv: doctor_argv(&legacy),
-        }];
+        });
     }
 
     let mut claim_boundary = report.claim_boundary;
