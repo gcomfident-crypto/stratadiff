@@ -43,8 +43,9 @@ collection drift remain explicit evidence gaps. The human-readable report puts t
 the detailed evidence and claim boundary.
 
 For a PR that is not queued, Doctor follows GitHub's documented rule: any Check Run or legacy
-commit status on the test-merge commit selects `test_merge`. A missing test-merge SHA, incomplete
-probe, or complete but empty test-merge signals leave `pr_head` provisional and remain
+commit status on the test-merge commit selects `test_merge`. Complete but empty Check Run and
+legacy-status surfaces select `pr_head`, because GitHub falls back to the head commit in that case.
+A missing test-merge SHA or incomplete probe leaves `pr_head` provisional and keeps the result
 `inconclusive`.
 
 For a queued PR, Doctor reads GraphQL `mergeQueueEntry`, records its entry ID, state, base commit,

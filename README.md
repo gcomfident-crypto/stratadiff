@@ -92,11 +92,12 @@ invalid definition, pagination or identity drift leaves an evidence gap. This un
 limited to the collected workflow-job model. Workflow code can still make arbitrary Checks API
 writes.
 
-For a PR that is not currently in a merge queue, Doctor follows GitHub's documented target rule:
+For a PR that is not currently in a merge queue, Doctor follows
+[GitHub's documented target rule](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks):
 if the test-merge commit has any Check Run or legacy commit status, it selects `test_merge`.
-A missing test-merge SHA, an incomplete probe, or complete but empty test-merge signals leave the
-PR head provisional and make the result `inconclusive`; absence alone is not treated as proof that
-GitHub selected the head.
+If both test-merge signal surfaces are complete but empty, it selects `pr_head`, because GitHub
+falls back to the head commit in that case. A missing test-merge SHA or an incomplete probe leaves
+the PR head provisional and makes the result `inconclusive`.
 
 For a queued PR, Doctor reads the current GraphQL `mergeQueueEntry`, records its entry ID, state,
 base commit, and head commit, and represents the entry head as a `merge_group` evaluation target.

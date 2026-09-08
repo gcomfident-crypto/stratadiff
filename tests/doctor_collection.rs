@@ -997,11 +997,11 @@ fn collects_only_the_exact_pr_base_and_head_with_classic_sources() {
     assert_eq!(snapshot.signal_sha, HEAD_SHA);
     assert_eq!(
         snapshot.target.evaluation.resolution,
-        DoctorEvaluationTargetResolution::Provisional
+        DoctorEvaluationTargetResolution::Selected
     );
     assert_eq!(
         evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
-        DoctorVerdict::Inconclusive
+        DoctorVerdict::ChecksBlocked
     );
     assert_eq!(snapshot.check_runs.len(), 1);
     assert_eq!(snapshot.check_runs[0].name, "lint");
@@ -1448,7 +1448,10 @@ fn a_missing_test_merge_sha_is_inconclusive() {
 
 #[test]
 fn only_required_workflow_rules_remain_an_unsupported_target() {
-    for (kind, expected_partial) in [("merge_queue", false), ("workflows", true)] {
+    for (kind, expected_partial, expected_verdict) in [
+        ("merge_queue", false, DoctorVerdict::ChecksClear),
+        ("workflows", true, DoctorVerdict::Inconclusive),
+    ] {
         let initial_pull = pull("release/1.x", BASE_SHA, HEAD_SHA, "open");
         let mut responses = stable_empty_responses(initial_pull);
         responses[2].1 = response(
@@ -1481,7 +1484,7 @@ fn only_required_workflow_rules_remain_an_unsupported_target() {
         );
         assert_eq!(
             evaluate_pull_request_doctor_v2(&snapshot).unwrap().verdict,
-            DoctorVerdict::Inconclusive
+            expected_verdict
         );
     }
 }

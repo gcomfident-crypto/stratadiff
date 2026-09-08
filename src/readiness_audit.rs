@@ -2706,6 +2706,7 @@ fn collect_pull_request_doctor_snapshot_with_budget<A: GithubPullRequestDoctorAp
             .map(|candidate| candidate.oid.as_str())
             .or(pull.merge_commit_sha.as_deref());
         let mut selected_test_merge = None;
+        let mut selected_pr_head = false;
         if let Some(merge_commit_sha) = test_merge_sha {
             if merge_commit_sha.eq_ignore_ascii_case(&pull.head.sha) {
                 add_doctor_gap(
@@ -2752,6 +2753,8 @@ fn collect_pull_request_doctor_snapshot_with_budget<A: GithubPullRequestDoctorAp
                         merge_check_runs,
                         merge_statuses,
                     ));
+                } else if target_probe_gaps.is_empty() {
+                    selected_pr_head = true;
                 }
                 for gap in target_probe_gaps {
                     add_doctor_gap(
@@ -2778,7 +2781,11 @@ fn collect_pull_request_doctor_snapshot_with_budget<A: GithubPullRequestDoctorAp
             (
                 DoctorEvaluationTarget {
                     kind: DoctorEvaluationTargetKind::PrHead,
-                    resolution: DoctorEvaluationTargetResolution::Provisional,
+                    resolution: if selected_pr_head {
+                        DoctorEvaluationTargetResolution::Selected
+                    } else {
+                        DoctorEvaluationTargetResolution::Provisional
+                    },
                     sha: pull.head.sha.to_ascii_lowercase(),
                     base_sha: None,
                     queue_entry_id: None,

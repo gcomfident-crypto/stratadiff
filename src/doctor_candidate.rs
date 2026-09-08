@@ -331,8 +331,11 @@ pub fn select_candidate(input: &CandidateSelectionInput) -> Result<CandidateSele
             &input.signals,
         ));
     }
-    Ok(unresolved(
-        CandidateSelectionStatus::Inconclusive,
+    Ok(selected(
+        CandidateKind::PrHead,
+        &target.head_sha,
+        None,
+        None,
         CandidateSelectionReason::TestMergeEmpty,
         &input.signals,
     ))

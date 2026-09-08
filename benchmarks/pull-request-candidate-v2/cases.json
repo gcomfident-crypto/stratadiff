@@ -1,0 +1,213 @@
+{
+  "schema": "stratadiff-pull-request-candidate-cases-v2",
+  "dataset_version": "2.0.0",
+  "provenance": [
+    {
+      "id": "github-docs-45788-2026-09-08",
+      "kind": "pull_request",
+      "captured_on": "2026-09-08",
+      "repository": "github/docs",
+      "source_query": "repository.pullRequest(number:45788)",
+      "source_url": "https://github.com/github/docs/pull/45788",
+      "values": {
+        "base_sha": "831337b0fed60b90a72e2711a41dfcad72b5f288",
+        "head_sha": "ca3e8c456e1e9cb81a9d194ec14afbcf78dee60c",
+        "is_in_merge_queue": false,
+        "is_merge_queue_enabled": true,
+        "potential_merge_sha": "775b52f54d8348776d5ea0984823bad5da4dc92c",
+        "pull_request": 45788,
+        "test_merge_status_check_rollup": "absent"
+      }
+    },
+    {
+      "id": "clickhouse-queue-first-five-2026-09-08",
+      "kind": "merge_queue",
+      "captured_on": "2026-09-08",
+      "repository": "ClickHouse/ClickHouse",
+      "source_query": "repository.mergeQueue.entries(first:5)",
+      "source_url": "https://github.com/ClickHouse/ClickHouse/queue/master",
+      "values": {
+        "entries": [
+          {
+            "base_sha": "16723d7e43a27fb1925d29f8f11c3a46e51b045a",
+            "head_sha": "7b33e4ced120cbec2932b81bdbb2a75c6245a7c4",
+            "id": "MQE_lQDOA5dJV88AAAABBVoJNs2aL84CwqYU",
+            "position": 1,
+            "pr_base_sha": "b922ae0ec55876ddebfd7cbda355a21b2d9ffe6b",
+            "pr_head_sha": "5d5f1bb2928c76f103c6e4d60f3c28cd22daef3d",
+            "pull_request": 116884,
+            "state": "AWAITING_CHECKS"
+          },
+          {
+            "base_sha": "7b33e4ced120cbec2932b81bdbb2a75c6245a7c4",
+            "head_sha": "c220c3f9c222c84444575d17236079c0d3032103",
+            "id": "MQE_lQDOA5dJV88AAAABAm2DHc2aL84CwqYy",
+            "position": 2,
+            "pr_base_sha": "73a16510728af191cc2b3be1f2234202d6d4d2f2",
+            "pr_head_sha": "c0d7e0fe804ff2642e2687bdee4782a2abb31970",
+            "pull_request": 115869,
+            "state": "AWAITING_CHECKS"
+          },
+          {
+            "base_sha": "c220c3f9c222c84444575d17236079c0d3032103",
+            "head_sha": "716fe0d51ce91010ba437e7e0d97d6d5aabb4427",
+            "id": "MQE_lQDOA5dJV88AAAABChnHBc2aL84Cwrqe",
+            "position": 3,
+            "pr_base_sha": "05f500731250ae3c47a6a718356ba03a769526fc",
+            "pr_head_sha": "90866e140173ab9d119e9cfe2dff6a553dd2c21d",
+            "pull_request": 118568,
+            "state": "AWAITING_CHECKS"
+          },
+          {
+            "base_sha": "716fe0d51ce91010ba437e7e0d97d6d5aabb4427",
+            "head_sha": "aea04d668a1be653a213f99a6718309e87fe7093",
+            "id": "MQE_lQDOA5dJV88AAAABAeYfbM2aL84CwsVc",
+            "position": 4,
+            "pr_base_sha": "26bd12dc68f43e7076765c9151b589897f25deba",
+            "pr_head_sha": "e12888a649c1856179606fb6d0ef66d7b8d88502",
+            "pull_request": 115675,
+            "state": "AWAITING_CHECKS"
+          },
+          {
+            "base_sha": "aea04d668a1be653a213f99a6718309e87fe7093",
+            "head_sha": "3685123b11b88a967d5428dd61a9dfdf28ed06b8",
+            "id": "MQE_lQDOA5dJV88AAAABCjXsfs2aL84Cws0o",
+            "position": 5,
+            "pr_base_sha": "5f096d5da845ea68c9639f6a327eea885a793b30",
+            "pr_head_sha": "b6d382a5fdbd8ea43edb24d56b8f5cf37880aca1",
+            "pull_request": 118616,
+            "state": "AWAITING_CHECKS"
+          }
+        ]
+      }
+    }
+  ],
+  "cases": [
+    {
+      "id": "test-merge-check-signal",
+      "description": "A Check Run on the test-merge SHA makes that SHA authoritative.",
+      "coverage": ["test_merge_check_signal"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "signals": [
+          {"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","check_runs":{"collection":"complete","success":1,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}},
+          {"sha":"cccccccccccccccccccccccccccccccccccccccc","check_runs":{"collection":"complete","success":1,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}}
+        ]
+      }
+    },
+    {
+      "id": "test-merge-status-signal",
+      "description": "A legacy commit status alone also makes the test-merge SHA authoritative.",
+      "coverage": ["test_merge_legacy_status_signal"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "signals": [
+          {"sha":"cccccccccccccccccccccccccccccccccccccccc","check_runs":{"collection":"complete","success":0,"other":0},"commit_statuses":{"collection":"complete","success":1,"other":0}}
+        ]
+      }
+    },
+    {
+      "id": "github-docs-empty-test-merge",
+      "description": "The frozen github/docs control has complete, empty test-merge signals, so GitHub evaluates required checks on the PR head.",
+      "coverage": ["live_capture_control","queue_enabled_not_enqueued","test_merge_empty_selects_pr_head"],
+      "provenance_ids": ["github-docs-45788-2026-09-08"],
+      "observation": {
+        "before": {"state":"open","base_sha":"831337b0fed60b90a72e2711a41dfcad72b5f288","head_sha":"ca3e8c456e1e9cb81a9d194ec14afbcf78dee60c","is_merge_queue_enabled":true,"is_in_merge_queue":false,"potential_merge_sha":"775b52f54d8348776d5ea0984823bad5da4dc92c","queue_entry":null},
+        "after": {"state":"open","base_sha":"831337b0fed60b90a72e2711a41dfcad72b5f288","head_sha":"ca3e8c456e1e9cb81a9d194ec14afbcf78dee60c","is_merge_queue_enabled":true,"is_in_merge_queue":false,"potential_merge_sha":"775b52f54d8348776d5ea0984823bad5da4dc92c","queue_entry":null},
+        "signals": [
+          {"sha":"775b52f54d8348776d5ea0984823bad5da4dc92c","check_runs":{"collection":"complete","success":0,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}}
+        ]
+      }
+    },
+    {
+      "id": "test-merge-null",
+      "description": "A missing potential merge commit cannot be treated as an empty one.",
+      "coverage": ["test_merge_null"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":null,"queue_entry":null},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":null,"queue_entry":null},
+        "signals": []
+      }
+    },
+    {
+      "id": "queue-enabled-not-enqueued",
+      "description": "An enabled queue does not override ordinary test-merge selection before enqueue.",
+      "coverage": ["queue_enabled_not_enqueued"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "signals": [
+          {"sha":"cccccccccccccccccccccccccccccccccccccccc","check_runs":{"collection":"complete","success":0,"other":1},"commit_statuses":{"collection":"complete","success":0,"other":0}}
+        ]
+      }
+    },
+    {
+      "id": "clickhouse-queued-entry",
+      "description": "The frozen first ClickHouse queue entry selects its GraphQL headCommit.",
+      "coverage": ["live_capture_control","multi_entry_queue_chain","queued_graphql_entry"],
+      "provenance_ids": ["clickhouse-queue-first-five-2026-09-08"],
+      "observation": {
+        "before": {"state":"open","base_sha":"b922ae0ec55876ddebfd7cbda355a21b2d9ffe6b","head_sha":"5d5f1bb2928c76f103c6e4d60f3c28cd22daef3d","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":null,"queue_entry":{"base_sha":"16723d7e43a27fb1925d29f8f11c3a46e51b045a","head_sha":"7b33e4ced120cbec2932b81bdbb2a75c6245a7c4","id":"MQE_lQDOA5dJV88AAAABBVoJNs2aL84CwqYU","position":1,"state":"AWAITING_CHECKS"}},
+        "after": {"state":"open","base_sha":"b922ae0ec55876ddebfd7cbda355a21b2d9ffe6b","head_sha":"5d5f1bb2928c76f103c6e4d60f3c28cd22daef3d","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":null,"queue_entry":{"base_sha":"16723d7e43a27fb1925d29f8f11c3a46e51b045a","head_sha":"7b33e4ced120cbec2932b81bdbb2a75c6245a7c4","id":"MQE_lQDOA5dJV88AAAABBVoJNs2aL84CwqYU","position":1,"state":"AWAITING_CHECKS"}},
+        "signals": []
+      }
+    },
+    {
+      "id": "queued-entry-missing",
+      "description": "Queue membership without a readable entry is not enough to choose a SHA.",
+      "coverage": ["queued_entry_missing"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "signals": []
+      }
+    },
+    {
+      "id": "queue-entry-drift",
+      "description": "A rebuilt queue entry invalidates observations collected between boundary reads.",
+      "coverage": ["queue_target_drift"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":{"base_sha":"dddddddddddddddddddddddddddddddddddddddd","head_sha":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","id":"MQE_old","position":2,"state":"AWAITING_CHECKS"}},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":{"base_sha":"ffffffffffffffffffffffffffffffffffffffff","head_sha":"1111111111111111111111111111111111111111","id":"MQE_new","position":1,"state":"AWAITING_CHECKS"}},
+        "signals": [
+          {"sha":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","check_runs":{"collection":"complete","success":1,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}}
+        ]
+      }
+    },
+    {
+      "id": "old-queue-green-new-missing",
+      "description": "A green obsolete queue SHA cannot replace the current missing candidate.",
+      "coverage": ["old_queue_green_new_missing","queued_graphql_entry"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":{"base_sha":"dddddddddddddddddddddddddddddddddddddddd","head_sha":"ffffffffffffffffffffffffffffffffffffffff","id":"MQE_current","position":1,"state":"AWAITING_CHECKS"}},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":true,"is_in_merge_queue":true,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":{"base_sha":"dddddddddddddddddddddddddddddddddddddddd","head_sha":"ffffffffffffffffffffffffffffffffffffffff","id":"MQE_current","position":1,"state":"AWAITING_CHECKS"}},
+        "signals": [
+          {"sha":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","check_runs":{"collection":"complete","success":1,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}},
+          {"sha":"ffffffffffffffffffffffffffffffffffffffff","check_runs":{"collection":"complete","success":0,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}}
+        ]
+      }
+    },
+    {
+      "id": "test-merge-api-gap",
+      "description": "An unavailable Check Runs surface prevents proving that a test merge is empty.",
+      "coverage": ["api_gap_fail_closed"],
+      "provenance_ids": [],
+      "observation": {
+        "before": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "after": {"state":"open","base_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","head_sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","is_merge_queue_enabled":false,"is_in_merge_queue":false,"potential_merge_sha":"cccccccccccccccccccccccccccccccccccccccc","queue_entry":null},
+        "signals": [
+          {"sha":"cccccccccccccccccccccccccccccccccccccccc","check_runs":{"collection":"gap","success":0,"other":0},"commit_statuses":{"collection":"complete","success":0,"other":0}}
+        ]
+      }
+    }
+  ]
+}

@@ -20,11 +20,25 @@ choosing among a PR head, test-merge commit, and merge-queue candidate. It inclu
 read-only observations from `github/docs#45788` and the first five entries of the
 `ClickHouse/ClickHouse` merge queue, plus drift, stale-green, missing-candidate, and API-gap cases.
 An independent verifier derives the oracle and rejects sixteen mutation classes; the Rust selector
-adapter is a separate product regression gate.
+adapter now targets v2, while v1 remains an immutable historical gate.
 
 The live-derived records establish concrete API shapes and queue topology at capture time. They do
 not establish currentness, failure prevalence, production accuracy, merge safety, adoption, or
 product-market fit.
+
+## Pull Request Candidate v2
+
+[`pull-request-candidate-v2/`](pull-request-candidate-v2/) is the current candidate-selection
+contract. It reuses v1's ten observations but supersedes one historical oracle decision according
+to GitHub's documented required-check rule: when both test-merge signal surfaces are complete and
+empty, required checks are evaluated on the PR head. The live-derived `github/docs#45788` control
+therefore selects `pr_head`; missing or incomplete signal collection remains inconclusive. Its
+independent verifier freezes the v2 contract. A Rust supersession test proves that all observation
+payloads remain equal and only the named oracle outcome changes, while CI continues to verify
+immutable v1 alongside v2.
+
+This controlled contract does not establish live collector conformance, failure prevalence,
+production accuracy, merge safety, adoption, or product-market fit.
 
 ## Doctor Workflow Trigger v1
 

@@ -1,0 +1,63 @@
+{
+  "schema": "stratadiff-pull-request-candidate-manifest-v2",
+  "dataset_version": "2.0.0",
+  "name": "Pull Request Candidate v2",
+  "designation": "controlled_semantic_regression_with_live_provenance",
+  "description": "The current deterministic offline contract for selecting the exact GitHub required-check candidate across PR head, test merge, and merge queue states.",
+  "dataset_license": "MIT",
+  "supersession": {
+    "supersedes": "pull-request-candidate-v1@1.0.0",
+    "changed_case_ids": ["github-docs-empty-test-merge"],
+    "previous_outcome": "inconclusive_test_merge_empty",
+    "current_outcome": "selected_pr_head_test_merge_empty",
+    "policy_source": {
+      "authority": "GitHub Docs",
+      "rule": "When the test merge commit has no status, required checks are evaluated on the head commit.",
+      "url": "https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#conflicts-between-head-commit-and-test-merge-commit"
+    }
+  },
+  "assets": {
+    "cases": {"path":"cases.json","sha256":"e45824835893505b713126a2fc41653df2d5e3109246bad5c4ddbe9e61e70d8a"},
+    "oracle": {"path":"oracle.json","sha256":"fe3a78803b192faf9fe2b3f643bf076c2404ea2a9024150c05c9fb6eff619912"}
+  },
+  "acceptance_gates": {
+    "minimum_cases": 10,
+    "minimum_inconclusive_cases": 3,
+    "minimum_live_provenance_captures": 2,
+    "minimum_merge_group_selections": 2,
+    "minimum_pr_head_selections": 1,
+    "minimum_retry_cases": 1,
+    "minimum_selected_cases": 6
+  },
+  "required_coverage": [
+    "api_gap_fail_closed",
+    "live_capture_control",
+    "multi_entry_queue_chain",
+    "old_queue_green_new_missing",
+    "queue_enabled_not_enqueued",
+    "queue_target_drift",
+    "queued_entry_missing",
+    "queued_graphql_entry",
+    "test_merge_check_signal",
+    "test_merge_empty_selects_pr_head",
+    "test_merge_legacy_status_signal",
+    "test_merge_null"
+  ],
+  "expected_summary": {
+    "candidate_kinds": {"merge_group":2,"pr_head":1,"test_merge":3},
+    "cases": 10,
+    "coverage_tags": 12,
+    "live_provenance_captures": 2,
+    "outcomes": {"inconclusive":3,"retry":1,"selected":6},
+    "queue_entries_captured": 5
+  },
+  "claim_boundary": {
+    "controlled_candidate_selection_supported": true,
+    "end_to_end_collector_conformance_supported": false,
+    "failure_prevalence_supported": false,
+    "live_capture_currentness_supported": false,
+    "merge_safety_supported": false,
+    "production_accuracy_supported": false,
+    "product_market_fit_supported": false
+  }
+}
