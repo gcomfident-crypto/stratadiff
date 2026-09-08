@@ -75,6 +75,24 @@
           "claim_boundary": {
             "properties": { "required_check_readiness_supported": { "const": false } },
             "required": ["required_check_readiness_supported"]
+          },
+          "next_actions": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "enum": ["wait_for_check", "inspect_failed_check", "resolve_source_identity", "complete_collection"]
+                }
+              },
+              "required": ["code"]
+            },
+            "contains": {
+              "type": "object",
+              "properties": { "code": { "const": "complete_collection" } },
+              "required": ["code"]
+            },
+            "minContains": 1,
+            "maxContains": 1
           }
         }
       }
@@ -105,7 +123,7 @@
           "target": {
             "properties": {
               "evaluation": {
-                "properties": { "kind": { "not": { "const": "merge_group" } } },
+                "properties": { "kind": { "const": "test_merge" } },
                 "required": ["kind"]
               }
             },
@@ -136,12 +154,34 @@
       },
       "then": {
         "properties": {
-          "requirements": {
-            "not": {
-              "contains": { "$ref": "#/$defs/pinned_missing_diagnosis" }
-            }
-          },
           "workflow_trigger_diagnoses": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "workflow_collection": {
+            "properties": { "status": { "const": "not_applicable" } },
+            "required": ["status"]
+          },
+          "requirements": {
+            "contains": { "$ref": "#/$defs/pinned_missing_diagnosis" }
+          }
+        },
+        "required": ["workflow_collection", "requirements"]
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "test_merge" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          }
         }
       }
     },
@@ -160,7 +200,7 @@
           "target": {
             "properties": {
               "evaluation": {
-                "properties": { "kind": { "const": "merge_group" } },
+                "properties": { "kind": { "enum": ["pr_head", "merge_group"] } },
                 "required": ["kind"]
               }
             },
@@ -191,7 +231,7 @@
           "target": {
             "properties": {
               "evaluation": {
-                "properties": { "kind": { "const": "merge_group" } },
+                "properties": { "kind": { "enum": ["pr_head", "merge_group"] } },
                 "required": ["kind"]
               }
             },
@@ -232,6 +272,146 @@
               "probes": { "minItems": 1 }
             },
             "required": ["inventory", "probes"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "pr_head" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          }
+        },
+        "required": ["target"]
+      },
+      "then": {
+        "properties": {
+          "workflow_trigger_diagnoses": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "diagnosis": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "$ref": "#/$defs/pull_request_workflow_trigger_diagnosis" }
+                  ]
+                }
+              },
+              "required": ["diagnosis"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "merge_group" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          }
+        },
+        "required": ["target"]
+      },
+      "then": {
+        "properties": {
+          "workflow_trigger_diagnoses": {
+            "items": {
+              "type": "object",
+              "properties": {
+                "diagnosis": {
+                  "oneOf": [
+                    { "type": "null" },
+                    { "$ref": "#/$defs/merge_group_workflow_trigger_diagnosis" }
+                  ]
+                }
+              },
+              "required": ["diagnosis"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "pr_head" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          },
+          "workflow_collection": {
+            "properties": { "status": { "const": "complete" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["target", "workflow_collection"]
+      },
+      "then": {
+        "properties": {
+          "workflow_collection": {
+            "properties": {
+              "probes": {
+                "contains": {
+                  "type": "object",
+                  "properties": { "kind": { "const": "pull_request_base" } },
+                  "required": ["kind"]
+                }
+              }
+            },
+            "required": ["probes"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "target": {
+            "properties": {
+              "evaluation": {
+                "properties": { "kind": { "const": "merge_group" } },
+                "required": ["kind"]
+              }
+            },
+            "required": ["evaluation"]
+          },
+          "workflow_collection": {
+            "properties": { "status": { "const": "complete" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["target", "workflow_collection"]
+      },
+      "then": {
+        "properties": {
+          "workflow_collection": {
+            "properties": {
+              "probes": {
+                "contains": {
+                  "type": "object",
+                  "properties": { "kind": { "const": "pull_request_head" } },
+                  "required": ["kind"]
+                }
+              }
+            },
+            "required": ["probes"]
           }
         }
       }
@@ -538,8 +718,8 @@
         "rationale": { "$ref": "#/$defs/bounded_text" },
         "argv": {
           "type": "array",
-          "minItems": 1,
-          "maxItems": 32,
+          "minItems": 5,
+          "maxItems": 5,
           "items": {
             "type": "string",
             "minLength": 1,
@@ -547,7 +727,51 @@
             "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
           }
         }
-      }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "code": {
+              "enum": ["wait_for_check", "inspect_failed_check", "restore_required_check", "fix_required_check_source", "resolve_source_identity"]
+            },
+            "requirement": { "$ref": "#/$defs/requirement_key" },
+            "argv": {
+              "prefixItems": [
+                { "const": "gh" },
+                { "const": "api" },
+                { "const": "--hostname" },
+                {
+                  "type": "string",
+                  "maxLength": 253,
+                  "pattern": "^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$"
+                },
+                {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "pattern": "^repos/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/commits/(?:[0-9a-f]{40}|[0-9a-f]{64})/check-runs\\?filter=latest&per_page=100$"
+                }
+              ]
+            }
+          },
+          "required": ["code", "requirement", "argv"]
+        },
+        {
+          "properties": {
+            "code": { "const": "complete_collection" },
+            "requirement": { "type": "null" },
+            "argv": {
+              "prefixItems": [
+                { "const": "stratadiff" },
+                { "const": "doctor" },
+                { "$ref": "#/$defs/https_url" },
+                { "const": "--format" },
+                { "const": "json" }
+              ]
+            }
+          },
+          "required": ["code", "requirement", "argv"]
+        }
+      ]
     },
     "string_set": {
       "type": "array",
@@ -711,7 +935,7 @@
       "additionalProperties": false,
       "required": ["kind", "sha"],
       "properties": {
-        "kind": { "enum": ["pull_request_head", "test_merge"] },
+        "kind": { "enum": ["pull_request_base", "pull_request_head", "test_merge"] },
         "sha": { "$ref": "#/$defs/object_id" }
       }
     },
@@ -746,10 +970,19 @@
         },
         "probes": {
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 3,
           "uniqueItems": true,
           "items": { "$ref": "#/$defs/workflow_probe" },
           "allOf": [
+            {
+              "contains": {
+                "type": "object",
+                "properties": { "kind": { "const": "pull_request_base" } },
+                "required": ["kind"]
+              },
+              "minContains": 0,
+              "maxContains": 1
+            },
             {
               "contains": {
                 "type": "object",
@@ -796,14 +1029,7 @@
             "properties": {
               "api_calls": { "minimum": 1 },
               "inventory": { "$ref": "#/$defs/nonempty_workflow_inventory" },
-              "probes": {
-                "minItems": 1,
-                "contains": {
-                  "type": "object",
-                  "properties": { "kind": { "const": "pull_request_head" } },
-                  "required": ["kind"]
-                }
-              },
+              "probes": { "minItems": 1 },
               "gaps": { "maxItems": 0 }
             }
           }
@@ -873,8 +1099,17 @@
         "action_code": {
           "enum": [
             "add_merge_group_trigger",
+            "add_pull_request_trigger",
+            "align_required_base_branch_filter",
             "approve_fork_workflow",
+            "collect_pull_request_activity",
+            "collect_pull_request_run",
             "collect_merge_group_run",
+            "inspect_branch_filter",
+            "inspect_conditional_job",
+            "inspect_path_filter",
+            "inspect_workflow_run",
+            "move_required_filter_inside_workflow",
             "none"
           ]
         },
@@ -884,6 +1119,100 @@
         },
         "requires_human_edit": { "type": "boolean" }
       }
+    },
+    "merge_group_none_evidence": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "const": "target:merge_group" },
+        { "const": "trigger:merge_group_checks_requested" },
+        { "const": "run:queued" }
+      ]
+    },
+    "pull_request_none_evidence": {
+      "oneOf": [
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "type": "string",
+              "maxLength": 1033,
+              "pattern": "^workflow:\\.github/workflows/[^/\\u0000-\\u001F\\u007F]+\\.ya?ml$"
+            },
+            { "const": "event:pull_request" },
+            { "const": "run_head:exact" }
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "const": "workflow:triggered" },
+            { "const": "job:conditional" },
+            { "const": "run:skipped_success" }
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            { "type": "string", "pattern": "^base:[^\\u0000-\\u001F\\u007F]+$" },
+            { "type": "string", "pattern": "^head:[^\\u0000-\\u001F\\u007F]+$" },
+            { "type": "string", "pattern": "^branches:[^\\u0000-\\u001F\\u007F]+$" },
+            { "const": "run:queued" }
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "type": "string", "pattern": "^changed:[^\\u0000-\\u001F\\u007F]+$" },
+            { "const": "paths:ordered_reinclude" },
+            { "const": "run:queued" }
+          ]
+        },
+        {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "type": "string", "pattern": "^changed:[^\\u0000-\\u001F\\u007F]+$" },
+            { "type": "string", "pattern": "^paths:[^\\u0000-\\u001F\\u007F]+$" },
+            { "const": "run:queued" }
+          ]
+        }
+      ]
+    },
+    "merge_group_unknown_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "prefixItems": [
+        { "const": "merge_group_run:absent" }
+      ]
+    },
+    "pull_request_unknown_evidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "prefixItems": [
+        {
+          "enum": [
+            "activity_filter:activity_unavailable",
+            "branch_filter:unsupported_pattern",
+            "conditional_job:outcome_unproven",
+            "path_filter:unsupported_pattern",
+            "pull_request_run:absent",
+            "trigger:no_supported_explanation"
+          ]
+        }
+      ]
     },
     "workflow_trigger_diagnosis": {
       "oneOf": [
@@ -928,6 +1257,130 @@
           "additionalProperties": false,
           "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
           "properties": {
+            "cause_code": {
+              "enum": [
+                "pull_request_trigger_missing",
+                "workflow_branch_filter_excluded",
+                "workflow_path_filter_excluded"
+              ]
+            },
+            "confidence": { "const": "certain" },
+            "evidence": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3,
+              "items": { "$ref": "#/$defs/nonempty_string" }
+            },
+            "fix": { "$ref": "#/$defs/workflow_trigger_fix" },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "cause_code": { "const": "pull_request_trigger_missing" } },
+                "required": ["cause_code"]
+              },
+              "then": {
+                "properties": {
+                  "evidence": {
+                    "prefixItems": [
+                      { "const": "target:pull_request_head" },
+                      {
+                        "type": "string",
+                        "maxLength": 1033,
+                        "pattern": "^workflow:\\.github/workflows/[^/\\u0000-\\u001F\\u007F]+\\.ya?ml$"
+                      },
+                      { "const": "trigger:pull_request_absent" }
+                    ]
+                  },
+                  "fix": {
+                    "allOf": [
+                      { "$ref": "#/$defs/workflow_trigger_fix" },
+                      {
+                        "properties": {
+                          "action_code": { "const": "add_pull_request_trigger" },
+                          "requires_human_edit": { "const": true }
+                        },
+                        "required": ["action_code", "requires_human_edit"]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "cause_code": { "const": "workflow_branch_filter_excluded" } },
+                "required": ["cause_code"]
+              },
+              "then": {
+                "properties": {
+                  "evidence": {
+                    "prefixItems": [
+                      { "type": "string", "pattern": "^base:[^\\u0000-\\u001F\\u007F]+$" },
+                      { "type": "string", "pattern": "^(?:branches|branches_ignore):[^\\u0000-\\u001F\\u007F]+$" },
+                      {
+                        "type": "string",
+                        "maxLength": 1033,
+                        "pattern": "^workflow:\\.github/workflows/[^/\\u0000-\\u001F\\u007F]+\\.ya?ml$"
+                      }
+                    ]
+                  },
+                  "fix": {
+                    "allOf": [
+                      { "$ref": "#/$defs/workflow_trigger_fix" },
+                      {
+                        "properties": {
+                          "action_code": { "const": "align_required_base_branch_filter" },
+                          "requires_human_edit": { "const": true }
+                        },
+                        "required": ["action_code", "requires_human_edit"]
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "cause_code": { "const": "workflow_path_filter_excluded" } },
+                "required": ["cause_code"]
+              },
+              "then": {
+                "properties": {
+                  "evidence": {
+                    "prefixItems": [
+                      { "type": "string", "pattern": "^changed:[^\\u0000-\\u001F\\u007F]+$" },
+                      { "type": "string", "pattern": "^(?:paths|paths_ignore):[^\\u0000-\\u001F\\u007F]+$" },
+                      {
+                        "type": "string",
+                        "maxLength": 1033,
+                        "pattern": "^workflow:\\.github/workflows/[^/\\u0000-\\u001F\\u007F]+\\.ya?ml$"
+                      }
+                    ]
+                  },
+                  "fix": {
+                    "allOf": [
+                      { "$ref": "#/$defs/workflow_trigger_fix" },
+                      {
+                        "properties": {
+                          "action_code": { "const": "move_required_filter_inside_workflow" },
+                          "requires_human_edit": { "const": true }
+                        },
+                        "required": ["action_code", "requires_human_edit"]
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
             "cause_code": { "const": "fork_approval_required" },
             "confidence": { "const": "certain" },
             "evidence": {
@@ -962,16 +1415,30 @@
           "properties": {
             "cause_code": { "const": "none" },
             "confidence": { "const": "certain" },
-            "evidence": {
-              "type": "array",
-              "minItems": 3,
-              "maxItems": 3,
-              "prefixItems": [
-                { "const": "target:merge_group" },
-                { "const": "trigger:merge_group_checks_requested" },
-                { "const": "run:queued" }
+            "evidence": { "$ref": "#/$defs/merge_group_none_evidence" },
+            "fix": {
+              "allOf": [
+                { "$ref": "#/$defs/workflow_trigger_fix" },
+                {
+                  "properties": {
+                    "action_code": { "const": "none" },
+                    "requires_human_edit": { "const": false }
+                  },
+                  "required": ["action_code", "requires_human_edit"]
+                }
               ]
             },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
+            "cause_code": { "const": "none" },
+            "confidence": { "const": "certain" },
+            "evidence": { "$ref": "#/$defs/pull_request_none_evidence" },
             "fix": {
               "allOf": [
                 { "$ref": "#/$defs/workflow_trigger_fix" },
@@ -994,14 +1461,7 @@
           "properties": {
             "cause_code": { "const": "workflow_trigger_unknown" },
             "confidence": { "const": "uncertain" },
-            "evidence": {
-              "type": "array",
-              "minItems": 1,
-              "maxItems": 1,
-              "prefixItems": [
-                { "const": "merge_group_run:absent" }
-              ]
-            },
+            "evidence": { "$ref": "#/$defs/merge_group_unknown_evidence" },
             "fix": {
               "allOf": [
                 { "$ref": "#/$defs/workflow_trigger_fix" },
@@ -1016,6 +1476,179 @@
             },
             "target_sha": { "$ref": "#/$defs/object_id" }
           }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cause_code", "confidence", "evidence", "fix", "target_sha"],
+          "properties": {
+            "cause_code": { "const": "workflow_trigger_unknown" },
+            "confidence": { "const": "uncertain" },
+            "evidence": { "$ref": "#/$defs/pull_request_unknown_evidence" },
+            "fix": {
+              "allOf": [
+                { "$ref": "#/$defs/workflow_trigger_fix" },
+                {
+                  "properties": { "requires_human_edit": { "const": false } },
+                  "required": ["requires_human_edit"]
+                }
+              ]
+            },
+            "target_sha": { "$ref": "#/$defs/object_id" }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "evidence": { "contains": { "const": "activity_filter:activity_unavailable" } } },
+                "required": ["evidence"]
+              },
+              "then": {
+                "properties": {
+                  "fix": {
+                    "properties": { "action_code": { "const": "collect_pull_request_activity" } },
+                    "required": ["action_code"]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "evidence": { "contains": { "const": "branch_filter:unsupported_pattern" } } },
+                "required": ["evidence"]
+              },
+              "then": {
+                "properties": {
+                  "fix": {
+                    "properties": { "action_code": { "const": "inspect_branch_filter" } },
+                    "required": ["action_code"]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "evidence": { "contains": { "const": "conditional_job:outcome_unproven" } } },
+                "required": ["evidence"]
+              },
+              "then": {
+                "properties": {
+                  "fix": {
+                    "properties": { "action_code": { "const": "inspect_conditional_job" } },
+                    "required": ["action_code"]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "evidence": { "contains": { "const": "path_filter:unsupported_pattern" } } },
+                "required": ["evidence"]
+              },
+              "then": {
+                "properties": {
+                  "fix": {
+                    "properties": { "action_code": { "const": "inspect_path_filter" } },
+                    "required": ["action_code"]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "evidence": { "contains": { "const": "pull_request_run:absent" } } },
+                "required": ["evidence"]
+              },
+              "then": {
+                "properties": {
+                  "fix": {
+                    "properties": { "action_code": { "const": "collect_pull_request_run" } },
+                    "required": ["action_code"]
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": { "evidence": { "contains": { "const": "trigger:no_supported_explanation" } } },
+                "required": ["evidence"]
+              },
+              "then": {
+                "properties": {
+                  "fix": {
+                    "properties": { "action_code": { "const": "inspect_workflow_run" } },
+                    "required": ["action_code"]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "pull_request_workflow_trigger_diagnosis": {
+      "allOf": [
+        { "$ref": "#/$defs/workflow_trigger_diagnosis" },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "cause_code": {
+                  "enum": [
+                    "pull_request_trigger_missing",
+                    "workflow_branch_filter_excluded",
+                    "workflow_path_filter_excluded",
+                    "fork_approval_required"
+                  ]
+                }
+              },
+              "required": ["cause_code"]
+            },
+            {
+              "properties": {
+                "cause_code": { "const": "none" },
+                "evidence": { "$ref": "#/$defs/pull_request_none_evidence" }
+              },
+              "required": ["cause_code", "evidence"]
+            },
+            {
+              "properties": {
+                "cause_code": { "const": "workflow_trigger_unknown" },
+                "evidence": { "$ref": "#/$defs/pull_request_unknown_evidence" }
+              },
+              "required": ["cause_code", "evidence"]
+            }
+          ]
+        }
+      ]
+    },
+    "merge_group_workflow_trigger_diagnosis": {
+      "allOf": [
+        { "$ref": "#/$defs/workflow_trigger_diagnosis" },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "cause_code": {
+                  "enum": ["merge_group_trigger_missing", "fork_approval_required"]
+                }
+              },
+              "required": ["cause_code"]
+            },
+            {
+              "properties": {
+                "cause_code": { "const": "none" },
+                "evidence": { "$ref": "#/$defs/merge_group_none_evidence" }
+              },
+              "required": ["cause_code", "evidence"]
+            },
+            {
+              "properties": {
+                "cause_code": { "const": "workflow_trigger_unknown" },
+                "evidence": { "$ref": "#/$defs/merge_group_unknown_evidence" }
+              },
+              "required": ["cause_code", "evidence"]
+            }
+          ]
         }
       ]
     },

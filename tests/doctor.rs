@@ -301,6 +301,64 @@ fn workflow_snapshot_v3() -> PullRequestDoctorSnapshotV3 {
     }
 }
 
+fn pull_request_workflow_snapshot_v3() -> PullRequestDoctorSnapshotV3 {
+    let mut snapshot = workflow_snapshot_v3();
+    let target = snapshot_v2(DoctorEvaluationTargetKind::PrHead);
+    snapshot.target = target.target;
+    snapshot.signal_sha = target.signal_sha;
+    snapshot.workflow_collection.inventory.as_mut().unwrap().sha = HEAD_SHA.to_owned();
+    snapshot.workflow_collection.probes = vec![DoctorWorkflowProbe {
+        kind: DoctorWorkflowProbeKind::PullRequestBase,
+        sha: BASE_SHA.to_owned(),
+    }];
+
+    let investigation = &mut snapshot.workflow_trigger_investigations[0];
+    let producer = investigation.producer.as_mut().unwrap();
+    producer.source_sha = BASE_SHA.to_owned();
+    producer.workflow_run_path = ".github/workflows/ci.yml@refs/heads/main".to_owned();
+    let input = investigation.input.as_mut().unwrap();
+    input.changed_files = WorkflowChangedFiles {
+        complete: true,
+        github_filter_file_limit_reached: false,
+        paths: vec!["src/lib.rs".to_owned()],
+        total: 1,
+    };
+    input.target = WorkflowTarget {
+        kind: WorkflowTargetKind::PullRequestHead,
+        sha: HEAD_SHA.to_owned(),
+    };
+    input.workflows[0].triggers.pull_request = None;
+    snapshot
+        .workflow_collection
+        .inventory
+        .as_mut()
+        .unwrap()
+        .files[0]
+        .triggers = input.workflows[0].triggers.clone();
+    snapshot
+}
+
+fn set_pull_request_trigger(
+    snapshot: &mut PullRequestDoctorSnapshotV3,
+    trigger: Option<PullRequestWorkflowTrigger>,
+) {
+    snapshot
+        .workflow_collection
+        .inventory
+        .as_mut()
+        .unwrap()
+        .files[0]
+        .triggers
+        .pull_request = trigger.clone();
+    snapshot.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap()
+        .workflows[0]
+        .triggers
+        .pull_request = trigger;
+}
+
 fn fork_approval_snapshot_v3() -> PullRequestDoctorSnapshotV3 {
     let mut snapshot = workflow_snapshot_v3();
     let merge_group_trigger = Some(MergeGroupWorkflowTrigger { types: Vec::new() });
@@ -1011,6 +1069,304 @@ fn v3_reports_a_missing_merge_group_trigger_with_unique_exact_sha_producer() {
 }
 
 #[test]
+fn v3_classifies_supported_pull_request_head_workflow_causes() {
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/pull-request-doctor-v3.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+
+    let missing_trigger = pull_request_workflow_snapshot_v3();
+
+    let mut branch_excluded = pull_request_workflow_snapshot_v3();
+    set_pull_request_trigger(
+        &mut branch_excluded,
+        Some(PullRequestWorkflowTrigger {
+            branches: vec!["release/**".to_owned()],
+            branches_ignore: Vec::new(),
+            paths: Vec::new(),
+            paths_ignore: Vec::new(),
+            types: Vec::new(),
+        }),
+    );
+
+    let mut path_excluded = pull_request_workflow_snapshot_v3();
+    set_pull_request_trigger(
+        &mut path_excluded,
+        Some(PullRequestWorkflowTrigger {
+            branches: Vec::new(),
+            branches_ignore: Vec::new(),
+            paths: vec!["docs/**".to_owned()],
+            paths_ignore: Vec::new(),
+            types: Vec::new(),
+        }),
+    );
+
+    let mut fork_approval = pull_request_workflow_snapshot_v3();
+    let fork_input = fork_approval.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap();
+    fork_input.pull_request.head_repository_is_fork = true;
+    fork_input.runs = vec![WorkflowRunObservation {
+        conclusion: Some(WorkflowRunConclusion::ActionRequired),
+        event: WorkflowRunEvent::PullRequest,
+        head_sha: HEAD_SHA.to_owned(),
+        status: WorkflowRunStatus::Completed,
+        workflow_path: ".github/workflows/ci.yml".to_owned(),
+    }];
+
+    let mut no_trigger_blocker = pull_request_workflow_snapshot_v3();
+    set_pull_request_trigger(
+        &mut no_trigger_blocker,
+        Some(PullRequestWorkflowTrigger {
+            branches: vec!["main".to_owned()],
+            branches_ignore: Vec::new(),
+            paths: Vec::new(),
+            paths_ignore: Vec::new(),
+            types: Vec::new(),
+        }),
+    );
+    no_trigger_blocker.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap()
+        .runs = vec![WorkflowRunObservation {
+        conclusion: None,
+        event: WorkflowRunEvent::PullRequest,
+        head_sha: HEAD_SHA.to_owned(),
+        status: WorkflowRunStatus::Queued,
+        workflow_path: ".github/workflows/ci.yml".to_owned(),
+    }];
+
+    let mut exact_pull_request_run = pull_request_workflow_snapshot_v3();
+    set_pull_request_trigger(
+        &mut exact_pull_request_run,
+        Some(PullRequestWorkflowTrigger {
+            branches: Vec::new(),
+            branches_ignore: Vec::new(),
+            paths: Vec::new(),
+            paths_ignore: Vec::new(),
+            types: Vec::new(),
+        }),
+    );
+    exact_pull_request_run.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap()
+        .runs = vec![WorkflowRunObservation {
+        conclusion: None,
+        event: WorkflowRunEvent::PullRequest,
+        head_sha: HEAD_SHA.to_owned(),
+        status: WorkflowRunStatus::Queued,
+        workflow_path: ".github/workflows/ci.yml".to_owned(),
+    }];
+    let exact_run_report = evaluate_pull_request_doctor_v3(&exact_pull_request_run).unwrap();
+    assert_eq!(
+        exact_run_report.workflow_trigger_diagnoses[0]
+            .diagnosis
+            .as_ref()
+            .unwrap()
+            .evidence,
+        [
+            "workflow:.github/workflows/ci.yml",
+            "event:pull_request",
+            "run_head:exact",
+        ]
+    );
+
+    let mut unknown = pull_request_workflow_snapshot_v3();
+    set_pull_request_trigger(
+        &mut unknown,
+        Some(PullRequestWorkflowTrigger {
+            branches: Vec::new(),
+            branches_ignore: Vec::new(),
+            paths: Vec::new(),
+            paths_ignore: Vec::new(),
+            types: Vec::new(),
+        }),
+    );
+
+    let cases = [
+        (
+            missing_trigger,
+            doctor_workflow::WorkflowTriggerCause::PullRequestTriggerMissing,
+            "add_pull_request_trigger",
+        ),
+        (
+            branch_excluded,
+            doctor_workflow::WorkflowTriggerCause::WorkflowBranchFilterExcluded,
+            "align_required_base_branch_filter",
+        ),
+        (
+            path_excluded,
+            doctor_workflow::WorkflowTriggerCause::WorkflowPathFilterExcluded,
+            "move_required_filter_inside_workflow",
+        ),
+        (
+            fork_approval,
+            doctor_workflow::WorkflowTriggerCause::ForkApprovalRequired,
+            "approve_fork_workflow",
+        ),
+        (
+            no_trigger_blocker,
+            doctor_workflow::WorkflowTriggerCause::None,
+            "none",
+        ),
+        (
+            exact_pull_request_run,
+            doctor_workflow::WorkflowTriggerCause::None,
+            "none",
+        ),
+        (
+            unknown,
+            doctor_workflow::WorkflowTriggerCause::WorkflowTriggerUnknown,
+            "collect_pull_request_run",
+        ),
+    ];
+
+    for (snapshot, expected_cause, expected_action) in cases {
+        let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+        let diagnosis = report.workflow_trigger_diagnoses[0]
+            .diagnosis
+            .as_ref()
+            .unwrap();
+
+        assert_eq!(
+            report.target.evaluation.kind,
+            DoctorEvaluationTargetKind::PrHead
+        );
+        assert_eq!(
+            report.workflow_trigger_diagnoses[0]
+                .producer
+                .as_ref()
+                .unwrap()
+                .source_sha,
+            BASE_SHA
+        );
+        assert_eq!(diagnosis.cause_code, expected_cause);
+        assert_eq!(diagnosis.fix.action_code, expected_action);
+        let instance = serde_json::to_value(report).unwrap();
+        if let Err(error) = validator.validate(&instance) {
+            panic!("pull-request-head Doctor report did not match v3 schema: {error}");
+        }
+    }
+}
+
+#[test]
+fn v3_rejects_unbound_or_incomplete_pull_request_head_evidence() {
+    let mut missing_base_probe = pull_request_workflow_snapshot_v3();
+    missing_base_probe.workflow_collection.probes.clear();
+    assert!(
+        evaluate_pull_request_doctor_v3(&missing_base_probe)
+            .unwrap_err()
+            .to_string()
+            .contains("historical producer source")
+    );
+
+    let mut wrong_source = pull_request_workflow_snapshot_v3();
+    wrong_source
+        .workflow_collection
+        .probes
+        .push(DoctorWorkflowProbe {
+            kind: DoctorWorkflowProbeKind::TestMerge,
+            sha: EVALUATION_SHA.to_owned(),
+        });
+    wrong_source.workflow_trigger_investigations[0]
+        .producer
+        .as_mut()
+        .unwrap()
+        .source_sha = EVALUATION_SHA.to_owned();
+    assert!(
+        evaluate_pull_request_doctor_v3(&wrong_source)
+            .unwrap_err()
+            .to_string()
+            .contains("declared base SHA")
+    );
+
+    let mut wrong_target_kind = pull_request_workflow_snapshot_v3();
+    wrong_target_kind.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap()
+        .target
+        .kind = WorkflowTargetKind::MergeGroup;
+    assert!(
+        evaluate_pull_request_doctor_v3(&wrong_target_kind)
+            .unwrap_err()
+            .to_string()
+            .contains("not bound")
+    );
+
+    let mut incomplete_files = pull_request_workflow_snapshot_v3();
+    incomplete_files.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap()
+        .changed_files
+        .complete = false;
+    assert!(
+        evaluate_pull_request_doctor_v3(&incomplete_files)
+            .unwrap_err()
+            .to_string()
+            .contains("complete changed-file set")
+    );
+
+    let mut unsupported_activity = pull_request_workflow_snapshot_v3();
+    unsupported_activity.workflow_trigger_investigations[0]
+        .input
+        .as_mut()
+        .unwrap()
+        .last_activity = "synchronize".to_owned();
+    assert!(
+        evaluate_pull_request_doctor_v3(&unsupported_activity)
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported phase-one evidence")
+    );
+}
+
+#[test]
+fn v3_keeps_test_merge_workflow_diagnosis_not_applicable() {
+    let base = snapshot_v2(DoctorEvaluationTargetKind::TestMerge);
+    let mut snapshot = PullRequestDoctorSnapshotV3 {
+        schema: PULL_REQUEST_DOCTOR_SNAPSHOT_V3_SCHEMA.to_owned(),
+        captured_at: base.captured_at,
+        provider_url: base.provider_url,
+        repository: base.repository,
+        target: base.target,
+        signal_sha: base.signal_sha,
+        collection: base.collection,
+        requirements: base.requirements,
+        check_runs: Vec::new(),
+        statuses: base.statuses,
+        workflow_collection: DoctorWorkflowCollection {
+            status: DoctorWorkflowCollectionStatus::NotApplicable,
+            api_calls: 0,
+            response_bytes: 0,
+            inventory: None,
+            probes: Vec::new(),
+            gaps: Vec::new(),
+        },
+        workflow_trigger_investigations: Vec::new(),
+    };
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+    let schema: serde_json::Value =
+        serde_json::from_str(include_str!("../schema/pull-request-doctor-v3.schema.json")).unwrap();
+    let validator = jsonschema::draft202012::new(&schema).unwrap();
+    let valid = serde_json::to_value(report).unwrap();
+    assert!(validator.validate(&valid).is_ok());
+
+    snapshot.target = snapshot_v2(DoctorEvaluationTargetKind::PrHead).target;
+    snapshot.signal_sha = HEAD_SHA.to_owned();
+    assert!(evaluate_pull_request_doctor_v3(&snapshot).is_err());
+
+    let mut invalid_pr_head = valid;
+    invalid_pr_head["target"]["evaluation"]["kind"] = serde_json::json!("pr_head");
+    invalid_pr_head["target"]["evaluation"]["sha"] = serde_json::json!(HEAD_SHA);
+    invalid_pr_head["target"]["evaluation"]["base_sha"] = serde_json::Value::Null;
+    assert!(validator.validate(&invalid_pr_head).is_err());
+}
+
+#[test]
 fn v3_reports_match_the_published_schema_for_every_collection_state() {
     let schema: serde_json::Value =
         serde_json::from_str(include_str!("../schema/pull-request-doctor-v3.schema.json")).unwrap();
@@ -1143,6 +1499,161 @@ fn v3_schema_rejects_tampered_workflow_evidence() {
     let report = evaluate_pull_request_doctor_v3(&workflow_snapshot_v3()).unwrap();
     let valid = serde_json::to_value(report).unwrap();
     assert!(validator.validate(&valid).is_ok());
+
+    let pull_request_head = serde_json::to_value(
+        evaluate_pull_request_doctor_v3(&pull_request_workflow_snapshot_v3()).unwrap(),
+    )
+    .unwrap();
+    assert!(validator.validate(&pull_request_head).is_ok());
+
+    let mut pull_request_head_with_merge_group_diagnosis = pull_request_head.clone();
+    pull_request_head_with_merge_group_diagnosis["workflow_trigger_diagnoses"][0]["diagnosis"] =
+        valid["workflow_trigger_diagnoses"][0]["diagnosis"].clone();
+    assert!(
+        validator
+            .validate(&pull_request_head_with_merge_group_diagnosis)
+            .is_err()
+    );
+
+    let mut merge_group_with_pull_request_diagnosis = valid.clone();
+    merge_group_with_pull_request_diagnosis["workflow_trigger_diagnoses"][0]["diagnosis"] =
+        pull_request_head["workflow_trigger_diagnoses"][0]["diagnosis"].clone();
+    assert!(
+        validator
+            .validate(&merge_group_with_pull_request_diagnosis)
+            .is_err()
+    );
+
+    let mut provisional_snapshot = pull_request_workflow_snapshot_v3();
+    provisional_snapshot.target.evaluation.resolution =
+        DoctorEvaluationTargetResolution::Provisional;
+    provisional_snapshot.collection.status = DoctorCollectionStatus::Partial;
+    provisional_snapshot
+        .collection
+        .gaps
+        .push(DoctorCollectionGap {
+            surface: DoctorCollectionSurface::Target,
+            reason: "the active GitHub check target could not be proven".to_owned(),
+        });
+    provisional_snapshot.check_runs = vec![check(
+        501,
+        Some(ACTIONS_APP_ID),
+        "completed",
+        Some("failure"),
+    )];
+    provisional_snapshot.workflow_collection = DoctorWorkflowCollection {
+        status: DoctorWorkflowCollectionStatus::NotApplicable,
+        api_calls: 0,
+        response_bytes: 0,
+        inventory: None,
+        probes: Vec::new(),
+        gaps: Vec::new(),
+    };
+    provisional_snapshot.workflow_trigger_investigations.clear();
+    let provisional =
+        serde_json::to_value(evaluate_pull_request_doctor_v3(&provisional_snapshot).unwrap())
+            .unwrap();
+    assert!(validator.validate(&provisional).is_ok());
+    assert_eq!(
+        provisional["next_actions"][0]["code"],
+        serde_json::json!("inspect_failed_check")
+    );
+    assert_eq!(
+        provisional["next_actions"][1]["code"],
+        serde_json::json!("complete_collection")
+    );
+
+    let restore_required_check = pull_request_head["next_actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["code"] == "restore_required_check")
+        .unwrap()
+        .clone();
+    let mut provisional_with_restore = provisional.clone();
+    provisional_with_restore["next_actions"][0] = restore_required_check;
+    assert!(validator.validate(&provisional_with_restore).is_err());
+
+    let mut requirement_action_without_requirement = provisional.clone();
+    requirement_action_without_requirement["next_actions"][0]["requirement"] =
+        serde_json::Value::Null;
+    assert!(
+        validator
+            .validate(&requirement_action_without_requirement)
+            .is_err()
+    );
+
+    let mut requirement_action_with_arbitrary_argv = provisional.clone();
+    requirement_action_with_arbitrary_argv["next_actions"][0]["argv"] = serde_json::json!([
+        "curl",
+        "https://example.com",
+        "--request",
+        "DELETE",
+        "resource"
+    ]);
+    assert!(
+        validator
+            .validate(&requirement_action_with_arbitrary_argv)
+            .is_err()
+    );
+
+    let requirement = provisional["next_actions"][0]["requirement"].clone();
+    let mut complete_collection_with_requirement = provisional.clone();
+    complete_collection_with_requirement["next_actions"][1]["requirement"] = requirement;
+    assert!(
+        validator
+            .validate(&complete_collection_with_requirement)
+            .is_err()
+    );
+
+    let complete_collection = provisional["next_actions"][1].clone();
+    let mut provisional_without_complete_collection = provisional.clone();
+    provisional_without_complete_collection["next_actions"]
+        .as_array_mut()
+        .unwrap()
+        .pop();
+    assert!(
+        validator
+            .validate(&provisional_without_complete_collection)
+            .is_err()
+    );
+
+    let mut provisional_with_duplicate_complete_collection = provisional;
+    provisional_with_duplicate_complete_collection["next_actions"]
+        .as_array_mut()
+        .unwrap()
+        .push(complete_collection);
+    assert!(
+        validator
+            .validate(&provisional_with_duplicate_complete_collection)
+            .is_err()
+    );
+
+    let mut pull_request_head_without_base_probe = pull_request_head.clone();
+    pull_request_head_without_base_probe["workflow_collection"]["probes"] = serde_json::json!([]);
+    assert!(
+        validator
+            .validate(&pull_request_head_without_base_probe)
+            .is_err()
+    );
+
+    let mut pull_request_head_with_wrong_fix = pull_request_head.clone();
+    pull_request_head_with_wrong_fix["workflow_trigger_diagnoses"][0]["diagnosis"]["fix"]["action_code"] =
+        serde_json::json!("align_required_base_branch_filter");
+    assert!(
+        validator
+            .validate(&pull_request_head_with_wrong_fix)
+            .is_err()
+    );
+
+    let mut pull_request_head_with_unsupported_cause = pull_request_head;
+    pull_request_head_with_unsupported_cause["workflow_trigger_diagnoses"][0]["diagnosis"]["cause_code"] =
+        serde_json::json!("pull_request_merge_conflict");
+    assert!(
+        validator
+            .validate(&pull_request_head_with_unsupported_cause)
+            .is_err()
+    );
 
     let fork_approval = serde_json::to_value(
         evaluate_pull_request_doctor_v3(&fork_approval_snapshot_v3()).unwrap(),

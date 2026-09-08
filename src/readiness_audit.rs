@@ -50,6 +50,8 @@ const MAX_LINK_HEADER_BYTES: usize = 16 * 1024;
 const MAX_WORKFLOW_TRIGGER_PATTERNS: usize = 1_000;
 const MAX_WORKFLOW_TRIGGER_PATTERN_BYTES: usize = 4 * 1024;
 const MAX_DOCTOR_WORKFLOW_DIRECTORY_ENTRIES: usize = 100;
+const MAX_GITHUB_PATH_FILTER_FILES: u64 = 300;
+const MAX_DOCTOR_CHANGED_FILE_PATH_BYTES: usize = 4 * 1024;
 const DOCTOR_CANDIDATE_QUERY: &str = concat!(
     "query StrataDiffPullRequestCandidate($owner:String!,$name:String!,$number:Int!){",
     "repository(owner:$owner,name:$name){nameWithOwner url pullRequest(number:$number){",
@@ -313,8 +315,15 @@ struct ApiDoctorPullRequest {
     html_url: String,
     state: String,
     merge_commit_sha: Option<String>,
+    #[serde(default)]
+    changed_files: Option<u64>,
     base: ApiDoctorPullRef,
     head: ApiDoctorPullHead,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct ApiDoctorChangedFile {
+    filename: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -3145,6 +3154,119 @@ fn collect_doctor_workflow_jobs<A: GithubReadinessApi>(
     Ok((jobs, None))
 }
 
+fn collect_doctor_changed_files<A: GithubReadinessApi>(
+    api: &mut A,
+    budget: &mut ApiBudget,
+    repository_path: &str,
+    pull_request_number: u64,
+    expected_total: u64,
+) -> Result<(Option<WorkflowChangedFiles>, Option<String>)> {
+    if expected_total > MAX_GITHUB_PATH_FILTER_FILES {
+        return Ok((
+            None,
+            Some(format!(
+                "GitHub path-filter evaluation is not provable for {expected_total} changed files because only the first {MAX_GITHUB_PATH_FILTER_FILES} files participate"
+            )),
+        ));
+    }
+    if expected_total == 0 {
+        return Ok((
+            Some(WorkflowChangedFiles {
+                complete: true,
+                github_filter_file_limit_reached: false,
+                paths: Vec::new(),
+                total: 0,
+            }),
+            None,
+        ));
+    }
+
+    let mut paths = Vec::new();
+    let mut unique_paths = BTreeSet::new();
+    for page in 1..=MAX_PAGES {
+        let endpoint = format!(
+            "repos/{repository_path}/pulls/{pull_request_number}/files?per_page={PAGE_SIZE}&page={page}"
+        );
+        let response = budget.get(api, &endpoint)?;
+        if !successful(&response) {
+            return Ok((
+                None,
+                Some(format!(
+                    "GitHub returned HTTP {} while reading pull-request changed files",
+                    response.status
+                )),
+            ));
+        }
+        let has_next = has_next_page(response.link_header.as_deref());
+        let page_body: Vec<ApiDoctorChangedFile> = parse_json(&response.body, &endpoint)?;
+        for file in page_body {
+            if file.filename.is_empty()
+                || file.filename.len() > MAX_DOCTOR_CHANGED_FILE_PATH_BYTES
+                || file.filename.chars().any(char::is_control)
+            {
+                return Ok((
+                    None,
+                    Some("GitHub returned an unsafe or oversized changed-file path".to_owned()),
+                ));
+            }
+            if !unique_paths.insert(file.filename.clone()) {
+                return Ok((
+                    None,
+                    Some("GitHub returned a duplicate changed-file path".to_owned()),
+                ));
+            }
+            paths.push(file.filename);
+        }
+
+        let observed = u64::try_from(paths.len())?;
+        if observed == expected_total {
+            if has_next {
+                return Ok((
+                    None,
+                    Some(
+                        "changed-file pagination advertised another page after the declared total"
+                            .to_owned(),
+                    ),
+                ));
+            }
+            paths.sort();
+            return Ok((
+                Some(WorkflowChangedFiles {
+                    complete: true,
+                    github_filter_file_limit_reached: false,
+                    paths,
+                    total: expected_total,
+                }),
+                None,
+            ));
+        }
+        if observed > expected_total {
+            return Ok((
+                None,
+                Some("changed-file response exceeded the pull request's declared total".to_owned()),
+            ));
+        }
+        if !has_next {
+            return Ok((
+                None,
+                Some(
+                    "changed-file pagination ended before the pull request's declared total"
+                        .to_owned(),
+                ),
+            ));
+        }
+        if page == MAX_PAGES {
+            return Ok((
+                None,
+                Some(format!(
+                    "changed-file pagination exceeded {MAX_PAGES} pages"
+                )),
+            ));
+        }
+    }
+    unreachable!("changed-file pagination loop always returns")
+}
+
 fn direct_workflow_path(path: &str) -> bool {
     path.strip_prefix(".github/workflows/").is_some_and(|name| {
         !name.is_empty()
@@ -3489,11 +3611,17 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
         "pull request changed before workflow producer collection; retry the doctor command"
     );
 
-    let declared_probes = expected_workflow_probes(&pull, &snapshot.signal_sha);
-    ensure!(
-        !declared_probes.is_empty(),
-        "merge-group workflow diagnosis requires a distinct producer candidate"
-    );
+    let declared_probes = expected_workflow_probes(&pull, &snapshot.target.evaluation);
+    if declared_probes.is_empty() {
+        for requirement in requirements {
+            add_workflow_gap(
+                &mut gaps,
+                requirement,
+                "producer_candidate_unavailable",
+                "Doctor could not identify a distinct historical candidate for producer discovery",
+            );
+        }
+    }
 
     let (workflow_inventory, workflow_inventory_gap) =
         collect_doctor_workflow_inventory(api, budget, &repository_path, &snapshot.signal_sha)?;
@@ -3521,6 +3649,24 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
         }
     }
 
+    let (changed_files, changed_files_gap) =
+        if snapshot.target.evaluation.kind == DoctorEvaluationTargetKind::PrHead {
+            match pull.changed_files {
+                Some(expected_total) => collect_doctor_changed_files(
+                    api,
+                    budget,
+                    &repository_path,
+                    pull.number,
+                    expected_total,
+                )?,
+                None => (
+                    None,
+                    Some("GitHub did not expose the pull request's changed-file total".to_owned()),
+                ),
+            }
+        } else {
+            (None, None)
+        };
     let mut run_cache: BTreeMap<
         (String, u64),
         std::result::Result<Vec<ApiDoctorWorkflowRun>, String>,
@@ -3528,6 +3674,9 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
     let mut job_cache: BTreeMap<u64, std::result::Result<Vec<ApiDoctorWorkflowJob>, String>> =
         BTreeMap::new();
     for investigation in &mut investigations {
+        if declared_probes.is_empty() {
+            continue;
+        }
         let expected_app_id = investigation
             .requirement
             .expected_app_id
@@ -3883,6 +4032,25 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
             continue;
         };
 
+        let (target_kind, target_event) = match snapshot.target.evaluation.kind {
+            DoctorEvaluationTargetKind::PrHead => (
+                WorkflowTargetKind::PullRequestHead,
+                WorkflowRunEvent::PullRequest,
+            ),
+            DoctorEvaluationTargetKind::MergeGroup => {
+                (WorkflowTargetKind::MergeGroup, WorkflowRunEvent::MergeGroup)
+            }
+            DoctorEvaluationTargetKind::TestMerge => {
+                add_workflow_gap(
+                    &mut gaps,
+                    &investigation.requirement,
+                    "workflow_target_unsupported",
+                    "Doctor does not classify workflow triggers for test-merge targets",
+                );
+                continue;
+            }
+        };
+
         let mut run_gaps = Vec::new();
         let mut observed_runs = Vec::new();
         for target_run in target_runs
@@ -3903,16 +4071,18 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
                 None => {}
             }
         }
-        if definition.triggers.merge_group.is_none()
-            && observed_runs
-                .iter()
-                .any(|run| run.event == WorkflowRunEvent::MergeGroup)
+        let has_exact_target_run = observed_runs.iter().any(|run| run.event == target_event);
+        let trigger_missing = match target_kind {
+            WorkflowTargetKind::PullRequestHead => definition.triggers.pull_request.is_none(),
+            WorkflowTargetKind::MergeGroup => definition.triggers.merge_group.is_none(),
+        };
+        if target_kind == WorkflowTargetKind::MergeGroup && trigger_missing && has_exact_target_run
         {
             add_workflow_gap(
                 &mut gaps,
                 &investigation.requirement,
                 "workflow_trigger_evidence_conflict",
-                "An exact-candidate merge_group run conflicts with the collected workflow definition",
+                "An exact-candidate workflow run conflicts with the collected workflow definition",
             );
             continue;
         }
@@ -3932,13 +4102,43 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
         if !run_gaps.is_empty() {
             continue;
         }
-        investigation.input = Some(DoctorWorkflowTriggerInput {
-            changed_files: WorkflowChangedFiles {
+        let changed_files = match target_kind {
+            WorkflowTargetKind::PullRequestHead => match &changed_files {
+                Some(changed_files) => changed_files.clone(),
+                None if has_exact_target_run => {
+                    let (total, github_filter_file_limit_reached) = match pull.changed_files {
+                        Some(total) => (total, total > MAX_GITHUB_PATH_FILTER_FILES),
+                        None => (0, false),
+                    };
+                    WorkflowChangedFiles {
+                        complete: false,
+                        github_filter_file_limit_reached,
+                        paths: Vec::new(),
+                        total,
+                    }
+                }
+                None => {
+                    let reason = changed_files_gap
+                        .as_deref()
+                        .context("missing changed-file collection gap")?;
+                    add_workflow_gap(
+                        &mut gaps,
+                        &investigation.requirement,
+                        "changed_files_incomplete",
+                        reason,
+                    );
+                    continue;
+                }
+            },
+            WorkflowTargetKind::MergeGroup => WorkflowChangedFiles {
                 complete: false,
                 github_filter_file_limit_reached: false,
                 paths: Vec::new(),
                 total: 0,
             },
+        };
+        investigation.input = Some(DoctorWorkflowTriggerInput {
+            changed_files,
             collection_gaps: run_gaps,
             expected_app: WorkflowExpectedApp::GithubActions,
             historical_check_names: vec![investigation.requirement.context.clone()],
@@ -3958,7 +4158,7 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
             required_context: investigation.requirement.context.clone(),
             runs: observed_runs,
             target: WorkflowTarget {
-                kind: WorkflowTargetKind::MergeGroup,
+                kind: target_kind,
                 sha: snapshot.signal_sha.clone(),
             },
             workflows: vec![definition],
@@ -4003,24 +4203,37 @@ fn collect_doctor_workflow_investigations<A: GithubPullRequestDoctorApi>(
 
 fn expected_workflow_probes(
     pull: &ApiDoctorPullRequest,
-    signal_sha: &str,
+    evaluation: &DoctorEvaluationTarget,
 ) -> Vec<DoctorWorkflowProbe> {
     let mut probes = Vec::new();
-    if let Some(test_merge_sha) = &pull.merge_commit_sha
-        && !test_merge_sha.eq_ignore_ascii_case(signal_sha)
-        && !test_merge_sha.eq_ignore_ascii_case(&pull.head.sha)
-        && !test_merge_sha.eq_ignore_ascii_case(&pull.base.sha)
-    {
-        probes.push(DoctorWorkflowProbe {
-            kind: DoctorWorkflowProbeKind::TestMerge,
-            sha: test_merge_sha.to_ascii_lowercase(),
-        });
-    }
-    if !pull.head.sha.eq_ignore_ascii_case(signal_sha) {
-        probes.push(DoctorWorkflowProbe {
-            kind: DoctorWorkflowProbeKind::PullRequestHead,
-            sha: pull.head.sha.to_ascii_lowercase(),
-        });
+    match evaluation.kind {
+        DoctorEvaluationTargetKind::PrHead => {
+            if !pull.base.sha.eq_ignore_ascii_case(&evaluation.sha) {
+                probes.push(DoctorWorkflowProbe {
+                    kind: DoctorWorkflowProbeKind::PullRequestBase,
+                    sha: pull.base.sha.to_ascii_lowercase(),
+                });
+            }
+        }
+        DoctorEvaluationTargetKind::MergeGroup => {
+            if let Some(test_merge_sha) = &pull.merge_commit_sha
+                && !test_merge_sha.eq_ignore_ascii_case(&evaluation.sha)
+                && !test_merge_sha.eq_ignore_ascii_case(&pull.head.sha)
+                && !test_merge_sha.eq_ignore_ascii_case(&pull.base.sha)
+            {
+                probes.push(DoctorWorkflowProbe {
+                    kind: DoctorWorkflowProbeKind::TestMerge,
+                    sha: test_merge_sha.to_ascii_lowercase(),
+                });
+            }
+            if !pull.head.sha.eq_ignore_ascii_case(&evaluation.sha) {
+                probes.push(DoctorWorkflowProbe {
+                    kind: DoctorWorkflowProbeKind::PullRequestHead,
+                    sha: pull.head.sha.to_ascii_lowercase(),
+                });
+            }
+        }
+        DoctorEvaluationTargetKind::TestMerge => {}
     }
     probes
 }
@@ -4046,7 +4259,10 @@ pub fn collect_pull_request_doctor_snapshot_v3<A: GithubPullRequestDoctorApi>(
     let initial =
         collect_pull_request_doctor_snapshot_with_budget(request.clone(), api, &mut budget)?;
     let initial_report = evaluate_pull_request_doctor_v2(&initial)?;
-    let requirements = if initial.target.evaluation.kind == DoctorEvaluationTargetKind::MergeGroup {
+    let requirements = if matches!(
+        initial.target.evaluation.kind,
+        DoctorEvaluationTargetKind::PrHead | DoctorEvaluationTargetKind::MergeGroup
+    ) {
         initial_report
             .requirements
             .iter()

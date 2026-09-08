@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use stratadiff::doctor::{
     DoctorCollectionStatus, DoctorCollectionSurface, DoctorEvaluationTargetKind,
     DoctorEvaluationTargetResolution, DoctorPolicyKind, DoctorVerdict,
-    DoctorWorkflowCollectionStatus, evaluate_pull_request_doctor_v2,
+    DoctorWorkflowCollectionStatus, DoctorWorkflowProbeKind, evaluate_pull_request_doctor_v2,
     evaluate_pull_request_doctor_v3, render_pull_request_doctor_v3_markdown,
 };
 use stratadiff::doctor_workflow::WorkflowTriggerCause;
@@ -87,6 +87,151 @@ struct StableWorkflowDoctorApi {
     duplicate_producer: bool,
     drift_producer_on_second_pass: bool,
     graphql_calls: usize,
+}
+
+#[derive(Clone, Copy)]
+enum PrHeadWorkflowScenario {
+    MissingTrigger,
+    BranchExcluded,
+    PathExcluded,
+    ForkApproval,
+    ChangedFilesIncomplete,
+    ChangedFilesOverLimit,
+    ObservedRunOverridesBranchFilter,
+    ObservedRunOverridesChangedFileLimit,
+    ObservedRunOverridesIncompleteChangedFiles,
+    ObservedRunOverridesMissingTrigger,
+    PaginatedPathExcluded,
+}
+
+struct StablePrHeadWorkflowDoctorApi {
+    calls: BTreeMap<String, usize>,
+    graphql_calls: usize,
+    scenario: PrHeadWorkflowScenario,
+}
+
+impl StablePrHeadWorkflowDoctorApi {
+    fn new(scenario: PrHeadWorkflowScenario) -> Self {
+        Self {
+            calls: BTreeMap::new(),
+            graphql_calls: 0,
+            scenario,
+        }
+    }
+
+    fn call_count(&self, endpoint: &str) -> usize {
+        self.calls.get(endpoint).copied().unwrap_or(0)
+    }
+
+    fn pull(&self) -> Value {
+        let changed_files = match self.scenario {
+            PrHeadWorkflowScenario::ChangedFilesIncomplete
+            | PrHeadWorkflowScenario::ObservedRunOverridesIncompleteChangedFiles => 2,
+            PrHeadWorkflowScenario::ChangedFilesOverLimit
+            | PrHeadWorkflowScenario::ObservedRunOverridesChangedFileLimit => 301,
+            PrHeadWorkflowScenario::PaginatedPathExcluded => 101,
+            _ => 1,
+        };
+        let head_repository = if matches!(self.scenario, PrHeadWorkflowScenario::ForkApproval) {
+            "contributor/widgets"
+        } else {
+            "acme/widgets"
+        };
+        json!({
+            "number": 9,
+            "html_url": "https://github.com/acme/widgets/pull/9",
+            "state": "open",
+            "merge_commit_sha": null,
+            "changed_files": changed_files,
+            "base": {"ref": "release/1.x", "sha": BASE_SHA},
+            "head": {
+                "ref": "feature/doctor",
+                "sha": HEAD_SHA,
+                "repo": {"full_name": head_repository}
+            }
+        })
+    }
+
+    fn policy() -> Value {
+        json!([{
+            "type": "required_status_checks",
+            "parameters": {
+                "required_status_checks": [
+                    {"context": "ci", "integration_id": 15368}
+                ]
+            },
+            "ruleset_source_type": "Repository",
+            "ruleset_source": "acme/widgets",
+            "ruleset_id": 70
+        }])
+    }
+
+    fn workflow_content(&self) -> Value {
+        let trigger = match self.scenario {
+            PrHeadWorkflowScenario::MissingTrigger
+            | PrHeadWorkflowScenario::ObservedRunOverridesMissingTrigger => "on: push\n",
+            PrHeadWorkflowScenario::BranchExcluded
+            | PrHeadWorkflowScenario::ObservedRunOverridesBranchFilter => concat!(
+                "on:\n",
+                "  pull_request:\n",
+                "    branches:\n",
+                "      - main\n"
+            ),
+            PrHeadWorkflowScenario::PathExcluded
+            | PrHeadWorkflowScenario::ChangedFilesIncomplete
+            | PrHeadWorkflowScenario::ChangedFilesOverLimit
+            | PrHeadWorkflowScenario::ObservedRunOverridesChangedFileLimit
+            | PrHeadWorkflowScenario::ObservedRunOverridesIncompleteChangedFiles
+            | PrHeadWorkflowScenario::PaginatedPathExcluded => concat!(
+                "on:\n",
+                "  pull_request:\n",
+                "    paths:\n",
+                "      - src/**\n"
+            ),
+            PrHeadWorkflowScenario::ForkApproval => "on: pull_request\n",
+        };
+        let yaml = format!(
+            "name: CI\n{trigger}jobs:\n  ci:\n    name: ci\n    runs-on: ubuntu-latest\n    steps: []\n"
+        );
+        json!({
+            "type": "file",
+            "encoding": "base64",
+            "content": STANDARD.encode(yaml),
+            "path": ".github/workflows/ci.yml",
+            "sha": WORKFLOW_BLOB_SHA
+        })
+    }
+
+    fn target_runs(&self) -> Value {
+        let conclusion = match self.scenario {
+            PrHeadWorkflowScenario::ForkApproval => Some("action_required"),
+            PrHeadWorkflowScenario::ObservedRunOverridesBranchFilter
+            | PrHeadWorkflowScenario::ObservedRunOverridesChangedFileLimit
+            | PrHeadWorkflowScenario::ObservedRunOverridesIncompleteChangedFiles
+            | PrHeadWorkflowScenario::ObservedRunOverridesMissingTrigger => None,
+            _ => return json!({"total_count": 0, "workflow_runs": []}),
+        };
+        let status = if conclusion.is_some() {
+            "completed"
+        } else {
+            "queued"
+        };
+        json!({
+            "total_count": 1,
+            "workflow_runs": [{
+                "id": 702,
+                "html_url": "https://github.com/acme/widgets/actions/runs/702",
+                "workflow_id": 901,
+                "path": ".github/workflows/ci.yml",
+                "event": "pull_request",
+                "head_sha": HEAD_SHA,
+                "check_suite_id": 602,
+                "run_attempt": 1,
+                "status": status,
+                "conclusion": conclusion
+            }]
+        })
+    }
 }
 
 impl StableWorkflowDoctorApi {
@@ -328,6 +473,161 @@ impl GithubReadinessApi for StableWorkflowDoctorApi {
                     "path": ".github/workflows/ci.yml",
                     "state": "active",
                     "html_url": workflow_url
+                }),
+            ));
+        }
+
+        anyhow::bail!("unexpected API request: {endpoint}")
+    }
+}
+
+impl GithubPullRequestDoctorApi for StablePrHeadWorkflowDoctorApi {
+    fn graphql(
+        &mut self,
+        query: &str,
+        variables: &Value,
+    ) -> anyhow::Result<GithubReadinessApiResponse> {
+        assert!(query.contains("query StrataDiffPullRequestCandidate"));
+        assert_eq!(
+            variables,
+            &json!({"owner": "acme", "name": "widgets", "number": 9})
+        );
+        self.graphql_calls += 1;
+        Ok(graphql_response_for_pull(
+            &serde_json::to_vec(&self.pull()).unwrap(),
+        ))
+    }
+}
+
+impl GithubReadinessApi for StablePrHeadWorkflowDoctorApi {
+    fn get(&mut self, endpoint: &str) -> anyhow::Result<GithubReadinessApiResponse> {
+        *self.calls.entry(endpoint.to_owned()).or_default() += 1;
+
+        if endpoint == "repos/acme/widgets/pulls/9" {
+            return Ok(response(200, self.pull()));
+        }
+        if endpoint == "repos/acme/widgets" {
+            return Ok(response(200, repository()));
+        }
+        if endpoint == "repos/acme/widgets/rules/branches/release%2F1.x?per_page=100&page=1" {
+            return Ok(response(200, Self::policy()));
+        }
+        if endpoint == "repos/acme/widgets/branches/release%2F1.x" {
+            return Ok(response(
+                200,
+                json!({"name": "release/1.x", "protected": false}),
+            ));
+        }
+        if endpoint
+            == format!(
+                "repos/acme/widgets/commits/{HEAD_SHA}/check-runs?filter=latest&per_page=100&page=1"
+            )
+        {
+            return Ok(response(200, json!({"total_count": 0, "check_runs": []})));
+        }
+        if endpoint == format!("repos/acme/widgets/commits/{HEAD_SHA}/statuses?per_page=100&page=1")
+        {
+            return Ok(response(200, json!([])));
+        }
+        if endpoint == format!("repos/acme/widgets/contents/.github/workflows?ref={HEAD_SHA}") {
+            return Ok(response(
+                200,
+                json!([{
+                    "type": "file",
+                    "path": ".github/workflows/ci.yml",
+                    "sha": WORKFLOW_BLOB_SHA
+                }]),
+            ));
+        }
+        if endpoint
+            == format!("repos/acme/widgets/contents/.github/workflows/ci.yml?ref={HEAD_SHA}")
+        {
+            return Ok(response(200, self.workflow_content()));
+        }
+        if endpoint
+            == format!("repos/acme/widgets/actions/runs?head_sha={HEAD_SHA}&per_page=100&page=1")
+        {
+            return Ok(response(200, self.target_runs()));
+        }
+        if endpoint == "repos/acme/widgets/pulls/9/files?per_page=100&page=1" {
+            if matches!(self.scenario, PrHeadWorkflowScenario::PaginatedPathExcluded) {
+                let files = (0..100)
+                    .map(|index| json!({"filename": format!("docs/file-{index:03}.md")}))
+                    .collect::<Vec<_>>();
+                return Ok(response_with_next(200, Value::Array(files)));
+            }
+            return Ok(response(200, json!([{"filename": "docs/readme.md"}])));
+        }
+        if endpoint == "repos/acme/widgets/pulls/9/files?per_page=100&page=2"
+            && matches!(self.scenario, PrHeadWorkflowScenario::PaginatedPathExcluded)
+        {
+            return Ok(response(200, json!([{"filename": "docs/final-page.md"}])));
+        }
+        if endpoint
+            == format!(
+                "repos/acme/widgets/commits/{BASE_SHA}/check-runs?check_name=ci&app_id=15368&filter=all&per_page=100&page=1"
+            )
+        {
+            return Ok(response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "check_runs": [{
+                        "id": 501,
+                        "url": "https://api.github.com/repos/acme/widgets/check-runs/501",
+                        "html_url": "https://github.com/acme/widgets/actions/runs/701/job/801",
+                        "name": "ci",
+                        "head_sha": BASE_SHA,
+                        "app": {"id": 15368, "slug": "github-actions"},
+                        "check_suite": {"id": 601}
+                    }]
+                }),
+            ));
+        }
+        if endpoint == "repos/acme/widgets/actions/runs?check_suite_id=601&per_page=100&page=1" {
+            return Ok(response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "workflow_runs": [{
+                        "id": 701,
+                        "html_url": "https://github.com/acme/widgets/actions/runs/701",
+                        "workflow_id": 901,
+                        "path": ".github/workflows/ci.yml",
+                        "event": "push",
+                        "head_sha": BASE_SHA,
+                        "check_suite_id": 601,
+                        "run_attempt": 1,
+                        "status": "completed",
+                        "conclusion": "success"
+                    }]
+                }),
+            ));
+        }
+        if endpoint == "repos/acme/widgets/actions/runs/701/jobs?filter=all&per_page=100&page=1" {
+            return Ok(response(
+                200,
+                json!({
+                    "total_count": 1,
+                    "jobs": [{
+                        "id": 801,
+                        "html_url": "https://github.com/acme/widgets/actions/runs/701/job/801",
+                        "name": "ci",
+                        "check_run_url": "https://api.github.com/repos/acme/widgets/check-runs/501",
+                        "run_attempt": 1
+                    }]
+                }),
+            ));
+        }
+        if endpoint == "repos/acme/widgets/actions/workflows/901" {
+            return Ok(response(
+                200,
+                json!({
+                    "id": 901,
+                    "name": "CI",
+                    "path": ".github/workflows/ci.yml",
+                    "state": "active",
+                    "html_url": "https://github.com/acme/widgets/actions/workflows/ci.yml"
                 }),
             ));
         }
@@ -1297,6 +1597,266 @@ fn v3_live_collection_abstains_when_exact_sha_inventory_has_two_producers() {
         )),
         2
     );
+}
+
+#[test]
+fn v3_live_collection_diagnoses_pr_head_trigger_failures_from_base_bound_producers() {
+    let cases = [
+        (
+            PrHeadWorkflowScenario::MissingTrigger,
+            WorkflowTriggerCause::PullRequestTriggerMissing,
+        ),
+        (
+            PrHeadWorkflowScenario::BranchExcluded,
+            WorkflowTriggerCause::WorkflowBranchFilterExcluded,
+        ),
+        (
+            PrHeadWorkflowScenario::PathExcluded,
+            WorkflowTriggerCause::WorkflowPathFilterExcluded,
+        ),
+        (
+            PrHeadWorkflowScenario::ForkApproval,
+            WorkflowTriggerCause::ForkApprovalRequired,
+        ),
+    ];
+
+    for (scenario, expected_cause) in cases {
+        let mut api = StablePrHeadWorkflowDoctorApi::new(scenario);
+
+        let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+        let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+        assert_eq!(
+            snapshot.target.evaluation.kind,
+            DoctorEvaluationTargetKind::PrHead
+        );
+        assert_eq!(
+            snapshot.target.evaluation.resolution,
+            DoctorEvaluationTargetResolution::Provisional
+        );
+        assert_eq!(
+            snapshot.workflow_collection.status,
+            DoctorWorkflowCollectionStatus::Complete
+        );
+        assert_eq!(snapshot.workflow_collection.probes.len(), 1);
+        assert_eq!(
+            snapshot.workflow_collection.probes[0].kind,
+            DoctorWorkflowProbeKind::PullRequestBase
+        );
+        assert_eq!(snapshot.workflow_collection.probes[0].sha, BASE_SHA);
+        let investigation = &snapshot.workflow_trigger_investigations[0];
+        assert_eq!(
+            investigation.producer.as_ref().unwrap().source_sha,
+            BASE_SHA
+        );
+        assert_eq!(
+            investigation.input.as_ref().unwrap().changed_files.paths,
+            ["docs/readme.md"]
+        );
+        assert_eq!(
+            report.workflow_trigger_diagnoses[0]
+                .diagnosis
+                .as_ref()
+                .unwrap()
+                .cause_code,
+            expected_cause
+        );
+        assert_eq!(api.graphql_calls, 6);
+        assert_eq!(
+            api.call_count("repos/acme/widgets/pulls/9/files?per_page=100&page=1"),
+            2
+        );
+        assert_eq!(
+            api.call_count(&format!(
+                "repos/acme/widgets/commits/{BASE_SHA}/check-runs?check_name=ci&app_id=15368&filter=all&per_page=100&page=1"
+            )),
+            2
+        );
+    }
+}
+
+#[test]
+fn v3_pr_head_observed_run_overrides_a_static_branch_exclusion() {
+    let mut api = StablePrHeadWorkflowDoctorApi::new(
+        PrHeadWorkflowScenario::ObservedRunOverridesBranchFilter,
+    );
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+    assert_eq!(
+        snapshot.workflow_collection.status,
+        DoctorWorkflowCollectionStatus::Complete
+    );
+    let diagnosis = report.workflow_trigger_diagnoses[0]
+        .diagnosis
+        .as_ref()
+        .unwrap();
+    assert_eq!(diagnosis.cause_code, WorkflowTriggerCause::None);
+    assert_eq!(
+        diagnosis.evidence,
+        [
+            "base:release/1.x",
+            "head:feature/doctor",
+            "branches:main",
+            "run:queued",
+        ]
+    );
+}
+
+#[test]
+fn v3_pr_head_abstains_when_changed_files_are_incomplete() {
+    let mut api =
+        StablePrHeadWorkflowDoctorApi::new(PrHeadWorkflowScenario::ChangedFilesIncomplete);
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+    assert_eq!(
+        snapshot.workflow_collection.status,
+        DoctorWorkflowCollectionStatus::Partial
+    );
+    assert!(snapshot.workflow_collection.gaps.iter().any(|gap| {
+        gap.code == "changed_files_incomplete" && gap.reason.contains("declared total")
+    }));
+    assert!(snapshot.workflow_trigger_investigations[0].input.is_none());
+    assert!(report.workflow_trigger_diagnoses[0].diagnosis.is_none());
+}
+
+#[test]
+fn v3_pr_head_collects_every_changed_file_page_before_path_diagnosis() {
+    let mut api = StablePrHeadWorkflowDoctorApi::new(PrHeadWorkflowScenario::PaginatedPathExcluded);
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+    let input = snapshot.workflow_trigger_investigations[0]
+        .input
+        .as_ref()
+        .unwrap();
+    assert!(input.changed_files.complete);
+    assert_eq!(input.changed_files.total, 101);
+    assert_eq!(input.changed_files.paths.len(), 101);
+    assert_eq!(
+        report.workflow_trigger_diagnoses[0]
+            .diagnosis
+            .as_ref()
+            .unwrap()
+            .cause_code,
+        WorkflowTriggerCause::WorkflowPathFilterExcluded
+    );
+    assert_eq!(
+        api.call_count("repos/acme/widgets/pulls/9/files?per_page=100&page=1"),
+        2
+    );
+    assert_eq!(
+        api.call_count("repos/acme/widgets/pulls/9/files?per_page=100&page=2"),
+        2
+    );
+}
+
+#[test]
+fn v3_pr_head_abstains_beyond_githubs_path_filter_file_limit() {
+    let mut api = StablePrHeadWorkflowDoctorApi::new(PrHeadWorkflowScenario::ChangedFilesOverLimit);
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+    assert_eq!(
+        snapshot.workflow_collection.status,
+        DoctorWorkflowCollectionStatus::Partial
+    );
+    assert!(
+        snapshot.workflow_collection.gaps.iter().any(|gap| {
+            gap.code == "changed_files_incomplete" && gap.reason.contains("first 300")
+        })
+    );
+    assert!(report.workflow_trigger_diagnoses[0].diagnosis.is_none());
+    assert_eq!(
+        api.call_count("repos/acme/widgets/pulls/9/files?per_page=100&page=1"),
+        0
+    );
+}
+
+#[test]
+fn v3_pr_head_observed_run_overrides_a_missing_static_trigger() {
+    let mut api = StablePrHeadWorkflowDoctorApi::new(
+        PrHeadWorkflowScenario::ObservedRunOverridesMissingTrigger,
+    );
+
+    let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+    let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+    assert_eq!(
+        snapshot.workflow_collection.status,
+        DoctorWorkflowCollectionStatus::Complete
+    );
+    assert!(snapshot.workflow_collection.gaps.is_empty());
+    let diagnosis = report.workflow_trigger_diagnoses[0]
+        .diagnosis
+        .as_ref()
+        .unwrap();
+    assert_eq!(diagnosis.cause_code, WorkflowTriggerCause::None);
+    assert_eq!(
+        diagnosis.evidence,
+        [
+            "workflow:.github/workflows/ci.yml",
+            "event:pull_request",
+            "run_head:exact",
+        ]
+    );
+}
+
+#[test]
+fn v3_pr_head_observed_run_does_not_require_changed_file_completeness() {
+    let cases = [
+        (
+            PrHeadWorkflowScenario::ObservedRunOverridesIncompleteChangedFiles,
+            2,
+            false,
+        ),
+        (
+            PrHeadWorkflowScenario::ObservedRunOverridesChangedFileLimit,
+            301,
+            true,
+        ),
+    ];
+
+    for (scenario, expected_total, expected_limit) in cases {
+        let mut api = StablePrHeadWorkflowDoctorApi::new(scenario);
+
+        let snapshot = collect_pull_request_doctor_snapshot_v3(request(), &mut api).unwrap();
+        let report = evaluate_pull_request_doctor_v3(&snapshot).unwrap();
+
+        assert_eq!(
+            snapshot.workflow_collection.status,
+            DoctorWorkflowCollectionStatus::Complete
+        );
+        assert!(snapshot.workflow_collection.gaps.is_empty());
+        let input = snapshot.workflow_trigger_investigations[0]
+            .input
+            .as_ref()
+            .unwrap();
+        assert!(!input.changed_files.complete);
+        assert_eq!(input.changed_files.total, expected_total);
+        assert_eq!(
+            input.changed_files.github_filter_file_limit_reached,
+            expected_limit
+        );
+        let diagnosis = report.workflow_trigger_diagnoses[0]
+            .diagnosis
+            .as_ref()
+            .unwrap();
+        assert_eq!(diagnosis.cause_code, WorkflowTriggerCause::None);
+        assert_eq!(
+            diagnosis.evidence,
+            [
+                "workflow:.github/workflows/ci.yml",
+                "event:pull_request",
+                "run_head:exact",
+            ]
+        );
+    }
 }
 
 #[test]

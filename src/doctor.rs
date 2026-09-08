@@ -210,6 +210,7 @@ pub struct DoctorWorkflowInventory {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum DoctorWorkflowProbeKind {
+    PullRequestBase,
     PullRequestHead,
     TestMerge,
 }
@@ -1516,8 +1517,12 @@ fn validate_workflow_collection(
         .iter()
         .map(|diagnosis| (diagnosis.key.clone(), diagnosis.status))
         .collect::<BTreeMap<_, _>>();
-    let eligible_keys = if snapshot.target.evaluation.kind == DoctorEvaluationTargetKind::MergeGroup
-    {
+    let workflow_target_kind = match snapshot.target.evaluation.kind {
+        DoctorEvaluationTargetKind::PrHead => Some(WorkflowTargetKind::PullRequestHead),
+        DoctorEvaluationTargetKind::TestMerge => None,
+        DoctorEvaluationTargetKind::MergeGroup => Some(WorkflowTargetKind::MergeGroup),
+    };
+    let eligible_keys = if workflow_target_kind.is_some() {
         report
             .requirements
             .iter()
@@ -1546,6 +1551,10 @@ fn validate_workflow_collection(
             "duplicate workflow producer probe kind"
         );
         match probe.kind {
+            DoctorWorkflowProbeKind::PullRequestBase => ensure!(
+                probe.sha == snapshot.target.base_sha,
+                "pull-request-base producer probe must use the declared base SHA"
+            ),
             DoctorWorkflowProbeKind::PullRequestHead => ensure!(
                 probe.sha == snapshot.target.head_sha,
                 "pull-request-head producer probe must use the declared head SHA"
@@ -1561,9 +1570,16 @@ fn validate_workflow_collection(
     if !eligible_keys.is_empty()
         && snapshot.workflow_collection.status != DoctorWorkflowCollectionStatus::Partial
     {
+        let required_probe_kind = match snapshot.target.evaluation.kind {
+            DoctorEvaluationTargetKind::PrHead => DoctorWorkflowProbeKind::PullRequestBase,
+            DoctorEvaluationTargetKind::MergeGroup => DoctorWorkflowProbeKind::PullRequestHead,
+            DoctorEvaluationTargetKind::TestMerge => {
+                unreachable!("test-merge targets do not have eligible workflow investigations")
+            }
+        };
         ensure!(
-            probe_kinds.contains(&DoctorWorkflowProbeKind::PullRequestHead),
-            "complete workflow collection must probe the pull-request head"
+            probe_kinds.contains(&required_probe_kind),
+            "complete workflow collection must probe the historical producer source"
         );
     }
     let mut investigation_keys = BTreeSet::new();
@@ -1582,8 +1598,8 @@ fn validate_workflow_collection(
             "workflow trigger investigation must identify a missing required check"
         );
         ensure!(
-            snapshot.target.evaluation.kind == DoctorEvaluationTargetKind::MergeGroup,
-            "workflow trigger investigation currently supports only merge-group targets"
+            workflow_target_kind.is_some(),
+            "workflow trigger investigation does not support test-merge targets"
         );
 
         if let Some(producer) = &investigation.producer {
@@ -1595,6 +1611,12 @@ fn validate_workflow_collection(
                 probed_source_shas.contains(producer.source_sha.as_str()),
                 "workflow producer evidence must come from a declared probe SHA"
             );
+            if snapshot.target.evaluation.kind == DoctorEvaluationTargetKind::PrHead {
+                ensure!(
+                    producer.source_sha == snapshot.target.base_sha,
+                    "pull-request-head workflow producer evidence must come from the declared base SHA"
+                );
+            }
             ensure!(
                 producer.check_run_id > 0
                     && producer.check_run_id <= MAX_JSON_INTEGER
@@ -1678,7 +1700,7 @@ fn validate_workflow_collection(
             ensure!(
                 input.expected_app == WorkflowExpectedApp::GithubActions
                     && input.required_context == investigation.requirement.context
-                    && input.target.kind == WorkflowTargetKind::MergeGroup
+                    && Some(input.target.kind) == workflow_target_kind
                     && input.target.sha == snapshot.signal_sha
                     && input.pull_request.number == snapshot.target.number
                     && input.pull_request.base_ref == snapshot.target.base_ref
@@ -1687,11 +1709,7 @@ fn validate_workflow_collection(
                 "workflow classifier input is not bound to its required check and pull request"
             );
             ensure!(
-                !input.changed_files.complete
-                    && !input.changed_files.github_filter_file_limit_reached
-                    && input.changed_files.paths.is_empty()
-                    && input.changed_files.total == 0
-                    && input.collection_gaps.is_empty()
+                input.collection_gaps.is_empty()
                     && input.historical_check_names
                         == vec![investigation.requirement.context.clone()]
                     && input.last_activity == "not_applicable"
@@ -1699,8 +1717,31 @@ fn validate_workflow_collection(
                         == crate::doctor_workflow::WorkflowProviderCapability::NotApplicable
                     && input.pull_request.mergeable_state
                         == crate::doctor_workflow::WorkflowMergeableState::Unknown,
-                "live merge-group classifier input contains unsupported phase-one evidence"
+                "live workflow classifier input contains unsupported phase-one evidence"
             );
+            let has_exact_pull_request_run = input.runs.iter().any(|run| {
+                run.event == crate::doctor_workflow::WorkflowRunEvent::PullRequest
+                    && run.head_sha == input.target.sha
+            });
+            match snapshot.target.evaluation.kind {
+                DoctorEvaluationTargetKind::PrHead => ensure!(
+                    has_exact_pull_request_run
+                        || (input.changed_files.complete
+                            && !input.changed_files.github_filter_file_limit_reached
+                            && input.changed_files.total <= 300),
+                    "live pull-request-head classifier input requires an exact run or a complete changed-file set within GitHub's filter limit"
+                ),
+                DoctorEvaluationTargetKind::MergeGroup => ensure!(
+                    !input.changed_files.complete
+                        && !input.changed_files.github_filter_file_limit_reached
+                        && input.changed_files.paths.is_empty()
+                        && input.changed_files.total == 0,
+                    "live merge-group classifier input contains unsupported phase-one changed-file evidence"
+                ),
+                DoctorEvaluationTargetKind::TestMerge => {
+                    unreachable!("test-merge targets do not have workflow investigations")
+                }
+            }
             let producer = investigation
                 .producer
                 .as_ref()
@@ -1771,7 +1812,7 @@ fn validate_workflow_collection(
     }
     ensure!(
         investigation_keys == eligible_keys,
-        "workflow investigations must cover every pinned missing merge-group requirement exactly once"
+        "workflow investigations must cover every eligible pinned missing requirement exactly once"
     );
 
     let mut gap_identities = BTreeSet::new();
@@ -1814,14 +1855,29 @@ pub fn evaluate_pull_request_doctor_v3(
                 .as_ref()
                 .map(classify_workflow_trigger)
                 .transpose()?;
-            ensure!(
-                diagnosis.as_ref().is_none_or(|diagnosis| matches!(
-                    diagnosis.cause_code,
+            let supported_cause = |cause| match snapshot.target.evaluation.kind {
+                DoctorEvaluationTargetKind::PrHead => matches!(
+                    cause,
+                    WorkflowTriggerCause::PullRequestTriggerMissing
+                        | WorkflowTriggerCause::WorkflowBranchFilterExcluded
+                        | WorkflowTriggerCause::WorkflowPathFilterExcluded
+                        | WorkflowTriggerCause::ForkApprovalRequired
+                        | WorkflowTriggerCause::None
+                        | WorkflowTriggerCause::WorkflowTriggerUnknown
+                ),
+                DoctorEvaluationTargetKind::MergeGroup => matches!(
+                    cause,
                     WorkflowTriggerCause::ForkApprovalRequired
                         | WorkflowTriggerCause::MergeGroupTriggerMissing
                         | WorkflowTriggerCause::None
                         | WorkflowTriggerCause::WorkflowTriggerUnknown
-                )),
+                ),
+                DoctorEvaluationTargetKind::TestMerge => false,
+            };
+            ensure!(
+                diagnosis
+                    .as_ref()
+                    .is_none_or(|diagnosis| supported_cause(diagnosis.cause_code)),
                 "live workflow diagnosis produced a cause outside the v3 evidence contract"
             );
             Ok(DoctorWorkflowTriggerReport {
@@ -2154,6 +2210,7 @@ fn workflow_cause_name(cause: crate::doctor_workflow::WorkflowTriggerCause) -> &
         }
         WorkflowTriggerCause::ProviderRuntimeDeliveryGap => "provider_runtime_delivery_gap",
         WorkflowTriggerCause::PullRequestMergeConflict => "pull_request_merge_conflict",
+        WorkflowTriggerCause::PullRequestTriggerMissing => "pull_request_trigger_missing",
         WorkflowTriggerCause::RequiredContextNotProduced => "required_context_not_produced",
         WorkflowTriggerCause::WorkflowActivityExcludesSynchronize => {
             "workflow_activity_excludes_synchronize"
@@ -2235,9 +2292,14 @@ pub fn render_pull_request_doctor_v3_markdown(report: &PullRequestDoctorReportV3
                 ));
             }
             Some(WorkflowTriggerCause::None) => {
+                let event = match report.target.evaluation.kind {
+                    DoctorEvaluationTargetKind::PrHead => "pull_request",
+                    DoctorEvaluationTargetKind::MergeGroup => "merge_group",
+                    DoctorEvaluationTargetKind::TestMerge => "test_merge",
+                };
                 prioritized.push_str(&format!(
                     "- {context}: the producer has an exact-candidate {} run, so its workflow trigger is not the proven blocker.\n",
-                    markdown_code("merge_group"),
+                    markdown_code(event),
                 ));
             }
             Some(WorkflowTriggerCause::WorkflowTriggerUnknown) => {

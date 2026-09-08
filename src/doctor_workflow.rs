@@ -192,6 +192,7 @@ pub enum WorkflowTriggerCause {
     ProviderDidNotEmitMergeGroupStatus,
     ProviderRuntimeDeliveryGap,
     PullRequestMergeConflict,
+    PullRequestTriggerMissing,
     RequiredContextNotProduced,
     WorkflowActivityExcludesSynchronize,
     WorkflowBranchFilterExcluded,
@@ -374,6 +375,15 @@ pub fn classify_workflow_trigger(
     }
 
     let (workflow, job) = active_matching[0];
+    let observed_pull_request_run = (input.target.kind == WorkflowTargetKind::PullRequestHead)
+        .then(|| {
+            input.runs.iter().find(|run| {
+                run.head_sha == input.target.sha
+                    && run.workflow_path == workflow.path
+                    && run.event == WorkflowRunEvent::PullRequest
+            })
+        })
+        .flatten();
     let approval_required = input.runs.iter().any(|run| {
         run.head_sha == input.target.sha
             && run.workflow_path == workflow.path
@@ -396,6 +406,7 @@ pub fn classify_workflow_trigger(
     if input.target.kind == WorkflowTargetKind::PullRequestHead
         && input.pull_request.mergeable_state == WorkflowMergeableState::Conflicting
         && workflow.triggers.pull_request.is_some()
+        && observed_pull_request_run.is_none()
     {
         return Ok(diagnosis(
             input,
@@ -444,154 +455,177 @@ pub fn classify_workflow_trigger(
         ));
     }
 
-    let Some(trigger) = workflow.triggers.pull_request.as_ref() else {
-        return Ok(unknown(
+    let trigger = workflow.triggers.pull_request.as_ref();
+    if trigger.is_none() && observed_pull_request_run.is_none() {
+        return Ok(diagnosis(
             input,
-            "trigger:pull_request_absent",
-            "add_or_inspect_pull_request_trigger",
+            WorkflowTriggerCause::PullRequestTriggerMissing,
+            WorkflowTriggerConfidence::Certain,
+            [
+                "target:pull_request_head".to_owned(),
+                format!("workflow:{}", workflow.path),
+                "trigger:pull_request_absent".to_owned(),
+            ],
+            workflow_fix("add_pull_request_trigger", true),
         ));
-    };
-    let default_types = ["opened", "reopened", "synchronize"];
-    let activity_matches = if trigger.types.is_empty() {
-        default_types.contains(&input.last_activity.as_str())
-    } else {
-        trigger
-            .types
-            .iter()
-            .any(|activity| activity == &input.last_activity)
-    };
-    if !activity_matches {
-        if input.last_activity != "synchronize" {
+    }
+
+    if observed_pull_request_run.is_none() {
+        let trigger = trigger.expect("missing pull_request trigger handled above");
+        if input.last_activity == "not_applicable" && !trigger.types.is_empty() {
             return Ok(unknown(
                 input,
-                "activity_filter:excluded_non_synchronize",
-                "inspect_pull_request_activity_filter",
+                "activity_filter:activity_unavailable",
+                "collect_pull_request_activity",
             ));
         }
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::WorkflowActivityExcludesSynchronize,
-            WorkflowTriggerConfidence::Certain,
-            [
-                format!("last_activity:{}", input.last_activity),
-                format!("types:{}", trigger.types.join(",")),
-                "exact_head_run:absent".to_owned(),
-            ],
-            workflow_fix("add_pull_request_synchronize", true),
-        ));
-    }
+        if input.last_activity != "not_applicable" {
+            let default_types = ["opened", "reopened", "synchronize"];
+            let activity_matches = if trigger.types.is_empty() {
+                default_types.contains(&input.last_activity.as_str())
+            } else {
+                trigger
+                    .types
+                    .iter()
+                    .any(|activity| activity == &input.last_activity)
+            };
+            if !activity_matches {
+                if input.last_activity != "synchronize" {
+                    return Ok(unknown(
+                        input,
+                        "activity_filter:excluded_non_synchronize",
+                        "inspect_pull_request_activity_filter",
+                    ));
+                }
+                return Ok(diagnosis(
+                    input,
+                    WorkflowTriggerCause::WorkflowActivityExcludesSynchronize,
+                    WorkflowTriggerConfidence::Certain,
+                    [
+                        format!("last_activity:{}", input.last_activity),
+                        format!("types:{}", trigger.types.join(",")),
+                        "exact_head_run:absent".to_owned(),
+                    ],
+                    workflow_fix("add_pull_request_synchronize", true),
+                ));
+            }
+        }
 
-    let branch_match = evaluate_ref_filters(
-        &trigger.branches,
-        &trigger.branches_ignore,
-        &input.pull_request.base_ref,
-    );
-    if branch_match == FilterDecision::Excluded {
-        let (filter_name, patterns) = if trigger.branches.is_empty() {
-            ("branches_ignore", trigger.branches_ignore.join(","))
-        } else {
-            ("branches", trigger.branches.join(","))
-        };
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::WorkflowBranchFilterExcluded,
-            WorkflowTriggerConfidence::Certain,
-            [
-                format!("base:{}", input.pull_request.base_ref),
-                format!("{filter_name}:{patterns}"),
-                format!("workflow:{}", workflow.path),
-            ],
-            workflow_fix("align_required_base_branch_filter", true),
-        ));
-    }
-    if branch_match == FilterDecision::Unknown {
-        return Ok(unknown(
-            input,
-            "branch_filter:unsupported_pattern",
-            "inspect_branch_filter",
-        ));
-    }
-
-    if input.changed_files.github_filter_file_limit_reached {
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::WorkflowTriggerUnknown,
-            WorkflowTriggerConfidence::Uncertain,
-            [
-                format!("changed_files:{}", input.changed_files.total),
-                "github_filter_limit:reached".to_owned(),
-                "gap:github_path_filter_evaluation_truncated".to_owned(),
-            ],
-            workflow_fix("inspect_github_filter_evaluation", false),
-        ));
-    }
-
-    let path_match = evaluate_path_filters(
-        &trigger.paths,
-        &trigger.paths_ignore,
-        &input.changed_files.paths,
-    );
-    if path_match == FilterDecision::Excluded {
-        let evidence = if !trigger.paths.is_empty() {
-            vec![
-                format!("changed:{}", input.changed_files.paths[0]),
-                format!("paths:{}", trigger.paths.join(",")),
-                format!("workflow:{}", workflow.path),
-            ]
-        } else {
-            vec![
-                format!("changed:{}", input.changed_files.paths[0]),
-                format!("paths_ignore:{}", trigger.paths_ignore[0]),
-                format!("workflow:{}", workflow.path),
-            ]
-        };
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::WorkflowPathFilterExcluded,
-            WorkflowTriggerConfidence::Certain,
-            evidence,
-            workflow_fix("move_required_filter_inside_workflow", true),
-        ));
-    }
-    if path_match == FilterDecision::Unknown {
-        return Ok(unknown(
-            input,
-            "path_filter:unsupported_pattern",
-            "inspect_path_filter",
-        ));
-    }
-
-    if input.pull_request.head_repository_is_fork
-        && has_gap(input, "fork_approval_policy_unavailable")
-    {
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::ForkApprovalPossible,
-            WorkflowTriggerConfidence::Uncertain,
-            [
-                "head_repository:fork",
-                "exact_head_run:absent",
-                "gap:fork_approval_policy_unavailable",
-            ],
-            WorkflowTriggerFix {
-                action_code: "inspect_fork_approval_policy".to_owned(),
-                argv: vec![
-                    "gh".to_owned(),
-                    "api".to_owned(),
-                    "repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval"
-                        .to_owned(),
+        let branch_match = evaluate_ref_filters(
+            &trigger.branches,
+            &trigger.branches_ignore,
+            &input.pull_request.base_ref,
+        );
+        if branch_match == FilterDecision::Excluded {
+            let (filter_name, patterns) = if trigger.branches.is_empty() {
+                ("branches_ignore", trigger.branches_ignore.join(","))
+            } else {
+                ("branches", trigger.branches.join(","))
+            };
+            return Ok(diagnosis(
+                input,
+                WorkflowTriggerCause::WorkflowBranchFilterExcluded,
+                WorkflowTriggerConfidence::Certain,
+                [
+                    format!("base:{}", input.pull_request.base_ref),
+                    format!("{filter_name}:{patterns}"),
+                    format!("workflow:{}", workflow.path),
                 ],
-                requires_human_edit: false,
-            },
-        ));
+                workflow_fix("align_required_base_branch_filter", true),
+            ));
+        }
+        if branch_match == FilterDecision::Unknown {
+            return Ok(unknown(
+                input,
+                "branch_filter:unsupported_pattern",
+                "inspect_branch_filter",
+            ));
+        }
+
+        if input.changed_files.github_filter_file_limit_reached {
+            return Ok(diagnosis(
+                input,
+                WorkflowTriggerCause::WorkflowTriggerUnknown,
+                WorkflowTriggerConfidence::Uncertain,
+                [
+                    format!("changed_files:{}", input.changed_files.total),
+                    "github_filter_limit:reached".to_owned(),
+                    "gap:github_path_filter_evaluation_truncated".to_owned(),
+                ],
+                workflow_fix("inspect_github_filter_evaluation", false),
+            ));
+        }
+        let has_path_filters = !trigger.paths.is_empty() || !trigger.paths_ignore.is_empty();
+        if has_path_filters && !input.changed_files.complete {
+            return Ok(unknown(
+                input,
+                "gap:changed_files_incomplete",
+                "collect_changed_files",
+            ));
+        }
+
+        let path_match = evaluate_path_filters(
+            &trigger.paths,
+            &trigger.paths_ignore,
+            &input.changed_files.paths,
+        );
+        if path_match == FilterDecision::Excluded {
+            let evidence = if !trigger.paths.is_empty() {
+                vec![
+                    format!("changed:{}", input.changed_files.paths[0]),
+                    format!("paths:{}", trigger.paths.join(",")),
+                    format!("workflow:{}", workflow.path),
+                ]
+            } else {
+                vec![
+                    format!("changed:{}", input.changed_files.paths[0]),
+                    format!("paths_ignore:{}", trigger.paths_ignore[0]),
+                    format!("workflow:{}", workflow.path),
+                ]
+            };
+            return Ok(diagnosis(
+                input,
+                WorkflowTriggerCause::WorkflowPathFilterExcluded,
+                WorkflowTriggerConfidence::Certain,
+                evidence,
+                workflow_fix("move_required_filter_inside_workflow", true),
+            ));
+        }
+        if path_match == FilterDecision::Unknown {
+            return Ok(unknown(
+                input,
+                "path_filter:unsupported_pattern",
+                "inspect_path_filter",
+            ));
+        }
+
+        if input.pull_request.head_repository_is_fork
+            && has_gap(input, "fork_approval_policy_unavailable")
+        {
+            return Ok(diagnosis(
+                input,
+                WorkflowTriggerCause::ForkApprovalPossible,
+                WorkflowTriggerConfidence::Uncertain,
+                [
+                    "head_repository:fork",
+                    "exact_head_run:absent",
+                    "gap:fork_approval_policy_unavailable",
+                ],
+                WorkflowTriggerFix {
+                    action_code: "inspect_fork_approval_policy".to_owned(),
+                    argv: vec![
+                        "gh".to_owned(),
+                        "api".to_owned(),
+                        "repos/{owner}/{repo}/actions/permissions/fork-pr-contributor-approval"
+                            .to_owned(),
+                    ],
+                    requires_human_edit: false,
+                },
+            ));
+        }
     }
 
-    let observed_run = input.runs.iter().find(|run| {
-        run.head_sha == input.target.sha
-            && run.workflow_path == workflow.path
-            && run.event == WorkflowRunEvent::PullRequest
-    });
-    let Some(observed_run) = observed_run else {
+    let Some(observed_run) = observed_pull_request_run else {
         return Ok(unknown(
             input,
             "pull_request_run:absent",
@@ -618,51 +652,61 @@ pub fn classify_workflow_trigger(
             workflow_fix("none", false),
         ));
     }
-    if let Some(pattern) = trigger.branches.first() {
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::None,
-            WorkflowTriggerConfidence::Certain,
-            [
-                format!("base:{}", input.pull_request.base_ref),
-                format!("head:{}", input.pull_request.head_ref),
-                format!("branches:{pattern}"),
-                "run:queued".to_owned(),
-            ],
-            workflow_fix("none", false),
-        ));
-    }
-    if trigger.paths.iter().any(|pattern| pattern.starts_with('!')) {
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::None,
-            WorkflowTriggerConfidence::Certain,
-            [
-                format!("changed:{}", input.changed_files.paths[0]),
-                "paths:ordered_reinclude".to_owned(),
-                "run:queued".to_owned(),
-            ],
-            workflow_fix("none", false),
-        ));
-    }
-    if let Some(pattern) = trigger.paths.first() {
-        return Ok(diagnosis(
-            input,
-            WorkflowTriggerCause::None,
-            WorkflowTriggerConfidence::Certain,
-            [
-                format!("changed:{}", input.changed_files.paths[0]),
-                format!("paths:{pattern}"),
-                "run:queued".to_owned(),
-            ],
-            workflow_fix("none", false),
-        ));
+    if let Some(trigger) = trigger {
+        if let Some(pattern) = trigger.branches.first() {
+            return Ok(diagnosis(
+                input,
+                WorkflowTriggerCause::None,
+                WorkflowTriggerConfidence::Certain,
+                [
+                    format!("base:{}", input.pull_request.base_ref),
+                    format!("head:{}", input.pull_request.head_ref),
+                    format!("branches:{pattern}"),
+                    "run:queued".to_owned(),
+                ],
+                workflow_fix("none", false),
+            ));
+        }
+        if let Some(changed_path) = input.changed_files.paths.first() {
+            if trigger.paths.iter().any(|pattern| pattern.starts_with('!')) {
+                return Ok(diagnosis(
+                    input,
+                    WorkflowTriggerCause::None,
+                    WorkflowTriggerConfidence::Certain,
+                    [
+                        format!("changed:{changed_path}"),
+                        "paths:ordered_reinclude".to_owned(),
+                        "run:queued".to_owned(),
+                    ],
+                    workflow_fix("none", false),
+                ));
+            }
+            if let Some(pattern) = trigger.paths.first() {
+                return Ok(diagnosis(
+                    input,
+                    WorkflowTriggerCause::None,
+                    WorkflowTriggerConfidence::Certain,
+                    [
+                        format!("changed:{changed_path}"),
+                        format!("paths:{pattern}"),
+                        "run:queued".to_owned(),
+                    ],
+                    workflow_fix("none", false),
+                ));
+            }
+        }
     }
 
-    Ok(unknown(
+    Ok(diagnosis(
         input,
-        "trigger:no_supported_explanation",
-        "inspect_workflow_run",
+        WorkflowTriggerCause::None,
+        WorkflowTriggerConfidence::Certain,
+        [
+            format!("workflow:{}", workflow.path),
+            "event:pull_request".to_owned(),
+            "run_head:exact".to_owned(),
+        ],
+        workflow_fix("none", false),
     ))
 }
 
